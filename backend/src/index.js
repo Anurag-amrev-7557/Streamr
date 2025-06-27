@@ -203,7 +203,6 @@ app.use('/uploads', (req, res, next) => {
 
 // Serve frontend static files in production
 if (process.env.NODE_ENV === 'production') {
-  const frontendPath = path.join(__dirname, '../../frontend/dist');
   app.use(express.static(frontendPath, {
     setHeaders: (res, filePath) => {
       if (/\.(js|css|svg|webp|png|jpg|jpeg|gif|woff2?|ttf|eot|ico)$/i.test(filePath)) {
@@ -213,10 +212,6 @@ if (process.env.NODE_ENV === 'production') {
       }
     }
   }));
-  // Fallback to index.html for SPA
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(frontendPath, 'index.html'));
-  });
 }
 
 // Error handling middleware
