@@ -195,6 +195,11 @@ app.use('/api/user', authenticate, userRoutes);
 app.use('/api/tmdb', tmdbRoutes);
 app.use('/api/community', communityRoutes);
 
+// Add this:
+app.get('/', (req, res) => {
+  res.send('Streamr Backend API is running.');
+});
+
 // Serve uploaded files
 app.use('/uploads', (req, res, next) => {
   if (process.env.NODE_ENV === 'production') {
