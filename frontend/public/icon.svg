@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background Circle -->
+  <circle cx="256" cy="256" r="256" fill="#1A1A1A"/>
+  
+  <!-- Play Button -->
+  <path d="M192 128L384 256L192 384V128Z" fill="#FF0000"/>
+  
+  <!-- Sound Waves -->
+  <path d="M320 192C320 192 352 224 352 256C352 288 320 320 320 320" stroke="#FFFFFF" stroke-width="16" stroke-linecap="round"/>
+  <path d="M352 160C352 160 400 208 400 256C400 304 352 352 352 352" stroke="#FFFFFF" stroke-width="16" stroke-linecap="round"/>
+</svg> 

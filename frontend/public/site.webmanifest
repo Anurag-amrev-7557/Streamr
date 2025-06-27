@@ -1,0 +1,26 @@
+{
+  "name": "Streamr",
+  "short_name": "Streamr",
+  "description": "Your Ultimate Streaming Platform",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "theme_color": "#1A1A1A",
+  "background_color": "#1A1A1A",
+  "display": "standalone",
+  "start_url": "/",
+  "orientation": "portrait",
+  "scope": "/",
+  "lang": "en-US"
+} 
