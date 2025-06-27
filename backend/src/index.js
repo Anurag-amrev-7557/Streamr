@@ -26,6 +26,8 @@ const winston = require('winston');
 const app = express();
 const server = createServer(app);
 
+const frontendPath = path.join(__dirname, '../../frontend/dist');
+
 // Initialize Socket.IO with CORS
 const io = socketIo(server, {
   cors: {
@@ -200,19 +202,6 @@ app.use('/uploads', (req, res, next) => {
   }
   next();
 }, express.static(path.join(__dirname, '../uploads')));
-
-// Serve frontend static files in production
-if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(frontendPath, {
-    setHeaders: (res, filePath) => {
-      if (/\.(js|css|svg|webp|png|jpg|jpeg|gif|woff2?|ttf|eot|ico)$/i.test(filePath)) {
-        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-      } else {
-        res.setHeader('Cache-Control', 'public, max-age=3600');
-      }
-    }
-  }));
-}
 
 // Error handling middleware
 app.use((err, req, res, next) => {
