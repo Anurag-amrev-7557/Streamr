@@ -31,7 +31,7 @@ const frontendPath = path.join(__dirname, '../../frontend/dist');
 // Initialize Socket.IO with CORS
 const io = socketIo(server, {
   cors: {
-    origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+    origin: ['http://localhost:5173', 'http://127.0.0.1:5173', 'https://streamr-see.web.app'],
     methods: ['GET', 'POST'],
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization']
@@ -50,7 +50,7 @@ const communityNamespace = io.of('/community');
 // Middleware
 const allowedOrigins = process.env.NODE_ENV === 'production' 
   ? [process.env.FRONTEND_URL] 
-  : ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173', 'http://127.0.0.1:3000'];
+  : ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173', 'http://127.0.0.1:3000', 'https://streamr-see.web.app'];
 
 app.use(cors({
   origin: allowedOrigins,
