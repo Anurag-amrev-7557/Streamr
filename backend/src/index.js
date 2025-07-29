@@ -26,6 +26,8 @@ const winston = require('winston');
 const app = express();
 const server = createServer(app);
 
+const frontendPath = path.join(__dirname, '../../frontend/dist');
+
 // Initialize Socket.IO with CORS
 const io = socketIo(server, {
   cors: {
@@ -46,9 +48,14 @@ const io = socketIo(server, {
 const communityNamespace = io.of('/community');
 
 // Middleware
-const allowedOrigins = process.env.NODE_ENV === 'production' 
-  ? [process.env.FRONTEND_URL] 
-  : ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173', 'http://127.0.0.1:3000'];
+const allowedOrigins = process.env.NODE_ENV === 'production'
+  ? ['https://streamr-see.web.app']
+  : [
+      'http://localhost:5173',
+      'http://localhost:3000',
+      'http://127.0.0.1:5173',
+      'http://127.0.0.1:3000'
+    ];
 
 app.use(cors({
   origin: allowedOrigins,
@@ -193,6 +200,11 @@ app.use('/api/user', authenticate, userRoutes);
 app.use('/api/tmdb', tmdbRoutes);
 app.use('/api/community', communityRoutes);
 
+// Add this:
+app.get('/', (req, res) => {
+  res.send('Streamr Backend API is running.');
+});
+
 // Serve uploaded files
 app.use('/uploads', (req, res, next) => {
   if (process.env.NODE_ENV === 'production') {
@@ -200,24 +212,6 @@ app.use('/uploads', (req, res, next) => {
   }
   next();
 }, express.static(path.join(__dirname, '../uploads')));
-
-// Serve frontend static files in production
-if (process.env.NODE_ENV === 'production') {
-  const frontendPath = path.join(__dirname, '../../frontend/dist');
-  app.use(express.static(frontendPath, {
-    setHeaders: (res, filePath) => {
-      if (/\.(js|css|svg|webp|png|jpg|jpeg|gif|woff2?|ttf|eot|ico)$/i.test(filePath)) {
-        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-      } else {
-        res.setHeader('Cache-Control', 'public, max-age=3600');
-      }
-    }
-  }));
-  // Fallback to index.html for SPA
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(frontendPath, 'index.html'));
-  });
-}
 
 // Error handling middleware
 app.use((err, req, res, next) => {

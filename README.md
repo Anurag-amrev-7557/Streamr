@@ -140,7 +140,30 @@ MIT
 
 ---
 
-## 10. Credits
+## 10. Streaming Features
+
+### Movie & TV Show Streaming
+Streamr integrates with 111movies.com to provide streaming functionality:
+
+- **Movies**: Direct streaming via `https://111movies.com/movie/{id}`
+- **TV Shows**: Episode-based streaming via `https://111movies.com/tv/{id}/{season}/{episode}`
+- **Embed Player**: Full-screen streaming experience with embed player
+- **Episode Selection**: Interactive season/episode selector for TV shows
+
+### Supported ID Formats
+- **IMDB IDs**: Must include 'tt' prefix (e.g., `tt6263850`)
+- **TMDB IDs**: Direct numeric IDs (e.g., `533535`)
+
+### Usage
+1. Navigate to any movie or TV show details page
+2. Click the "Watch Now" button (red gradient button)
+3. For TV shows, select season and episode if needed
+4. Enjoy streaming in the embedded player
+
+---
+
+## 11. Credits
 - [TMDB API](https://www.themoviedb.org/documentation/api)
+- [111movies.com](https://111movies.com) - Streaming content provider
 - [Vite](https://vitejs.dev/), [React](https://react.dev/), [Tailwind](https://tailwindcss.com/)
 - [Express](https://expressjs.com/), [MongoDB](https://www.mongodb.com/), [Socket.IO](https://socket.io/) 

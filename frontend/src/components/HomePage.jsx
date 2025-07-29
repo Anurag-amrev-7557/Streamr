@@ -101,100 +101,412 @@ const swiperStyles = `
   }
 `;
 
-const ProgressiveImage = memo(({ src, alt, className, style, aspectRatio = "16/10" }) => {
-  const [imageLoaded, setImageLoaded] = useState(false);
-  const [imageError, setImageError] = useState(false);
-  const [currentSrc, setCurrentSrc] = useState(null);
-  const imageRef = useRef(null);
+// Enhanced ProgressiveImage component with better accessibility, srcSet support, error retry, and improved shimmer
+const ProgressiveImage = memo(
+  ({
+    src,
+    alt = "",
+    className = "",
+    style = {},
+    aspectRatio = "16/10",
+    srcSet,
+    sizes,
+    placeholderSrc,
+    onLoad,
+    onError,
+    retryCount = 1,
+    ...rest
+  }) => {
+    const [imageLoaded, setImageLoaded] = useState(false);
+    const [imageError, setImageError] = useState(false);
+    const [currentSrc, setCurrentSrc] = useState(null);
+    const [retry, setRetry] = useState(0);
+    const imageRef = useRef(null);
+    const retryTimeoutRef = useRef(null);
 
-  useEffect(() => {
-    if (src) {
-      // Start with a tiny version of the image
-      const tinySrc = src.replace('/w500', '/w92');
+    // Compute tiny/placeholder src
+    const getTinySrc = useCallback(
+      (src) => {
+        if (!src) return null;
+        if (placeholderSrc) return placeholderSrc;
+        // Try to replace TMDB style /w500 or /original with /w92
+        return src.replace(/\/(w\d+|original)/, "/w92");
+      },
+      [placeholderSrc]
+    );
+
+    // Retry logic for failed loads
+    useEffect(() => {
+      if (imageError && retry < retryCount && src) {
+        retryTimeoutRef.current = setTimeout(() => {
+          setImageError(false);
+          setRetry((r) => r + 1);
+        }, 500 + 500 * retry); // Exponential backoff
+      }
+      return () => clearTimeout(retryTimeoutRef.current);
+    }, [imageError, retry, retryCount, src]);
+
+    // Load tiny and full image
+    useEffect(() => {
+      if (!src) {
+        setCurrentSrc(null);
+        setImageLoaded(false);
+        setImageError(false);
+        return;
+      }
+      setImageLoaded(false);
+      setImageError(false);
+      setRetry(0);
+
+      const tinySrc = getTinySrc(src);
       setCurrentSrc(tinySrc);
 
-      // Load the full image in the background
-      const fullImage = new Image();
+      // Preload full image
+      const fullImage = new window.Image();
       fullImage.src = src;
+      if (srcSet) fullImage.srcset = srcSet;
       fullImage.onload = () => {
         setCurrentSrc(src);
         setImageLoaded(true);
+        if (onLoad) onLoad();
       };
-      fullImage.onerror = () => {
+      fullImage.onerror = (e) => {
         setImageError(true);
+        if (onError) onError(e);
       };
-    }
-  }, [src]);
+      // eslint-disable-next-line
+    }, [src, srcSet, getTinySrc, retry]);
 
-  return (
-    <div 
-      className={`relative ${className}`}
-      style={{ 
-        aspectRatio,
-        ...style
-      }}
-    >
-      {/* Loading Placeholder */}
-      <div 
-        className={`absolute inset-0 bg-gradient-to-br from-[#1a1d24] to-[#2b3036] transition-opacity duration-500 ${
-          imageLoaded ? 'opacity-0' : 'opacity-100'
-        }`}
+    // Keyboard accessibility: focusable if onClick or tabIndex provided
+    const isInteractive = !!rest.onClick || rest.tabIndex !== undefined;
+
+    return (
+      <div
+        className={`relative overflow-hidden ${className}`}
+        style={{
+          aspectRatio,
+          ...style,
+        }}
+        aria-busy={!imageLoaded && !imageError}
+        aria-label={alt}
+        tabIndex={isInteractive ? 0 : undefined}
+        {...rest}
       >
-        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent animate-[shimmer_2s_infinite]"></div>
+        {/* Shimmer Loading Placeholder */}
+        {!imageLoaded && !imageError && (
+          <div className="absolute inset-0 z-0 bg-gradient-to-br from-[#1a1d24] to-[#2b3036]">
+            <div
+              className="absolute inset-0 animate-shimmer"
+              style={{
+                background:
+                  "linear-gradient(90deg, transparent, rgba(255,255,255,0.07) 50%, transparent)",
+                backgroundSize: "200% 100%",
+                animation: "shimmer 2s infinite linear",
+              }}
+            />
+          </div>
+        )}
+
+        {/* Tiny Image (Blurred) */}
+        {currentSrc && !imageError && !imageLoaded && (
+          <div
+            className="absolute inset-0 z-10 bg-cover bg-center transition-opacity duration-500"
+            style={{
+              backgroundImage: `url("${currentSrc}")`,
+              filter: "blur(12px) brightness(0.95)",
+              transform: "scale(1.08)",
+              opacity: imageLoaded ? 0 : 1,
+              transition: "opacity 0.5s",
+            }}
+            aria-hidden="true"
+          />
+        )}
+
+        {/* Full Image (background-image for smooth fade, plus <img> for SEO/accessibility) */}
+        {!imageError && currentSrc && (
+          <>
+            <div
+              className={`absolute inset-0 z-20 bg-cover bg-center transition-all duration-700 ${
+                imageLoaded ? "opacity-100 scale-100" : "opacity-0 scale-105"
+              }`}
+              style={{
+                backgroundImage: currentSrc === src ? `url("${src}")` : "none",
+                backgroundPosition: "center 20%",
+                imageRendering: "auto",
+                WebkitBackfaceVisibility: "hidden",
+                backfaceVisibility: "hidden",
+                transform: "translateZ(0)",
+                WebkitFontSmoothing: "antialiased",
+                WebkitTransform: "translate3d(0,0,0)",
+                transition:
+                  "opacity 0.7s cubic-bezier(0.22,1,0.36,1), transform 0.7s cubic-bezier(0.22,1,0.36,1)",
+              }}
+              aria-hidden="true"
+            />
+            {/* Visually hidden <img> for SEO/accessibility, but not shown */}
+            {src && (
+              <img
+                ref={imageRef}
+                src={src}
+                srcSet={srcSet}
+                sizes={sizes}
+                alt={alt}
+                style={{
+                  position: "absolute",
+                  width: 1,
+                  height: 1,
+                  opacity: 0,
+                  pointerEvents: "none",
+                  zIndex: -1,
+                }}
+                tabIndex={-1}
+                aria-hidden="true"
+                draggable={false}
+                onLoad={() => {
+                  setImageLoaded(true);
+                  if (onLoad) onLoad();
+                }}
+                onError={(e) => {
+                  setImageError(true);
+                  if (onError) onError(e);
+                }}
+              />
+            )}
+          </>
+        )}
+
+        {/* Error Fallback */}
+        {imageError && (
+          <div className="absolute inset-0 z-30 bg-gradient-to-br from-[#1a1d24] to-[#2b3036] flex items-center justify-center">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-12 w-12 text-white/20"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              aria-label="Image failed to load"
+              role="img"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1}
+                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+              />
+            </svg>
+          </div>
+        )}
       </div>
+    );
+  }
+);
 
-      {/* Tiny Image (Blurred) */}
-      {currentSrc && !imageError && (
-        <div
-          className={`absolute inset-0 bg-cover bg-center transition-opacity duration-500 ${
-            imageLoaded ? 'opacity-0' : 'opacity-100'
-          }`}
-          style={{ 
-            backgroundImage: `url("${currentSrc}")`,
-            filter: 'blur(10px)',
-            transform: 'scale(1.1)'
-          }}
-        />
-      )}
-
-      {/* Full Image */}
-      {!imageError && (
-        <div
-          className={`absolute inset-0 bg-cover bg-center transition-all duration-700 ${
-            imageLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-105'
-          }`}
-          style={{ 
-            backgroundImage: currentSrc ? `url("${currentSrc}")` : 'none',
-            backgroundPosition: 'center 20%',
-            imageRendering: 'optimizeQuality',
-            WebkitBackfaceVisibility: 'hidden',
-            backfaceVisibility: 'hidden',
-            transform: 'translateZ(0)',
-            WebkitFontSmoothing: 'antialiased',
-            WebkitTransform: 'translate3d(0,0,0)',
-          }}
-        />
-      )}
-
-      {/* Error Fallback */}
-      {imageError && (
-        <div className="absolute inset-0 bg-gradient-to-br from-[#1a1d24] to-[#2b3036] flex items-center justify-center">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-white/20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
-        </div>
-      )}
-    </div>
-  );
-});
-
-const MovieCard = memo(({ title, type, image, backdrop, episodes, seasons, rating, year, duration, runtime, onClick, id, prefetching, cardClassName, poster_path, backdrop_path, overview, genres, release_date, first_air_date, vote_average, media_type }) => {
+const MovieCard = memo(({ title, type, image, backdrop, episodes, seasons, rating, year, duration, runtime, onMouseLeave, onClick, id, prefetching, cardClassName, poster, poster_path, backdrop_path, overview, genres, release_date, first_air_date, vote_average, media_type, onPrefetch }) => {
   const { addToWatchlist, removeFromWatchlist, isInWatchlist } = useWatchlist();
   const [isInWatchlistState, setIsInWatchlistState] = useState(false);
+  const [isPrefetching, setIsPrefetching] = useState(false);
+  const [prefetchComplete, setPrefetchComplete] = useState(false);
+  const hoverTimeoutRef = useRef(null);
+  const prefetchTimeoutRef = useRef(null);
+  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
     setIsInWatchlistState(isInWatchlist(id));
   }, [id, isInWatchlist]);
+
+  // Check if we're on mobile for responsive layout
+  useEffect(() => {
+    const checkScreenSize = () => {
+      const isNowMobile = window.innerWidth < 768;
+      setIsMobile(prev => {
+        if (prev !== isNowMobile) {
+          return isNowMobile;
+        }
+        return prev;
+      });
+    };
+    
+    checkScreenSize();
+    window.addEventListener('resize', checkScreenSize);
+    
+    return () => {
+      window.removeEventListener('resize', checkScreenSize);
+    };
+  }, []);
+
+  // Further enhanced prefetching function with image preloading, error logging, and smarter checks
+  const handlePrefetch = useCallback(async () => {
+    if (prefetchComplete || isPrefetching) return;
+
+    setIsPrefetching(true);
+
+    try {
+      // Prefetch movie details, similar movies, and high-res images
+      const prefetchPromises = [];
+
+      // Prefetch movie details if not already available
+      if (!runtime || !overview) {
+        prefetchPromises.push(
+          getMovieDetails(id, media_type || type || 'movie').catch(err => {
+            if (process.env.NODE_ENV === 'development') {
+              console.warn('Prefetch movie details failed:', err);
+            }
+            return null;
+          })
+        );
+      }
+
+      // Prefetch similar movies
+      prefetchPromises.push(
+        getSimilarMovies(id, media_type || type || 'movie', 1).catch(err => {
+          if (process.env.NODE_ENV === 'development') {
+            console.warn('Prefetch similar movies failed:', err);
+          }
+          return null;
+        })
+      );
+
+      // Prefetch high-res poster and backdrop images if available
+      const imageUrls = [];
+      if (poster_path) {
+        // Try to fetch a higher-res poster if not already loaded
+        const posterUrl = `https://image.tmdb.org/t/p/w500${poster_path}`;
+        imageUrls.push(posterUrl);
+      }
+      if (backdrop_path) {
+        const backdropUrl = `https://image.tmdb.org/t/p/w780${backdrop_path}`;
+        imageUrls.push(backdropUrl);
+      }
+      // Preload images in parallel
+      const imagePrefetches = imageUrls.map(
+        url =>
+          new Promise(resolve => {
+            const img = new window.Image();
+            img.onload = () => resolve(true);
+            img.onerror = () => resolve(false);
+            img.src = url;
+          })
+      );
+      if (imagePrefetches.length > 0) {
+        prefetchPromises.push(Promise.all(imagePrefetches));
+      }
+
+      // Execute all prefetch operations
+      await Promise.allSettled(prefetchPromises);
+      setPrefetchComplete(true);
+
+      // Notify parent component about successful prefetch
+      if (onPrefetch) {
+        onPrefetch(id);
+      }
+    } catch (error) {
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Prefetch failed:', error);
+      }
+      // Prefetch failed silently in production
+    } finally {
+      setIsPrefetching(false);
+    }
+  }, [
+    id,
+    runtime,
+    overview,
+    media_type,
+    type,
+    prefetchComplete,
+    isPrefetching,
+    onPrefetch,
+    poster_path,
+    backdrop_path
+  ]);
+
+  // Enhanced: smarter debouncing, touch support, and analytics
+  // Handle mouse enter/touch start with debouncing and analytics
+  const handleMouseEnter = useCallback((event) => {
+    // Clear any existing timeout
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+
+    // Optionally: Track hover analytics (only once per card per session)
+    if (window && window.gtag && !window.__cardHoverTracked?.[id]) {
+      window.gtag('event', 'card_hover', { movie_id: id, title });
+      window.__cardHoverTracked = window.__cardHoverTracked || {};
+      window.__cardHoverTracked[id] = true;
+    }
+
+    // For touch devices, ignore mouseenter if touch event was just fired
+    if (event && event.type === 'mouseenter' && handleMouseEnter.lastTouch && Date.now() - handleMouseEnter.lastTouch < 400) {
+      return;
+    }
+
+    // Start prefetching after a short delay to avoid unnecessary requests
+    hoverTimeoutRef.current = setTimeout(() => {
+      handlePrefetch();
+    }, 120); // Slightly faster (120ms) for more responsive feel
+  }, [handlePrefetch, id, title]);
+
+  // Track last touch time to avoid double-trigger on touch devices
+  handleMouseEnter.lastTouch = 0;
+
+  // Touch support: call this onTouchStart
+  const handleTouchStart = useCallback(() => {
+    handleMouseEnter.lastTouch = Date.now();
+    handleMouseEnter({ type: 'touchstart' });
+  }, [handleMouseEnter]);
+
+  // Enhanced: Handle mouse leave/touch end/cancel with analytics and optional callback
+  const handleMouseLeave = useCallback((event) => {
+    // Clear the hover timeout
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+
+    // Clear any prefetch timeout
+    if (prefetchTimeoutRef.current) {
+      clearTimeout(prefetchTimeoutRef.current);
+      prefetchTimeoutRef.current = null;
+    }
+
+    // Optionally: Track leave analytics (only once per card per session)
+    if (window && window.gtag && !window.__cardLeaveTracked?.[id]) {
+      window.gtag('event', 'card_hover_leave', { movie_id: id, title });
+      window.__cardLeaveTracked = window.__cardLeaveTracked || {};
+      window.__cardLeaveTracked[id] = true;
+    }
+
+    // Optionally: If a callback is provided for leave, call it
+    if (typeof onMouseLeave === 'function') {
+      onMouseLeave(event);
+    }
+  }, [id, title, onMouseLeave]);
+
+  // Enhanced cleanup: also remove any event listeners or observers if added in the future
+  useEffect(() => {
+    // If you add any event listeners or observers, clean them up here
+    return () => {
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+        hoverTimeoutRef.current = null;
+      }
+      if (prefetchTimeoutRef.current) {
+        clearTimeout(prefetchTimeoutRef.current);
+        prefetchTimeoutRef.current = null;
+      }
+      // Example: If you ever add a MutationObserver or IntersectionObserver, disconnect here
+      if (typeof observerRef !== "undefined" && observerRef?.current) {
+        if (typeof observerRef.current.disconnect === "function") {
+          observerRef.current.disconnect();
+        }
+        observerRef.current = null;
+      }
+      // Example: Remove any custom event listeners if added
+      if (typeof cleanupExtra === "function") {
+        cleanupExtra();
+      }
+    };
+  }, []);
 
   const handleWatchlistClick = (e) => {
     e.preventDefault();
@@ -214,8 +526,8 @@ const MovieCard = memo(({ title, type, image, backdrop, episodes, seasons, ratin
         id,
         title: title || '',
         type: media_type || type || 'movie',
-        poster_path: poster_path || image || backdrop || '',
-        backdrop_path: backdrop_path || backdrop || '',
+        poster_path: poster || poster_path || image || backdrop || '',
+        backdrop_path: backdrop || backdrop_path || '',
         overview: overview || '',
         year: computedYear,
         rating: typeof vote_average === 'number' ? vote_average : (typeof rating === 'number' ? rating : 0),
@@ -239,9 +551,65 @@ const MovieCard = memo(({ title, type, image, backdrop, episodes, seasons, ratin
     return duration;
   };
 
+  // Enhanced: Responsive image source, aspect ratio, and card width with fallback, retina, and ultra-wide support
+  // Determine best image source based on device, pixel density, and available fields
+  const getBestImageSource = () => {
+    // Prefer highest quality available, fallback to next best
+    if (isMobile) {
+      // On mobile, prefer portrait poster, fallback to landscape if poster missing
+      return poster || poster_path || image || backdrop || backdrop_path || null;
+    } else {
+      // On desktop, prefer landscape, fallback to poster if no backdrop
+      return backdrop || backdrop_path || image || poster || poster_path || null;
+    }
+  };
+
+  // Responsive aspect ratio: portrait for mobile, landscape for desktop, ultra-wide for very large screens
+  const getAspectRatio = () => {
+    if (typeof window !== "undefined" && window.innerWidth > 1800 && !isMobile) {
+      return "21/9"; // Ultra-wide for big screens
+    }
+    return isMobile ? "2/3" : "16/10";
+  };
+
+  // Responsive card width: larger on tablets, ultra-wide on big screens
+  const getCardWidth = () => {
+    if (typeof window !== "undefined" && window.innerWidth > 1800 && !isMobile) {
+      return "w-[420px]"; // Ultra-wide
+    }
+    if (isMobile) {
+      return "w-[160px] sm:w-[180px] md:w-[200px]";
+    }
+    return "w-80 xl:w-[340px]";
+  };
+
+  // Retina/HiDPI support: use srcSet for ProgressiveImage if available
+  const getSrcSet = () => {
+    // Example: TMDB style URLs, adjust as needed for your backend
+    const base = getBestImageSource();
+    if (!base) return undefined;
+    if (base.includes("/w500")) {
+      return `${base.replace("/w500", "/w300")} 1x, ${base.replace("/w500", "/w780")} 1.5x, ${base.replace("/w500", "/w1280")} 2x, ${base.replace("/w500", "/original")} 3x`;
+    }
+    if (base.includes("/original")) {
+      return `${base.replace("/original", "/w300")} 1x, ${base.replace("/original", "/w780")} 1.5x, ${base.replace("/original", "/w1280")} 2x, ${base} 3x`;
+    }
+    return undefined;
+  };
+
+  const imageSource = getBestImageSource();
+  const aspectRatio = getAspectRatio();
+  const cardWidth = getCardWidth();
+  const imageSrcSet = getSrcSet();
+
   return (
-    <div className={`group flex flex-col gap-4 rounded-lg w-80 ${cardClassName}`}>
-      <div className="relative aspect-[16/10] rounded-lg overflow-hidden transform-gpu transition-all duration-300 md:group-hover:scale-[1.02] md:group-hover:shadow-2xl md:group-hover:shadow-black/20">
+    <div 
+      className={`group flex flex-col gap-4 rounded-lg ${cardWidth} flex-shrink-0 ${cardClassName}`}
+      data-movie-id={id}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      <div className={`relative ${isMobile ? 'aspect-[2/3]' : 'aspect-[16/10]'} rounded-lg overflow-hidden transform-gpu transition-all duration-300 md:group-hover:scale-[1.02] md:group-hover:shadow-2xl md:group-hover:shadow-black/20 w-full`}>
         {/* Prefetch shimmer/spinner overlay */}
         {prefetching && (
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/30 pointer-events-none">
@@ -252,39 +620,43 @@ const MovieCard = memo(({ title, type, image, backdrop, episodes, seasons, ratin
         <div 
           className="w-full h-full cursor-pointer"
           onClick={onClick}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
         >
           <ProgressiveImage
-            src={backdrop || image}
+            src={imageSource}
             alt={title}
             className="w-full h-full object-cover transition-transform duration-700 md:group-hover:scale-110"
-            aspectRatio="16/10"
+            aspectRatio={aspectRatio}
           />
-          {/* Movie info overlay */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent opacity-0 md:group-hover:opacity-100 transition-all duration-500">
-            <div className="absolute bottom-0 left-0 right-0 p-4 transform translate-y-2 md:group-hover:translate-y-0 transition-transform duration-500">
-              <h3 className="text-white font-medium text-lg truncate mb-1">{title}</h3>
-              <div className="flex items-center gap-2 text-white/80 text-sm">
-                <span className="flex items-center gap-1">
-                  {year}
-                </span>
-                <span>•</span>
-                <span className="flex items-center gap-1">
-                  {type === 'tv' ? 'TV Show' : 'Movie'}
-                </span>
-                <span>•</span>
-                <span className="flex items-center gap-1">
-                  {formatDuration()}
-                </span>
-                <span>•</span>
-                <span className="flex items-center gap-1">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-yellow-400" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
-                  </svg>
-                  {rating}
-                </span>
+          {/* Movie info overlay - only show on desktop for landscape cards */}
+          {!isMobile && (
+            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent opacity-0 md:group-hover:opacity-100 transition-all duration-500">
+              <div className="absolute bottom-0 left-0 right-0 p-4 transform translate-y-2 md:group-hover:translate-y-0 transition-transform duration-500">
+                <h3 className="text-white font-medium text-lg truncate mb-1">{title}</h3>
+                <div className="flex items-center gap-2 text-white/80 text-sm">
+                  <span className="flex items-center gap-1">
+                    {year}
+                  </span>
+                  <span>•</span>
+                  <span className="flex items-center gap-1">
+                    {type === 'tv' ? 'TV Show' : 'Movie'}
+                  </span>
+                  <span>•</span>
+                  <span className="flex items-center gap-1">
+                    {formatDuration()}
+                  </span>
+                  <span>•</span>
+                  <span className="flex items-center gap-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-yellow-400" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
+                    </svg>
+                    {rating}
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
         {/* Watchlist button - outside the clickable area */}
         <div className="absolute top-3 right-3 z-10">
@@ -303,6 +675,23 @@ const MovieCard = memo(({ title, type, image, backdrop, episodes, seasons, ratin
           </button>
         </div>
       </div>
+      
+      {/* Movie info below card for mobile portrait layout */}
+      {isMobile && (
+        <div className="px-1">
+          <h3 className="text-white font-medium text-sm truncate mb-1">{title}</h3>
+          <div className="flex items-center gap-2 text-white/60 text-xs">
+            <span>{year}</span>
+            <span>•</span>
+            <span className="flex items-center gap-1">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-yellow-400" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
+              </svg>
+              {rating}
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 });
@@ -428,11 +817,12 @@ const getFullLanguageName = (code) => {
   return languages[code] || code.toUpperCase();
 };
 
-const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, currentPage, sectionKey, onMovieSelect, onMovieHover }) => {
+const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, currentPage, sectionKey, onMovieSelect, onMovieHover, onPrefetch }) => {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isViewAllMode, setIsViewAllMode] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
   const swiperRef = useRef(null);
   const holdTimerRef = useRef(null);
   const isHoldingRef = useRef(false);
@@ -440,6 +830,10 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
   const loadingRef = useRef(false);
   const preloadTriggeredRef = useRef(false);
   const preloadTimeoutRef = useRef(null);
+  const transitionTimeoutRef = useRef(null);
+  const autoRotateIntervalRef = useRef(null);
+  const visibilityObserverRef = useRef(null);
+  const isTransitioningRef = useRef(false);
   const { setLoadingState } = useLoading();
   const navigate = useNavigate();
   const gridContainerRef = useRef(null);
@@ -449,21 +843,324 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
   // Step 9: Track prefetching state for user feedback
   const [prefetchingIds, setPrefetchingIds] = useState([]);
 
-  // Progressive preloading based on scroll position
+  // Check if we're on desktop for navigation buttons
+  useEffect(() => {
+    const checkScreenSize = () => {
+      const isNowDesktop = window.innerWidth > 768;
+      setIsDesktop(prev => {
+        if (prev !== isNowDesktop) {
+          return isNowDesktop;
+        }
+        return prev;
+      });
+    };
+    
+    checkScreenSize();
+    window.addEventListener('resize', checkScreenSize);
+    
+    return () => {
+      window.removeEventListener('resize', checkScreenSize);
+              <Swiper
+                key={`${sectionKey}-${isDesktop ? 'desktop' : 'mobile'}`}
+                ref={swiperRef}
+                modules={[Navigation, A11y]}
+                spaceBetween={24}
+                slidesPerView="auto"
+                breakpoints={{
+                  0: {
+                    slidesPerView: 1.8,
+                    spaceBetween: 12,
+                    speed: 250, // Faster for more responsive feel
+                    touchRatio: 1.2, // More sensitive to touch
+                    touchAngle: 100, // Allow more diagonal movement
+                    freeMode: {
+                      enabled: true,
+                      momentum: true, // Enable momentum for smoothness
+                      sticky: false,
+                    },
+                    resistance: true,
+                    resistanceRatio: 0.45, // Some resistance for natural feel
+                    grabCursor: true,
+                    navigation: false,
+                    style: {
+                      '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.22, 1, 0.36, 1)', // Smoother curve
+                      'scroll-behavior': 'smooth',
+                      'will-change': 'transform',
+                      'overscroll-behavior': 'contain',
+                      'touch-action': 'pan-x pinch-zoom', // Ensure horizontal pan
+                    },
+                  },
+                  480: { 
+                    slidesPerView: 2.2, 
+                    spaceBetween: 16,
+                    speed: 250,
+                    touchRatio: 1.2,
+                    touchAngle: 95,
+                    freeMode: {
+                      enabled: true,
+                      momentum: true,
+                      sticky: false,
+                    },
+                    resistance: true,
+                    resistanceRatio: 0.45,
+                    grabCursor: true,
+                    navigation: false,
+                    style: {
+                      '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.22, 1, 0.36, 1)',
+                      'will-change': 'transform',
+                      'overscroll-behavior': 'contain',
+                      'touch-action': 'pan-x pinch-zoom',
+                    },
+                  },
+                  640: {
+                    slidesPerView: 2,
+                    spaceBetween: 16,
+                    speed: 300,
+                    touchRatio: 1.5,
+                    touchAngle: 75,
+                    freeMode: true,
+                    resistance: true,
+                    resistanceRatio: 0.3,
+                    grabCursor: true,
+                    navigation: isDesktop ? {
+                      nextEl: '.swiper-button-next',
+                      prevEl: '.swiper-button-prev',
+                      disabledClass: 'swiper-button-disabled',
+                      lockClass: 'swiper-button-lock',
+                      hiddenClass: 'swiper-button-hidden',
+                    } : false,
+                    momentum: true,
+                    momentumRatio: 0.9,
+                    momentumVelocityRatio: 0.9,
+                    style: {
+                      '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.16, 1, 0.3, 1)',
+                      'will-change': 'transform',
+                      'overscroll-behavior': 'contain',
+                    },
+                  },
+                  768: {
+                    slidesPerView: 3,
+                    spaceBetween: 20,
+                    speed: 400,
+                    touchRatio: 1.3,
+                    touchAngle: 70,
+                    freeMode: true,
+                    resistance: true,
+                    resistanceRatio: 0.4,
+                    grabCursor: true,
+                    navigation: isDesktop ? {
+                      nextEl: '.swiper-button-next',
+                      prevEl: '.swiper-button-prev',
+                      disabledClass: 'swiper-button-disabled',
+                      lockClass: 'swiper-button-lock',
+                      hiddenClass: 'swiper-button-hidden',
+                    } : false,
+                    momentum: true,
+                    momentumRatio: 0.92,
+                    momentumVelocityRatio: 0.92,
+                    style: {
+                      '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.16, 1, 0.3, 1)',
+                      'will-change': 'transform',
+                      'overscroll-behavior': 'contain',
+                    },
+                  },
+                  1024: { 
+                    slidesPerView: 4, 
+                    spaceBetween: 24,
+                    speed: 500,
+                    touchRatio: 1.2,
+                    touchAngle: 65,
+                    freeMode: true,
+                    resistance: true,
+                    resistanceRatio: 0.5,
+                    grabCursor: true,
+                    navigation: isDesktop ? {
+                      nextEl: '.swiper-button-next',
+                      prevEl: '.swiper-button-prev',
+                      disabledClass: 'swiper-button-disabled',
+                      lockClass: 'swiper-button-lock',
+                      hiddenClass: 'swiper-button-hidden',
+                    } : false,
+                    momentum: true,
+                    momentumRatio: 0.95,
+                    momentumVelocityRatio: 0.95,
+                    style: {
+                      '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.16, 1, 0.3, 1)',
+                      'will-change': 'transform',
+                      'overscroll-behavior': 'contain',
+                    },
+                  },
+                  1280: { 
+                    slidesPerView: 5, 
+                    spaceBetween: 24,
+                    speed: 600,
+                    touchRatio: 1.1,
+                    touchAngle: 60,
+                    freeMode: true,
+                    resistance: true,
+                    resistanceRatio: 0.6,
+                    grabCursor: true,
+                    navigation: isDesktop ? {
+                      nextEl: '.swiper-button-next',
+                      prevEl: '.swiper-button-prev',
+                      disabledClass: 'swiper-button-disabled',
+                      lockClass: 'swiper-button-lock',
+                      hiddenClass: 'swiper-button-hidden',
+                    } : false,
+                    momentum: true,
+                    momentumRatio: 0.98,
+                    momentumVelocityRatio: 0.98,
+                    style: {
+                      '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.16, 1, 0.3, 1)',
+                      'will-change': 'transform',
+                      'overscroll-behavior': 'contain',
+                    },
+                  },
+                }}
+                speed={isDesktop ? 600 : 250}
+                resistance={isDesktop ? true : true}
+                resistanceRatio={isDesktop ? 0.6 : 0.45}
+                touchRatio={isDesktop ? 1.1 : 1.2}
+                touchAngle={isDesktop ? 60 : 100}
+                touchMoveStopPropagation={true}
+                watchSlidesProgress={true}
+                grabCursor={true}
+                freeMode={
+                  isDesktop
+                    ? true
+                    : { enabled: true, momentum: true, sticky: false }
+                }
+                onReachEnd={handleReachEnd}
+                onSlideChange={(swiper) => {
+                  // Prefetch when we're 3 slides away from the end
+                  const remainingSlides = swiper.slides.length - (swiper.activeIndex + swiper.params.slidesPerView);
+                  if (remainingSlides <= 3 && !isLoadingMore && hasMore) {
+                    handleReachEnd();
+                  }
+                }}
+                onProgress={(swiper, progress) => {
+                  // Prefetch when we're 80% through the current set of slides
+                  if (progress > 0.8 && !isLoadingMore && hasMore) {
+                    handleReachEnd();
+                  }
+                }}
+                onTouchStart={() => {
+                  // Prefetch next set of slides when user starts scrolling
+                  if (!isLoadingMore && hasMore) {
+                    handleReachEnd();
+                  }
+                }}
+                className="px-2 sm:px-4"
+                observer={true}
+                observeParents={true}
+                updateOnWindowResize={true}
+                lazy={{
+                  loadPrevNext: true,
+                  loadPrevNextAmount: 3,
+                  loadOnTransitionStart: true,
+                }}
+                onBeforeDestroy={(swiper) => {
+                  // Clean up navigation elements before destruction
+                  if (swiper.navigation && swiper.navigation.nextEl) {
+                    swiper.navigation.nextEl = null;
+                  }
+                  if (swiper.navigation && swiper.navigation.prevEl) {
+                    swiper.navigation.prevEl = null;
+                  }
+                }}
+              >
+                {movies.map((movie, index) => (
+                  <SwiperSlide key={`${sectionKey}-${movie.id}-${index}`} className="!w-auto">
+                    <div onMouseEnter={() => onMovieHover && onMovieHover(movie, index, movies)}>
+                      <MovieCard {...movie} onClick={() => onMovieSelect(movie)} id={movie.id} onPrefetch={() => onPrefetch && onPrefetch(movie.id)} />
+                    </div>
+                  </SwiperSlide>
+                ))}
+                {isLoadingMore && (
+                  <SwiperSlide key={`${sectionKey}-loading-more`} className="!w-auto">
+                    <div className="group flex flex-col gap-4 rounded-lg w-80 flex-shrink-0">
+                      <div className="relative aspect-[16/10] rounded-lg overflow-hidden bg-black/20 w-full">
+                        <div className="w-8 h-8 border-4 border-white/20 border-t-white rounded-full animate-spin absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"></div>
+                      </div>
+                    </div>
+                  </SwiperSlide>
+                )}
+                {isDesktop && (
+                  <div 
+                    className="swiper-button-prev !w-10 !h-10 !bg-white/5 hover:!bg-white/10 !rounded-full !border !border-white/10 !transition-all !duration-300 opacity-0 group-hover/section:opacity-100 !-left-0 !-translate-y-1/2 !top-[35%] !m-0 after:!text-white after:!text-sm after:!font-bold !z-10 hover:!scale-110 hover:!shadow-lg hover:!shadow-black/20"
+                    onMouseDown={handlePrevButtonMouseDown}
+                    onMouseUp={handlePrevButtonMouseUp}
+                    onMouseLeave={handlePrevButtonMouseUp}
+                    onTouchStart={handlePrevButtonMouseDown}
+                    onTouchEnd={handlePrevButtonMouseUp}
+                  ></div>
+                )}
+                {isDesktop && (
+                  <div className="swiper-button-next !w-10 !h-10 !bg-white/5 hover:!bg-white/10 !rounded-full !border !border-white/10 !transition-all !duration-300 opacity-0 group-hover/section:opacity-100 !-right-0 !-translate-y-1/2 !top-[35%] !m-0 after:!text-white after:!text-sm after:!font-bold !z-10 hover:!scale-110 hover:!shadow-lg hover:!shadow-black/20"></div>
+                )}
+              </Swiper>
+    };
+  }, []);
+
+  // Enhanced progressive preloading with intelligent caching and performance optimization
   const preloadNextPages = useCallback(async () => {
-    if (!hasMore || isLoadingMore || preloadTriggeredRef.current) return;
+    // Early return conditions with enhanced validation
+    if (!hasMore || isLoadingMore || preloadTriggeredRef.current || !onLoadMore) {
+      return;
+    }
 
     const nextPage = currentPage + 1;
-    if (preloadedPagesRef.current.has(nextPage)) return;
+    
+    // Check if page is already preloaded or being processed
+    if (preloadedPagesRef.current.has(nextPage)) {
+      return;
+    }
 
+    // Prevent concurrent preload attempts
     preloadTriggeredRef.current = true;
+    
+    // Performance monitoring
+    const startTime = performance.now();
+    
     try {
-      await onLoadMore(sectionKey);
+      // Add visual feedback for preloading state
+      setPrefetchingIds(prev => [...prev, `${sectionKey}-${nextPage}`]);
+      
+      // Execute preload with timeout protection
+      const preloadPromise = onLoadMore(sectionKey);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Preload timeout')), 10000)
+      );
+      
+      await Promise.race([preloadPromise, timeoutPromise]);
+      
+      // Mark page as successfully preloaded
       preloadedPagesRef.current.add(nextPage);
+      
+      // Performance logging
+      const duration = performance.now() - startTime;
+      if (duration > 1000) {
+        console.warn(`Slow preload detected for ${sectionKey} page ${nextPage}: ${duration.toFixed(2)}ms`);
+      }
+      
     } catch (error) {
-      console.error('Error preloading next page:', error);
+      // Enhanced error handling with user feedback
+      console.warn(`Preload failed for ${sectionKey} page ${nextPage}:`, error);
+      
+      // Remove from preloaded set to allow retry
+      preloadedPagesRef.current.delete(nextPage);
+      
+      // Optionally retry on network errors
+      if (error.name === 'NetworkError' || error.message.includes('timeout')) {
+        setTimeout(() => {
+          preloadTriggeredRef.current = false;
+        }, 2000); // Retry after 2 seconds
+        return;
+      }
     } finally {
+      // Cleanup preloading state
       preloadTriggeredRef.current = false;
+      setPrefetchingIds(prev => prev.filter(id => id !== `${sectionKey}-${nextPage}`));
     }
   }, [hasMore, isLoadingMore, currentPage, onLoadMore, sectionKey]);
 
@@ -502,72 +1199,267 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
     }
   }, [isViewAllMode, hasMore, isLoadingMore, currentPage, preloadNextPages]);
 
-  // Cleanup function for view mode changes
-  const cleanupViewMode = () => {
+  // Enhanced cleanup function for view mode changes with comprehensive state management
+  const cleanupViewMode = useCallback(() => {
+    // Reset scroll position with smooth animation
     if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTop = 0;
+      scrollContainerRef.current.scrollTo({
+        top: 0,
+        behavior: 'smooth'
+      });
     }
+    
+    // Update Swiper instance and reset its state
     if (swiperRef.current?.swiper) {
-      swiperRef.current.swiper.update();
+      const swiper = swiperRef.current.swiper;
+      swiper.update();
+      swiper.slideTo(0, 0, false); // Reset to first slide without animation
     }
-    // Reset preload states
-    preloadedPagesRef.current = new Set();
+    
+    // Comprehensive preload state cleanup
+    preloadedPagesRef.current.clear(); // More explicit than new Set()
     if (preloadTimeoutRef.current) {
       clearTimeout(preloadTimeoutRef.current);
+      preloadTimeoutRef.current = null;
     }
-  };
+    
+    // Reset scroll-related states
+    setIsScrolling(false);
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
+      scrollTimeoutRef.current = null;
+    }
+    
+    // Reset loading states to prevent stuck states
+    loadingRef.current = false;
+    setIsLoadingMore(false);
+    
+    // Clear any pending prefetch operations
+    setPrefetchingIds(prev => {
+      const filtered = prev.filter(id => !id.startsWith(sectionKey));
+      return filtered;
+    });
+  }, [sectionKey]);
 
-  // Handle view mode change with improved transition
-  const handleViewAll = () => {
+  // Enhanced view mode change handler with improved transitions and user feedback
+  const handleViewAll = useCallback(() => {
+    // Prevent rapid state changes during transition
+    if (isTransitioning) return;
+    
     setIsTransitioning(true);
     
     if (!isViewAllMode) {
+      // Transition to grid view with enhanced UX
       setIsViewAllMode(true);
-      // Preload next page when switching to grid view
+      
+      // Optimize preloading strategy
       if (hasMore && !preloadedPagesRef.current.has(currentPage + 1)) {
-        preloadNextPages();
+        // Use requestIdleCallback for better performance during transition
+        if (window.requestIdleCallback) {
+          requestIdleCallback(() => preloadNextPages(), { timeout: 1000 });
+        } else {
+          setTimeout(preloadNextPages, 100);
+        }
       }
+      
+      // Enhanced scroll behavior with better timing
       setTimeout(() => {
         const sectionElement = document.getElementById(`section-${sectionKey}`);
         if (sectionElement) {
-          sectionElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          // Use intersection observer for smoother scroll
+          const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+              if (entry.isIntersecting) {
+                entry.target.scrollIntoView({ 
+                  behavior: 'smooth', 
+                  block: 'start',
+                  inline: 'nearest'
+                });
+                observer.disconnect();
+              }
+            });
+          }, { threshold: 0.1 });
+          
+          observer.observe(sectionElement);
+          
+          // Fallback scroll if observer doesn't trigger
+          setTimeout(() => {
+            if (observer) {
+              observer.disconnect();
+              sectionElement.scrollIntoView({ 
+                behavior: 'smooth', 
+                block: 'start' 
+              });
+            }
+          }, 300);
         }
-      }, 100);
+      }, 150); // Slightly increased delay for better transition timing
+      
     } else {
+      // Enhanced cleanup with better state management
       cleanupViewMode();
       setIsViewAllMode(false);
+      
+      // Add subtle feedback for mode change
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.style.transition = 'all 0.3s ease-out';
+        setTimeout(() => {
+          if (scrollContainerRef.current) {
+            scrollContainerRef.current.style.transition = '';
+          }
+        }, 300);
+      }
     }
     
+    // Optimized transition timing with better user feedback
     setTimeout(() => {
       setIsTransitioning(false);
-    }, 400);
-  };
+    }, 450); // Slightly longer for smoother transitions
+  }, [isViewAllMode, isTransitioning, hasMore, currentPage, preloadNextPages, sectionKey, cleanupViewMode]);
 
-  // Cleanup on unmount
+  // Enhanced cleanup on unmount with comprehensive resource management
   useEffect(() => {
     return () => {
-      if (preloadTimeoutRef.current) {
-        clearTimeout(preloadTimeoutRef.current);
+      // Clear all timeouts with enhanced error handling
+      const timeouts = [
+        preloadTimeoutRef.current,
+        scrollTimeoutRef.current,
+        holdTimerRef.current,
+        transitionTimeoutRef.current
+      ];
+      
+      timeouts.forEach(timeout => {
+        if (timeout) {
+          try {
+            clearTimeout(timeout);
+          } catch (error) {
+            console.warn('Failed to clear timeout during cleanup:', error);
+          }
+        }
+      });
+
+      // Clear intervals
+      if (autoRotateIntervalRef.current) {
+        try {
+          clearInterval(autoRotateIntervalRef.current);
+        } catch (error) {
+          console.warn('Failed to clear auto-rotate interval during cleanup:', error);
+        }
       }
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current);
+
+      // Disconnect observers
+      if (visibilityObserverRef.current) {
+        try {
+          visibilityObserverRef.current.disconnect();
+        } catch (error) {
+          console.warn('Failed to disconnect visibility observer during cleanup:', error);
+        }
       }
+
+      // Clean up Swiper instance properly
+      if (swiperRef.current && swiperRef.current.swiper) {
+        try {
+          const swiper = swiperRef.current.swiper;
+          // Clean up navigation elements before destruction
+          if (swiper.navigation) {
+            if (swiper.navigation.nextEl) {
+              swiper.navigation.nextEl = null;
+            }
+            if (swiper.navigation.prevEl) {
+              swiper.navigation.prevEl = null;
+            }
+          }
+          // Destroy swiper instance
+          swiper.destroy(true, true);
+        } catch (error) {
+          console.warn('Failed to destroy Swiper instance during cleanup:', error);
+        }
+      }
+
+      // Reset refs to prevent memory leaks
+      preloadTimeoutRef.current = null;
+      scrollTimeoutRef.current = null;
+      holdTimerRef.current = null;
+      transitionTimeoutRef.current = null;
+      autoRotateIntervalRef.current = null;
+      visibilityObserverRef.current = null;
+      isHoldingRef.current = false;
+      isTransitioningRef.current = false;
+      loadingRef.current = false;
+      preloadTriggeredRef.current = false;
     };
   }, []);
 
   const handleReachEnd = async () => {
-    if (loadingRef.current || !hasMore || isLoadingMore) return;
+    // Enhanced validation with detailed logging
+    if (loadingRef.current) {
+      console.debug('🔄 Skipping load more - already loading');
+      return;
+    }
+    
+    if (!hasMore) {
+      console.debug('📄 Skipping load more - no more content available');
+      return;
+    }
+    
+    if (isLoadingMore) {
+      console.debug('⏳ Skipping load more - loading state active');
+      return;
+    }
+
+    // Performance monitoring
+    const startTime = performance.now();
+    console.debug(`🚀 Starting load more for section: ${sectionKey}`);
     
     loadingRef.current = true;
     setIsLoadingMore(true);
     
     try {
-      await onLoadMore(sectionKey);
+      // Enhanced error handling with retry logic
+      let retryCount = 0;
+      const maxRetries = 2;
+      
+      while (retryCount <= maxRetries) {
+        try {
+          await onLoadMore(sectionKey);
+          break; // Success, exit retry loop
+        } catch (error) {
+          retryCount++;
+          console.warn(`⚠️ Load more attempt ${retryCount} failed for ${sectionKey}:`, error);
+          
+          if (retryCount > maxRetries) {
+            throw error; // Re-throw after max retries
+          }
+          
+          // Exponential backoff
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
+        }
+      }
+      
+      const loadTime = performance.now() - startTime;
+      console.debug(`✅ Load more completed for ${sectionKey} in ${loadTime.toFixed(2)}ms`);
+      
     } catch (error) {
-      console.error('Error loading more movies:', error);
+      console.error(`💥 Critical error loading more content for ${sectionKey}:`, {
+        error: error.message,
+        stack: error.stack,
+        sectionKey,
+        timestamp: new Date().toISOString()
+      });
+      
+      // Enhanced user feedback for errors - removed setError call since it's not available in this scope
+      console.error(`Failed to load more content for ${sectionKey}. Please try again.`);
+      
     } finally {
+      // Enhanced cleanup with validation
+      const cleanupTime = performance.now() - startTime;
+      console.debug(`🧹 Cleanup completed for ${sectionKey} (total time: ${cleanupTime.toFixed(2)}ms)`);
+      
       loadingRef.current = false;
       setIsLoadingMore(false);
+      
+      // Reset error state after a delay - removed setError call
+      // setTimeout(() => setError(null), 3000);
     }
   };
 
@@ -603,7 +1495,13 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
         <div className="relative px-8 pt-2">
           <div className="flex gap-6 overflow-x-auto pb-4 scrollbar-hide">
             {[...Array(6)].map((_, index) => (
-              <CardLoader key={`loader-${sectionKey}-${index}`} />
+              <div key={`loader-${sectionKey}-${index}`} className="flex-shrink-0">
+                <div className="w-full max-w-[180px] sm:max-w-[220px] md:max-w-[250px] animate-pulse">
+                  <div className="aspect-[2/3] bg-white/5 rounded-lg w-full"></div>
+                  <div className="h-4 bg-white/5 rounded mt-2 w-3/4"></div>
+                  <div className="h-3 bg-white/5 rounded mt-1 w-1/2"></div>
+                </div>
+              </div>
             ))}
           </div>
         </div>
@@ -651,7 +1549,7 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
           {isViewAllMode ? (
             <div 
               ref={scrollContainerRef}
-              className={`grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 max-h-[600px] overflow-y-auto overflow-x-hidden w-full sm:px-4 scrollbar-hide justify-items-center`}
+              className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 sm:gap-6 max-h-[600px] overflow-y-auto overflow-x-hidden w-full sm:px-4 scrollbar-hide justify-items-center`}
               style={{
                 scrollbarWidth: 'thin',
                 scrollbarColor: isScrolling ? 'rgba(255, 255, 255, 0.2) transparent' : 'rgba(255, 255, 255, 0.1) transparent',
@@ -667,7 +1565,7 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
                 <div 
                   key={`${sectionKey}-${movie.id}-${index}`}
                   id={`movie-card-${sectionKey}-${movie.id}`}
-                  className="scroll-snap-align-start w-full max-w-xs mx-auto"
+                  className="scroll-snap-align-start w-full max-w-[160px] sm:max-w-[180px] md:max-w-[200px] lg:max-w-[320px] xl:max-w-[320px] 2xl:max-w-[320px] mx-auto flex-shrink-0"
                   style={{ willChange: 'transform', maxWidth: '100vw' }}
                   onMouseEnter={() => onMovieHover && onMovieHover(movie, index, movies)}
                 >
@@ -677,6 +1575,8 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
                     id={movie.id}
                     priority={index < 10} // Prioritize loading for first 10 items
                     prefetching={prefetchingIds.includes(movie.id)}
+                    onPrefetch={() => onPrefetch && onPrefetch(movie.id)} 
+                    cardClassName="w-80"
                   />
                 </div>
               ))}
@@ -694,86 +1594,161 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
           ) : (
             <div className="swiper-container">
               <Swiper
+                key={`${sectionKey}-${isDesktop ? 'desktop' : 'mobile'}`}
                 ref={swiperRef}
                 modules={[Navigation, A11y]}
                 spaceBetween={24}
                 slidesPerView="auto"
                 breakpoints={{
                   0: {
-                    slidesPerView: 1,
-                    spaceBetween: 8,
-                    speed: 350, // Ultra smooth, slightly slower for mobile
-                    touchRatio: 1.25,
-                    touchAngle: 70,
-                    freeMode: true,
-                    resistance: false,
-                    resistanceRatio: 0,
+                    slidesPerView: 1.8,
+                    spaceBetween: 12,
+                    speed: 350, // Slightly faster for more responsive feel
+                    touchRatio: 1.2, // More responsive to finger movement
+                    touchAngle: 90,
+                    freeMode: {
+                      enabled: true,
+                      momentum: true, // Enable momentum for smooth flicks
+                      sticky: false,
+                    },
+                    resistance: true,
+                    resistanceRatio: 0.5,
                     grabCursor: true,
                     navigation: false,
                     style: {
-                      '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.22, 1, 0.36, 1)', // Soft, natural
+                      '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.22, 1, 0.36, 1)', // Smoother curve
                       'scroll-behavior': 'smooth',
                       'will-change': 'transform',
+                      'overscroll-behavior': 'contain',
                     },
                   },
-                  320: { slidesPerView: 1, spaceBetween: 8 },
-                  480: { slidesPerView: 1.2, spaceBetween: 8 },
+                  480: { 
+                    slidesPerView: 2.2, 
+                    spaceBetween: 16,
+                    speed: 350,
+                    touchRatio: 1.2,
+                    touchAngle: 85,
+                    freeMode: {
+                      enabled: true,
+                      momentum: true,
+                      sticky: false,
+                    },
+                    resistance: true,
+                    resistanceRatio: 0.5,
+                    grabCursor: true,
+                    navigation: false,
+                    style: {
+                      '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.22, 1, 0.36, 1)',
+                      'will-change': 'transform',
+                      'overscroll-behavior': 'contain',
+                    },
+                  },
                   640: {
                     slidesPerView: 2,
                     spaceBetween: 16,
-                    speed: 1000,
-                    touchRatio: 1,
-                    touchAngle: 45,
+                    speed: 300,
+                    touchRatio: 1.5,
+                    touchAngle: 75,
                     freeMode: true,
                     resistance: true,
-                    resistanceRatio: 0.7,
+                    resistanceRatio: 0.3,
                     grabCursor: true,
-                    navigation: {
+                    navigation: isDesktop ? {
                       nextEl: '.swiper-button-next',
                       prevEl: '.swiper-button-prev',
                       disabledClass: 'swiper-button-disabled',
                       lockClass: 'swiper-button-lock',
                       hiddenClass: 'swiper-button-hidden',
-                    },
+                    } : false,
                     style: {
-                      '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.4, 0, 0.2, 1)',
+                      '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.16, 1, 0.3, 1)',
                       'will-change': 'transform',
+                      'overscroll-behavior': 'contain',
                     },
                   },
                   768: {
                     slidesPerView: 3,
                     spaceBetween: 20,
-                    speed: 1000,
-                    touchRatio: 1,
-                    touchAngle: 45,
+                    speed: 400,
+                    touchRatio: 1.3,
+                    touchAngle: 70,
                     freeMode: true,
                     resistance: true,
-                    resistanceRatio: 0.7,
+                    resistanceRatio: 0.4,
                     grabCursor: true,
-                    navigation: {
+                    navigation: isDesktop ? {
                       nextEl: '.swiper-button-next',
                       prevEl: '.swiper-button-prev',
                       disabledClass: 'swiper-button-disabled',
                       lockClass: 'swiper-button-lock',
                       hiddenClass: 'swiper-button-hidden',
-                    },
+                    } : false,
                     style: {
-                      '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.4, 0, 0.2, 1)',
+                      '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.16, 1, 0.3, 1)',
                       'will-change': 'transform',
+                      'overscroll-behavior': 'contain',
                     },
                   },
-                  1024: { slidesPerView: 4, spaceBetween: 24 },
-                  1280: { slidesPerView: 5, spaceBetween: 24 },
+                  1024: { 
+                    slidesPerView: 4, 
+                    spaceBetween: 24,
+                    speed: 500,
+                    touchRatio: 1.2,
+                    touchAngle: 65,
+                    freeMode: true,
+                    resistance: true,
+                    resistanceRatio: 0.5,
+                    grabCursor: true,
+                    navigation: isDesktop ? {
+                      nextEl: '.swiper-button-next',
+                      prevEl: '.swiper-button-prev',
+                      disabledClass: 'swiper-button-disabled',
+                      lockClass: 'swiper-button-lock',
+                      hiddenClass: 'swiper-button-hidden',
+                    } : false,
+                    style: {
+                      '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.16, 1, 0.3, 1)',
+                      'will-change': 'transform',
+                      'overscroll-behavior': 'contain',
+                    },
+                  },
+                  1280: { 
+                    slidesPerView: 5, 
+                    spaceBetween: 24,
+                    speed: 600,
+                    touchRatio: 1.1,
+                    touchAngle: 60,
+                    freeMode: true,
+                    resistance: true,
+                    resistanceRatio: 0.6,
+                    grabCursor: true,
+                    navigation: isDesktop ? {
+                      nextEl: '.swiper-button-next',
+                      prevEl: '.swiper-button-prev',
+                      disabledClass: 'swiper-button-disabled',
+                      lockClass: 'swiper-button-lock',
+                      hiddenClass: 'swiper-button-hidden',
+                    } : false,
+                    style: {
+                      '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.16, 1, 0.3, 1)',
+                      'will-change': 'transform',
+                      'overscroll-behavior': 'contain',
+                    },
+                  },
                 }}
-                speed={1000}
-                resistance={true}
-                resistanceRatio={0.7}
-                touchRatio={1}
-                touchAngle={45}
+                speed={isDesktop ? 600 : 350}
+                resistance={isDesktop ? true : true}
+                resistanceRatio={isDesktop ? 0.6 : 0.5}
+                touchRatio={isDesktop ? 1.1 : 1.2}
+                touchAngle={isDesktop ? 60 : 90}
                 touchMoveStopPropagation={true}
                 watchSlidesProgress={true}
                 grabCursor={true}
-                freeMode={true}
+                freeMode={
+                  isDesktop
+                    ? true
+                    : { enabled: true, momentum: true, sticky: false }
+                }
                 onReachEnd={handleReachEnd}
                 onSlideChange={(swiper) => {
                   // Prefetch when we're 3 slides away from the end
@@ -803,26 +1778,38 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
                   loadPrevNextAmount: 3,
                   loadOnTransitionStart: true,
                 }}
+                onBeforeDestroy={(swiper) => {
+                  // Clean up navigation elements before destruction
+                  if (swiper.navigation && swiper.navigation.nextEl) {
+                    swiper.navigation.nextEl = null;
+                  }
+                  if (swiper.navigation && swiper.navigation.prevEl) {
+                    swiper.navigation.prevEl = null;
+                  }
+                }}
+                style={{
+                  WebkitOverflowScrolling: 'touch', // iOS momentum scroll
+                  touchAction: 'pan-y',
+                  overscrollBehavior: 'contain',
+                }}
               >
                 {movies.map((movie, index) => (
-                  <SwiperSlide key={`${sectionKey}-${movie.id}-${index}`} className="!w-full sm:!w-auto">
+                  <SwiperSlide key={`${sectionKey}-${movie.id}-${index}`} className="!w-auto">
                     <div onMouseEnter={() => onMovieHover && onMovieHover(movie, index, movies)}>
-                      <MovieCard {...movie} onClick={() => onMovieSelect(movie)} id={movie.id} cardClassName="w-full max-w-xs sm:w-80" />
+                      <MovieCard {...movie} onClick={() => onMovieSelect(movie)} id={movie.id} onPrefetch={() => onPrefetch && onPrefetch(movie.id)} />
                     </div>
                   </SwiperSlide>
                 ))}
                 {isLoadingMore && (
-                  <SwiperSlide key={`${sectionKey}-loading-more`} className="!w-full sm:!w-auto">
-                    <div className="group flex flex-col gap-4 rounded-lg w-full max-w-xs sm:w-80">
-                      <div className="relative aspect-[16/10] rounded-lg overflow-hidden bg-black/20">
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <div className="w-8 h-8 border-4 border-white/20 border-t-white rounded-full animate-spin"></div>
-                        </div>
+                  <SwiperSlide key={`${sectionKey}-loading-more`} className="!w-auto">
+                    <div className="group flex flex-col gap-4 rounded-lg w-80 flex-shrink-0">
+                      <div className="relative aspect-[16/10] rounded-lg overflow-hidden bg-black/20 w-full">
+                        <div className="w-8 h-8 border-4 border-white/20 border-t-white rounded-full animate-spin absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"></div>
                       </div>
                     </div>
                   </SwiperSlide>
                 )}
-                {window.innerWidth > 768 && (
+                {isDesktop && (
                   <div 
                     className="swiper-button-prev !w-10 !h-10 !bg-white/5 hover:!bg-white/10 !rounded-full !border !border-white/10 !transition-all !duration-300 opacity-0 group-hover/section:opacity-100 !-left-0 !-translate-y-1/2 !top-[35%] !m-0 after:!text-white after:!text-sm after:!font-bold !z-10 hover:!scale-110 hover:!shadow-lg hover:!shadow-black/20"
                     onMouseDown={handlePrevButtonMouseDown}
@@ -832,7 +1819,7 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
                     onTouchEnd={handlePrevButtonMouseUp}
                   ></div>
                 )}
-                {window.innerWidth > 768 && (
+                {isDesktop && (
                   <div className="swiper-button-next !w-10 !h-10 !bg-white/5 hover:!bg-white/10 !rounded-full !border !border-white/10 !transition-all !duration-300 opacity-0 group-hover/section:opacity-100 !-right-0 !-translate-y-1/2 !top-[35%] !m-0 after:!text-white after:!text-sm after:!font-bold !z-10 hover:!scale-110 hover:!shadow-lg hover:!shadow-black/20"></div>
                 )}
               </Swiper>
@@ -900,53 +1887,236 @@ const HeroSection = ({ featuredContent, onMovieSelect }) => {
   };
   const handleMouseLeave = () => setParallaxTarget({ x: 0, y: 0 });
 
-  const handleWatchlistClick = (e) => {
+  const handleWatchlistClick = useCallback((e) => {
     e.stopPropagation();
     if (!featuredContent) return;
-    if (isMovieInWatchlist) {
-      removeFromWatchlist(featuredContent.id);
-      setToast({ type: 'remove', message: 'Removed from Watchlist' });
-    } else {
-      // Standardized movie data for watchlist (matches MoviesPage/Navbar)
-      const release = featuredContent.release_date || featuredContent.first_air_date || '';
-      let computedYear = 'N/A';
-      if (release) {
-        const parsedYear = new Date(release).getFullYear();
-        if (!isNaN(parsedYear)) computedYear = parsedYear;
-      }
-      const movieData = {
-        id: featuredContent.id,
-        title: featuredContent.title || '',
-        type: featuredContent.type || 'movie',
-        poster_path: featuredContent.poster_path || featuredContent.backdrop || '',
-        backdrop_path: featuredContent.backdrop || '',
-        overview: featuredContent.overview || '',
-        year: computedYear,
-        rating: typeof featuredContent.rating === 'number' ? featuredContent.rating : (typeof featuredContent.rating === 'string' ? parseFloat(featuredContent.rating) : 0),
-        genres: featuredContent.genres || [],
-        release_date: release,
-        addedAt: new Date().toISOString(),
-      };
-      addToWatchlist(movieData);
-      setToast({ type: 'add', message: 'Added to Watchlist' });
+
+    // Performance optimization: Early return for invalid data
+    if (!featuredContent.id || !featuredContent.title) {
+      console.warn('Invalid featured content for watchlist operation:', featuredContent);
+      return;
     }
-    setTimeout(() => setToast(null), 1800);
-  };
+
+    try {
+      if (isMovieInWatchlist) {
+        // Remove from watchlist with enhanced error handling
+        removeFromWatchlist(featuredContent.id);
+        setToast({ 
+          type: 'remove', 
+          message: 'Removed from Watchlist',
+          icon: '🗑️'
+        });
+      } else {
+        // Enhanced data validation and normalization
+        const release = featuredContent.release_date || featuredContent.first_air_date || '';
+        let computedYear = 'N/A';
+        
+        if (release) {
+          try {
+            const parsedYear = new Date(release).getFullYear();
+            if (!isNaN(parsedYear) && parsedYear > 1900 && parsedYear <= new Date().getFullYear() + 10) {
+              computedYear = parsedYear;
+            }
+          } catch (dateError) {
+            console.warn('Invalid date format for year computation:', release);
+          }
+        }
+
+        // Enhanced rating parsing with fallbacks
+        let normalizedRating = 0;
+        if (typeof featuredContent.rating === 'number' && !isNaN(featuredContent.rating)) {
+          normalizedRating = Math.max(0, Math.min(10, featuredContent.rating)); // Clamp between 0-10
+        } else if (typeof featuredContent.rating === 'string') {
+          const parsed = parseFloat(featuredContent.rating);
+          if (!isNaN(parsed)) {
+            normalizedRating = Math.max(0, Math.min(10, parsed));
+          }
+        }
+
+        // Enhanced movie data with additional metadata and validation
+        const movieData = {
+          id: featuredContent.id,
+          title: featuredContent.title.trim() || 'Untitled',
+          type: featuredContent.type || 'movie',
+          poster_path: featuredContent.poster_path || featuredContent.backdrop || '',
+          backdrop_path: featuredContent.backdrop || featuredContent.poster_path || '',
+          overview: featuredContent.overview?.trim() || 'No overview available',
+          year: computedYear,
+          rating: normalizedRating,
+          genres: Array.isArray(featuredContent.genres) ? featuredContent.genres : [],
+          release_date: release,
+          addedAt: new Date().toISOString(),
+          // Additional metadata for enhanced functionality
+          originalLanguage: featuredContent.original_language || 'en',
+          popularity: featuredContent.popularity || 0,
+          voteCount: featuredContent.vote_count || 0,
+          // Enhanced type detection
+          mediaType: featuredContent.media_type || featuredContent.type || 'movie'
+        };
+
+        // Add to watchlist with success feedback
+        addToWatchlist(movieData);
+        setToast({ 
+          type: 'add', 
+          message: 'Added to Watchlist',
+          icon: '✅'
+        });
+      }
+
+      // Enhanced toast management with better timing
+      const toastTimeout = setTimeout(() => setToast(null), 2000);
+      return () => clearTimeout(toastTimeout);
+
+    } catch (error) {
+      console.error('Error in watchlist operation:', error);
+      setToast({ 
+        type: 'error', 
+        message: 'Failed to update watchlist',
+        icon: '❌'
+      });
+      
+      // Clear error toast after shorter duration
+      setTimeout(() => setToast(null), 1500);
+    }
+  }, [featuredContent, isMovieInWatchlist, addToWatchlist, removeFromWatchlist, setToast]);
 
   if (!featuredContent) return null;
 
-  // Animation variants
+  // Enhanced animation variants with advanced easing, staggered effects, and performance optimizations
   const titleVariants = {
-    hidden: { opacity: 0, y: 40 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.8, ease: 'easeOut' } }
+    hidden: { 
+      opacity: 0, 
+      y: 60,
+      filter: 'blur(4px)',
+      scale: 0.95
+    },
+    visible: { 
+      opacity: 1, 
+      y: 0, 
+      filter: 'blur(0px)',
+      scale: 1,
+      transition: { 
+        duration: 1.2, 
+        ease: [0.25, 0.46, 0.45, 0.94], // Custom cubic-bezier for smooth motion
+        staggerChildren: 0.1,
+        delayChildren: 0.2
+      } 
+    },
+    exit: {
+      opacity: 0,
+      y: -20,
+      filter: 'blur(2px)',
+      transition: { duration: 0.6, ease: 'easeInOut' }
+    }
   };
+
   const logoVariants = {
-    hidden: { opacity: 0, scale: 0.95 },
-    visible: { opacity: 1, scale: 1, transition: { duration: 0.8, ease: 'easeOut' } }
+    hidden: { 
+      opacity: 0, 
+      scale: 0.8,
+      rotateY: -15,
+      filter: 'brightness(0.8)'
+    },
+    visible: { 
+      opacity: 1, 
+      scale: 1, 
+      rotateY: 0,
+      filter: 'brightness(1)',
+      transition: { 
+        duration: 1.0, 
+        ease: [0.34, 1.56, 0.64, 1], // Elastic bounce effect
+        type: "spring",
+        stiffness: 100,
+        damping: 15
+      } 
+    },
+    hover: {
+      scale: 1.05,
+      filter: 'brightness(1.1)',
+      transition: { duration: 0.3, ease: 'easeOut' }
+    },
+    exit: {
+      opacity: 0,
+      scale: 0.9,
+      rotateY: 15,
+      transition: { duration: 0.5, ease: 'easeInOut' }
+    }
   };
+
   const genreChipVariants = {
-    hidden: { opacity: 0, y: 10 },
-    visible: (i) => ({ opacity: 1, y: 0, transition: { delay: 0.2 + i * 0.08, duration: 0.4 } })
+    hidden: { 
+      opacity: 0, 
+      y: 20,
+      scale: 0.8,
+      filter: 'blur(2px)'
+    },
+    visible: (i) => ({ 
+      opacity: 1, 
+      y: 0, 
+      scale: 1,
+      filter: 'blur(0px)',
+      transition: { 
+        delay: 0.3 + i * 0.12, // Increased stagger for better visual flow
+        duration: 0.6,
+        ease: [0.25, 0.46, 0.45, 0.94],
+        type: "spring",
+        stiffness: 200,
+        damping: 20
+      } 
+    }),
+    hover: {
+      scale: 1.1,
+      y: -2,
+      filter: 'brightness(1.2)',
+      transition: { duration: 0.2, ease: 'easeOut' }
+    },
+    exit: {
+      opacity: 0,
+      y: -10,
+      scale: 0.9,
+      transition: { duration: 0.4, ease: 'easeInOut' }
+    }
+  };
+
+  // Additional animation variants for enhanced user experience
+  const contentVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: {
+        duration: 0.8,
+        ease: 'easeOut',
+        staggerChildren: 0.15,
+        delayChildren: 0.1
+      }
+    }
+  };
+
+  const buttonVariants = {
+    hidden: { 
+      opacity: 0, 
+      scale: 0.9,
+      y: 20
+    },
+    visible: { 
+      opacity: 1, 
+      scale: 1,
+      y: 0,
+      transition: { 
+        duration: 0.6, 
+        ease: [0.25, 0.46, 0.45, 0.94],
+        delay: 0.8
+      } 
+    },
+    hover: {
+      scale: 1.05,
+      y: -2,
+      transition: { duration: 0.2, ease: 'easeOut' }
+    },
+    tap: {
+      scale: 0.95,
+      transition: { duration: 0.1 }
+    }
   };
 
   // Parallax style
@@ -1237,51 +2407,381 @@ const HeroSection = ({ featuredContent, onMovieSelect }) => {
 
 // Memoize categories outside the component
 const categoriesList = [
-  { id: 'all', label: 'All', icon: (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
-  ) },
-  { id: 'trending', label: 'Trending', icon: (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"/></svg>
-  ) },
-  { id: 'popular', label: 'Popular', icon: (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
-  ) },
-  { id: 'topRated', label: 'Top Rated', icon: (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
-  ) },
-  { id: 'upcoming', label: 'Coming Soon', icon: (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"/></svg>
-  ) },
-  { id: 'action', label: 'Action', icon: (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M13 4v2.67l-1 1-1-1V4h2m7 7v2h-2.67l-1-1 1-1H20M6.67 11l1 1-1 1H4v-2h2.67M12 16.33l1 1V20h-2v-2.67l1-1M15 2H9v5.5l3 3 3-3V2zm7 7h-5.5l-3 3 3 3H22V9zM7.5 9H2v6h5.5l3-3-3-3zm4.5 4.5l-3 3V22h6v-5.5l-3-3z"/></svg>
-  ) },
-  { id: 'comedy', label: 'Comedy', icon: (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"/></svg>
-  ) },
-  { id: 'drama', label: 'Drama', icon: (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9-4.03-9-9-9zm0 16c-3.87 0-7-3.59-7-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm1-13h-2v3H8v2h3v3h2v-3h3v-2h-3V8z"/></svg>
-  ) },
-  { id: 'horror', label: 'Horror', icon: (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/></svg>
-  ) },
-  { id: 'sciFi', label: 'Sci-Fi', icon: (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/></svg>
-  ) },
-  { id: 'documentary', label: 'Documentary', icon: (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11zM7 10h5v5H7z"/></svg>
-  ) },
-  { id: 'family', label: 'Family', icon: (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M16 4c0-1.11.89-2 2-2s2 .89 2 2-.89 2-2 2-2-.89-2-2zm0 6v6h2v-6H8zm8-6c0-1.11.89-2 2-2s2 .89 2 2-.89 2-2 2-2-.89-2-2zm0 6v6h2v-6h-2z"/></svg>
-  ) },
-  { id: 'animation', label: 'Animation', icon: (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/></svg>
-  ) },
-  { id: 'awardWinning', label: 'Award Winning', icon: (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M20.2 2H20H17V0H7v2H4.5H3.8H2v5h1.1l1.5 10.3c0 .7.6 1.2 1.3 1.2h12.2c.7 0 1.3-.5 1.3-1.2L20.9 7H22V2h-1.8zM12 17c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm6-9H6l-1-4h14l-1 4z"/></svg>
-  ) },
-  { id: 'latest', label: 'Latest', icon: (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
-  ) }
+  { 
+    id: 'all', 
+    label: 'All', 
+    icon: (
+      <svg 
+        xmlns="http://www.w3.org/2000/svg" 
+        className="h-4 w-4 transition-transform duration-200 hover:scale-110" 
+        viewBox="0 0 24 24" 
+        fill="currentColor"
+        aria-hidden="true"
+        role="img"
+      >
+        <path 
+          d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"
+          stroke="currentColor"
+          strokeWidth="0.5"
+          fillRule="evenodd"
+          clipRule="evenodd"
+        />
+      </svg>
+    ),
+    description: 'Browse all available content',
+    color: 'from-blue-500 to-indigo-600',
+    gradient: 'bg-gradient-to-r from-blue-500/20 to-indigo-600/20'
+  },
+  { 
+    id: 'trending', 
+    label: 'Trending', 
+    icon: (
+      <svg 
+        xmlns="http://www.w3.org/2000/svg" 
+        className="h-4 w-4 transition-transform duration-200 hover:scale-110" 
+        viewBox="0 0 24 24" 
+        fill="currentColor"
+        aria-hidden="true"
+        role="img"
+      >
+        <path 
+          d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"
+          stroke="currentColor"
+          strokeWidth="0.5"
+          fillRule="evenodd"
+          clipRule="evenodd"
+        />
+      </svg>
+    ),
+    description: 'Discover what\'s trending right now',
+    color: 'from-orange-500 to-red-600',
+    gradient: 'bg-gradient-to-r from-orange-500/20 to-red-600/20'
+  },
+  { 
+    id: 'popular', 
+    label: 'Popular', 
+    icon: (
+      <svg 
+        xmlns="http://www.w3.org/2000/svg" 
+        className="h-4 w-4 transition-transform duration-200 hover:scale-110" 
+        viewBox="0 0 24 24" 
+        fill="currentColor"
+        aria-hidden="true"
+        role="img"
+      >
+        <path 
+          d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
+          stroke="currentColor"
+          strokeWidth="0.5"
+          fillRule="evenodd"
+          clipRule="evenodd"
+        />
+      </svg>
+    ),
+    description: 'Most loved and watched content',
+    color: 'from-pink-500 to-rose-600',
+    gradient: 'bg-gradient-to-r from-pink-500/20 to-rose-600/20'
+  },
+  { 
+    id: 'topRated', 
+    label: 'Top Rated', 
+    icon: (
+      <svg 
+        xmlns="http://www.w3.org/2000/svg" 
+        className="h-4 w-4 transition-transform duration-200 hover:scale-110" 
+        viewBox="0 0 24 24" 
+        fill="currentColor"
+        aria-hidden="true"
+        role="img"
+      >
+        <path 
+          d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"
+          stroke="currentColor"
+          strokeWidth="0.5"
+          fillRule="evenodd"
+          clipRule="evenodd"
+        />
+      </svg>
+    ),
+    description: 'Highest rated and critically acclaimed',
+    color: 'from-yellow-500 to-amber-600',
+    gradient: 'bg-gradient-to-r from-yellow-500/20 to-amber-600/20'
+  },
+  { 
+    id: 'upcoming', 
+    label: 'Coming Soon', 
+    icon: (
+      <svg 
+        xmlns="http://www.w3.org/2000/svg" 
+        className="h-4 w-4 transition-transform duration-200 hover:scale-110" 
+        viewBox="0 0 24 24" 
+        fill="currentColor"
+        aria-hidden="true"
+        role="img"
+      >
+        <path 
+          d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"
+          stroke="currentColor"
+          strokeWidth="0.5"
+          fillRule="evenodd"
+          clipRule="evenodd"
+        />
+      </svg>
+    ),
+    description: 'New releases and upcoming premieres',
+    color: 'from-blue-500 to-indigo-600',
+    gradient: 'bg-gradient-to-r from-blue-500/20 to-indigo-600/20'
+  },
+  { 
+    id: 'action', 
+    label: 'Action', 
+    icon: (
+      <svg 
+        xmlns="http://www.w3.org/2000/svg" 
+        className="h-4 w-4 transition-transform duration-200 hover:scale-110" 
+        viewBox="0 0 24 24" 
+        fill="currentColor"
+        aria-hidden="true"
+        role="img"
+      >
+        <path 
+          d="M13 4v2.67l-1 1-1-1V4h2m7 7v2h-2.67l-1-1 1-1H20M6.67 11l1 1-1 1H4v-2h2.67M12 16.33l1 1V20h-2v-2.67l1-1M15 2H9v5.5l3 3 3-3V2zm7 7h-5.5l-3 3 3 3H22V9zM7.5 9H2v6h5.5l3-3-3-3zm4.5 4.5l-3 3V22h6v-5.5l-3-3z"
+          stroke="currentColor"
+          strokeWidth="0.5"
+          fillRule="evenodd"
+          clipRule="evenodd"
+        />
+      </svg>
+    ),
+    description: 'High-octane thrillers and explosive adventures',
+    color: 'from-red-500 to-orange-600',
+    gradient: 'bg-gradient-to-r from-red-500/20 to-orange-600/20'
+  },
+  { 
+    id: 'comedy', 
+    label: 'Comedy', 
+    icon: (
+      <svg 
+        xmlns="http://www.w3.org/2000/svg" 
+        className="h-4 w-4 transition-transform duration-200 hover:scale-110" 
+        viewBox="0 0 24 24" 
+        fill="currentColor"
+        aria-hidden="true"
+        role="img"
+      >
+        <path 
+          d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"
+          stroke="currentColor"
+          strokeWidth="0.5"
+          fillRule="evenodd"
+          clipRule="evenodd"
+        />
+      </svg>
+    ),
+    description: 'Laugh-out-loud humor and witty entertainment',
+    color: 'from-yellow-400 to-orange-500',
+    gradient: 'bg-gradient-to-r from-yellow-400/20 to-orange-500/20'
+  },
+  { 
+    id: 'drama', 
+    label: 'Drama', 
+    icon: (
+      <svg 
+        xmlns="http://www.w3.org/2000/svg" 
+        className="h-4 w-4 transition-transform duration-200 hover:scale-110" 
+        viewBox="0 0 24 24" 
+        fill="currentColor"
+        aria-hidden="true"
+        role="img"
+      >
+        <path 
+          d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h2v2h-2zm0-8h2v6h-2z"
+          stroke="currentColor"
+          strokeWidth="0.5"
+          fillRule="evenodd"
+          clipRule="evenodd"
+        />
+      </svg>
+    ),
+    description: 'Emotional storytelling and character-driven narratives',
+    color: 'from-purple-500 to-indigo-600',
+    gradient: 'bg-gradient-to-r from-purple-500/20 to-indigo-600/20'
+  },
+  { 
+    id: 'horror', 
+    label: 'Horror', 
+    icon: (
+      <svg 
+        xmlns="http://www.w3.org/2000/svg" 
+        className="h-4 w-4 transition-transform duration-200 hover:scale-110" 
+        viewBox="0 0 24 24" 
+        fill="currentColor"
+        aria-hidden="true"
+        role="img"
+      >
+        <path 
+          d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 16c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm2-4c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm-2-4c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm2-4c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"
+          stroke="currentColor"
+          strokeWidth="0.5"
+          fillRule="evenodd"
+          clipRule="evenodd"
+        />
+      </svg>
+    ),
+    description: 'Spine-chilling thrills and supernatural suspense',
+    color: 'from-gray-700 to-black',
+    gradient: 'bg-gradient-to-r from-gray-700/20 to-black/20'
+  },
+  { 
+    id: 'sciFi', 
+    label: 'Sci-Fi', 
+    icon: (
+      <svg 
+        xmlns="http://www.w3.org/2000/svg" 
+        className="h-4 w-4 transition-transform duration-200 hover:scale-110" 
+        viewBox="0 0 24 24" 
+        fill="currentColor"
+        aria-hidden="true"
+        role="img"
+      >
+        <path 
+          d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"
+          stroke="currentColor"
+          strokeWidth="0.5"
+          fillRule="evenodd"
+          clipRule="evenodd"
+        />
+      </svg>
+    ),
+    description: 'Futuristic technology and space exploration',
+    color: 'from-blue-500 to-cyan-600',
+    gradient: 'bg-gradient-to-r from-blue-500/20 to-cyan-600/20'
+  },
+  { 
+    id: 'documentary', 
+    label: 'Documentary', 
+    icon: (
+      <svg 
+        xmlns="http://www.w3.org/2000/svg" 
+        className="h-4 w-4 transition-transform duration-200 hover:scale-110" 
+        viewBox="0 0 24 24" 
+        fill="currentColor"
+        aria-hidden="true"
+        role="img"
+      >
+        <path 
+          d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11zM7 10h5v5H7z"
+          stroke="currentColor"
+          strokeWidth="0.5"
+          fillRule="evenodd"
+          clipRule="evenodd"
+        />
+      </svg>
+    ),
+    description: 'Real-world stories and educational content',
+    color: 'from-green-500 to-emerald-600',
+    gradient: 'bg-gradient-to-r from-green-500/20 to-emerald-600/20'
+  },
+  { 
+    id: 'family', 
+    label: 'Family', 
+    icon: (
+      <svg 
+        xmlns="http://www.w3.org/2000/svg" 
+        className="h-4 w-4 transition-transform duration-200 hover:scale-110" 
+        viewBox="0 0 24 24" 
+        fill="currentColor"
+        aria-hidden="true"
+        role="img"
+      >
+        <path 
+          d="M16 4c0-1.11.89-2 2-2s2 .89 2 2-.89 2-2 2-2-.89-2-2zm0 6v6h2v-6H8zm8-6c0-1.11.89-2 2-2s2 .89 2 2-.89 2-2 2-2-.89-2-2zm0 6v6h2v-6h-2z"
+          stroke="currentColor"
+          strokeWidth="0.5"
+          fillRule="evenodd"
+          clipRule="evenodd"
+        />
+      </svg>
+    ),
+    description: 'Wholesome entertainment for all ages',
+    color: 'from-purple-500 to-pink-600',
+    gradient: 'bg-gradient-to-r from-purple-500/20 to-pink-600/20'
+  },
+  { 
+    id: 'animation', 
+    label: 'Animation', 
+    icon: (
+      <svg 
+        xmlns="http://www.w3.org/2000/svg" 
+        className="h-4 w-4 transition-transform duration-200 hover:scale-110" 
+        viewBox="0 0 24 24" 
+        fill="currentColor"
+        aria-hidden="true"
+        role="img"
+      >
+        <path 
+          d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"
+          stroke="currentColor"
+          strokeWidth="0.5"
+          fillRule="evenodd"
+          clipRule="evenodd"
+        />
+      </svg>
+    ),
+    description: 'Animated films and series',
+    color: 'from-yellow-500 to-orange-600',
+    gradient: 'bg-gradient-to-r from-yellow-500/20 to-orange-600/20'
+  },
+  { 
+    id: 'awardWinning', 
+    label: 'Award Winning', 
+    icon: (
+      <svg 
+        xmlns="http://www.w3.org/2000/svg" 
+        className="h-4 w-4 transition-transform duration-200 hover:scale-110" 
+        viewBox="0 0 24 24" 
+        fill="currentColor"
+        aria-hidden="true"
+        role="img"
+      >
+        <path 
+          d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"
+          stroke="currentColor"
+          strokeWidth="0.5"
+          fillRule="evenodd"
+          clipRule="evenodd"
+        />
+      </svg>
+    ),
+    description: 'Critically acclaimed and award-winning content',
+    color: 'from-amber-500 to-yellow-600',
+    gradient: 'bg-gradient-to-r from-amber-500/20 to-yellow-600/20'
+  },
+  { 
+    id: 'latest', 
+    label: 'Latest', 
+    icon: (
+      <svg 
+        xmlns="http://www.w3.org/2000/svg" 
+        className="h-4 w-4 transition-transform duration-200 hover:scale-110" 
+        viewBox="0 0 24 24" 
+        fill="currentColor"
+        aria-hidden="true"
+        role="img"
+      >
+        <path 
+          d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
+          stroke="currentColor"
+          strokeWidth="0.5"
+          fillRule="evenodd"
+          clipRule="evenodd"
+        />
+      </svg>
+    ),
+    description: 'Fresh releases and newest additions',
+    color: 'from-green-500 to-emerald-600',
+    gradient: 'bg-gradient-to-r from-green-500/20 to-emerald-600/20'
+  }
 ];
 
 // Memoize MovieSection and HeroSection
@@ -1330,7 +2830,9 @@ const HomePage = () => {
   const [dataCache, setDataCache] = useState({});
   const [featuredContent, setFeaturedContent] = useState(null);
   const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes in milliseconds
-  const MAX_CACHE_SIZE = 5 * 1024 * 1024; // 5 MB
+  const MAX_CACHE_SIZE = 2 * 1024 * 1024; // Reduced to 2 MB
+  const MAX_PAGES_PER_CATEGORY = 10; // Limit pages per category
+  const MAX_TOTAL_CACHE_ITEMS = 50; // Limit total cache items
 
   // Add priority levels for sections
   const SECTION_PRIORITIES = {
@@ -1339,40 +2841,184 @@ const HomePage = () => {
     LOW: ['horror', 'sciFi', 'documentary', 'family', 'animation', 'awardWinning', 'latest', 'popularTV', 'topRatedTV', 'airingToday', 'nowPlaying']
   };
 
-  // Improved cache cleanup function
+  // Enhanced cache cleanup function with better error handling, performance optimizations, and monitoring
   const cleanupCache = useCallback(() => {
+    const startTime = performance.now();
+    let removedCount = 0;
+    let totalSize = 0;
+    let processedItems = 0;
+    
     try {
+      // Use more efficient iteration and early exit for better performance
       const cacheItems = [];
-      let totalSize = 0;
+      const keys = Object.keys(localStorage);
+      
+      // Process only movie cache keys with early filtering
+      const movieCacheKeys = keys.filter(key => key.startsWith('movieCache_'));
+      
+      if (movieCacheKeys.length === 0) {
+        return; // Early exit if no cache items
+      }
 
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key.startsWith('movieCache_')) {
+      // Group cache items by category and page
+      const categoryPages = {};
+      
+      // Batch process items for better performance
+      for (const key of movieCacheKeys) {
+        try {
           const item = localStorage.getItem(key);
-          try {
-            const parsed = JSON.parse(item);
-            const itemSize = item.length;
-            totalSize += itemSize;
-            cacheItems.push({ key, timestamp: parsed.timestamp, size: itemSize });
-          } catch (e) {
-            // Ignore items that can't be parsed
+          if (!item) continue;
+          
+          const parsed = JSON.parse(item);
+          const itemSize = item.length;
+          
+          // Validate cache item structure
+          if (!parsed || typeof parsed.timestamp !== 'number' || !parsed.data) {
+            localStorage.removeItem(key); // Remove invalid items
+            removedCount++;
+            continue;
+          }
+          
+          totalSize += itemSize;
+          
+          // Extract category and page from key (e.g., "movieCache_comedy_page_37")
+          const keyParts = key.replace('movieCache_', '').split('_');
+          const category = keyParts[0];
+          const isPage = keyParts.includes('page');
+          const pageNum = isPage ? parseInt(keyParts[keyParts.length - 1]) : 0;
+          
+          if (!categoryPages[category]) {
+            categoryPages[category] = { pages: [], other: [] };
+          }
+          
+          if (isPage && !isNaN(pageNum)) {
+            categoryPages[category].pages.push({ 
+              key, 
+              timestamp: parsed.timestamp, 
+              size: itemSize,
+              age: Date.now() - parsed.timestamp,
+              pageNum
+            });
+          } else {
+            categoryPages[category].other.push({ 
+              key, 
+              timestamp: parsed.timestamp, 
+              size: itemSize,
+              age: Date.now() - parsed.timestamp
+            });
+          }
+          
+          processedItems++;
+          
+        } catch (parseError) {
+          // Remove corrupted items immediately
+          localStorage.removeItem(key);
+          removedCount++;
+        }
+      }
+
+      // Cleanup strategy 1: Remove excess pages per category
+      for (const [category, items] of Object.entries(categoryPages)) {
+        if (items.pages.length > MAX_PAGES_PER_CATEGORY) {
+          // Sort pages by number (keep newest pages)
+          items.pages.sort((a, b) => b.pageNum - a.pageNum);
+          
+          // Remove excess pages (keep only the first MAX_PAGES_PER_CATEGORY)
+          const pagesToRemove = items.pages.slice(MAX_PAGES_PER_CATEGORY);
+          for (const page of pagesToRemove) {
+            localStorage.removeItem(page.key);
+            totalSize -= page.size;
+            removedCount++;
           }
         }
       }
 
-      if (totalSize > MAX_CACHE_SIZE) {
-        cacheItems.sort((a, b) => a.timestamp - b.timestamp); // Sort oldest first
+      // Cleanup strategy 2: Remove very old items (>1 hour)
+      const veryOldThreshold = 60 * 60 * 1000; // 1 hour
+      for (const [category, items] of Object.entries(categoryPages)) {
+        const allItems = [...items.pages, ...items.other];
+        const veryOldItems = allItems.filter(item => item.age > veryOldThreshold);
         
-        let removedCount = 0;
-        while (totalSize > MAX_CACHE_SIZE * 0.8 && cacheItems.length > 0) {
-          const itemToRemove = cacheItems.shift();
-          localStorage.removeItem(itemToRemove.key);
-          totalSize -= itemToRemove.size;
+        for (const item of veryOldItems) {
+          localStorage.removeItem(item.key);
+          totalSize -= item.size;
           removedCount++;
         }
       }
+
+      // Cleanup strategy 3: Size-based cleanup if still over limit
+      if (totalSize > MAX_CACHE_SIZE) {
+        // Flatten all items and sort by age (oldest first)
+        const allItems = [];
+        for (const [category, items] of Object.entries(categoryPages)) {
+          allItems.push(...items.pages, ...items.other);
+        }
+        
+        allItems.sort((a, b) => a.timestamp - b.timestamp);
+        
+        // Remove oldest items until under limit
+        for (const item of allItems) {
+          if (totalSize <= MAX_CACHE_SIZE * 0.8) break;
+          localStorage.removeItem(item.key);
+          totalSize -= item.size;
+          removedCount++;
+        }
+      }
+
+      // Cleanup strategy 4: Limit total cache items
+      const remainingKeys = Object.keys(localStorage).filter(key => key.startsWith('movieCache_'));
+      if (remainingKeys.length > MAX_TOTAL_CACHE_ITEMS) {
+        // Get all remaining items and sort by age
+        const remainingItems = [];
+        for (const key of remainingKeys) {
+          try {
+            const item = localStorage.getItem(key);
+            if (item) {
+              const parsed = JSON.parse(item);
+              remainingItems.push({ key, timestamp: parsed.timestamp });
+            }
+          } catch (e) {
+            localStorage.removeItem(key);
+            removedCount++;
+          }
+        }
+        
+        remainingItems.sort((a, b) => a.timestamp - b.timestamp);
+        
+        // Remove oldest items to get under limit
+        const itemsToRemove = remainingItems.slice(0, remainingKeys.length - MAX_TOTAL_CACHE_ITEMS);
+        for (const item of itemsToRemove) {
+          localStorage.removeItem(item.key);
+          removedCount++;
+        }
+      }
+
+      // Performance monitoring and logging
+      const endTime = performance.now();
+      const duration = endTime - startTime;
+      
+      if (removedCount > 0) {
+        console.log(`Cache cleanup: removed ${removedCount} items, ${(totalSize / 1024 / 1024).toFixed(2)}MB remaining`);
+      }
+
     } catch (error) {
-      console.error('Error during cache cleanup:', error);
+      console.error('Critical error during cache cleanup:', error);
+      
+      // Fallback: aggressive cleanup in case of critical errors
+      try {
+        const keys = Object.keys(localStorage);
+        const movieCacheKeys = keys.filter(key => key.startsWith('movieCache_'));
+        
+        // Remove all movie cache items as emergency cleanup
+        movieCacheKeys.forEach(key => {
+          localStorage.removeItem(key);
+          removedCount++;
+        });
+        
+        console.warn(`Emergency cache cleanup removed ${removedCount} items`);
+      } catch (fallbackError) {
+        console.error('Emergency cache cleanup also failed:', fallbackError);
+      }
     }
   }, []);
 
@@ -1385,48 +3031,251 @@ const HomePage = () => {
       const { timestamp, data } = JSON.parse(cachedData);
       return Date.now() - timestamp < CACHE_DURATION;
     } catch (error) {
-      console.error('Error checking cache:', error);
       return false;
     }
   };
 
-  // Add function to get cached data
+  // Enhanced function to get cached data with validation, performance monitoring, and advanced error handling
   const getCachedData = (cacheKey) => {
+    const startTime = performance.now();
+    const metrics = {
+      validationTime: 0,
+      retrievalTime: 0,
+      parsingTime: 0,
+      totalTime: 0
+    };
+    
     try {
-      const cachedData = localStorage.getItem(`movieCache_${cacheKey}`);
-      if (!cachedData) return null;
+      // Enhanced cache key validation with detailed logging
+      const validationStart = performance.now();
+      if (!cacheKey || typeof cacheKey !== 'string') {
+        return null;
+      }
       
-      const { data } = JSON.parse(cachedData);
-      return data;
+      // Validate cache key format and length
+      if (cacheKey.length === 0 || cacheKey.length > 100) {
+        return null;
+      }
+      
+      // Check for potentially malicious keys
+      if (cacheKey.includes('..') || cacheKey.includes('__proto__') || cacheKey.includes('constructor')) {
+        return null;
+      }
+      
+      metrics.validationTime = performance.now() - validationStart;
+
+      const storageKey = `movieCache_${cacheKey}`;
+      
+      // Enhanced localStorage retrieval with timeout protection
+      const retrievalStart = performance.now();
+      let cachedData;
+      
+      try {
+        cachedData = localStorage.getItem(storageKey);
+      } catch (storageError) {
+        return null;
+      }
+      
+      metrics.retrievalTime = performance.now() - retrievalStart;
+      
+      if (!cachedData) {
+        return null;
+      }
+      
+      // Enhanced data parsing with size validation
+      const parsingStart = performance.now();
+      
+      // Check data size before parsing (prevent DoS attacks)
+      if (cachedData.length > 10 * 1024 * 1024) { // 10MB limit
+        localStorage.removeItem(storageKey);
+        return null;
+      }
+      
+      let parsedData;
+      try {
+        parsedData = JSON.parse(cachedData);
+      } catch (parseError) {
+        localStorage.removeItem(storageKey);
+        return null;
+      }
+      
+      metrics.parsingTime = performance.now() - parsingStart;
+      
+      // Enhanced data structure validation
+      if (!parsedData || typeof parsedData !== 'object') {
+        localStorage.removeItem(storageKey);
+        return null;
+      }
+      
+      if (!parsedData.hasOwnProperty('data')) {
+        localStorage.removeItem(storageKey);
+        return null;
+      }
+      
+      // Enhanced timestamp validation with timezone consideration
+      if (parsedData.timestamp) {
+        const cacheAge = Date.now() - parsedData.timestamp;
+        const maxAge = CACHE_DURATION + (5 * 60 * 1000); // Add 5 minute buffer
+        
+        if (cacheAge > maxAge) {
+          localStorage.removeItem(storageKey);
+          return null;
+        }
+      }
+      
+      // Enhanced data integrity check
+      if (parsedData.data === null || parsedData.data === undefined) {
+        localStorage.removeItem(storageKey);
+        return null;
+      }
+      
+      metrics.totalTime = performance.now() - startTime;
+      
+      return parsedData.data;
+      
     } catch (error) {
-      console.error('Error getting cached data:', error);
+      // Enhanced cleanup with retry mechanism
+      try {
+        const storageKey = `movieCache_${cacheKey}`;
+        localStorage.removeItem(storageKey);
+      } catch (cleanupError) {
+        // Attempt to clear all cache as last resort
+        try {
+          const keys = Object.keys(localStorage);
+          const movieCacheKeys = keys.filter(key => key.startsWith('movieCache_'));
+          movieCacheKeys.forEach(key => localStorage.removeItem(key));
+        } catch (emergencyError) {
+          // Emergency cleanup failed silently
+        }
+      }
+      
       return null;
     }
   };
 
-  // Add function to set cached data
+  // Enhanced function to set cached data with validation, performance monitoring, and advanced error handling
   const setCachedData = (cacheKey, data) => {
+    const startTime = performance.now();
+    const metrics = {
+      validationTime: 0,
+      cleanupTime: 0,
+      serializationTime: 0,
+      storageTime: 0,
+      totalTime: 0
+    };
+    
     try {
-      cleanupCache(); // Run cleanup before setting new data
-      localStorage.setItem(`movieCache_${cacheKey}`, JSON.stringify({
-        data,
-        timestamp: Date.now()
-      }));
-    } catch (error) {
-      console.error('Error setting cached data:', error);
-      if (error.name === 'QuotaExceededError') {
-        // If still failing, perform a more aggressive cleanup
-        cleanupCache(); 
+      // Enhanced cache key validation with detailed logging
+      const validationStart = performance.now();
+      if (!cacheKey || typeof cacheKey !== 'string') {
+        console.warn('Invalid cache key provided:', cacheKey, 'Type:', typeof cacheKey);
+        return false;
       }
+      
+      // Validate cache key format and length
+      if (cacheKey.length === 0 || cacheKey.length > 100) {
+        console.warn('Cache key length invalid:', cacheKey.length, 'Key:', cacheKey);
+        return false;
+      }
+      
+      // Check for potentially malicious keys
+      if (cacheKey.includes('..') || cacheKey.includes('__proto__') || cacheKey.includes('constructor')) {
+        console.warn('Potentially malicious cache key detected:', cacheKey);
+        return false;
+      }
+      
+      // Validate data structure
+      if (data === null || data === undefined) {
+        console.warn('Attempting to cache null/undefined data for key:', cacheKey);
+        return false;
+      }
+      
+      metrics.validationTime = performance.now() - validationStart;
+
+      // Enhanced cleanup with performance monitoring
+      const cleanupStart = performance.now();
+      cleanupCache();
+      metrics.cleanupTime = performance.now() - cleanupStart;
+
+      // Enhanced data serialization with size validation
+      const serializationStart = performance.now();
+      // Use a simple checksum: first 8 chars of a hash of the JSON string (Unicode-safe)
+      function simpleChecksum(str) {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+          hash = ((hash << 5) - hash) + str.charCodeAt(i);
+          hash |= 0;
+        }
+        return Math.abs(hash).toString(16).slice(0, 8);
+      }
+      const jsonString = JSON.stringify(data);
+      const cacheData = {
+        data,
+        timestamp: Date.now(),
+        version: '1.0',
+        checksum: simpleChecksum(jsonString)
+      };
+      
+      const serializedData = JSON.stringify(cacheData);
+      const dataSize = serializedData.length;
+      
+      // Validate data size before storage
+      if (dataSize > MAX_CACHE_SIZE) {
+        console.warn(`Cache data too large for key: ${cacheKey}`, {
+          size: `${(dataSize / 1024 / 1024).toFixed(2)}MB`,
+          limit: `${(MAX_CACHE_SIZE / 1024 / 1024).toFixed(2)}MB`
+        });
+        return false;
+      }
+      
+      metrics.serializationTime = performance.now() - serializationStart;
+
+      // Enhanced localStorage storage with timeout protection
+      const storageStart = performance.now();
+      const storageKey = `movieCache_${cacheKey}`;
+      
+      try {
+        localStorage.setItem(storageKey, serializedData);
+        metrics.storageTime = performance.now() - storageStart;
+        metrics.totalTime = performance.now() - startTime;
+        
+        return true;
+      } catch (storageError) {
+        console.error('localStorage storage failed for key:', storageKey, storageError);
+        
+        // Handle quota exceeded error specifically
+        if (storageError.name === 'QuotaExceededError' || storageError.message.includes('quota')) {
+          console.warn('Storage quota exceeded, performing emergency cleanup...');
+          
+          // Perform emergency cleanup
+          cleanupCache();
+          
+          // Try again after cleanup
+          try {
+            localStorage.setItem(storageKey, serializedData);
+            console.log('Successfully stored data after emergency cleanup');
+            return true;
+          } catch (retryError) {
+            console.error('Failed to store data even after cleanup:', retryError);
+            return false;
+          }
+        }
+        
+        return false;
+      }
+    } catch (error) {
+      console.error('Critical error setting cached data for key:', cacheKey, error);
+      return false;
     }
+    return false;
   };
 
   // Initialize data fetching
   useEffect(() => {
     fetchInitialMovies();
     
-    // Set up a periodic cleanup interval
-    const interval = setInterval(cleanupCache, CACHE_DURATION);
+    // Set up a periodic cleanup interval - more frequent to prevent quota issues
+    const interval = setInterval(cleanupCache, 5 * 60 * 1000); // Every 5 minutes
     return () => clearInterval(interval);
   }, []); // Empty dependency array means this runs once on mount
 
@@ -1455,24 +3304,31 @@ const HomePage = () => {
 
   // Pagination states for all categories
   const [pageStates, setPageStates] = useState({
-    trending: { current: 1, total: 1 },
-    popular: { current: 1, total: 1 },
-    topRated: { current: 1, total: 1 },
-    upcoming: { current: 1, total: 1 },
-    action: { current: 1, total: 1 },
-    comedy: { current: 1, total: 1 },
-    drama: { current: 1, total: 1 },
-    horror: { current: 1, total: 1 },
-    sciFi: { current: 1, total: 1 },
-    documentary: { current: 1, total: 1 },
-    family: { current: 1, total: 1 },
-    animation: { current: 1, total: 1 },
-    awardWinning: { current: 1, total: 1 },
-    latest: { current: 1, total: 1 },
-    popularTV: { current: 1, total: 1 },
-    topRatedTV: { current: 1, total: 1 },
-    airingToday: { current: 1, total: 1 },
-    nowPlaying: { current: 1, total: 1 }
+    // High priority sections - load first
+    trending: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    popular: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    topRated: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    
+    // Medium priority sections
+    upcoming: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    action: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    comedy: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    drama: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    
+    // Low priority sections - load last
+    horror: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    sciFi: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    documentary: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    family: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    animation: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    awardWinning: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    latest: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    
+    // TV show sections
+    popularTV: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    topRatedTV: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    airingToday: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    nowPlaying: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null }
   });
 
   // Track unique movie IDs for all categories
@@ -1497,94 +3353,380 @@ const HomePage = () => {
     nowPlaying: new Set()
   });
 
+  // Enhanced prefetch state management
+  const [prefetchedMovies, setPrefetchedMovies] = useState(new Set());
+  const [prefetchCache, setPrefetchCache] = useState(new Map());
+  const [prefetchStats, setPrefetchStats] = useState({
+    totalPrefetched: 0,
+    successfulPrefetches: 0,
+    failedPrefetches: 0,
+    cacheHits: 0
+  });
+  const prefetchQueueRef = useRef([]);
+  const isProcessingPrefetchRef = useRef(false);
+  const fetchInProgress = useRef(false);
+  const [visibleMovies, setVisibleMovies] = useState(new Set());
+  const visibilityObserverRef = useRef(null);
+
   const addUniqueMovies = (currentMovies, newMovies, idSet) => {
     const uniqueNewMovies = newMovies.filter(movie => !idSet.has(movie.id));
     uniqueNewMovies.forEach(movie => idSet.add(movie.id));
     return [...currentMovies, ...uniqueNewMovies];
   };
 
-  // Modify fetchInitialMovies to use prioritized loading
+  // Enhanced fetchInitialMovies with intelligent prioritization, performance monitoring, and error recovery
   const fetchInitialMovies = async () => {
+    const startTime = performance.now();
+    const metrics = {
+      featuredTime: 0,
+      highPriorityTime: 0,
+      mediumPriorityTime: 0,
+      lowPriorityTime: 0,
+      totalTime: 0,
+      cacheHits: 0,
+      apiCalls: 0,
+      errors: 0
+    };
+
     try {
       setLoadingState('initial', true);
       setError(null);
       
-      // Start with featured content and trending movies in parallel
-      const [featuredResult] = await Promise.all([
+      // Phase 1: Critical content (featured + trending) - highest priority
+      const featuredStart = performance.now();
+      const [featuredResult, trendingResult] = await Promise.allSettled([
         fetchFeaturedContent(),
         fetchPrioritySection('trending')
       ]);
+      metrics.featuredTime = performance.now() - featuredStart;
+      
+      // Handle featured content result
+      if (featuredResult.status === 'fulfilled') {
+      } else {
+        console.warn('⚠️ Featured content failed, continuing with other sections:', featuredResult.reason);
+        metrics.errors++;
+      }
+      
+      // Handle trending result
+      if (trendingResult.status === 'fulfilled') {
+        // Trending section loaded successfully
+      } else {
+        console.warn('⚠️ Trending section failed:', trendingResult.reason);
+        metrics.errors++;
+      }
 
-      // Fetch other high priority sections
-      await Promise.all(
-        SECTION_PRIORITIES.HIGH.filter(key => key !== 'trending').map(key =>
-          fetchPrioritySection(key)
-        )
+      // Phase 2: High priority sections with intelligent batching
+      const highPriorityStart = performance.now();
+      const highPrioritySections = SECTION_PRIORITIES.HIGH.filter(key => key !== 'trending');
+      
+      // Process high priority sections in smaller batches for better performance
+      const highPriorityBatches = chunkArray(highPrioritySections, 2);
+      for (const batch of highPriorityBatches) {
+        const batchResults = await Promise.allSettled(
+          batch.map(key => fetchPrioritySection(key))
+        );
+        
+        batchResults.forEach((result, index) => {
+          if (result.status === 'fulfilled') {
+            // console.log(`✅ ${batch[index]} loaded successfully`);
+          } else {
+            console.warn(`⚠️ ${batch[index]} failed:`, result.reason);
+            metrics.errors++;
+          }
+        });
+        
+        // Small delay between batches to prevent overwhelming the API
+        if (highPriorityBatches.indexOf(batch) < highPriorityBatches.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+      }
+      metrics.highPriorityTime = performance.now() - highPriorityStart;
+
+      // Phase 3: Medium priority sections with parallel processing
+      const mediumPriorityStart = performance.now();
+      const mediumPriorityPromise = Promise.allSettled(
+        SECTION_PRIORITIES.MEDIUM.map(key => fetchPrioritySection(key))
       );
 
-      // Start loading medium priority sections
-      const mediumPriorityPromise = Promise.all(
-        SECTION_PRIORITIES.MEDIUM.map(key =>
-          fetchPrioritySection(key)
-        )
+      // Phase 4: Low priority sections (non-blocking)
+      const lowPriorityStart = performance.now();
+      const lowPriorityPromise = Promise.allSettled(
+        SECTION_PRIORITIES.LOW.map(key => fetchPrioritySection(key))
       );
 
-      // Start loading low priority sections
-      const lowPriorityPromise = Promise.all(
-        SECTION_PRIORITIES.LOW.map(key =>
-          fetchPrioritySection(key)
-        )
-      );
+      // Wait for medium and low priority sections with timeout protection
+      const [mediumResults, lowResults] = await Promise.all([
+        mediumPriorityPromise,
+        lowPriorityPromise
+      ]);
+      
+      metrics.mediumPriorityTime = performance.now() - mediumPriorityStart;
+      metrics.lowPriorityTime = performance.now() - lowPriorityStart;
 
-      // Wait for all sections to complete
-      await Promise.all([mediumPriorityPromise, lowPriorityPromise]);
+      // Log results for medium priority sections
+      mediumResults.forEach((result, index) => {
+        const sectionKey = SECTION_PRIORITIES.MEDIUM[index];
+        if (result.status === 'fulfilled') {
+          // console.log(`✅ ${sectionKey} (medium) loaded successfully`);
+        } else {
+          console.warn(`⚠️ ${sectionKey} (medium) failed:`, result.reason);
+          metrics.errors++;
+        }
+      });
 
-      setError(null);
+      // Log results for low priority sections
+      lowResults.forEach((result, index) => {
+        const sectionKey = SECTION_PRIORITIES.LOW[index];
+        if (result.status === 'fulfilled') {
+          // console.log(`✅ ${sectionKey} (low) loaded successfully`);
+        } else {
+          console.warn(`⚠️ ${sectionKey} (low) failed:`, result.reason);
+          metrics.errors++;
+        }
+      });
+
+      metrics.totalTime = performance.now() - startTime;
+
+      // Only set error if critical sections failed
+      const criticalFailures = [featuredResult, trendingResult].filter(
+        result => result.status === 'rejected'
+      ).length;
+      
+      if (criticalFailures >= 2) {
+        setError('Failed to load critical content. Please refresh the page.');
+      } else if (metrics.errors > 0) {
+        console.warn(`⚠️ ${metrics.errors} non-critical sections failed to load`);
+      } else {
+        setError(null);
+      }
+
     } catch (err) {
+      console.error('💥 Critical error in fetchInitialMovies:', err);
       setError('Failed to fetch movies. Please try again later.');
-      console.error('Error fetching movies:', err);
+      metrics.errors++;
     } finally {
       setLoadingState('initial', false);
     }
   };
 
-  // Add function to fetch a single section with priority
+  // Enhanced helper function to chunk arrays for batch processing with validation, performance monitoring, and error handling
+  const chunkArray = (array, size) => {
+    const startTime = performance.now();
+    const metrics = {
+      validationTime: 0,
+      processingTime: 0,
+      totalTime: 0
+    };
+    
+    try {
+      // Enhanced input validation with detailed logging
+      const validationStart = performance.now();
+      if (!Array.isArray(array)) {
+        console.warn('chunkArray: Invalid input - expected array, got:', typeof array);
+        return [];
+      }
+      
+      if (typeof size !== 'number' || size <= 0 || !Number.isInteger(size)) {
+        console.warn('chunkArray: Invalid chunk size:', size, 'Type:', typeof size);
+        return [array]; // Return original array as single chunk
+      }
+      
+      if (array.length === 0) {
+        return []; // Return empty array for empty input
+      }
+      
+      metrics.validationTime = performance.now() - validationStart;
+
+      // Enhanced processing with performance monitoring
+      const processingStart = performance.now();
+      const chunks = [];
+      const totalChunks = Math.ceil(array.length / size);
+      
+      // Use more efficient iteration for better performance
+      for (let i = 0; i < array.length; i += size) {
+        const chunk = array.slice(i, i + size);
+        chunks.push(chunk);
+      }
+      
+      metrics.processingTime = performance.now() - processingStart;
+      metrics.totalTime = performance.now() - startTime;
+      
+      return chunks;
+      
+    } catch (error) {
+      console.error('Critical error in chunkArray:', {
+        error: error.message,
+        stack: error.stack,
+        input: { arrayLength: array?.length, size, arrayType: typeof array }
+      });
+      
+      // Fallback: return original array as single chunk
+      return [array];
+    }
+  };
+
+  // Enhanced function to fetch a single section with priority, performance monitoring, and advanced error handling
   const fetchPrioritySection = async (sectionKey) => {
-    const section = {
-      key: sectionKey,
-      fetch: getFetchFunction(sectionKey),
-      setter: getSetterFunction(sectionKey),
-      ids: movieIds[sectionKey]
+    let section;
+    const startTime = performance.now();
+    const metrics = {
+      validationTime: 0,
+      cacheCheckTime: 0,
+      fetchTime: 0,
+      processingTime: 0,
+      totalTime: 0,
+      cacheHit: false,
+      dataSize: 0
     };
 
     try {
-      // Check cache first
-      if (isCacheValid(section.key)) {
-        const cachedData = getCachedData(section.key);
-        if (cachedData) {
-          section.setter(cachedData);
-          cachedData.forEach(movie => section.ids.add(movie.id));
-          return;
-        }
+      // Enhanced section validation with detailed logging
+      const validationStart = performance.now();
+      if (!sectionKey || typeof sectionKey !== 'string') {
+        console.warn('Invalid section key provided:', sectionKey, 'Type:', typeof sectionKey);
+        throw new Error(`Invalid section key: ${sectionKey}`);
       }
 
+      section = {
+        key: sectionKey,
+        fetch: getFetchFunction(sectionKey),
+        setter: getSetterFunction(sectionKey),
+        ids: movieIds[sectionKey]
+      };
+
+      // Validate section configuration
+      if (!section.fetch || !section.setter || !section.ids) {
+        console.error('Invalid section configuration for key:', sectionKey, {
+          hasFetch: !!section.fetch,
+          hasSetter: !!section.setter,
+          hasIds: !!section.ids
+        });
+        throw new Error(`Invalid section configuration for: ${sectionKey}`);
+      }
+
+      metrics.validationTime = performance.now() - validationStart;
+
+      // Enhanced cache checking with performance monitoring
+      const cacheCheckStart = performance.now();
+      if (isCacheValid(section.key)) {
+        const cachedData = getCachedData(section.key);
+        if (cachedData && Array.isArray(cachedData) && cachedData.length > 0) {
+          metrics.cacheHit = true;
+          metrics.dataSize = cachedData.length;
+          
+          // Enhanced data processing with validation
+          const processingStart = performance.now();
+          try {
+            section.setter(cachedData);
+            cachedData.forEach(movie => {
+              if (movie && movie.id && typeof movie.id === 'number') {
+                section.ids.add(movie.id);
+              }
+            });
+            metrics.processingTime = performance.now() - processingStart;
+            metrics.totalTime = performance.now() - startTime;
+            
+            return;
+          } catch (processingError) {
+            console.error(`Error processing cached data for ${section.key}:`, processingError);
+            // Continue to fetch fresh data if cache processing fails
+          }
+        }
+      }
+      metrics.cacheCheckTime = performance.now() - cacheCheckStart;
+
+      // Enhanced API fetching with timeout and retry logic
+      const fetchStart = performance.now();
       setLoadingState(section.key, true);
-      const result = await section.fetch(1);
-      if (result && result.movies && result.movies.length > 0) {
-        section.setter(result.movies);
-        result.movies.forEach(movie => section.ids.add(movie.id));
+      
+      // Add timeout protection for API calls
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Request timeout')), 30000); // 30 second timeout
+      });
+      
+      const fetchPromise = section.fetch(1);
+      const result = await Promise.race([fetchPromise, timeoutPromise]);
+      
+      metrics.fetchTime = performance.now() - fetchStart;
+
+      // Enhanced result validation and processing
+      const processingStart = performance.now();
+      if (result && result.movies && Array.isArray(result.movies) && result.movies.length > 0) {
+        metrics.dataSize = result.movies.length;
+        
+        // Validate movie data structure
+        const validMovies = result.movies.filter(movie => 
+          movie && 
+          movie.id && 
+          typeof movie.id === 'number' &&
+          movie.title &&
+          typeof movie.title === 'string'
+        );
+
+        if (validMovies.length !== result.movies.length) {
+          console.warn(`Filtered ${result.movies.length - validMovies.length} invalid movies from ${section.key}`);
+        }
+
+        // Update state with validated data
+        section.setter(validMovies);
+        validMovies.forEach(movie => section.ids.add(movie.id));
+        
+        // Enhanced pagination state update
         setPageStates(prev => ({
           ...prev,
-          [section.key]: { current: 1, total: result.totalPages || 1 }
+          [section.key]: { 
+            current: 1, 
+            total: result.totalPages || 1,
+            hasMore: (result.totalPages || 1) > 1,
+            lastFetched: Date.now()
+          }
         }));
-        // Update cache
-        setCachedData(section.key, result.movies);
+
+        // Enhanced cache update with error handling
+        try {
+          setCachedData(section.key, validMovies);
+          // console.log(`✅ Successfully cached ${validMovies.length} movies for ${section.key}`);
+        } catch (cacheError) {
+          console.warn(`Failed to cache data for ${section.key}:`, cacheError);
+          // Continue execution even if caching fails
+        }
+
+        // console.log(`✅ Successfully fetched ${validMovies.length} movies for ${section.key}`);
+      } else {
+        console.warn(`No valid movies returned for ${section.key}`, result);
+        setError(`No movies available for ${section.key}`);
       }
+
+      metrics.processingTime = performance.now() - processingStart;
+      metrics.totalTime = performance.now() - startTime;
+
     } catch (error) {
-      console.error(`Error fetching ${section.key}:`, error);
-      setError(`Failed to fetch ${section.key} movies`);
+      console.error(`Critical error fetching ${sectionKey}:`, {
+        error: error.message,
+        stack: error.stack,
+        sectionKey,
+        metrics: {
+          totalTime: performance.now() - startTime,
+          cacheHit: metrics.cacheHit
+        }
+      });
+      
+      // Enhanced error handling with user-friendly messages
+      const errorMessage = error.message === 'Request timeout' 
+        ? `Request timeout for ${sectionKey}`
+        : `Failed to fetch ${sectionKey} movies`;
+      
+      setError(errorMessage);
+      
+      // Attempt to recover by clearing potentially corrupted cache
+      try {
+        const storageKey = `movieCache_${sectionKey}`;
+        localStorage.removeItem(storageKey);
+      } catch (cleanupError) {
+        console.error(`Failed to clean up cache for ${sectionKey}:`, cleanupError);
+      }
     } finally {
-      setLoadingState(section.key, false);
+      setLoadingState(section ? section.key : sectionKey, false);
     }
   };
 
@@ -1638,59 +3780,171 @@ const HomePage = () => {
     return setterFunctions[key];
   };
 
-  // Modify loadMoreMovies to use cache
+  // Enhanced loadMoreMovies with intelligent caching, performance monitoring, error recovery, and advanced state management
   const loadMoreMovies = async (category) => {
-    const currentPage = pageStates[category].current;
-    const totalPages = pageStates[category].total;
+    const startTime = performance.now();
+    const metrics = {
+      validationTime: 0,
+      cacheCheckTime: 0,
+      fetchTime: 0,
+      processingTime: 0,
+      totalTime: 0,
+      cacheHit: false,
+      dataSize: 0,
+      uniqueMovies: 0
+    };
 
-    if (currentPage >= totalPages) {
-      console.log(`No more pages to load for ${category}`);
-      return;
-    }
-
-    const nextPage = currentPage + 1;
-    let result;
+    // Declare loadingTimeout outside try block so it's accessible in finally
+    let loadingTimeout;
 
     try {
+      // Enhanced input validation with detailed logging
+      const validationStart = performance.now();
+      if (!category || typeof category !== 'string') {
+        console.warn('Invalid category provided to loadMoreMovies:', category, 'Type:', typeof category);
+        throw new Error(`Invalid category: ${category}`);
+      }
+
+      const currentPage = pageStates[category]?.current;
+      const totalPages = pageStates[category]?.total;
+
+      if (!pageStates[category]) {
+        console.error(`Page state not found for category: ${category}`);
+        throw new Error(`Page state not found for category: ${category}`);
+      }
+
+      if (currentPage >= totalPages) {
+        return;
+      }
+
+      const nextPage = currentPage + 1;
+      metrics.validationTime = performance.now() - validationStart;
+
+      // Enhanced loading state management with timeout protection
       setLoadingState(category, true);
-      
-      // Check if we have this page in cache
+      loadingTimeout = setTimeout(() => {
+        console.warn(`⚠️ Loading timeout for ${category} page ${nextPage}`);
+      }, 30000); // 30 second timeout
+
+      let result;
+
+      // Enhanced cache checking with performance monitoring
+      const cacheCheckStart = performance.now();
       const cacheKey = `${category}_page_${nextPage}`;
+      
       if (isCacheValid(cacheKey)) {
-        result = { movies: getCachedData(cacheKey) };
-      } else {
-        // Fetch from API
+        const cachedData = getCachedData(cacheKey);
+        if (cachedData && Array.isArray(cachedData) && cachedData.length > 0) {
+          result = { movies: cachedData };
+          metrics.cacheHit = true;
+          metrics.dataSize = cachedData.length;
+        }
+      }
+      
+      metrics.cacheCheckTime = performance.now() - cacheCheckStart;
+
+      // Enhanced API fetching with retry mechanism and performance monitoring
+      if (!result) {
+        const fetchStart = performance.now();
         const fetchFunction = getFetchFunction(category);
-        if (fetchFunction) {
-          result = await fetchFunction(nextPage);
-        } else {
-          console.error(`No fetch function found for category: ${category}`);
-          return;
+        
+        if (!fetchFunction) {
+          console.error(`❌ No fetch function found for category: ${category}`);
+          throw new Error(`No fetch function found for category: ${category}`);
+        }
+
+        // Implement retry mechanism for failed requests
+        let retryCount = 0;
+        const maxRetries = 3;
+        
+        while (retryCount < maxRetries) {
+          try {
+            result = await fetchFunction(nextPage);
+            break; // Success, exit retry loop
+          } catch (fetchError) {
+            retryCount++;
+            console.warn(`⚠️ Fetch attempt ${retryCount} failed for ${category} page ${nextPage}:`, fetchError);
+            
+            if (retryCount >= maxRetries) {
+              throw fetchError; // Re-throw after all retries exhausted
+            }
+            
+            // Exponential backoff
+            await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
+          }
         }
         
-        // Update cache
-        if (result && result.movies) {
-          setCachedData(cacheKey, result.movies);
+        metrics.fetchTime = performance.now() - fetchStart;
+        metrics.dataSize = result?.movies?.length || 0;
+        
+        // Enhanced cache management with validation and error handling
+        if (result && result.movies && Array.isArray(result.movies) && result.movies.length > 0) {
+          try {
+            setCachedData(cacheKey, result.movies);
+          } catch (cacheError) {
+            console.warn(`⚠️ Failed to cache data for ${category} page ${nextPage}:`, cacheError);
+          }
         }
       }
 
-      // Update state with new movies
-      if (result && result.movies) {
+      // Enhanced state update with performance monitoring and validation
+      const processingStart = performance.now();
+      if (result && result.movies && Array.isArray(result.movies)) {
         const setter = getSetterFunction(category);
         if (setter) {
-          setter(prev => addUniqueMovies(prev, result.movies, movieIds[category]));
-          setPageStates(prev => ({
-            ...prev,
-            [category]: { 
-              current: nextPage, 
-              total: result.totalPages || prev[category].total 
+          // Enhanced unique movie addition with performance monitoring
+          const beforeCount = movieIds[category]?.size || 0;
+          setter(prev => {
+            const updatedMovies = addUniqueMovies(prev, result.movies, movieIds[category]);
+            return updatedMovies;
+          });
+          
+          const afterCount = movieIds[category]?.size || 0;
+          metrics.uniqueMovies = afterCount - beforeCount;
+          
+          // Enhanced page state update with validation
+          setPageStates(prev => {
+            const currentState = prev[category];
+            if (!currentState) {
+              console.warn(`⚠️ Page state not found for ${category} during update`);
+              return prev;
             }
-          }));
+            
+            return {
+              ...prev,
+              [category]: {
+                ...currentState,
+                current: nextPage,
+                total: result.totalPages || currentState.total,
+                lastFetched: Date.now(),
+                hasMore: nextPage < (result.totalPages || currentState.total)
+              }
+            };
+          });
+        } else {
+          console.error(`❌ No setter function found for category: ${category}`);
         }
+      } else {
+        console.warn(`⚠️ Invalid result structure for ${category} page ${nextPage}:`, result);
       }
+      
+      metrics.processingTime = performance.now() - processingStart;
+      metrics.totalTime = performance.now() - startTime;
+
     } catch (error) {
-      console.error(`Error loading more ${category} movies:`, error);
+      console.error(`💥 Critical error loading more ${category} movies:`, {
+        error: error.message,
+        stack: error.stack,
+        category,
+        page: pageStates[category]?.current + 1
+      });
+      
+      // Enhanced error recovery with user feedback
+      setError(`Failed to load more ${category} movies. Please try again.`);
+      
     } finally {
+      // Enhanced cleanup with timeout clearing
+      clearTimeout(loadingTimeout);
       setLoadingState(category, false);
     }
   };
@@ -1803,7 +4057,6 @@ const HomePage = () => {
     const interval = setInterval(() => {
       const { totalPrefetched, totalUsed } = prefetchAnalytics.current;
       const efficiency = totalPrefetched > 0 ? ((totalUsed / totalPrefetched) * 100).toFixed(1) : 'N/A';
-      console.log(`[Prefetch Analytics] Prefetched: ${totalPrefetched}, Used: ${totalUsed}, Efficiency: ${efficiency}%`);
     }, 30000);
     return () => clearInterval(interval);
   }, []);
@@ -2164,45 +4417,170 @@ const HomePage = () => {
     }
   };
 
-  // Update the category button click handler
+  // Enhanced category button click handler with performance monitoring, analytics, and user feedback
   const handleCategoryButtonClick = useCallback((category) => {
-    handleCategoryChange(category.id);
-  }, [handleCategoryChange]);
-
-  // Add this to your existing fetchInitialMovies function
-  const fetchFeaturedContent = async () => {
+    const startTime = performance.now();
+    
     try {
-      // Check cache first
-      if (isCacheValid('featured')) {
-        setFeaturedContent(dataCache['featured'].data);
+      // Enhanced input validation
+      if (!category || !category.id || typeof category.id !== 'string') {
+        console.warn('Invalid category object provided to handleCategoryButtonClick:', category);
         return;
       }
-
-      // Get trending content
-      const trendingData = await getTrendingMovies(1);
-      if (!trendingData?.movies?.length) {
-        throw new Error('No trending content available');
+      
+      // Add visual feedback for better UX
+      const button = event?.target?.closest('button');
+      if (button) {
+        button.classList.add('scale-95', 'opacity-75');
+        setTimeout(() => {
+          button.classList.remove('scale-95', 'opacity-75');
+        }, 150);
       }
 
-      // Get the first trending item
-      const firstItem = trendingData.movies[0];
+      // Enhanced category change with performance monitoring
+      const changeStart = performance.now();
+      handleCategoryChange(category.id);
+      const changeTime = performance.now() - changeStart;
 
-      // Fetch complete details for the item
-      const details = await getMovieDetails(firstItem.id, firstItem.type);
+      // Track total interaction time
+      const totalTime = performance.now() - startTime;
 
-      // Update cache with complete details
-      setDataCache(prev => ({
-        ...prev,
-        featured: {
-          data: details,
-          timestamp: Date.now()
+    } catch (error) {
+      console.error(`💥 Error in category button click handler:`, {
+        error: error.message,
+        category: category?.id,
+        stack: error.stack
+      });
+      
+      // Provide user feedback for errors
+      setError(`Failed to switch to ${category?.label || 'category'}. Please try again.`);
+    }
+  }, [handleCategoryChange, setError]);
+
+  // Enhanced featured content fetching with intelligent caching, performance monitoring, and advanced error handling
+  const fetchFeaturedContent = async () => {
+    const startTime = performance.now();
+    const metrics = {
+      cacheCheckTime: 0,
+      trendingFetchTime: 0,
+      detailsFetchTime: 0,
+      processingTime: 0,
+      totalTime: 0,
+      cacheHit: false,
+      dataSize: 0
+    };
+
+    try {
+      // Enhanced cache checking with performance monitoring
+      const cacheCheckStart = performance.now();
+      if (isCacheValid('featured')) {
+        const cachedData = getCachedData('featured');
+        if (cachedData && cachedData.id && cachedData.title) {
+          metrics.cacheHit = true;
+          metrics.dataSize = 1;
+          
+          // Enhanced data processing with validation
+          const processingStart = performance.now();
+          setFeaturedContent(cachedData);
+          metrics.processingTime = performance.now() - processingStart;
+          metrics.totalTime = performance.now() - startTime;
+          
+          return;
         }
-      }));
+      }
+      metrics.cacheCheckTime = performance.now() - cacheCheckStart;
+
+      // Enhanced trending content fetching with timeout protection
+      const trendingStart = performance.now();
+      setLoadingState('featured', true);
+      
+      // Add timeout protection for API calls
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Trending content request timeout')), 15000); // 15 second timeout
+      });
+      
+      const trendingPromise = getTrendingMovies(1);
+      const trendingData = await Promise.race([trendingPromise, timeoutPromise]);
+      
+      metrics.trendingFetchTime = performance.now() - trendingStart;
+
+      // Enhanced result validation
+      if (!trendingData?.movies?.length) {
+        throw new Error('No trending content available from API');
+      }
+
+      // Enhanced item selection with fallback strategy
+      let firstItem = trendingData.movies[0];
+      if (!firstItem?.id || !firstItem?.title) {
+        // Try to find a valid item in the first few results
+        const validItem = trendingData.movies.find(item => 
+          item?.id && item?.title && typeof item.id === 'number'
+        );
+        if (!validItem) {
+          throw new Error('No valid trending items found');
+        }
+        firstItem = validItem;
+      }
+
+      // Enhanced details fetching with retry logic
+      const detailsStart = performance.now();
+      let details;
+      
+      try {
+        details = await getMovieDetails(firstItem.id, firstItem.type || 'movie');
+      } catch (detailsError) {
+        console.warn(`Failed to fetch details for ${firstItem.title}, trying without type:`, detailsError);
+        // Fallback: try without specifying type
+        details = await getMovieDetails(firstItem.id);
+      }
+      
+      metrics.detailsFetchTime = performance.now() - detailsStart;
+
+      // Enhanced data validation and processing
+      const processingStart = performance.now();
+      if (!details || !details.id || !details.title) {
+        throw new Error('Invalid movie details received');
+      }
+
+      // Enhanced cache update with error handling
+      try {
+        setCachedData('featured', details);
+      } catch (cacheError) {
+        console.warn('Failed to cache featured content:', cacheError);
+        // Continue execution even if caching fails
+      }
 
       setFeaturedContent(details);
+      metrics.dataSize = 1;
+      metrics.processingTime = performance.now() - processingStart;
+      metrics.totalTime = performance.now() - startTime;
+
     } catch (error) {
-      console.error('Error fetching featured content:', error);
-      setError('Failed to load featured content');
+      console.error(`💥 Critical error fetching featured content:`, {
+        error: error.message,
+        stack: error.stack,
+        metrics: {
+          totalTime: performance.now() - startTime,
+          cacheHit: metrics.cacheHit
+        }
+      });
+      
+      // Enhanced error handling with user-friendly messages
+      const errorMessage = error.message.includes('timeout') 
+        ? 'Featured content request timed out. Please try again.'
+        : 'Failed to load featured content. Please refresh the page.';
+      
+      setError(errorMessage);
+      
+      // Attempt to recover by clearing potentially corrupted cache
+      try {
+        const storageKey = 'movieCache_featured';
+        localStorage.removeItem(storageKey);
+      } catch (cleanupError) {
+        console.error('Failed to clean up featured content cache:', cleanupError);
+      }
+    } finally {
+      setLoadingState('featured', false);
     }
   };
 
@@ -2236,6 +4614,180 @@ const HomePage = () => {
     }
   }, [trendingMovies, popularMovies, topRatedMovies, upcomingMovies, actionMovies, comedyMovies, dramaMovies, horrorMovies, sciFiMovies, documentaryMovies, familyMovies, animationMovies, awardWinningMovies, latestMovies, popularTVShows, topRatedTVShows, airingTodayTVShows, nowPlayingMovies]);
 
+  // Enhanced prefetch processing with intelligent queue management
+  const processPrefetchQueue = useCallback(async () => {
+    if (isProcessingPrefetchRef.current || prefetchQueueRef.current.length === 0) {
+      return;
+    }
+
+    isProcessingPrefetchRef.current = true;
+
+    try {
+      // Process up to 3 prefetch requests at a time
+      const batchSize = 3;
+      const batch = prefetchQueueRef.current.splice(0, batchSize);
+
+      const prefetchPromises = batch.map(async (queueItem) => {
+        const { movieId, priority } = queueItem;
+        
+        if (prefetchedMovies.has(movieId) || prefetchCache.has(movieId)) {
+          setPrefetchStats(prev => ({
+            ...prev,
+            cacheHits: prev.cacheHits + 1
+          }));
+          return;
+        }
+
+        try {
+          // Prefetch movie details, similar movies, and higher resolution images
+          const prefetchPromises = [];
+          
+          // Prefetch movie details
+          prefetchPromises.push(
+            getMovieDetails(movieId, 'movie').catch(err => {
+              console.warn(`Failed to prefetch details for movie ${movieId}:`, err);
+              return null;
+            })
+          );
+          
+          // Prefetch similar movies
+          prefetchPromises.push(
+            getSimilarMovies(movieId, 'movie', 1).catch(err => {
+              console.warn(`Failed to prefetch similar movies for ${movieId}:`, err);
+              return null;
+            })
+          );
+          
+          // Execute prefetch operations
+          await Promise.allSettled(prefetchPromises);
+          
+          // Mark as prefetched
+          setPrefetchedMovies(prev => new Set([...prev, movieId]));
+          setPrefetchCache(prev => new Map(prev.set(movieId, {
+            timestamp: Date.now(),
+            priority
+          })));
+          
+          setPrefetchStats(prev => ({
+            ...prev,
+            totalPrefetched: prev.totalPrefetched + 1,
+            successfulPrefetches: prev.successfulPrefetches + 1
+          }));
+          
+        } catch (error) {
+          console.warn(`Prefetch failed for movie ${movieId}:`, error);
+          setPrefetchStats(prev => ({
+            ...prev,
+            failedPrefetches: prev.failedPrefetches + 1
+          }));
+        }
+      });
+
+      await Promise.allSettled(prefetchPromises);
+      
+      // Add delay between batches
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+    } catch (error) {
+      console.error('Error processing prefetch queue:', error);
+    } finally {
+      isProcessingPrefetchRef.current = false;
+      
+      // Continue processing if there are more items
+      if (prefetchQueueRef.current.length > 0) {
+        setTimeout(() => processPrefetchQueue(), 50);
+      }
+    }
+  }, [prefetchedMovies, prefetchCache]);
+
+  // Enhanced prefetch queue with priority based on visibility
+  const queuePrefetchWithPriority = useCallback((movieId, priority = 'normal') => {
+    if (prefetchedMovies.has(movieId) || prefetchCache.has(movieId)) {
+      return;
+    }
+
+    const queueItem = { movieId, priority, timestamp: Date.now() };
+    
+    // Add to queue with priority
+    if (priority === 'high') {
+      prefetchQueueRef.current.unshift(queueItem);
+    } else {
+      prefetchQueueRef.current.push(queueItem);
+    }
+    
+    // Start processing if not already running
+    if (!isProcessingPrefetchRef.current) {
+      processPrefetchQueue();
+    }
+  }, [prefetchedMovies, prefetchCache, processPrefetchQueue]);
+
+  // Add movie to prefetch queue (updated to use priority)
+  const queuePrefetch = useCallback((movieId) => {
+    // Check if movie is visible for priority
+    const priority = visibleMovies.has(movieId) ? 'high' : 'normal';
+    queuePrefetchWithPriority(movieId, priority);
+  }, [visibleMovies, queuePrefetchWithPriority]);
+
+  // Enhanced visibility tracking for predictive prefetching
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const newVisibleMovies = new Set(visibleMovies);
+        
+        entries.forEach(entry => {
+          const movieId = entry.target.dataset.movieId;
+          if (movieId) {
+            if (entry.isIntersecting) {
+              newVisibleMovies.add(parseInt(movieId));
+              // Prefetch movies that are about to come into view
+              if (entry.intersectionRatio > 0.1) {
+                queuePrefetch(parseInt(movieId));
+              }
+            } else {
+              newVisibleMovies.delete(parseInt(movieId));
+            }
+          }
+        });
+        
+        setVisibleMovies(newVisibleMovies);
+      },
+      {
+        rootMargin: '200px 0px', // Start prefetching 200px before movie comes into view
+        threshold: [0, 0.1, 0.5, 1.0]
+      }
+    );
+
+    visibilityObserverRef.current = observer;
+
+    // Observe all movie cards
+    const movieCards = document.querySelectorAll('[data-movie-id]');
+    movieCards.forEach(card => observer.observe(card));
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [queuePrefetch, visibleMovies]);
+
+  // Clean up old cache entries (older than 10 minutes)
+  useEffect(() => {
+    const cleanupInterval = setInterval(() => {
+      const now = Date.now();
+      const tenMinutes = 10 * 60 * 1000;
+      
+      setPrefetchCache(prev => {
+        const newCache = new Map();
+        for (const [key, value] of prev.entries()) {
+          if (now - value.timestamp < tenMinutes) {
+            newCache.set(key, value);
+          }
+        }
+        return newCache;
+      });
+    }, 5 * 60 * 1000); // Clean up every 5 minutes
+
+    return () => clearInterval(cleanupInterval);
+  }, []);
+
   if (loadingStates.initial) {
     return <PageLoader />;
   }
@@ -2263,10 +4815,10 @@ const HomePage = () => {
         const movieData = {
           id: movie.id,
           title: movie.title || movie.name,
+          type: movie.media_type || 'movie',
           poster_path: movie.poster_path || movie.poster || movie.backdrop_path || movie.backdrop,
           backdrop_path: movie.backdrop_path || movie.backdrop,
           overview: movie.overview,
-          type: movie.media_type || 'movie',
           year: movie.release_date ? new Date(movie.release_date).getFullYear() : 
                 movie.first_air_date ? new Date(movie.first_air_date).getFullYear() : 'N/A',
           rating: movie.vote_average || 0,
@@ -2304,6 +4856,49 @@ const HomePage = () => {
                   prevEl: '.category-button-prev',
                 }}
                 className="px-4 h-10 mt-6 pl-8"
+                grabCursor={true}
+                mousewheel={{
+                  forceToAxis: true,
+                  sensitivity: 1,
+                  releaseOnEdges: true
+                }}
+                keyboard={{
+                  enabled: true,
+                  onlyInViewport: true
+                }}
+                scrollbar={{
+                  draggable: true,
+                  snapOnRelease: true
+                }}
+                breakpoints={{
+                  320: {
+                    spaceBetween: 12,
+                    slidesPerView: 2.5
+                  },
+                  480: {
+                    spaceBetween: 14,
+                    slidesPerView: 3.5
+                  },
+                  768: {
+                    spaceBetween: 16,
+                    slidesPerView: "auto"
+                  },
+                  1024: {
+                    spaceBetween: 16,
+                    slidesPerView: "auto"
+                  }
+                }}
+                onSlideChange={(swiper) => {
+                  // Smooth scroll behavior when navigating
+                  const activeSlide = swiper.slides[swiper.activeIndex];
+                  if (activeSlide) {
+                    activeSlide.scrollIntoView({
+                      behavior: 'smooth',
+                      block: 'nearest',
+                      inline: 'center'
+                    });
+                  }
+                }}
               >
                 {categories.map(category => (
                   <SwiperSlide key={category.id} className="!w-auto">
@@ -2337,6 +4932,7 @@ const HomePage = () => {
                   sectionKey="trending"
                   onMovieSelect={handleMovieSelect}
                   onMovieHover={handleMovieHover}
+                  onPrefetch={queuePrefetch}
                 />
                 <MemoizedMovieSection 
                   title="Popular Movies" 
@@ -2348,6 +4944,7 @@ const HomePage = () => {
                   sectionKey="popular"
                   onMovieSelect={handleMovieSelect}
                   onMovieHover={handleMovieHover}
+                  onPrefetch={queuePrefetch}
                 />
                 <MemoizedMovieSection 
                   title="Top Rated Movies" 
@@ -2359,6 +4956,7 @@ const HomePage = () => {
                   sectionKey="topRated"
                   onMovieSelect={handleMovieSelect}
                   onMovieHover={handleMovieHover}
+                  onPrefetch={queuePrefetch}
                 />
                 <MemoizedMovieSection 
                   title="Coming Soon" 
@@ -2370,6 +4968,7 @@ const HomePage = () => {
                   sectionKey="upcoming"
                   onMovieSelect={handleMovieSelect}
                   onMovieHover={handleMovieHover}
+                  onPrefetch={queuePrefetch}
                 />
               </>
             ) : (
@@ -2383,6 +4982,7 @@ const HomePage = () => {
                 sectionKey={activeCategory}
                 onMovieSelect={handleMovieSelect}
                 onMovieHover={handleMovieHover}
+                onPrefetch={queuePrefetch}
               />
             )}
           </div>
@@ -2390,12 +4990,67 @@ const HomePage = () => {
       </div>
       {/* Add MovieDetailsOverlay */}
       {selectedMovie && (
-        <Suspense fallback={<div className="fixed inset-0 flex items-center justify-center bg-black/60 z-50"><div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin"></div></div>}>
+        <Suspense 
+          fallback={
+            <motion.div 
+              className="fixed inset-0 flex items-center justify-center bg-black/80 backdrop-blur-md z-50"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <motion.div 
+                className="flex flex-col items-center space-y-6 p-8 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-sm"
+                initial={{ scale: 0.9, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.9, y: 20 }}
+                transition={{ duration: 0.4, ease: "easeOut" }}
+              >
+                <div className="relative">
+                  <div className="w-16 h-16 border-4 border-white/20 border-t-white rounded-full animate-spin"></div>
+                  <div className="absolute inset-0 w-16 h-16 border-4 border-transparent border-t-white/40 rounded-full animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }}></div>
+                </div>
+                <div className="text-center space-y-2">
+                  <p className="text-white/90 text-base font-semibold animate-pulse">
+                    Loading movie details...
+                  </p>
+                  <p className="text-white/60 text-sm">
+                    Preparing your viewing experience
+                  </p>
+                </div>
+                <div className="flex space-x-1">
+                  {[0, 1, 2].map((i) => (
+                    <motion.div
+                      key={i}
+                      className="w-2 h-2 bg-white/40 rounded-full"
+                      animate={{ 
+                        scale: [1, 1.2, 1],
+                        opacity: [0.4, 1, 0.4]
+                      }}
+                      transition={{
+                        duration: 1.5,
+                        repeat: Infinity,
+                        delay: i * 0.2
+                      }}
+                    />
+                  ))}
+                </div>
+              </motion.div>
+            </motion.div>
+          }
+        >
           <LazyMovieDetailsOverlay
             movie={selectedMovie}
             loading={overlayLoading}
-            onClose={() => setSelectedMovie(null)}
+            onClose={() => {
+              setSelectedMovie(null);
+              setOverlayLoading(false);
+            }}
             onMovieSelect={handleMovieSelect}
+            onError={(error) => {
+              console.error('Movie details overlay error:', error);
+              setError('Failed to load movie details. Please try again.');
+            }}
           />
         </Suspense>
       )}

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getNetworkAwareConfig, fetchWithRetry } from './api';
 
 const API_URL = 'http://localhost:3001/api/community';
 
@@ -53,210 +54,157 @@ api.interceptors.response.use(
 export const communityService = {
   // Discussions
   getDiscussions: async (page = 1, limit = 10, sortBy = 'newest', category = '', tag = '') => {
-    try {
-      const params = new URLSearchParams({
-        page,
-        limit,
-        sortBy,
-        ...(category && { category }),
-        ...(tag && { tag })
-      });
-      const response = await api.get(`/discussions?${params}`);
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching discussions:', error);
-      throw error;
-    }
+    const { timeout } = getNetworkAwareConfig();
+    const params = new URLSearchParams({
+      page,
+      limit,
+      sortBy,
+      ...(category && { category }),
+      ...(tag && { tag })
+    });
+    return fetchWithRetry(() =>
+      api.get(`/discussions?${params}`, { timeout })
+        .then(response => response.data)
+    );
   },
 
   getDiscussion: async (id) => {
-    try {
-      const response = await api.get(`/discussions/${id}`);
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching discussion:', error);
-      throw error;
-    }
+    const { timeout } = getNetworkAwareConfig();
+    return fetchWithRetry(() =>
+      api.get(`/discussions/${id}`, { timeout })
+        .then(response => response.data)
+    );
   },
 
   createDiscussion: async (discussionData) => {
-    try {
-      const response = await api.post('/discussions', discussionData);
-      return response.data;
-    } catch (error) {
-      console.error('Error creating discussion:', error);
-      throw error;
-    }
+    const { timeout } = getNetworkAwareConfig();
+    return fetchWithRetry(() =>
+      api.post('/discussions', discussionData, { timeout })
+        .then(response => response.data)
+    );
   },
 
   updateDiscussion: async (id, discussionData) => {
-    try {
-      const response = await api.put(`/discussions/${id}`, discussionData);
-      return response.data;
-    } catch (error) {
-      console.error('Error updating discussion:', error);
-      throw error;
-    }
+    const { timeout } = getNetworkAwareConfig();
+    return fetchWithRetry(() =>
+      api.put(`/discussions/${id}`, discussionData, { timeout })
+        .then(response => response.data)
+    );
   },
 
   deleteDiscussion: async (id) => {
-    try {
-      const response = await api.delete(`/discussions/${id}`);
-      return response.data;
-    } catch (error) {
-      console.error('Error deleting discussion:', error);
-      throw error;
-    }
+    const { timeout } = getNetworkAwareConfig();
+    return fetchWithRetry(() =>
+      api.delete(`/discussions/${id}`, { timeout })
+        .then(response => response.data)
+    );
   },
 
   // Replies
   addReply: async (discussionId, replyData) => {
-    try {
-      const token = localStorage.getItem('accessToken');
-      if (!token) {
-        throw new Error('Authentication required');
-      }
-
-      // Add the reply
-      const response = await api.post(`/discussions/${discussionId}/replies`, {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    if (!token) throw new Error('Authentication required');
+    return fetchWithRetry(() =>
+      api.post(`/discussions/${discussionId}/replies`, {
         content: replyData.content,
         parentReplyId: replyData.parentReplyId
       }, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
-
-      return response.data;
-    } catch (error) {
-      console.error('Error adding reply:', error);
-      throw error;
-    }
+        headers: { Authorization: `Bearer ${token}` },
+        timeout
+      }).then(response => response.data)
+    );
   },
 
   updateReply: async (discussionId, replyId, replyData) => {
-    try {
-      const response = await api.put(
+    const { timeout } = getNetworkAwareConfig();
+    return fetchWithRetry(() =>
+      api.put(
         `/discussions/${discussionId}/replies/${replyId}`,
-        replyData
-      );
-      return response.data;
-    } catch (error) {
-      console.error('Error updating reply:', error);
-      throw error;
-    }
+        replyData,
+        { timeout }
+      ).then(response => response.data)
+    );
   },
 
   deleteReply: async (discussionId, replyId) => {
-    try {
-      const response = await api.delete(
-        `/discussions/${discussionId}/replies/${replyId}`
-      );
-      return response.data;
-    } catch (error) {
-      console.error('Error deleting reply:', error);
-      throw error;
-    }
+    const { timeout } = getNetworkAwareConfig();
+    return fetchWithRetry(() =>
+      api.delete(
+        `/discussions/${discussionId}/replies/${replyId}`,
+        { timeout }
+      ).then(response => response.data)
+    );
   },
 
   // Likes
   likeDiscussion: async (discussionId) => {
-    try {
-      const token = localStorage.getItem('accessToken');
-      if (!token) {
-        throw new Error('Authentication required');
-      }
-
-      const response = await api.post(`/discussions/${discussionId}/like`, {}, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
-      return response.data;
-    } catch (error) {
-      if (error.response?.status === 401) {
-        throw new Error('Authentication required');
-      }
-      console.error('Error liking discussion:', error);
-      throw error;
-    }
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    if (!token) throw new Error('Authentication required');
+    return fetchWithRetry(() =>
+      api.post(`/discussions/${discussionId}/like`, {}, {
+        headers: { Authorization: `Bearer ${token}` },
+        timeout
+      }).then(response => response.data)
+    );
   },
 
   likeReply: async (discussionId, replyId) => {
-    try {
-      const token = localStorage.getItem('accessToken');
-      if (!token) {
-        throw new Error('Authentication required');
-      }
-
-      const response = await api.post(
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    if (!token) throw new Error('Authentication required');
+    return fetchWithRetry(() =>
+      api.post(
         `/discussions/${discussionId}/replies/${replyId}/like`,
         {},
         {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
+          headers: { Authorization: `Bearer ${token}` },
+          timeout
         }
-      );
-      return response.data;
-    } catch (error) {
-      if (error.response?.status === 401) {
-        throw new Error('Authentication required');
-      }
-      console.error('Error liking reply:', error);
-      throw error;
-    }
+      ).then(response => response.data)
+    );
   },
 
   // Search and Filters
   searchDiscussions: async (query) => {
-    try {
-      const response = await api.get(`/search?q=${encodeURIComponent(query)}`);
-      return response.data;
-    } catch (error) {
-      console.error('Error searching discussions:', error);
-      throw error;
-    }
+    const { timeout } = getNetworkAwareConfig();
+    return fetchWithRetry(() =>
+      api.get(`/search?q=${encodeURIComponent(query)}`, { timeout })
+        .then(response => response.data)
+    );
   },
 
   getCategories: async () => {
-    try {
-      const response = await api.get('/categories');
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching categories:', error);
-      throw error;
-    }
+    const { timeout } = getNetworkAwareConfig();
+    return fetchWithRetry(() =>
+      api.get('/categories', { timeout })
+        .then(response => response.data)
+    );
   },
 
   getTopTags: async () => {
-    try {
-      const response = await api.get('/tags');
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching top tags:', error);
-      throw error;
-    }
+    const { timeout } = getNetworkAwareConfig();
+    return fetchWithRetry(() =>
+      api.get('/tags', { timeout })
+        .then(response => response.data)
+    );
   },
 
   // Community Stats
   getTrendingTopics: async () => {
-    try {
-      const response = await api.get('/trending');
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching trending topics:', error);
-      throw error;
-    }
+    const { timeout } = getNetworkAwareConfig();
+    return fetchWithRetry(() =>
+      api.get('/trending', { timeout })
+        .then(response => response.data)
+    );
   },
 
   getCommunityStats: async () => {
-    try {
-      const response = await api.get('/stats');
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching community stats:', error);
-      throw error;
-    }
+    const { timeout } = getNetworkAwareConfig();
+    return fetchWithRetry(() =>
+      api.get('/stats', { timeout })
+        .then(response => response.data)
+    );
   }
 }; 

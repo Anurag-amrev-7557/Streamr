@@ -1,0 +1,290 @@
+\documentclass[a4paper,11pt]{article}
+
+% Package imports
+\usepackage{latexsym}
+\usepackage{xcolor}
+\usepackage{float}
+\usepackage{ragged2e}
+\usepackage[empty]{fullpage}
+\usepackage{wrapfig}
+\usepackage{tabularx}
+\usepackage{titlesec}
+\usepackage{geometry}
+\usepackage{marvosym}
+\usepackage{verbatim}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{multicol}
+\usepackage{graphicx}
+\usepackage{cfr-lm}
+\usepackage[T1]{fontenc}
+\usepackage{fontawesome5}
+\usepackage[hidelinks]{hyperref}
+\usepackage{microtype}
+\usepackage{tabularx} % Required for tables that stretch to page width
+\usepackage{array} % Required for vertical centering in tables
+% Color definitions
+\definecolor{darkblue}{RGB}{0,0,139}
+
+% Page layout
+\geometry{left=1.4cm, top=0.8cm, right=1.2cm, bottom=1cm}
+\setlength{\multicolsep}{0pt} 
+\pagestyle{fancy}
+\fancyhf{} % clear all header and footer fields
+\fancyfoot{}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+\setlength{\footskip}{4.08pt}
+
+% Hyperlink setup
+\hypersetup{
+    colorlinks=true,
+    linkcolor=darkblue,
+    filecolor=darkblue,
+    urlcolor=darkblue,
+}
+
+% Custom box settings
+\usepackage[most]{tcolorbox}
+\tcbset{
+    frame code={},
+    center title,
+    left=0pt,
+    right=0pt,
+    top=0pt,
+    bottom=0pt,
+    colback=gray!20,
+    colframe=white,
+    width=\dimexpr\textwidth\relax,
+    enlarge left by=-2mm,
+    boxsep=4pt,
+    arc=0pt,outer arc=0pt,
+}
+
+% URL style
+\urlstyle{same}
+
+% Text alignment
+\raggedright
+\setlength{\tabcolsep}{0in}
+
+% Section formatting
+\titleformat{\section}{
+  \vspace{-4pt}\scshape\raggedright\large\bfseries
+}{}{0em}{}[\color{black}\titlerule \vspace{-7pt}]
+
+% Custom commands
+\newcommand{\resumeItem}[2]{
+  \item{
+    \textbf{#1}{\hspace{0.5mm}#2 \vspace{-0.5mm}}
+  }
+}
+
+\newcommand{\resumePOR}[3]{
+\vspace{0.5mm}\item
+    \begin{tabular*}{0.97\textwidth}[t]{l@{\extracolsep{\fill}}r}
+        \textbf{#1}\hspace{0.3mm}#2 & \textit{\small{#3}} 
+    \end{tabular*}
+    \vspace{-2mm}
+}
+
+\newcommand{\resumeSubheading}[4]{
+\vspace{0.5mm}\item
+    \begin{tabular*}{0.98\textwidth}[t]{l@{\extracolsep{\fill}}r}
+        \textbf{#1} & \textit{\footnotesize{#4}} \\
+        \textit{\footnotesize{#3}} &  \footnotesize{#2}\\
+    \end{tabular*}
+    \vspace{-2.4mm}
+}
+
+\newcommand{\resumeProject}[4]{
+\vspace{0.5mm}\item
+    \begin{tabular*}{0.98\textwidth}[t]{l@{\extracolsep{\fill}}r}
+        \textbf{#1} & \textit{\footnotesize{#3}} \\
+        \footnotesize{\textit{#2}} & \footnotesize{#4}
+    \end{tabular*}
+    \vspace{-2.4mm}
+}
+
+\newcommand{\resumeSubItem}[2]{\resumeItem{#1}{#2}\vspace{-4pt}}
+
+\renewcommand{\labelitemi}{$\vcenter{\hbox{\tiny$\bullet$}}$}
+\renewcommand{\labelitemii}{$\vcenter{\hbox{\tiny$\circ$}}$}
+
+\newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=*,labelsep=1mm]}
+\newcommand{\resumeHeadingSkillStart}{\begin{itemize}[leftmargin=*,itemsep=1.7mm, rightmargin=2ex]}
+\newcommand{\resumeItemListStart}{\begin{itemize}[leftmargin=*,labelsep=1mm,itemsep=0.5mm]}
+
+\newcommand{\resumeSubHeadingListEnd}{\end{itemize}\vspace{2mm}}
+\newcommand{\resumeHeadingSkillEnd}{\end{itemize}\vspace{-2mm}}
+\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-2mm}}
+\newcommand{\cvsection}[1]{%
+\vspace{2mm}
+\begin{tcolorbox}
+    \textbf{\large #1}
+\end{tcolorbox}
+    \vspace{-4mm}
+}
+
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}%
+\newcolumntype{R}{>{\raggedleft\arraybackslash}X}%
+\newcolumntype{C}{>{\centering\arraybackslash}X}%
+
+% Commands for icon sizing and positioning
+\newcommand{\socialicon}[1]{\raisebox{-0.05em}{\resizebox{!}{1em}{#1}}}
+\newcommand{\ieeeicon}[1]{\raisebox{-0.3em}{\resizebox{!}{1.3em}{#1}}}
+
+% Font options
+\newcommand{\headerfonti}{\fontfamily{phv}\selectfont} % Helvetica-like (similar to Arial/Calibri)
+\newcommand{\headerfontii}{\fontfamily{ptm}\selectfont} % Times-like (similar to Times New Roman)
+\newcommand{\headerfontiii}{\fontfamily{ppl}\selectfont} % Palatino (elegant serif)
+\newcommand{\headerfontiv}{\fontfamily{pbk}\selectfont} % Bookman (readable serif)
+\newcommand{\headerfontv}{\fontfamily{pag}\selectfont} % Avant Garde-like (similar to Trebuchet MS)
+\newcommand{\headerfontvi}{\fontfamily{cmss}\selectfont} % Computer Modern Sans Serif
+\newcommand{\headerfontvii}{\fontfamily{qhv}\selectfont} % Quasi-Helvetica (another Arial/Calibri alternative)
+\newcommand{\headerfontviii}{\fontfamily{qpl}\selectfont} % Quasi-Palatino (another elegant serif option)
+\newcommand{\headerfontix}{\fontfamily{qtm}\selectfont} % Quasi-Times (another Times New Roman alternative)
+\newcommand{\headerfontx}{\fontfamily{bch}\selectfont} % Charter (clean serif font)
+
+% Define personal information
+\newcommand{\name}{Anurag Verma} % Your Name
+\newcommand{\course}{Bachelor of Technology} % Your Course
+\newcommand{\roll}{23CE01006} % Your Roll No.
+\newcommand{\phone}{9675630112} % Your Phone Number
+\newcommand{\emaila}{anuragverma08002@gmail.com} % Email 1
+\newcommand{\emailb}{23ce01006@iitbbs.ac.in} % Email 2
+\newcommand{\github}{Anurag-amrev-7557} % Github
+\newcommand{\website}{https://anuragverma.web.app} % Website
+\newcommand{\linkedin}{anurag-verma-18645b280} % LinkedIn
+
+\begin{document}
+\fontfamily{cmr}\selectfont
+
+%----------HEADING-----------------
+\parbox{2.35cm}{%
+\includegraphics[width=2cm,clip]{logo.png}
+}
+\parbox{\dimexpr\linewidth-2.8cm\relax}{
+\begin{tabularx}{\linewidth}{L r}
+  \textbf{\LARGE \name} & +91-\phone \\
+  \course & \href{mailto:\emailb}{\emailb} \\
+  Civil & \href{https://www.linkedin.com/in/\linkedin}{linkedin.com/in/\linkedin} \\
+  Indian Institute of Technology, Bhubaneswar
+  & \href{https://github.com/\github}{github.com/\github} \\
+\end{tabularx}
+}
+\vspace{-2mm}
+
+\section{\textbf{Education}}
+\vspace{1mm}
+\setlength{\tabcolsep}{5pt}
+\begin{tabularx}{\textwidth}{|>{\centering\arraybackslash}X|>{\centering\arraybackslash}p{8cm}|>{\centering\arraybackslash}p{3cm}|>{\centering\arraybackslash}p{2.5cm}|}
+  \hline
+  \textbf{Degree/Certificate} & \textbf{Institute/Board} & \textbf{CGPA/Percentage} & \textbf{Year} \\
+  \hline
+  B.Tech., Civil & Indian Institute of Technology, Bhubaneswar & 7.58 & Aug 2027 \\ 
+  \hline
+  Senior Secondary & CBSE & 95.5 & 2021 \\
+  \hline
+  Secondary & CBSE & 96 & 2019 \\
+  \hline
+\end{tabularx}
+\vspace{-4mm}
+
+\section{\textbf{Experience}}
+\vspace{-0.4mm}
+\resumeSubHeadingListStart
+\resumeSubheading
+    {Career Groves [\href{https://offernmove.onrender.com/}{\faIcon{globe}}]}{Remote / Virtual}
+    {Full Stack Developer}{Oct 2024 - Dec 2024}
+\resumeItemListStart
+  \item Developed and deployed a full-stack real-estate room rental platform.
+  \item Improved backend performance by 25\% by optimizing API response times (reduced average latency from 480ms to 360ms) using Node.js, Express, and MySQL.
+  \item Refactored database queries and indexing strategies, reducing data fetch time by ~30\% on key routes.
+  \item Managed AWS EC2 deployment and uptime monitoring, maintaining 99.5\% availability over 3 months.
+  \item Built secure authentication system with JWT and session management; added real-time room availability tracking, improving user engagement by 20\%.
+\resumeItemListEnd
+
+\resumeSubheading
+    {GirlScript Summer of Code}{Remote / Virtual}
+    {Open Source Contributor}{Jun 2024 ‑ Aug 2024}
+\resumeItemListStart
+  \item Merged 10+ pull requests across 3 repositories, contributing new features and resolving reported bugs.
+  \item Implemented UI enhancements and accessibility fixes for a React-based documentation site, improving user experience and responsiveness.
+  \item Built a poll-creation interface and integrated RESTful APIs for a web voting app, enabling dynamic result visualization.
+  \item Coordinated with 15+ contributors using GitHub Issues and Slack, reducing review turnaround time by 30\%.
+\resumeItemListEnd
+\resumeSubHeadingListEnd
+\vspace{-6mm}
+
+\section{\textbf{Projects}}
+\vspace{-0.4mm}
+\resumeSubHeadingListStart
+
+\resumeProject
+    {FxSync: Real-time Synchronized Audio Playback Platform [\href{https://fxsync-web.web.app/}{\faIcon{globe}}]}
+    {Tools: React, Node.js, Express, Socket.IO, JavaScript, Tailwind CSS, Firebase, Vite}
+    {Jun 2025 -- Jul 2025}
+    {{}[\href{https://github.com/Anurag-amrev-7557/FxSync}{\textcolor{darkblue}{\faGithub}}]}
+\resumeItemListStart
+    \item Built full-stack app for 50+ users to join rooms and sync audio playback in real time.
+    \item Achieved $<$100ms sync accuracy and 95\% reduction in playback drift using Socket.IO.
+    \item Developed modular React UI for playlists, calibration, and chat, increasing engagement by 30\%.
+    \item Reduced latency by 40\% via multi-peer time sync algorithms and analytics.
+\resumeItemListEnd
+
+\resumeProject
+    {Votely: Full-stack poll app with real-time results and admin tools. [\href{https://votelynow.web.app/}{\faIcon{globe}}]}
+    {Tools: React, Node.js, Express, MongoDB, Firebase Hosting, Tailwind CSS, Axios, JWT, REST API}
+    {May 2025 - Jun 2025}
+    {{}[\href{https://github.com/Anurag-amrev-7557/votely}{\textcolor{darkblue}{\faGithub}}]}
+\resumeItemListStart
+    \item Built secure poll/voting system for users with real-time results and robust auth.
+    \item Developed Node.js/Express REST APIs, cutting backend response time by 30\%.
+    \item Designed responsive React/Tailwind UI, boosting engagement by 40\%.
+    \item Integrated JWT auth and RBAC, achieving minimum security incidents.
+\resumeItemListEnd
+\resumeSubHeadingListEnd
+\vspace{-8mm}
+
+\section{\textbf{Skills}}
+\vspace{-0.4mm}
+\resumeHeadingSkillStart
+  \resumeSubItem{Programming Languages}
+    {: Java, Python, C, C++, JavaScript, HTML5, CSS3}
+  \resumeSubItem{Frameworks \& Libraries}
+    {: React.js, Node.js, Express.js, Bootstrap, Tailwind CSS, Axios}
+  \resumeSubItem{Databases}
+    {: MongoDB, MySQL, SQL (Relational \& NoSQL)}
+  \resumeSubItem{Machine Learning \& Data Science}
+    {: NumPy, Pandas, Scikit-learn, TensorFlow, Keras, Matplotlib}
+  \resumeSubItem{DevOps \& Deployment}
+    {: GitHub Actions, Firebase, CI/CD, GitHub Pages, Nginx, Netlify}
+  \resumeSubItem{Tools \& Platforms}
+    {: Git, GitHub, VS Code, Postman, AWS EC2, Linux/Unix}
+\resumeHeadingSkillEnd
+\vspace{-2mm}
+
+\section{\textbf{Certifications}}
+\vspace{-0.4mm}
+\resumeSubHeadingListStart
+\resumePOR
+    {DeepLearning.AI, Coursera} % Certification Name
+    {, \href{https://www.coursera.org/account/accomplishments/verify/FLZVCUV6GMU4}{Certification 1}} % Issuer
+    {June 2025} % Duration
+\resumePOR
+    {CareerGroves} % Certification Name
+    {, \href{https://www.linkedin.com/in/anurag-verma-18645b280/details/certifications/}{Certification 2}} % Issuer
+    {October 2024} % Duration
+\resumePOR
+    {Apna College} % Certification Name
+    {, \href{https://mycourse.app/tQxZ1otn6YDG3TWQA}{Certification 3}} % Issuer
+    {August 2024} % Duration
+
+\resumeSubHeadingListEnd
+
+\vspace{-6mm}
+
+
+\end{document}
+

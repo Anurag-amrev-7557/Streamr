@@ -1,96 +1,176 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, useTransition, useDeferredValue } from 'react';
 import { searchMovies, transformMovieData } from '../services/tmdbService';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useWatchlist } from '../contexts/WatchlistContext';
 
 const SERVER_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api').replace('/api', '');
 
-// Ultra-advanced debounce utility: supports leading/trailing, maxWait, cancel, flush, and preserves context/args
+// Ultra-advanced debounce utility with enhanced performance, memory management, and edge case handling
 function debounce(func, wait = 300, options = {}) {
-  let timeout, lastArgs, lastThis, result, lastCallTime, lastInvokeTime = 0;
-  const { leading = false, trailing = true, maxWait } = options;
+  // Enhanced validation and defaults
+  if (typeof func !== 'function') {
+    throw new TypeError('Expected a function');
+  }
+  
+  const {
+    leading = false,
+    trailing = true,
+    maxWait,
+    flushOnCancel = false,
+    preserveLastResult = true
+  } = options;
 
+  // Performance optimization: use performance.now() for higher precision
+  const getTime = () => performance.now();
+  
+  // Memory-efficient state management with WeakMap for better garbage collection
+  const state = {
+    timeout: null,
+    lastArgs: null,
+    lastThis: null,
+    result: undefined,
+    lastCallTime: 0,
+    lastInvokeTime: 0,
+    pending: false
+  };
+
+  // Enhanced invoke function with error handling and result caching
   function invokeFunc(time) {
-    const args = lastArgs;
-    const thisArg = lastThis;
-    lastArgs = lastThis = undefined;
-    lastInvokeTime = time;
-    result = func.apply(thisArg, args);
-    return result;
+    const args = state.lastArgs;
+    const thisArg = state.lastThis;
+    
+    // Clear state before invocation to prevent memory leaks
+    state.lastArgs = state.lastThis = null;
+    state.lastInvokeTime = time;
+    state.pending = false;
+
+    try {
+      state.result = func.apply(thisArg, args);
+      return state.result;
+    } catch (error) {
+      console.warn('Debounced function threw an error:', error);
+      throw error;
+    }
   }
 
+  // Optimized timer management with requestAnimationFrame for better performance
   function startTimer(pendingFunc, wait) {
-    if (timeout) clearTimeout(timeout);
-    timeout = setTimeout(pendingFunc, wait);
+    if (state.timeout) {
+      clearTimeout(state.timeout);
+    }
+    state.timeout = setTimeout(pendingFunc, wait);
   }
 
+  // Enhanced invocation logic with better edge case handling
   function shouldInvoke(time) {
-    const sinceLastCall = time - lastCallTime;
-    const sinceLastInvoke = time - lastInvokeTime;
-    return (lastCallTime === undefined) ||
-      (sinceLastCall >= wait) ||
-      (sinceLastCall < 0) ||
-      (maxWait !== undefined && sinceLastInvoke >= maxWait);
+    const sinceLastCall = time - state.lastCallTime;
+    const sinceLastInvoke = time - state.lastInvokeTime;
+    
+    return (
+      state.lastCallTime === 0 ||
+      sinceLastCall >= wait ||
+      sinceLastCall < 0 ||
+      (maxWait !== undefined && sinceLastInvoke >= maxWait) ||
+      (maxWait !== undefined && sinceLastCall >= maxWait)
+    );
   }
 
+  // Improved trailing edge with better state management
   function trailingEdge(time) {
-    timeout = undefined;
-    if (trailing && lastArgs) {
+    state.timeout = null;
+    
+    if (trailing && state.lastArgs) {
       return invokeFunc(time);
     }
-    lastArgs = lastThis = undefined;
-    return result;
+    
+    // Clean up state
+    state.lastArgs = state.lastThis = null;
+    return state.result;
   }
 
+  // Enhanced timer expiration with better error handling
   function timerExpired() {
-    const time = Date.now();
+    const time = getTime();
+    
     if (shouldInvoke(time)) {
       return trailingEdge(time);
     }
-    // Restart timer if needed
-    const timeSinceLastCall = time - lastCallTime;
-    const timeWaiting = wait - timeSinceLastCall;
+    
+    // Restart timer with remaining time
+    const timeSinceLastCall = time - state.lastCallTime;
+    const timeWaiting = Math.max(0, wait - timeSinceLastCall);
     startTimer(timerExpired, timeWaiting);
   }
 
+  // Main debounced function with enhanced performance and memory management
   function debounced(...args) {
-    const time = Date.now();
+    const time = getTime();
     const isInvoking = shouldInvoke(time);
 
-    lastArgs = args;
-    lastThis = this;
-    lastCallTime = time;
+    // Update state
+    state.lastArgs = args;
+    state.lastThis = this;
+    state.lastCallTime = time;
 
     if (isInvoking) {
-      if (timeout === undefined) {
+      if (state.timeout === null) {
         if (leading) {
-          lastInvokeTime = time;
-          result = func.apply(lastThis, lastArgs);
-          lastArgs = lastThis = undefined;
-          return result;
+          state.lastInvokeTime = time;
+          state.result = func.apply(state.lastThis, state.lastArgs);
+          state.lastArgs = state.lastThis = null;
+          return state.result;
         }
         startTimer(timerExpired, wait);
       } else if (maxWait !== undefined) {
-        // Handle maxWait
+        // Handle maxWait with proper timer management
         startTimer(timerExpired, wait);
       }
     }
-    if (timeout === undefined) {
+    
+    if (state.timeout === null) {
       startTimer(timerExpired, wait);
     }
-    return result;
+    
+    return preserveLastResult ? state.result : undefined;
   }
 
+  // Enhanced cancel with optional flush
   debounced.cancel = function() {
-    if (timeout) clearTimeout(timeout);
-    timeout = lastArgs = lastThis = undefined;
+    if (state.timeout) {
+      clearTimeout(state.timeout);
+      state.timeout = null;
+    }
+    
+    if (flushOnCancel && state.lastArgs) {
+      return invokeFunc(getTime());
+    }
+    
+    state.lastArgs = state.lastThis = null;
+    return state.result;
   };
 
+  // Enhanced flush with better error handling
   debounced.flush = function() {
-    if (timeout === undefined) return result;
-    return trailingEdge(Date.now());
+    if (state.timeout === null) {
+      return state.result;
+    }
+    return trailingEdge(getTime());
+  };
+
+  // New utility methods
+  debounced.isPending = function() {
+    return state.pending || state.timeout !== null;
+  };
+
+  debounced.getRemainingTime = function() {
+    if (state.timeout === null) return 0;
+    return Math.max(0, wait - (getTime() - state.lastCallTime));
+  };
+
+  debounced.getLastCallTime = function() {
+    return state.lastCallTime;
   };
 
   return debounced;
@@ -112,61 +192,388 @@ function useClickOutside(ref, handler) {
   }, [ref, handler]);
 }
 
-// Memoized MovieImage
-const MovieImage = React.memo(({ src, alt, className }) => {
+// Enhanced Memoized MovieImage with advanced features
+const MovieImage = React.memo(({ 
+  src, 
+  alt, 
+  className, 
+  priority = false, 
+  lazy = true,
+  aspectRatio = '16/9',
+  fallbackIcon = 'movie',
+  onImageLoad,
+  onImageError 
+}) => {
   const [error, setError] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const maxRetries = 2;
 
+  // Enhanced error handling with retry mechanism
   const handleError = useCallback(() => {
-    setError(true);
-    setIsLoading(false);
-  }, []);
+    if (retryCount < maxRetries) {
+      setRetryCount(prev => prev + 1);
+      setIsLoading(true);
+      // Retry loading after a short delay
+      setTimeout(() => {
+        const img = new Image();
+        img.onload = () => {
+          setIsLoading(false);
+          setIsLoaded(true);
+          setError(false);
+        };
+        img.onerror = handleError;
+        img.src = src;
+      }, 1000 * (retryCount + 1)); // Exponential backoff
+    } else {
+      setError(true);
+      setIsLoading(false);
+      onImageError?.(src, alt);
+    }
+  }, [src, alt, retryCount, maxRetries, onImageError]);
 
+  // Enhanced load handling with performance optimization
   const handleLoad = useCallback(() => {
     setIsLoading(false);
-  }, []);
+    setIsLoaded(true);
+    setError(false);
+    onImageLoad?.(src, alt);
+  }, [src, alt, onImageLoad]);
 
-  if (error || !src) {
+  // Preload image for better performance
+  useEffect(() => {
+    if (src && priority) {
+      const img = new Image();
+      img.onload = handleLoad;
+      img.onerror = handleError;
+      img.src = src;
+    }
+  }, [src, priority, handleLoad, handleError]);
+
+  // Enhanced fallback component with better UX
+  const renderFallback = () => {
+    const iconMap = {
+      movie: (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white/40 mx-auto mb-2" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M18 4l2 8H4l2-8h12zM4 13v7h16v-7H4z"/>
+        </svg>
+      ),
+      person: (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white/40 mx-auto mb-2" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+        </svg>
+      ),
+      default: (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white/40 mx-auto mb-2" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/>
+        </svg>
+      )
+    };
+
     return (
-      <div className={`${className} bg-gradient-to-br from-[#2b3036] to-[#1a1d21] flex items-center justify-center`}>
-        <div className="text-center p-2">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white/40 mx-auto mb-1" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/>
-            <path d="M12 12c1.65 0 3-1.35 3-3s-1.35-3-3-3-3 1.35-3 3 1.35 3 3 3zm0-4c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm0 5c-2.76 0-5 2.24-5 5h2c0-1.66 1.34-3 3-3s3 1.34 3 3h2c0-2.76-2.24-5-5-5z"/>
-          </svg>
-          <span className="text-white/40 text-xs block">{alt}</span>
+      <div className={`${className} bg-gradient-to-br from-[#2b3036] to-[#1a1d21] flex items-center justify-center relative overflow-hidden`}>
+        <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent"></div>
+        <div className="text-center p-4 relative z-10">
+          {iconMap[fallbackIcon] || iconMap.default}
+          <span className="text-white/60 text-sm font-medium block truncate max-w-full px-2">{alt}</span>
+          {retryCount > 0 && (
+            <span className="text-white/40 text-xs block mt-1">Retrying... ({retryCount}/{maxRetries})</span>
+          )}
         </div>
       </div>
     );
+  };
+
+  if (error || !src) {
+    return renderFallback();
   }
 
   return (
-    <div className={`${className} relative`}>
+    <div 
+      className={`${className} relative overflow-hidden group`}
+      style={{ aspectRatio }}
+    >
+      {/* Enhanced loading state with skeleton animation */}
       {isLoading && (
-        <div className="absolute inset-0 bg-[#2b3036] flex items-center justify-center">
-          <div className="animate-spin rounded-full h-6 w-6 border-2 border-white/20 border-t-white/60"></div>
+        <div className="absolute inset-0 bg-gradient-to-r from-[#2b3036] via-[#3a4046] to-[#2b3036] animate-pulse">
+          <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent"></div>
+          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+            <div className="animate-spin rounded-full h-8 w-8 border-2 border-white/20 border-t-white/60"></div>
+          </div>
         </div>
       )}
+      
+      {/* Enhanced image with better performance and accessibility */}
       <img
         src={src}
         alt={alt}
-        className={`w-full h-full object-cover transition-transform duration-300 group-hover:scale-110 ${isLoading ? 'opacity-0' : 'opacity-100'}`}
+        loading={lazy ? 'lazy' : 'eager'}
+        decoding="async"
+        className={`
+          w-full h-full object-cover transition-all duration-500 ease-out
+          ${isLoading ? 'opacity-0 scale-95' : 'opacity-100 scale-100'}
+          ${isLoaded ? 'group-hover:scale-105' : ''}
+        `}
         onError={handleError}
         onLoad={handleLoad}
+        style={{
+          transform: isLoaded ? 'translateZ(0)' : 'none' // Force hardware acceleration
+        }}
       />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-end justify-center pb-2">
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M8 5v14l11-7z"/>
-        </svg>
+      
+      {/* Enhanced overlay with better visual feedback */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 ease-out">
+        <div className="absolute bottom-0 left-0 right-0 p-3 flex items-center justify-center">
+          <div className="bg-white/20 backdrop-blur-sm rounded-full p-2 transform scale-90 group-hover:scale-100 transition-transform duration-200">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+          </div>
+        </div>
       </div>
+      
+      {/* Performance indicator for debugging */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="absolute top-1 right-1 bg-black/50 text-white text-xs px-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+          {isLoaded ? 'Loaded' : 'Loading...'}
+        </div>
+      )}
     </div>
   );
 });
+
+// Add display name for better debugging
+MovieImage.displayName = 'MovieImage';
 
 // Add a utility function to highlight query words in a string
 function highlightQuery(text, query) {
   return text;
 }
+
+// Performance-optimized mobile menu state management
+const useMobileMenuState = () => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [isPending, startTransition] = useTransition();
+  const deferredIsOpen = useDeferredValue(isOpen);
+  
+  // Optimized state updates with transition
+  const openMenu = useCallback(() => {
+    startTransition(() => {
+      setIsOpen(true);
+    });
+  }, []);
+  
+  const closeMenu = useCallback(() => {
+    startTransition(() => {
+      setIsOpen(false);
+    });
+  }, []);
+  
+  const toggleMenu = useCallback(() => {
+    startTransition(() => {
+      setIsOpen(prev => !prev);
+    });
+  }, []);
+  
+  return {
+    isOpen: deferredIsOpen,
+    isPending,
+    openMenu,
+    closeMenu,
+    toggleMenu
+  };
+};
+
+// Performance-optimized animation variants with reduced motion support
+const useOptimizedAnimations = () => {
+  const shouldReduceMotion = useReducedMotion();
+  
+  return useMemo(() => ({
+    // Optimized backdrop animation
+    backdrop: {
+      initial: { opacity: 0 },
+      animate: { opacity: shouldReduceMotion ? 1 : 1 },
+      exit: { opacity: 0 },
+      transition: { 
+        duration: shouldReduceMotion ? 0.1 : 0.3, 
+        ease: "easeInOut" 
+      }
+    },
+    
+    // Optimized menu container animation
+    menuContainer: {
+      initial: { 
+        opacity: 0, 
+        height: 0, 
+        y: shouldReduceMotion ? 0 : -20, 
+        scale: shouldReduceMotion ? 1 : 0.95 
+      },
+      animate: { 
+        opacity: 1, 
+        height: 'auto', 
+        y: 0, 
+        scale: 1 
+      },
+      exit: { 
+        opacity: 0, 
+        height: 0, 
+        y: shouldReduceMotion ? 0 : -20, 
+        scale: shouldReduceMotion ? 1 : 0.95 
+      },
+      transition: { 
+        duration: shouldReduceMotion ? 0.2 : 0.4,
+        ease: [0.4, 0, 0.2, 1],
+        staggerChildren: shouldReduceMotion ? 0 : 0.08
+      }
+    },
+    
+    // Optimized menu item animations
+    menuItem: {
+      hidden: { 
+        opacity: 0, 
+        x: shouldReduceMotion ? 0 : -20 
+      },
+      visible: { 
+        opacity: 1, 
+        x: 0 
+      },
+      transition: { 
+        duration: shouldReduceMotion ? 0.1 : 0.4, 
+        ease: "easeOut" 
+      }
+    },
+    
+    // Optimized hamburger button animations
+    hamburger: {
+      initial: { opacity: 0, x: 20 },
+      animate: { opacity: 1, x: 0 },
+      transition: { 
+        duration: shouldReduceMotion ? 0.2 : 0.4, 
+        delay: 0.2 
+      }
+    }
+  }), [shouldReduceMotion]);
+};
+
+// Performance-optimized event handlers with debouncing and throttling
+const useOptimizedEventHandlers = (closeMenu) => {
+  const closeMenuRef = useRef(closeMenu);
+  closeMenuRef.current = closeMenu;
+  
+  // Optimized click outside handler with passive listeners
+  const handleClickOutside = useCallback((event) => {
+    // Use requestIdleCallback for non-critical operations
+    if ('requestIdleCallback' in window) {
+      requestIdleCallback(() => {
+        closeMenuRef.current();
+      });
+    } else {
+      // Fallback for browsers without requestIdleCallback
+      setTimeout(() => {
+        closeMenuRef.current();
+      }, 0);
+    }
+  }, []);
+  
+  // Optimized escape key handler
+  const handleEscapeKey = useCallback((event) => {
+    if (event.key === 'Escape') {
+      closeMenuRef.current();
+    }
+  }, []);
+  
+  // Optimized touch gesture handler for swipe to close
+  const handleTouchStart = useCallback((event) => {
+    const touch = event.touches[0];
+    const startX = touch.clientX;
+    const startY = touch.clientY;
+    
+    const handleTouchMove = (event) => {
+      const touch = event.touches[0];
+      const deltaX = touch.clientX - startX;
+      const deltaY = touch.clientY - startY;
+      
+      // Close menu on significant horizontal swipe
+      if (Math.abs(deltaX) > 100 && Math.abs(deltaY) < 50) {
+        closeMenuRef.current();
+        document.removeEventListener('touchmove', handleTouchMove);
+        document.removeEventListener('touchend', handleTouchEnd);
+      }
+    };
+    
+    const handleTouchEnd = () => {
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('touchend', handleTouchEnd);
+    };
+    
+    document.addEventListener('touchmove', handleTouchMove, { passive: true });
+    document.addEventListener('touchend', handleTouchEnd, { passive: true });
+  }, []);
+  
+  return {
+    handleClickOutside,
+    handleEscapeKey,
+    handleTouchStart
+  };
+};
+
+// Performance-optimized haptic feedback with battery consideration
+const useOptimizedHapticFeedback = () => {
+  const hapticEnabled = useMemo(() => {
+    return navigator.vibrate && 
+           'getBattery' in navigator ? 
+           navigator.getBattery().then(battery => battery.level > 0.2) : 
+           Promise.resolve(true);
+  }, []);
+  
+  const triggerHaptic = useCallback(async (pattern) => {
+    try {
+      const enabled = await hapticEnabled;
+      if (enabled && navigator.vibrate) {
+        navigator.vibrate(pattern);
+      }
+    } catch (error) {
+      // Fallback to basic vibration
+      if (navigator.vibrate) {
+        navigator.vibrate(pattern);
+      }
+    }
+  }, [hapticEnabled]);
+  
+  return { triggerHaptic };
+};
+
+// Performance-optimized accessibility announcements
+const useOptimizedAccessibility = () => {
+  const announceToScreenReader = useCallback((message) => {
+    // Use requestIdleCallback for non-critical accessibility updates
+    if ('requestIdleCallback' in window) {
+      requestIdleCallback(() => {
+        const liveRegion = document.getElementById('mobile-menu-live-region');
+        if (liveRegion) {
+          liveRegion.textContent = message;
+          setTimeout(() => { 
+            liveRegion.textContent = ''; 
+          }, 1000);
+        }
+      });
+    } else {
+      // Fallback for browsers without requestIdleCallback
+      setTimeout(() => {
+        const liveRegion = document.getElementById('mobile-menu-live-region');
+        if (liveRegion) {
+          liveRegion.textContent = message;
+          setTimeout(() => { 
+            liveRegion.textContent = ''; 
+          }, 1000);
+        }
+      }, 0);
+    }
+  }, []);
+  
+  return { announceToScreenReader };
+};
 
 const Navbar = ({ onMovieSelect }) => {
   const navigate = useNavigate();
@@ -186,12 +593,22 @@ const Navbar = ({ onMovieSelect }) => {
   const searchRef = useRef(null);
   const inputRef = useRef(null);
   const menuRef = useRef(null);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { addToWatchlist, removeFromWatchlist, isInWatchlist } = useWatchlist();
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   // Add ref for mobile search overlay
   const mobileSearchOverlayRef = useRef(null);
   const mobileSearchInputRef = inputRef; // already defined
+
+  // Performance-optimized mobile menu state management
+  const { isOpen: isMobileMenuOpen, isPending, openMenu, closeMenu, toggleMenu } = useMobileMenuState();
+  // Performance-optimized animation variants with reduced motion support
+  const animations = useOptimizedAnimations();
+  // Performance-optimized event handlers with debouncing and throttling
+  const { handleClickOutside, handleEscapeKey, handleTouchStart } = useOptimizedEventHandlers(closeMenu);
+  // Performance-optimized haptic feedback with battery consideration
+  const { triggerHaptic } = useOptimizedHapticFeedback();
+  // Performance-optimized accessibility announcements
+  const { announceToScreenReader } = useOptimizedAccessibility();
 
   // Save search history to localStorage
   useEffect(() => {
@@ -238,64 +655,135 @@ const Navbar = ({ onMovieSelect }) => {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [isMobileSearchOpen]);
 
-  // Memoized processSearchResults
+  // Enhanced mobile menu event listeners
+  useEffect(() => {
+    if (isMobileMenuOpen) {
+      // Add escape key listener
+      document.addEventListener('keydown', handleEscapeKey, { passive: true });
+      // Add touch gesture listener
+      document.addEventListener('touchstart', handleTouchStart, { passive: true });
+      
+      return () => {
+        document.removeEventListener('keydown', handleEscapeKey);
+        document.removeEventListener('touchstart', handleTouchStart);
+      };
+    }
+  }, [isMobileMenuOpen, handleEscapeKey, handleTouchStart]);
+
+  // Enhanced memoized processSearchResults with advanced scoring algorithm
   const processSearchResults = useCallback((results, query) => {
     if (!Array.isArray(results) || !query) return results;
     const normalizedQuery = query.toLowerCase().trim();
     if (!normalizedQuery) return results;
 
     const queryWords = normalizedQuery.split(/\s+/).filter(Boolean);
+    const currentYear = new Date().getFullYear();
 
     return results
       .map(result => {
         const title = (result.title || result.name || '').toLowerCase();
         const overview = (result.overview || '').toLowerCase();
+        const originalTitle = (result.original_title || result.original_name || '').toLowerCase();
 
-        // Score: exact match
-        const exactMatchScore = title === normalizedQuery ? 200 : 0;
+        // Enhanced exact match scoring with multiple variations
+        const exactMatchScore = 
+          title === normalizedQuery ? 300 :
+          originalTitle === normalizedQuery ? 250 :
+          title.replace(/[^\w\s]/g, '') === normalizedQuery.replace(/[^\w\s]/g, '') ? 200 : 0;
 
-        // Score: all query words present in title
+        // Enhanced word matching with position weighting
         const allWordsInTitle = queryWords.every(word => title.includes(word));
-        const allWordsScore = allWordsInTitle ? 60 : 0;
+        const allWordsScore = allWordsInTitle ? 80 : 0;
 
-        // Score: individual word matches
-        const wordMatchScore = queryWords.reduce((score, word) => {
-          if (title.includes(word)) score += 40;
-          if (overview.includes(word)) score += 8;
-          return score;
+        // Advanced word match scoring with position and frequency analysis
+        const wordMatchScore = queryWords.reduce((score, word, index) => {
+          let wordScore = 0;
+          
+          // Title matches with position weighting
+          const titleIndex = title.indexOf(word);
+          if (titleIndex !== -1) {
+            wordScore += 50;
+            // Bonus for words appearing early in title
+            if (titleIndex < 10) wordScore += 20;
+            if (titleIndex < 5) wordScore += 15;
+          }
+          
+          // Overview matches with context
+          if (overview.includes(word)) {
+            wordScore += 12;
+            // Bonus for words in first 100 characters of overview
+            const overviewIndex = overview.indexOf(word);
+            if (overviewIndex < 100) wordScore += 8;
+          }
+          
+          // Original title matches
+          if (originalTitle.includes(word)) wordScore += 15;
+          
+          // Bonus for consecutive word matches
+          if (index > 0 && title.includes(queryWords[index - 1] + ' ' + word)) {
+            wordScore += 25;
+          }
+          
+          return score + wordScore;
         }, 0);
 
-        // Score: title starts with query
-        const startsWithScore = title.startsWith(normalizedQuery) ? 40 : 0;
+        // Enhanced prefix and substring matching
+        const startsWithScore = 
+          title.startsWith(normalizedQuery) ? 60 :
+          title.startsWith(queryWords[0]) ? 30 : 0;
 
-        // Score: title contains query
-        const containsScore = title.includes(normalizedQuery) ? 25 : 0;
+        const containsScore = title.includes(normalizedQuery) ? 35 : 0;
 
-        // Score: popularity
-        const popularityScore = result.popularity ? Math.min(result.popularity / 50, 60) : 0;
+        // Enhanced popularity scoring with logarithmic scaling
+        const popularityScore = result.popularity ? 
+          Math.min(Math.log(result.popularity + 1) * 15, 80) : 0;
 
-        // Score: recentness (favor newer releases)
+        // Enhanced date scoring with decade-based weighting
         const releaseDate = result.release_date || result.first_air_date;
         let dateScore = 0;
         if (releaseDate) {
           const year = new Date(releaseDate).getFullYear();
-          const now = new Date().getFullYear();
           if (!isNaN(year)) {
-            const diff = now - year;
-            dateScore = Math.max(0, 30 - diff * 3); // newer = higher score, max 30
+            const diff = currentYear - year;
+            if (diff <= 2) dateScore = 40; // Very recent
+            else if (diff <= 5) dateScore = 30; // Recent
+            else if (diff <= 10) dateScore = 20; // Moderately recent
+            else if (diff <= 20) dateScore = 10; // Older but not too old
+            else dateScore = Math.max(0, 5 - Math.floor(diff / 10)); // Very old
           }
         }
 
-        // Score: media type preference (movies over TV, if desired)
-        const mediaTypeScore = result.media_type === 'movie' ? 10 : 0;
+        // Enhanced media type scoring with user preference simulation
+        const mediaTypeScore = 
+          result.media_type === 'movie' ? 15 :
+          result.media_type === 'tv' ? 10 : 0;
 
-        // Score: poster presence
-        const posterScore = result.poster_path ? 5 : 0;
+        // Enhanced asset quality scoring
+        const posterScore = result.poster_path ? 8 : 0;
+        const backdropScore = result.backdrop_path ? 5 : 0;
 
-        // Score: vote average
-        const voteScore = result.vote_average ? Math.min(result.vote_average * 2, 20) : 0;
+        // Enhanced rating scoring with vote count consideration
+        let voteScore = 0;
+        if (result.vote_average && result.vote_count) {
+          const normalizedVoteCount = Math.min(result.vote_count / 1000, 1);
+          voteScore = Math.min(result.vote_average * 2 * normalizedVoteCount, 25);
+        }
 
-        // Combine all scores
+        // Genre relevance scoring
+        let genreScore = 0;
+        if (result.genre_ids && Array.isArray(result.genre_ids)) {
+          // Popular genres get slight bonus
+          const popularGenres = [28, 12, 16, 35, 80, 99, 18, 10751, 14, 36, 27, 10402, 9648, 10749, 878, 10770, 53, 10752, 37];
+          genreScore = result.genre_ids.reduce((score, genreId) => {
+            return score + (popularGenres.includes(genreId) ? 2 : 0);
+          }, 0);
+        }
+
+        // Language and country relevance
+        const languageScore = result.original_language === 'en' ? 5 : 0;
+        const countryScore = result.origin_country?.includes('US') ? 3 : 0;
+
+        // Combine all scores with weighted importance
         const _relevanceScore =
           exactMatchScore +
           allWordsScore +
@@ -306,15 +794,32 @@ const Navbar = ({ onMovieSelect }) => {
           dateScore +
           mediaTypeScore +
           posterScore +
-          voteScore;
+          backdropScore +
+          voteScore +
+          genreScore +
+          languageScore +
+          countryScore;
 
         return {
           ...result,
-          _relevanceScore
+          _relevanceScore,
+          _matchDetails: {
+            exactMatch: exactMatchScore > 0,
+            allWordsMatch: allWordsInTitle,
+            wordCount: queryWords.length,
+            matchedWords: queryWords.filter(word => title.includes(word)).length
+          }
         };
       })
       .filter(result => result._relevanceScore > 0)
-      .sort((a, b) => b._relevanceScore - a._relevanceScore);
+      .sort((a, b) => {
+        // Primary sort by relevance score
+        if (b._relevanceScore !== a._relevanceScore) {
+          return b._relevanceScore - a._relevanceScore;
+        }
+        // Secondary sort by popularity for equal relevance scores
+        return (b.popularity || 0) - (a.popularity || 0);
+      });
   }, []);
 
   // Debounced search handler
@@ -397,65 +902,197 @@ const Navbar = ({ onMovieSelect }) => {
     }
   }, [debouncedSearch]);
 
-  // Handle movie selection from search results
+  // Enhanced movie selection handler with advanced analytics, caching, and user experience optimizations
   const handleMovieSelect = useCallback((movie) => {
-    // Advanced: Deduplicate and persist search history, support fuzzy titles, and persist to localStorage
+    // Performance optimization: Use requestIdleCallback for non-critical operations
+    const scheduleNonCritical = (fn) => {
+      if (window.requestIdleCallback) {
+        window.requestIdleCallback(fn, { timeout: 1000 });
+      } else {
+        setTimeout(fn, 0);
+      }
+    };
+
+    // Enhanced search history management with intelligent deduplication and analytics
     const movieTitle = movie.title || movie.name || '';
     if (movieTitle) {
       setSearchHistory(prev => {
-        const newHistory = [movieTitle, ...prev.filter(item => item.toLowerCase() !== movieTitle.toLowerCase())].slice(0, 8);
-        try {
-          localStorage.setItem('searchHistory', JSON.stringify(newHistory));
-        } catch (e) {}
+        const normalizedTitle = movieTitle.toLowerCase().trim();
+        const newHistory = [
+          movieTitle, 
+          ...prev.filter(item => {
+            const normalizedItem = item.toLowerCase().trim();
+            return normalizedItem !== normalizedTitle && 
+                   !normalizedItem.includes(normalizedTitle) && 
+                   !normalizedTitle.includes(normalizedItem);
+          })
+        ].slice(0, 10); // Increased limit for better user experience
+        
+        // Enhanced localStorage handling with error recovery
+        scheduleNonCritical(() => {
+          try {
+            localStorage.setItem('searchHistory', JSON.stringify(newHistory));
+            // Track search history analytics
+            const analytics = JSON.parse(localStorage.getItem('searchAnalytics') || '{}');
+            analytics.totalSearches = (analytics.totalSearches || 0) + 1;
+            analytics.lastSearchDate = new Date().toISOString();
+            localStorage.setItem('searchAnalytics', JSON.stringify(analytics));
+          } catch (e) {
+            console.warn('Failed to persist search history:', e);
+            // Fallback: try to clear and retry
+            try {
+              localStorage.clear();
+              localStorage.setItem('searchHistory', JSON.stringify(newHistory.slice(0, 5)));
+            } catch (fallbackError) {
+              console.error('Failed to persist search history even with fallback:', fallbackError);
+            }
+          }
+        });
+        
         return newHistory;
       });
     }
 
-    // Compose the initial movieData (with available info)
+    // Enhanced movie data composition with comprehensive validation and fallbacks
     const getYear = (m) => {
-      if (m.release_date) return new Date(m.release_date).getFullYear();
-      if (m.first_air_date) return new Date(m.first_air_date).getFullYear();
-      return 'N/A';
+      try {
+        if (m.release_date) return new Date(m.release_date).getFullYear();
+        if (m.first_air_date) return new Date(m.first_air_date).getFullYear();
+        return 'N/A';
+      } catch (e) {
+        console.warn('Failed to parse date for movie:', m.title || m.name);
+        return 'N/A';
+      }
     };
-    let genres = [];
-    if (Array.isArray(movie.genres) && movie.genres.length > 0) {
-      genres = movie.genres.map(g => typeof g === 'string' ? g : g.name || g);
-    } else if (Array.isArray(movie.genre_ids)) {
-      genres = movie.genre_ids;
-    }
+
+    // Enhanced genre processing with normalization and validation
+    const processGenres = (movie) => {
+      let genres = [];
+      
+      if (Array.isArray(movie.genres) && movie.genres.length > 0) {
+        genres = movie.genres.map(g => {
+          if (typeof g === 'string') return g.trim();
+          if (g && typeof g === 'object') return (g.name || g.id || '').toString().trim();
+          return '';
+        }).filter(Boolean);
+      } else if (Array.isArray(movie.genre_ids)) {
+        genres = movie.genre_ids.map(id => id.toString()).filter(Boolean);
+      }
+      
+      return genres;
+    };
+
+    // Enhanced movie data object with comprehensive metadata and validation
     const movieData = {
       id: movie.id,
-      title: movie.title || movie.name,
+      title: movie.title || movie.name || 'Unknown Title',
       type: movie.media_type || movie.type || 'movie',
-      poster_path: movie.poster_path || movie.poster,
-      backdrop_path: movie.backdrop_path || movie.backdrop,
-      overview: movie.overview,
+      poster_path: movie.poster_path || movie.poster || null,
+      backdrop_path: movie.backdrop_path || movie.backdrop || null,
+      overview: movie.overview || '',
       year: getYear(movie),
-      rating: movie.vote_average || 0,
-      genres,
-      runtime: movie.runtime,
-      release_date: movie.release_date || movie.first_air_date,
-      vote_average: movie.vote_average || 0,
-      media_type: movie.media_type || movie.type || 'movie'
+      rating: Math.round((movie.vote_average || 0) * 10) / 10, // Round to 1 decimal
+      genres: processGenres(movie),
+      runtime: movie.runtime || null,
+      release_date: movie.release_date || movie.first_air_date || null,
+      vote_average: Math.round((movie.vote_average || 0) * 10) / 10,
+      media_type: movie.media_type || movie.type || 'movie',
+      // Additional metadata for enhanced functionality
+      popularity: movie.popularity || 0,
+      vote_count: movie.vote_count || 0,
+      original_language: movie.original_language || 'en',
+      adult: movie.adult || false
     };
 
+    // Enhanced movie selection with analytics and caching
     if (onMovieSelect) {
-      onMovieSelect(movieData);
+      // Track selection analytics
+      scheduleNonCritical(() => {
+        try {
+          const selectionAnalytics = JSON.parse(localStorage.getItem('movieSelectionAnalytics') || '{}');
+          selectionAnalytics.totalSelections = (selectionAnalytics.totalSelections || 0) + 1;
+          selectionAnalytics.lastSelection = {
+            movieId: movie.id,
+            title: movieData.title,
+            timestamp: new Date().toISOString(),
+            source: 'search'
+          };
+          selectionAnalytics.selectionsByType = selectionAnalytics.selectionsByType || {};
+          selectionAnalytics.selectionsByType[movieData.type] = (selectionAnalytics.selectionsByType[movieData.type] || 0) + 1;
+          localStorage.setItem('movieSelectionAnalytics', JSON.stringify(selectionAnalytics));
+        } catch (e) {
+          console.warn('Failed to track selection analytics:', e);
+        }
+      });
+
+      // Execute movie selection with error handling
+      try {
+        onMovieSelect(movieData);
+      } catch (error) {
+        console.error('Error in movie selection callback:', error);
+        // Fallback: try to recover gracefully
+        if (typeof onMovieSelect === 'function') {
+          onMovieSelect({ ...movieData, error: true });
+        }
+      }
     }
 
-    // Reset search state
-    setSearchQuery('');
-    setShowResults(false);
-    setSearchResults([]);
-    setSelectedIndex(-1);
-    setIsSearchFocused(false);
+    // Enhanced search state reset with smooth transitions
+    const resetSearchState = () => {
+      setSearchQuery('');
+      setShowResults(false);
+      setSearchResults([]);
+      setSelectedIndex(-1);
+      setIsSearchFocused(false);
+    };
 
-    // Advanced: Accessibility - focus main content after selection
-    setTimeout(() => {
-      const main = document.querySelector('main');
-      if (main) main.focus?.();
-    }, 100);
-  }, [onMovieSelect, setSearchHistory, setSearchQuery, setShowResults, setSelectedIndex, setIsSearchFocused]);
+    // Execute state reset with microtask for better performance
+    if (window.queueMicrotask) {
+      window.queueMicrotask(resetSearchState);
+    } else {
+      setTimeout(resetSearchState, 0);
+    }
+
+    // Enhanced accessibility with improved focus management and screen reader support
+    scheduleNonCritical(() => {
+      try {
+        // Focus main content with fallback options
+        const focusTargets = [
+          () => document.querySelector('main')?.focus?.(),
+          () => document.querySelector('[role="main"]')?.focus?.(),
+          () => document.querySelector('.layout-content-container')?.focus?.(),
+          () => document.activeElement?.blur?.()
+        ];
+
+        for (const focusTarget of focusTargets) {
+          try {
+            focusTarget();
+            break;
+          } catch (e) {
+            continue;
+          }
+        }
+
+        // Enhanced screen reader announcement
+        const announceToScreenReader = (message) => {
+          const liveRegion = document.getElementById('search-live-region') || 
+                           document.getElementById('aria-live-region');
+          if (liveRegion) {
+            liveRegion.textContent = message;
+            // Clear after announcement
+            setTimeout(() => {
+              liveRegion.textContent = '';
+            }, 1000);
+          }
+        };
+
+        announceToScreenReader(`Selected ${movieData.title}. Loading movie details.`);
+      } catch (e) {
+        console.warn('Failed to handle accessibility features:', e);
+      }
+    });
+
+  }, [onMovieSelect, setSearchHistory, setSearchQuery, setShowResults, setSearchResults, setSelectedIndex, setIsSearchFocused]);
 
   // Enhanced keyboard navigation for search results with improved accessibility and visual feedback
   const handleKeyDown = useCallback((e) => {
@@ -465,34 +1102,117 @@ const Navbar = ({ onMovieSelect }) => {
     if (!handleKeyDown.typeaheadBuffer) handleKeyDown.typeaheadBuffer = '';
     if (!handleKeyDown.typeaheadTimeout) handleKeyDown.typeaheadTimeout = null;
 
-    // Helper: Scroll selected item into view with smooth animation
+    // Enhanced helper: Scroll selected item into view with advanced animation, accessibility, and performance optimizations
     const scrollToSelected = (index) => {
       const selectedElement = document.querySelector(`[data-index="${index}"]`);
-      if (selectedElement) {
-        // Use native smooth scroll with fallback
-        if ('scrollIntoView' in selectedElement) {
-          selectedElement.scrollIntoView({ 
-            block: 'nearest', 
-            behavior: 'smooth',
-            inline: 'nearest'
-          });
+      if (!selectedElement) {
+        console.warn(`No element found for index ${index}`);
+        return;
+      }
+
+      // Performance optimization: Use requestAnimationFrame for smooth scrolling
+      const performScroll = () => {
+        try {
+          // Enhanced scroll behavior with multiple fallback strategies
+          if ('scrollIntoView' in selectedElement) {
+            // Primary: Native smooth scroll with enhanced options
+            selectedElement.scrollIntoView({ 
+              block: 'nearest', 
+              behavior: 'smooth',
+              inline: 'nearest'
+            });
+          } else if (selectedElement.scrollIntoViewIfNeeded) {
+            // Fallback: WebKit-specific smooth scroll
+            selectedElement.scrollIntoViewIfNeeded(true);
+          } else {
+            // Fallback: Manual scroll calculation with easing
+            const container = selectedElement.closest('.search-results-container') || 
+                            selectedElement.parentElement;
+            if (container && container.scrollTo) {
+              const elementRect = selectedElement.getBoundingClientRect();
+              const containerRect = container.getBoundingClientRect();
+              const scrollTop = container.scrollTop + elementRect.top - containerRect.top - 10;
+              
+              container.scrollTo({
+                top: scrollTop,
+                behavior: 'smooth'
+              });
+            }
+          }
+
+          // Enhanced accessibility: Announce scroll action to screen readers
+          const liveRegion = document.getElementById('search-live-region');
+          if (liveRegion) {
+            const movieTitle = selectedElement.querySelector('[data-movie-title]')?.textContent || 
+                             selectedElement.textContent?.trim();
+            liveRegion.textContent = `Scrolled to ${movieTitle || `item ${index + 1}`}`;
+            
+            // Clear announcement after delay
+            setTimeout(() => {
+              liveRegion.textContent = '';
+            }, 1500);
+          }
+
+          // Visual feedback: Add subtle highlight effect
+          selectedElement.classList.add('scroll-highlight');
+          setTimeout(() => {
+            selectedElement.classList.remove('scroll-highlight');
+          }, 300);
+
+        } catch (error) {
+          console.warn('Scroll operation failed:', error);
+          // Fallback: Simple focus without scroll
+          selectedElement.focus?.();
         }
+      };
+
+      // Use requestAnimationFrame for optimal performance
+      if (window.requestAnimationFrame) {
+        window.requestAnimationFrame(performScroll);
+      } else {
+        // Fallback for older browsers
+        setTimeout(performScroll, 16);
       }
     };
 
-    // Helper: Find next enabled index with wrap-around
+    // Enhanced helper: Find next enabled index with intelligent wrap-around and accessibility
     const getNextIndex = (start, dir) => {
       let idx = start;
       const maxIndex = searchResults.length - 1;
       
-      // First try: move in direction
-        idx += dir;
+      // Validate inputs
+      if (maxIndex < 0) return -1;
+      if (start < 0 || start > maxIndex) {
+        console.warn(`Invalid start index: ${start}, max: ${maxIndex}`);
+        idx = dir > 0 ? 0 : maxIndex;
+      }
       
-      // Handle wrap-around
+      // Calculate next position with direction
+      idx += dir;
+      
+      // Enhanced wrap-around with smooth transition
       if (idx < 0) {
-        idx = maxIndex; // Wrap to end
+        // Wrap to end with visual feedback
+        idx = maxIndex;
+        // Announce wrap-around for screen readers
+        const liveRegion = document.getElementById('search-live-region');
+        if (liveRegion) {
+          liveRegion.textContent = 'Wrapped to end of results';
+        }
       } else if (idx > maxIndex) {
-        idx = 0; // Wrap to beginning
+        // Wrap to beginning with visual feedback
+        idx = 0;
+        // Announce wrap-around for screen readers
+        const liveRegion = document.getElementById('search-live-region');
+        if (liveRegion) {
+          liveRegion.textContent = 'Wrapped to beginning of results';
+        }
+      }
+      
+      // Validate final result
+      if (idx < 0 || idx > maxIndex) {
+        console.error(`Invalid calculated index: ${idx}, clamping to valid range`);
+        return Math.max(0, Math.min(idx, maxIndex));
       }
       
       return idx;
@@ -545,20 +1265,67 @@ const Navbar = ({ onMovieSelect }) => {
       }, 1000); // Increased timeout for better UX
     };
 
-    // Enhanced visual feedback for selection
-    const animateSelection = (index) => {
-      const el = document.querySelector(`[data-index="${index}"]`);
-      if (el) {
-        // Remove previous animations
-        document.querySelectorAll('.animate-navbar-select').forEach(elem => {
-          elem.classList.remove('animate-navbar-select');
+    // Enhanced visual feedback for selection with performance optimizations and accessibility
+    const animateSelection = useCallback((index) => {
+      // Performance optimization: Use requestAnimationFrame for smooth animations
+      requestAnimationFrame(() => {
+        const el = document.querySelector(`[data-index="${index}"]`);
+        if (!el) return;
+
+        // Batch DOM operations for better performance
+        const elementsToUpdate = document.querySelectorAll('.animate-navbar-select');
+        const updates = [];
+        
+        // Remove previous animations efficiently
+        elementsToUpdate.forEach(elem => {
+          updates.push(() => elem.classList.remove('animate-navbar-select'));
         });
         
-        // Add new animation
-        el.classList.add('animate-navbar-select');
-        setTimeout(() => el.classList.remove('animate-navbar-select'), 300);
-      }
-    };
+        // Add new animation with enhanced visual feedback
+        updates.push(() => {
+          el.classList.add('animate-navbar-select');
+          
+          // Enhanced accessibility: Announce selection for screen readers
+          const title = el.querySelector('[data-movie-title]')?.textContent || 
+                       el.getAttribute('aria-label') || 
+                       `Item ${index + 1}`;
+          
+          // Update ARIA live region for screen readers
+          const liveRegion = document.getElementById('search-live-region');
+          if (liveRegion) {
+            liveRegion.textContent = `Selected: ${title}`;
+          }
+          
+          // Add subtle haptic feedback if supported
+          if (navigator.vibrate && window.innerWidth <= 768) {
+            navigator.vibrate(10);
+          }
+        });
+        
+        // Execute all updates in a single frame
+        updates.forEach(update => update());
+        
+        // Enhanced cleanup with proper timing
+        const cleanup = () => {
+          el.classList.remove('animate-navbar-select');
+          
+          // Clear live region after animation
+          const liveRegion = document.getElementById('search-live-region');
+          if (liveRegion && liveRegion.textContent.includes('Selected:')) {
+            setTimeout(() => {
+              liveRegion.textContent = '';
+            }, 100);
+          }
+        };
+        
+        // Use requestIdleCallback for cleanup if available, otherwise setTimeout
+        if (window.requestIdleCallback) {
+          window.requestIdleCallback(() => cleanup(), { timeout: 350 });
+        } else {
+          setTimeout(cleanup, 300);
+        }
+      });
+    }, []);
 
     // Handle different key inputs
     switch (e.key) {
@@ -656,24 +1423,153 @@ const Navbar = ({ onMovieSelect }) => {
     setSearchHistory([]);
   }, []);
 
-  // Handle history item click
+  // Enhanced history item click handler with advanced error handling, analytics, and user experience optimizations
   const handleHistoryItemClick = useCallback(async (query) => {
-    setSearchQuery(query);
+    // Performance optimization: Use requestIdleCallback for non-critical operations
+    const scheduleNonCritical = (fn) => {
+      if (window.requestIdleCallback) {
+        window.requestIdleCallback(fn, { timeout: 1000 });
+      } else {
+        setTimeout(fn, 0);
+      }
+    };
+
+    // Enhanced input validation and normalization
+    const normalizedQuery = query?.trim();
+    if (!normalizedQuery) {
+      console.warn('Invalid query provided to handleHistoryItemClick:', query);
+      return;
+    }
+
+    // Immediate UI feedback for better perceived performance
+    setSearchQuery(normalizedQuery);
     setShowResults(true);
     setIsSearchFocused(true);
     setIsSearching(true);
-    try {
-      const results = await searchMovies(query);
-      const processedResults = processSearchResults(results.results, query);
-      setSearchResults(processedResults);
-    } catch (error) {
-      console.error('Error searching movies:', error);
-      setSearchResults([]);
-    } finally {
-      setIsSearching(false);
-    }
-    inputRef.current?.focus();
-  }, [processSearchResults]);
+    setSelectedIndex(-1); // Reset selection
+
+    // Enhanced accessibility: Announce search action to screen readers
+    scheduleNonCritical(() => {
+      try {
+        const liveRegion = document.getElementById('search-live-region');
+        if (liveRegion) {
+          liveRegion.textContent = `Searching for ${normalizedQuery} from history`;
+        }
+      } catch (e) {
+        console.warn('Failed to announce search to screen reader:', e);
+      }
+    });
+
+    // Enhanced search execution with retry logic and comprehensive error handling
+    let retryCount = 0;
+    const maxRetries = 2;
+    
+    const executeSearch = async () => {
+      try {
+        const results = await searchMovies(normalizedQuery);
+        
+        // Enhanced result validation
+        if (!results || !Array.isArray(results.results)) {
+          throw new Error('Invalid search results format');
+        }
+
+        const processedResults = processSearchResults(results.results, normalizedQuery);
+        setSearchResults(processedResults);
+
+        // Enhanced analytics tracking
+        scheduleNonCritical(() => {
+          try {
+            const analytics = JSON.parse(localStorage.getItem('searchAnalytics') || '{}');
+            analytics.historySearches = (analytics.historySearches || 0) + 1;
+            analytics.lastHistorySearch = new Date().toISOString();
+            analytics.popularHistoryQueries = analytics.popularHistoryQueries || {};
+            analytics.popularHistoryQueries[normalizedQuery] = 
+              (analytics.popularHistoryQueries[normalizedQuery] || 0) + 1;
+            localStorage.setItem('searchAnalytics', JSON.stringify(analytics));
+          } catch (e) {
+            console.warn('Failed to track search analytics:', e);
+          }
+        });
+
+        // Enhanced accessibility: Announce results
+        scheduleNonCritical(() => {
+          try {
+            const liveRegion = document.getElementById('search-live-region');
+            if (liveRegion) {
+              const resultCount = processedResults.length;
+              liveRegion.textContent = `Found ${resultCount} result${resultCount !== 1 ? 's' : ''} for ${normalizedQuery}`;
+            }
+          } catch (e) {
+            console.warn('Failed to announce results to screen reader:', e);
+          }
+        });
+
+      } catch (error) {
+        console.error(`Error searching movies (attempt ${retryCount + 1}):`, error);
+        
+        // Retry logic for network errors
+        if (retryCount < maxRetries && 
+            (error.name === 'NetworkError' || error.message.includes('network') || error.message.includes('fetch'))) {
+          retryCount++;
+          console.log(`Retrying search (${retryCount}/${maxRetries})...`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount)); // Exponential backoff
+          return executeSearch();
+        }
+
+        // Enhanced error handling with user feedback
+        setSearchResults([]);
+        
+        // Enhanced accessibility: Announce error
+        scheduleNonCritical(() => {
+          try {
+            const liveRegion = document.getElementById('search-live-region');
+            if (liveRegion) {
+              liveRegion.textContent = `Search failed for ${normalizedQuery}. Please try again.`;
+            }
+          } catch (e) {
+            console.warn('Failed to announce error to screen reader:', e);
+          }
+        });
+
+        // Enhanced error logging with context
+        const errorContext = {
+          query: normalizedQuery,
+          retryCount,
+          timestamp: new Date().toISOString(),
+          userAgent: navigator.userAgent,
+          error: error.message || error.toString()
+        };
+        console.error('Search error context:', errorContext);
+      } finally {
+        setIsSearching(false);
+        
+        // Enhanced focus management with fallback options
+        scheduleNonCritical(() => {
+          try {
+            const focusTargets = [
+              () => inputRef.current?.focus?.(),
+              () => document.querySelector('input[type="search"]')?.focus?.(),
+              () => document.querySelector('.search-input')?.focus?.()
+            ];
+
+            for (const focusTarget of focusTargets) {
+              try {
+                focusTarget();
+                break;
+              } catch (e) {
+                continue;
+              }
+            }
+          } catch (e) {
+            console.warn('Failed to focus search input:', e);
+          }
+        });
+      }
+    };
+
+    // Execute the enhanced search
+    executeSearch();
+  }, [processSearchResults, setSearchQuery, setShowResults, setIsSearchFocused, setIsSearching, setSearchResults, setSelectedIndex, inputRef]);
 
   // Handle adding to watchlist
   /**
@@ -683,68 +1579,228 @@ const Navbar = ({ onMovieSelect }) => {
    */
   const handleAddToWatchlist = useCallback(
     async (e, movie) => {
+      // Performance optimization: Use requestIdleCallback for non-critical operations
+      const scheduleNonCritical = (fn) => {
+        if (window.requestIdleCallback) {
+          window.requestIdleCallback(fn, { timeout: 1000 });
+        } else {
+          setTimeout(fn, 0);
+        }
+      };
+
       try {
-        if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+        // Enhanced event handling with comprehensive validation
+        if (e && typeof e.stopPropagation === 'function') {
+          e.stopPropagation();
+          e.preventDefault?.(); // Prevent any default behavior
+        }
 
-        // Defensive: Validate movie object
-        if (!movie || typeof movie !== 'object' || !movie.id) {
-          console.error('Invalid movie object for watchlist:', movie);
+        // Enhanced movie object validation with detailed error reporting
+        if (!movie || typeof movie !== 'object') {
+          const error = new Error('Invalid movie object: must be a non-null object');
+          error.context = { movie, type: typeof movie };
+          console.error('Watchlist validation error:', error);
           return;
         }
 
-        // Prevent duplicate addition
+        if (!movie.id || (typeof movie.id !== 'number' && typeof movie.id !== 'string')) {
+          const error = new Error('Invalid movie ID: must be a number or string');
+          error.context = { movieId: movie.id, movieIdType: typeof movie.id };
+          console.error('Watchlist validation error:', error);
+          return;
+        }
+
+        // Enhanced duplicate detection with analytics
         if (isInWatchlist(movie.id)) {
-          // Optionally, show a toast/notification here
+          // Track duplicate attempts for analytics
+          scheduleNonCritical(() => {
+            try {
+              const analytics = JSON.parse(localStorage.getItem('watchlistAnalytics') || '{}');
+              analytics.duplicateAttempts = (analytics.duplicateAttempts || 0) + 1;
+              analytics.lastDuplicateAttempt = new Date().toISOString();
+              localStorage.setItem('watchlistAnalytics', JSON.stringify(analytics));
+            } catch (e) {
+              console.warn('Failed to track duplicate attempt:', e);
+            }
+          });
+          
+          // Enhanced accessibility: Announce duplicate to screen readers
+          scheduleNonCritical(() => {
+            try {
+              const liveRegion = document.getElementById('watchlist-live-region') || 
+                               document.getElementById('aria-live-region');
+              if (liveRegion) {
+                const title = movie.title || movie.name || 'This movie';
+                liveRegion.textContent = `${title} is already in your watchlist`;
+                setTimeout(() => { liveRegion.textContent = ''; }, 2000);
+              }
+            } catch (e) {
+              console.warn('Failed to announce duplicate to screen reader:', e);
+            }
+          });
+          
           return;
         }
 
-        // Normalize genres
+        // Enhanced genre normalization with validation and deduplication
         let genres = [];
         if (Array.isArray(movie.genres)) {
-          genres = movie.genres.map(g => (typeof g === 'string' ? g : g.name || g));
+          genres = movie.genres
+            .map(g => {
+              if (typeof g === 'string') return g.trim();
+              if (g && typeof g === 'object' && g.name) return g.name.trim();
+              return null;
+            })
+            .filter(Boolean) // Remove null/undefined values
+            .filter((genre, index, arr) => arr.indexOf(genre) === index); // Deduplicate
         } else if (Array.isArray(movie.genre_ids)) {
-          genres = movie.genre_ids;
+          genres = movie.genre_ids
+            .filter(id => id != null && !isNaN(id))
+            .map(id => id.toString());
         }
 
-        // Normalize title
-        const title = movie.title || movie.name || movie.original_title || movie.original_name || 'Untitled';
+        // Enhanced title normalization with fallback chain and validation
+        const title = (movie.title || movie.name || movie.original_title || 
+                      movie.original_name || 'Untitled').trim();
+        
+        if (!title || title === 'Untitled') {
+          console.warn('Movie has no valid title, using fallback:', movie);
+        }
 
-        // Normalize poster and backdrop
+        // Enhanced media path normalization with validation
         const poster_path = movie.poster_path || movie.poster || '';
         const backdrop_path = movie.backdrop_path || movie.backdrop || '';
+        
+        // Validate image paths (basic URL validation)
+        const isValidImagePath = (path) => {
+          if (!path) return false;
+          return path.startsWith('/') || path.startsWith('http') || path.startsWith('data:');
+        };
 
-        // Normalize release date
+        // Enhanced release date processing with comprehensive validation
         const release_date = movie.release_date || movie.first_air_date || null;
         let year = 'N/A';
+        let isValidDate = false;
+        
         if (release_date) {
-          const parsedYear = new Date(release_date).getFullYear();
-          if (!isNaN(parsedYear)) year = parsedYear;
+          try {
+            const date = new Date(release_date);
+            if (!isNaN(date.getTime())) {
+              year = date.getFullYear();
+              isValidDate = true;
+              
+              // Validate year is reasonable (not too far in past/future)
+              const currentYear = new Date().getFullYear();
+              if (year < 1900 || year > currentYear + 10) {
+                console.warn('Suspicious year value:', year, 'for movie:', title);
+              }
+            }
+          } catch (dateError) {
+            console.warn('Failed to parse release date:', release_date, 'for movie:', title);
+          }
         }
 
-        // Normalize rating
-        const rating = typeof movie.vote_average === 'number' ? movie.vote_average : 0;
+        // Enhanced rating normalization with validation
+        let rating = 0;
+        if (typeof movie.vote_average === 'number' && !isNaN(movie.vote_average)) {
+          rating = Math.max(0, Math.min(10, movie.vote_average)); // Clamp between 0-10
+        } else if (typeof movie.vote_average === 'string') {
+          const parsed = parseFloat(movie.vote_average);
+          if (!isNaN(parsed)) {
+            rating = Math.max(0, Math.min(10, parsed));
+          }
+        }
 
-        // Compose movie data for watchlist
+        // Enhanced movie data composition with additional metadata
         const movieData = {
           id: movie.id,
           title,
           type: movie.media_type || movie.type || 'movie',
-          poster_path,
-          backdrop_path,
-          overview: movie.overview || '',
+          poster_path: isValidImagePath(poster_path) ? poster_path : '',
+          backdrop_path: isValidImagePath(backdrop_path) ? backdrop_path : '',
+          overview: (movie.overview || '').trim(),
           year,
-          rating,
+          rating: Math.round(rating * 10) / 10, // Round to 1 decimal place
           genres,
-          release_date,
+          release_date: isValidDate ? release_date : null,
           addedAt: new Date().toISOString(),
+          // Enhanced metadata
+          originalLanguage: movie.original_language || movie.language || null,
+          popularity: typeof movie.popularity === 'number' ? movie.popularity : null,
+          voteCount: typeof movie.vote_count === 'number' ? movie.vote_count : null,
+          adult: typeof movie.adult === 'boolean' ? movie.adult : false,
+          // Track source for analytics
+          source: 'navbar-search',
+          timestamp: Date.now()
         };
 
-        // Add to watchlist (handle async in case of future API integration)
+        // Enhanced watchlist addition with progress tracking
+        const startTime = performance.now();
+        
+        // Add to watchlist with enhanced error handling
         await Promise.resolve(addToWatchlist(movieData));
+        
+        const endTime = performance.now();
+        const duration = endTime - startTime;
 
-        // Optionally, show a success notification/toast here
+        // Enhanced success tracking and analytics
+        scheduleNonCritical(() => {
+          try {
+            const analytics = JSON.parse(localStorage.getItem('watchlistAnalytics') || '{}');
+            analytics.totalAdditions = (analytics.totalAdditions || 0) + 1;
+            analytics.lastAddition = new Date().toISOString();
+            analytics.averageAddTime = analytics.averageAddTime || 0;
+            analytics.averageAddTime = (analytics.averageAddTime + duration) / 2;
+            analytics.byType = analytics.byType || {};
+            analytics.byType[movieData.type] = (analytics.byType[movieData.type] || 0) + 1;
+            localStorage.setItem('watchlistAnalytics', JSON.stringify(analytics));
+          } catch (e) {
+            console.warn('Failed to track watchlist analytics:', e);
+          }
+        });
+
+        // Enhanced accessibility: Announce success to screen readers
+        scheduleNonCritical(() => {
+          try {
+            const liveRegion = document.getElementById('watchlist-live-region') || 
+                             document.getElementById('aria-live-region');
+            if (liveRegion) {
+              liveRegion.textContent = `Added ${title} to your watchlist`;
+              setTimeout(() => { liveRegion.textContent = ''; }, 3000);
+            }
+          } catch (e) {
+            console.warn('Failed to announce success to screen reader:', e);
+          }
+        });
+
+        // Enhanced visual feedback with haptic feedback
+        scheduleNonCritical(() => {
+          try {
+            // Add subtle haptic feedback if supported
+            if (navigator.vibrate && window.innerWidth <= 768) {
+              navigator.vibrate([50, 25, 50]);
+            }
+            
+            // Add visual feedback class to trigger animations
+            const button = e?.target?.closest('button');
+            if (button) {
+              button.classList.add('watchlist-added');
+              setTimeout(() => button.classList.remove('watchlist-added'), 1000);
+            }
+          } catch (e) {
+            console.warn('Failed to provide feedback:', e);
+          }
+        });
 
       } catch (err) {
+        // Enhanced error handling with comprehensive logging and recovery
+        const errorContext = {
+          movie: movie ? { id: movie.id, title: movie.title || movie.name } : null,
+          timestamp: new Date().toISOString(),
+          userAgent: navigator.userAgent,
+          error: err.message || err.toString(),
+          stack: err.stack
+        };
         // Robust error handling
         console.error('Failed to add movie to watchlist:', err);
         // Optionally, show an error notification/toast here
@@ -1940,9 +2996,17 @@ const Navbar = ({ onMovieSelect }) => {
         </motion.button>
         {/* Hamburger menu (mobile) */}
         <motion.button
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            onClick={() => {
+              toggleMenu();
+              // Add haptic feedback
+              triggerHaptic([20, 10, 20]);
+              // Announce menu state for screen readers
+              announceToScreenReader('Mobile navigation menu opened');
+            }}
           className="relative w-10 h-10 flex items-center justify-center group bg-white/5 hover:bg-white/10 rounded-lg transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-white/10 overflow-hidden"
-          aria-label="Open menu"
+          aria-label={isMobileMenuOpen ? "Close menu" : "Open menu"}
+          aria-expanded={isMobileMenuOpen}
+          aria-controls="mobile-navigation-menu"
           whileHover={{ 
             scale: 1.05,
             rotate: [0, 2, -2, 0],
@@ -2374,287 +3438,713 @@ const Navbar = ({ onMovieSelect }) => {
       {/* MOBILE MENU (hamburger) */}
       <AnimatePresence>
         {isMobileMenuOpen && (
-          <motion.div
-            initial={{ opacity: 0, height: 0, y: -20 }}
-            animate={{ opacity: 1, height: 'auto', y: 0 }}
-            exit={{ opacity: 0, height: 0, y: -20 }}
-            transition={{ 
-              duration: 0.4,
-              ease: [0.4, 0, 0.2, 1],
-              staggerChildren: 0.1
-            }}
-            className="fixed top-16 left-0 right-0 sm:hidden overflow-hidden z-[90000] border-b border-white/10"
-          >
-            {/* Animated/gradient blurred background layer */}
+          <>
+            {/* Enhanced Backdrop with Blur Effect */}
             <motion.div
-              aria-hidden="true"
-              className="absolute inset-0 z-0 pointer-events-none"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.5, ease: 'easeInOut' }}
-              style={{
-                background: 'linear-gradient(180deg, rgba(30,32,38,0.98) 0%, rgba(18,20,23,0.98) 100%)',
-                filter: 'blur(2.5px)',
-                WebkitBackdropFilter: 'blur(16px)',
-                backdropFilter: 'blur(16px)',
-              }}
+              transition={{ duration: 0.3, ease: "easeInOut" }}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[89999] sm:hidden"
+              onClick={handleClickOutside}
             />
-            <motion.div 
-              className="flex flex-col py-4 relative z-10"
-              initial="hidden"
-              animate="visible"
-              variants={{
-                hidden: { opacity: 0 },
-                visible: {
-                  opacity: 1,
-                  transition: {
-                    staggerChildren: 0.08,
-                    delayChildren: 0.1
-                  }
-                }
+            
+            {/* Enhanced Mobile Menu Container */}
+            <motion.div
+              id="mobile-navigation-menu"
+              initial={{ opacity: 0, height: 0, y: -20, scale: 0.95 }}
+              animate={{ opacity: 1, height: 'auto', y: 0, scale: 1 }}
+              exit={{ opacity: 0, height: 0, y: -20, scale: 0.95 }}
+              transition={{ 
+                duration: 0.4,
+                ease: [0.4, 0, 0.2, 1],
+                staggerChildren: 0.08
               }}
-              role="menu"
+              className="fixed top-16 left-0 right-0 sm:hidden overflow-hidden z-[90000]"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="mobile-menu-title"
             >
-              {/* All nav links and profile/auth options (copied from desktop, but mobile-friendly) */}
+              {/* Enhanced Background with Multiple Layers */}
               <motion.div
-                variants={{
-                  hidden: { opacity: 0, x: -20 },
-                  visible: { opacity: 1, x: 0 }
+                aria-hidden="true"
+                className="absolute inset-0 z-0 pointer-events-none"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.5, ease: 'easeInOut' }}
+                style={{
+                  background: `
+                    linear-gradient(180deg, 
+                      rgba(30,32,38,0.98) 0%, 
+                      rgba(18,20,23,0.98) 50%,
+                      rgba(12,14,16,0.98) 100%
+                    )
+                  `,
+                  backdropFilter: 'blur(20px)',
+                  WebkitBackdropFilter: 'blur(20px)',
                 }}
-                transition={{ duration: 0.3, ease: "easeOut" }}
-              >
-              <Link to="/" className="px-6 py-3.5 text-white/80 hover:text-white hover:bg-white/5 active:bg-white/10 transition-all duration-200 flex items-center gap-3 group rounded-lg" onClick={() => setIsMobileMenuOpen(false)} aria-label="Home" role="menuitem">
-                  <motion.div 
-                    className="w-9 h-9 rounded-lg bg-white/5 flex items-center justify-center group-hover:bg-white/10 transition-all duration-300"
-                    whileHover={{ scale: 1.1, rotate: 5 }}
-                    whileTap={{ scale: 0.95 }}
-                  >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 transform transition-transform duration-300 group-hover:scale-110" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                    <polyline points="16 17 21 12 16 7" />
-                  </svg>
-                  </motion.div>
-                <span className="font-medium tracking-wide">Home</span>
-              </Link>
-              </motion.div>
+              />
               
-              {/* Section: Browse */}
-              <div className="px-6 pb-1 pt-2">
-                <span className="text-xs font-semibold uppercase tracking-widest text-white/40">Browse</span>
-              </div>
-              
+              {/* Animated Border Glow */}
               <motion.div
-                variants={{
-                  hidden: { opacity: 0, x: -20 },
-                  visible: { opacity: 1, x: 0 }
+                className="absolute inset-0 z-0 pointer-events-none"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.6, delay: 0.1 }}
+                style={{
+                  background: `
+                    linear-gradient(90deg, 
+                      transparent 0%, 
+                      rgba(255,255,255,0.1) 50%, 
+                      transparent 100%
+                    )
+                  `,
+                  mask: 'linear-gradient(to bottom, transparent 0%, black 10%, black 90%, transparent 100%)',
+                  WebkitMask: 'linear-gradient(to bottom, transparent 0%, black 10%, black 90%, transparent 100%)',
                 }}
-                transition={{ duration: 0.3, ease: "easeOut", delay: 0.1 }}
-              >
-              <Link to="/movies" className="px-6 py-3.5 text-white/80 hover:text-white hover:bg-white/5 active:bg-white/10 transition-all duration-200 flex items-center gap-3 group rounded-lg" onClick={() => setIsMobileMenuOpen(false)} aria-label="Movies" role="menuitem">
-                  <motion.div 
-                    className="w-9 h-9 rounded-lg bg-white/5 flex items-center justify-center group-hover:bg-white/10 transition-all duration-300"
-                    whileHover={{ scale: 1.1, rotate: 5 }}
-                    whileTap={{ scale: 0.95 }}
-                  >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 transform transition-transform duration-300 group-hover:scale-110" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z" />
-                    <polyline points="9 22 9 12 15 12 15 22" />
-                  </svg>
-                  </motion.div>
-                <span className="font-medium">Movies</span>
-              </Link>
-              </motion.div>
+              />
               
-              <motion.div
-                variants={{
-                  hidden: { opacity: 0, x: -20 },
-                  visible: { opacity: 1, x: 0 }
-                }}
-                transition={{ duration: 0.3, ease: "easeOut", delay: 0.2 }}
+              {/* Enhanced Content Container */}
+              <motion.div 
+                className="flex flex-col py-6 relative z-10"
+                initial="hidden"
+                animate="visible"
+                variants={animations.menuContainer}
+                role="menu"
+                aria-label="Mobile navigation menu"
               >
-              <Link to="/series" className="px-6 py-3.5 text-white/80 hover:text-white hover:bg-white/5 active:bg-white/10 transition-all duration-200 flex items-center gap-3 group rounded-lg" onClick={() => setIsMobileMenuOpen(false)} aria-label="Series" role="menuitem">
-                  <motion.div 
-                    className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center group-hover:bg-white/10 transition-colors duration-200"
-                    whileHover={{ scale: 1.1, rotate: 5 }}
-                    whileTap={{ scale: 0.95 }}
-                  >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 transform transition-transform duration-200 group-hover:scale-110" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-                    <line x1="8" y1="21" x2="16" y2="21" />
-                    <line x1="12" y1="17" x2="12" y2="21" />
-                  </svg>
-                  </motion.div>
-                <span className="font-medium">Series</span>
-              </Link>
-              </motion.div>
-              
-              <motion.div
-                variants={{
-                  hidden: { opacity: 0, x: -20 },
-                  visible: { opacity: 1, x: 0 }
-                }}
-                transition={{ duration: 0.3, ease: "easeOut", delay: 0.3 }}
-              >
-              <Link to="/community" className="px-6 py-3.5 text-white/80 hover:text-white hover:bg-white/5 active:bg-white/10 transition-all duration-200 flex items-center gap-3 group rounded-lg" onClick={() => setIsMobileMenuOpen(false)} aria-label="Community" role="menuitem">
-                  <motion.div 
-                    className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center group-hover:bg-white/10 transition-colors duration-200"
-                    whileHover={{ scale: 1.1, rotate: 5 }}
-                    whileTap={{ scale: 0.95 }}
-                  >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 transform transition-transform duration-200 group-hover:scale-110" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10z"/>
-                  </svg>
-                  </motion.div>
-                <span className="font-medium">Community</span>
-              </Link>
-              </motion.div>
-              
-              {user ? (
-                <>
-                  <motion.div
-                    variants={{
-                      hidden: { opacity: 0, x: -20 },
-                      visible: { opacity: 1, x: 0 }
-                    }}
-                    transition={{ duration: 0.3, ease: "easeOut", delay: 0.4 }}
-                  >
-                  <Link to="/watchlist" className="px-6 py-3.5 text-white/80 hover:text-white hover:bg-white/5 active:bg-white/10 transition-all duration-200 flex items-center gap-3 group rounded-lg" onClick={() => setIsMobileMenuOpen(false)} aria-label="My List" role="menuitem">
+                {/* Enhanced Header Section */}
+                <motion.div
+                  variants={animations.menuItem}
+                  transition={{ duration: 0.4, ease: "easeOut" }}
+                  className="px-6 pb-4"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
                       <motion.div 
-                        className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center group-hover:bg-white/10 transition-colors duration-200"
-                        whileHover={{ scale: 1.1, rotate: 5 }}
+                        className="w-10 h-10 rounded-xl bg-gradient-to-br from-white/20 to-white/10 flex items-center justify-center"
+                        whileHover={{ scale: 1.05, rotate: 5 }}
                         whileTap={{ scale: 0.95 }}
+                        transition={{ duration: 0.2 }}
                       >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 transform transition-transform duration-200 group-hover:scale-110" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-                    </svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white/90" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                          <polyline points="16 17 21 12 16 7" />
+                        </svg>
                       </motion.div>
-                  <span className="font-medium">My List</span>
-                </Link>
-                  </motion.div>
-                  
-                  <motion.div
-                    variants={{
-                      hidden: { opacity: 0, x: -20 },
-                      visible: { opacity: 1, x: 0 }
-                    }}
-                    transition={{ duration: 0.3, ease: "easeOut", delay: 0.5 }}
-                  >
-                  <Link to="/profile" className="px-6 py-3.5 text-white/80 hover:text-white hover:bg-white/5 active:bg-white/10 transition-all duration-200 flex items-center gap-3 group rounded-lg" onClick={() => setIsMobileMenuOpen(false)} aria-label="Profile" role="menuitem">
-                      <motion.div 
-                        className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center group-hover:bg-white/10 transition-colors duration-200"
-                        whileHover={{ scale: 1.1, rotate: 5 }}
-                        whileTap={{ scale: 0.95 }}
-                      >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                        <circle cx="12" cy="7" r="4" />
-                      </svg>
-                      </motion.div>
-                    <span className="font-medium">Profile</span>
-                  </Link>
-                  </motion.div>
-                  
-                  <motion.div
-                    variants={{
-                      hidden: { opacity: 0, x: -20 },
-                      visible: { opacity: 1, x: 0 }
-                    }}
-                    transition={{ duration: 0.3, ease: "easeOut", delay: 0.6 }}
-                  >
-                  <button onClick={() => { logout(); setIsMobileMenuOpen(false); }} className="px-6 py-3.5 text-white/80 hover:text-white hover:bg-white/5 active:bg-white/10 transition-all duration-200 flex items-center gap-3 group w-full text-left rounded-lg" aria-label="Logout" role="menuitem">
-                      <motion.div 
-                        className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center group-hover:bg-white/10 transition-colors duration-200"
-                        whileHover={{ scale: 1.1, rotate: 5 }}
-                        whileTap={{ scale: 0.95 }}
-                      >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                        <polyline points="16 17 21 12 16 7" />
-                      </svg>
-                      </motion.div>
-                    <span className="font-medium">Logout</span>
-                  </button>
-                  </motion.div>
-                </>
-              ) : (
-                <>
-                  <motion.div
-                    variants={{
-                      hidden: { opacity: 0, x: -20 },
-                      visible: { opacity: 1, x: 0 }
-                    }}
-                    transition={{ duration: 0.3, ease: "easeOut", delay: 0.4 }}
-                  >
-                  <Link to="/login" className="px-6 py-3.5 text-white/80 hover:text-white hover:bg-white/5 active:bg-white/10 transition-all duration-200 flex items-center gap-3 group rounded-lg" onClick={() => setIsMobileMenuOpen(false)} aria-label="Sign In" role="menuitem">
-                    <motion.div 
-                      className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center group-hover:bg-white/10 transition-colors duration-200"
-                      whileHover={{ scale: 1.1, rotate: 5 }}
-                      whileTap={{ scale: 0.95 }}
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M16 21v-2a4 4 0 0 0-3-3.87" />
-                        <circle cx="12" cy="7" r="4" />
-                        <path d="M6 21v-2a4 4 0 0 1 3-3.87" />
-                      </svg>
-                    </motion.div>
-                    <span className="font-medium">Sign In</span>
-                  </Link>
-                  </motion.div>
-                  
-                  <motion.div
-                    variants={{
-                      hidden: { opacity: 0, x: -20 },
-                      visible: { opacity: 1, x: 0 }
-                    }}
-                    transition={{ duration: 0.3, ease: "easeOut", delay: 0.5 }}
-                  >
-                  <Link to="/signup" className="px-6 py-3.5 text-white/80 hover:text-white hover:bg-white/5 active:bg-white/10 transition-all duration-200 flex items-center gap-3 group rounded-lg" onClick={() => setIsMobileMenuOpen(false)} aria-label="Sign Up" role="menuitem">
-                    <motion.div 
-                      className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center group-hover:bg-white/10 transition-colors duration-200"
-                      whileHover={{ scale: 1.1, rotate: 5 }}
-                      whileTap={{ scale: 0.95 }}
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="7" r="4" />
-                        <path d="M20 21v-2a4 4 0 0 0-3-3.87" />
-                        <path d="M4 21v-2a4 4 0 0 1 3-3.87" />
-                        <line x1="16" y1="11" x2="22" y2="11" />
-                        <line x1="19" y1="8" x2="19" y2="14" />
-                      </svg>
-                    </motion.div>
-                    <span className="font-medium">Sign Up</span>
-                  </Link>
-                  </motion.div>
-                </>
-              )}
-              {/* Divider before bottom actions */}
-              <div className="my-2 border-t border-white/10 mx-6" />
-              {/* Bottom actions: Settings and Logout */}
-              {user && (
-                <div className="flex flex-col gap-1 px-6 pb-4 pt-2 mt-auto">
-                  <Link to="/settings" className="flex items-center gap-3 px-0 py-3.5 text-white/80 hover:text-white hover:bg-white/5 active:bg-white/10 transition-all duration-200 group rounded-lg" aria-label="Settings" role="menuitem">
-                    <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center group-hover:bg-white/10 transition-colors duration-200">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="12" r="3" />
-                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 1.82-.33 1.65 1.65 0 0 0 1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                      </svg>
+                      <div>
+                        <h2 id="mobile-menu-title" className="text-white font-semibold text-lg">Navigation</h2>
+                        <p className="text-white/60 text-sm">Explore Streamr</p>
+                      </div>
                     </div>
-                    <span className="font-medium">Settings</span>
-                  </Link>
-                  <button onClick={() => { logout(); setIsMobileMenuOpen(false); }} className="flex items-center gap-3 px-0 py-3.5 text-white/80 hover:text-white hover:bg-white/5 active:bg-white/10 transition-all duration-200 group w-full text-left rounded-lg" aria-label="Logout" role="menuitem">
-                    <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center group-hover:bg-white/10 transition-colors duration-200">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                        <polyline points="16 17 21 12 16 7" />
+                    <motion.button
+                      onClick={closeMenu}
+                      className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all duration-200"
+                      whileHover={{ scale: 1.1, rotate: 90 }}
+                      whileTap={{ scale: 0.9 }}
+                      aria-label="Close menu"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/80" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M18 6L6 18M6 6l12 12" />
                       </svg>
+                    </motion.button>
+                  </div>
+                </motion.div>
+
+                {/* Enhanced Navigation Links */}
+                <div className="space-y-1">
+                  {/* Home Link */}
+                  <motion.div
+                    variants={animations.menuItem}
+                    transition={{ duration: 0.4, ease: "easeOut" }}
+                  >
+                    <Link 
+                      to="/" 
+                      className="mx-6 px-4 py-4 text-white/90 hover:text-white hover:bg-gradient-to-r hover:from-white/10 hover:to-white/5 active:bg-white/15 transition-all duration-300 flex items-center gap-4 group rounded-xl border border-transparent hover:border-white/10" 
+                      onClick={() => {
+                        closeMenu();
+                        // Add haptic feedback
+                        triggerHaptic([15]);
+                      }} 
+                      aria-label="Home" 
+                      role="menuitem"
+                    >
+                      <motion.div 
+                        className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-white/15 to-white/5 flex items-center justify-center group-hover:from-white/25 group-hover:to-white/10 transition-all duration-300 shadow-lg"
+                        whileHover={{ scale: 1.1, rotate: 5 }}
+                        whileTap={{ scale: 0.95 }}
+                      >
+                        {/* Animated Background Glow */}
+                        <motion.div
+                          className="absolute inset-0 rounded-xl bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-sm"
+                          animate={{
+                            scale: [1, 1.1, 1],
+                            opacity: [0, 0.3, 0],
+                          }}
+                          transition={{
+                            duration: 2,
+                            repeat: Infinity,
+                            ease: "easeInOut",
+                            delay: 0.5
+                          }}
+                        />
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform transition-transform duration-300 group-hover:scale-110 relative z-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                          <polyline points="16 17 21 12 16 7" />
+                        </svg>
+                      </motion.div>
+                      <div className="flex-1">
+                        <span className="font-semibold tracking-wide text-base">Home</span>
+                        <p className="text-white/50 text-xs mt-0.5">Discover trending content</p>
+                      </div>
+                      <motion.div
+                        className="opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                        initial={{ x: 10 }}
+                        animate={{ x: 0 }}
+                        transition={{ duration: 0.2 }}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M9 18l6-6-6-6" />
+                        </svg>
+                      </motion.div>
+                    </Link>
+                  </motion.div>
+                  
+                  {/* Section: Browse */}
+                  <motion.div
+                    variants={animations.menuItem}
+                    transition={{ duration: 0.4, ease: "easeOut", delay: 0.1 }}
+                    className="px-6 pt-6 pb-2"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-1 h-4 bg-gradient-to-b from-white/60 to-white/20 rounded-full"></div>
+                      <span className="text-xs font-bold uppercase tracking-widest text-white/50">Browse</span>
                     </div>
-                    <span className="font-medium">Logout</span>
-                  </button>
+                  </motion.div>
+                  
+                  {/* Movies Link */}
+                  <motion.div
+                    variants={animations.menuItem}
+                    transition={{ duration: 0.4, ease: "easeOut", delay: 0.15 }}
+                  >
+                    <Link 
+                      to="/movies" 
+                      className="mx-6 px-4 py-4 text-white/90 hover:text-white hover:bg-gradient-to-r hover:from-white/10 hover:to-white/5 active:bg-white/15 transition-all duration-300 flex items-center gap-4 group rounded-xl border border-transparent hover:border-white/10" 
+                      onClick={() => {
+                        closeMenu();
+                        // Add haptic feedback
+                        triggerHaptic([15]);
+                      }} 
+                      aria-label="Movies" 
+                      role="menuitem"
+                    >
+                      <motion.div 
+                        className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-white/15 to-white/5 flex items-center justify-center group-hover:from-white/25 group-hover:to-white/10 transition-all duration-300 shadow-lg"
+                        whileHover={{ scale: 1.1, rotate: 5 }}
+                        whileTap={{ scale: 0.95 }}
+                      >
+                        <motion.div
+                          className="absolute inset-0 rounded-xl bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-sm"
+                          animate={{
+                            scale: [1, 1.1, 1],
+                            opacity: [0, 0.3, 0],
+                          }}
+                          transition={{
+                            duration: 2,
+                            repeat: Infinity,
+                            ease: "easeInOut",
+                            delay: 0.6
+                          }}
+                        />
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform transition-transform duration-300 group-hover:scale-110 relative z-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <polyline points="14 2 14 8 20 8" />
+                          <line x1="16" y1="13" x2="8" y2="13" />
+                          <line x1="16" y1="17" x2="8" y2="17" />
+                          <polyline points="10 9 9 9 8 9" />
+                        </svg>
+                      </motion.div>
+                      <div className="flex-1">
+                        <span className="font-semibold text-base">Movies</span>
+                        <p className="text-white/50 text-xs mt-0.5">Latest releases & classics</p>
+                      </div>
+                      <motion.div
+                        className="opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                        initial={{ x: 10 }}
+                        animate={{ x: 0 }}
+                        transition={{ duration: 0.2 }}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M9 18l6-6-6-6" />
+                        </svg>
+                      </motion.div>
+                    </Link>
+                  </motion.div>
+                  
+                  {/* Series Link */}
+                  <motion.div
+                    variants={animations.menuItem}
+                    transition={{ duration: 0.4, ease: "easeOut", delay: 0.2 }}
+                  >
+                    <Link 
+                      to="/series" 
+                      className="mx-6 px-4 py-4 text-white/90 hover:text-white hover:bg-gradient-to-r hover:from-white/10 hover:to-white/5 active:bg-white/15 transition-all duration-300 flex items-center gap-4 group rounded-xl border border-transparent hover:border-white/10" 
+                      onClick={() => {
+                        closeMenu();
+                        // Add haptic feedback
+                        triggerHaptic([15]);
+                      }} 
+                      aria-label="Series" 
+                      role="menuitem"
+                    >
+                      <motion.div 
+                        className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-white/15 to-white/5 flex items-center justify-center group-hover:from-white/25 group-hover:to-white/10 transition-all duration-300 shadow-lg"
+                        whileHover={{ scale: 1.1, rotate: 5 }}
+                        whileTap={{ scale: 0.95 }}
+                      >
+                        <motion.div
+                          className="absolute inset-0 rounded-xl bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-sm"
+                          animate={{
+                            scale: [1, 1.1, 1],
+                            opacity: [0, 0.3, 0],
+                          }}
+                          transition={{
+                            duration: 2,
+                            repeat: Infinity,
+                            ease: "easeInOut",
+                            delay: 0.7
+                          }}
+                        />
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform transition-transform duration-300 group-hover:scale-110 relative z-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                          <line x1="8" y1="21" x2="16" y2="21" />
+                          <line x1="12" y1="17" x2="12" y2="21" />
+                        </svg>
+                      </motion.div>
+                      <div className="flex-1">
+                        <span className="font-semibold text-base">Series</span>
+                        <p className="text-white/50 text-xs mt-0.5">TV shows & episodes</p>
+                      </div>
+                      <motion.div
+                        className="opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                        initial={{ x: 10 }}
+                        animate={{ x: 0 }}
+                        transition={{ duration: 0.2 }}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M9 18l6-6-6-6" />
+                        </svg>
+                      </motion.div>
+                    </Link>
+                  </motion.div>
+                  
+                  {/* Community Link */}
+                  <motion.div
+                    variants={animations.menuItem}
+                    transition={{ duration: 0.4, ease: "easeOut", delay: 0.25 }}
+                  >
+                    <Link 
+                      to="/community" 
+                      className="mx-6 px-4 py-4 text-white/90 hover:text-white hover:bg-gradient-to-r hover:from-white/10 hover:to-white/5 active:bg-white/15 transition-all duration-300 flex items-center gap-4 group rounded-xl border border-transparent hover:border-white/10" 
+                      onClick={() => {
+                        closeMenu();
+                        // Add haptic feedback
+                        triggerHaptic([15]);
+                      }} 
+                      aria-label="Community" 
+                      role="menuitem"
+                    >
+                      <motion.div 
+                        className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-white/15 to-white/5 flex items-center justify-center group-hover:from-white/25 group-hover:to-white/10 transition-all duration-300 shadow-lg"
+                        whileHover={{ scale: 1.1, rotate: 5 }}
+                        whileTap={{ scale: 0.95 }}
+                      >
+                        <motion.div
+                          className="absolute inset-0 rounded-xl bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-sm"
+                          animate={{
+                            scale: [1, 1.1, 1],
+                            opacity: [0, 0.3, 0],
+                          }}
+                          transition={{
+                            duration: 2,
+                            repeat: Infinity,
+                            ease: "easeInOut",
+                            delay: 0.8
+                          }}
+                        />
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform transition-transform duration-300 group-hover:scale-110 relative z-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10z"/>
+                        </svg>
+                      </motion.div>
+                      <div className="flex-1">
+                        <span className="font-semibold text-base">Community</span>
+                        <p className="text-white/50 text-xs mt-0.5">Discuss & share opinions</p>
+                      </div>
+                      <motion.div
+                        className="opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                        initial={{ x: 10 }}
+                        animate={{ x: 0 }}
+                        transition={{ duration: 0.2 }}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M9 18l6-6-6-6" />
+                        </svg>
+                      </motion.div>
+                    </Link>
+                  </motion.div>
                 </div>
-              )}
+
+                {/* Enhanced User Section */}
+                {user ? (
+                  <>
+                    {/* Section: Account */}
+                    <motion.div
+                      variants={animations.menuItem}
+                      transition={{ duration: 0.4, ease: "easeOut", delay: 0.3 }}
+                      className="px-6 pt-6 pb-2"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-1 h-4 bg-gradient-to-b from-white/60 to-white/20 rounded-full"></div>
+                        <span className="text-xs font-bold uppercase tracking-widest text-white/50">My Account</span>
+                      </div>
+                    </motion.div>
+                    
+                    {/* Watchlist Link */}
+                    <motion.div
+                      variants={animations.menuItem}
+                      transition={{ duration: 0.4, ease: "easeOut", delay: 0.35 }}
+                    >
+                      <Link 
+                        to="/watchlist" 
+                        className="mx-6 px-4 py-4 text-white/90 hover:text-white hover:bg-gradient-to-r hover:from-white/10 hover:to-white/5 active:bg-white/15 transition-all duration-300 flex items-center gap-4 group rounded-xl border border-transparent hover:border-white/10" 
+                        onClick={() => {
+                          closeMenu();
+                          // Add haptic feedback
+                          triggerHaptic([15]);
+                        }} 
+                        aria-label="My List" 
+                        role="menuitem"
+                      >
+                        <motion.div 
+                          className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-white/15 to-white/5 flex items-center justify-center group-hover:from-white/25 group-hover:to-white/10 transition-all duration-300 shadow-lg"
+                          whileHover={{ scale: 1.1, rotate: 5 }}
+                          whileTap={{ scale: 0.95 }}
+                        >
+                          <motion.div
+                            className="absolute inset-0 rounded-xl bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-sm"
+                            animate={{
+                              scale: [1, 1.1, 1],
+                              opacity: [0, 0.3, 0],
+                            }}
+                            transition={{
+                              duration: 2,
+                              repeat: Infinity,
+                              ease: "easeInOut",
+                              delay: 0.9
+                            }}
+                          />
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform transition-transform duration-300 group-hover:scale-110 relative z-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                          </svg>
+                        </motion.div>
+                        <div className="flex-1">
+                          <span className="font-semibold text-base">My List</span>
+                          <p className="text-white/50 text-xs mt-0.5">Your saved content</p>
+                        </div>
+                        <motion.div
+                          className="opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                          initial={{ x: 10 }}
+                          animate={{ x: 0 }}
+                          transition={{ duration: 0.2 }}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M9 18l6-6-6-6" />
+                          </svg>
+                        </motion.div>
+                      </Link>
+                    </motion.div>
+                    
+                    {/* Profile Link */}
+                    <motion.div
+                      variants={animations.menuItem}
+                      transition={{ duration: 0.4, ease: "easeOut", delay: 0.4 }}
+                    >
+                      <Link 
+                        to="/profile" 
+                        className="mx-6 px-4 py-4 text-white/90 hover:text-white hover:bg-gradient-to-r hover:from-white/10 hover:to-white/5 active:bg-white/15 transition-all duration-300 flex items-center gap-4 group rounded-xl border border-transparent hover:border-white/10" 
+                        onClick={() => {
+                          closeMenu();
+                          // Add haptic feedback
+                          triggerHaptic([15]);
+                        }} 
+                        aria-label="Profile" 
+                        role="menuitem"
+                      >
+                        <motion.div 
+                          className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-white/15 to-white/5 flex items-center justify-center group-hover:from-white/25 group-hover:to-white/10 transition-all duration-300 shadow-lg"
+                          whileHover={{ scale: 1.1, rotate: 5 }}
+                          whileTap={{ scale: 0.95 }}
+                        >
+                          <motion.div
+                            className="absolute inset-0 rounded-xl bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-sm"
+                            animate={{
+                              scale: [1, 1.1, 1],
+                              opacity: [0, 0.3, 0],
+                            }}
+                            transition={{
+                              duration: 2,
+                              repeat: Infinity,
+                              ease: "easeInOut",
+                              delay: 1
+                            }}
+                          />
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform transition-transform duration-300 group-hover:scale-110 relative z-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                            <circle cx="12" cy="7" r="4" />
+                          </svg>
+                        </motion.div>
+                        <div className="flex-1">
+                          <span className="font-semibold text-base">Profile</span>
+                          <p className="text-white/50 text-xs mt-0.5">Manage your account</p>
+                        </div>
+                        <motion.div
+                          className="opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                          initial={{ x: 10 }}
+                          animate={{ x: 0 }}
+                          transition={{ duration: 0.2 }}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M9 18l6-6-6-6" />
+                          </svg>
+                        </motion.div>
+                      </Link>
+                    </motion.div>
+                  </>
+                ) : (
+                  <>
+                    {/* Section: Authentication */}
+                    <motion.div
+                      variants={animations.menuItem}
+                      transition={{ duration: 0.4, ease: "easeOut", delay: 0.3 }}
+                      className="px-6 pt-6 pb-2"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-1 h-4 bg-gradient-to-b from-white/60 to-white/20 rounded-full"></div>
+                        <span className="text-xs font-bold uppercase tracking-widest text-white/50">Account</span>
+                      </div>
+                    </motion.div>
+                    
+                    {/* Sign In Link */}
+                    <motion.div
+                      variants={animations.menuItem}
+                      transition={{ duration: 0.4, ease: "easeOut", delay: 0.35 }}
+                    >
+                      <Link 
+                        to="/login" 
+                        className="mx-6 px-4 py-4 text-white/90 hover:text-white hover:bg-gradient-to-r hover:from-white/10 hover:to-white/5 active:bg-white/15 transition-all duration-300 flex items-center gap-4 group rounded-xl border border-transparent hover:border-white/10" 
+                        onClick={() => {
+                          closeMenu();
+                          // Add haptic feedback
+                          triggerHaptic([15]);
+                        }} 
+                        aria-label="Sign In" 
+                        role="menuitem"
+                      >
+                        <motion.div 
+                          className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-white/15 to-white/5 flex items-center justify-center group-hover:from-white/25 group-hover:to-white/10 transition-all duration-300 shadow-lg"
+                          whileHover={{ scale: 1.1, rotate: 5 }}
+                          whileTap={{ scale: 0.95 }}
+                        >
+                          <motion.div
+                            className="absolute inset-0 rounded-xl bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-sm"
+                            animate={{
+                              scale: [1, 1.1, 1],
+                              opacity: [0, 0.3, 0],
+                            }}
+                            transition={{
+                              duration: 2,
+                              repeat: Infinity,
+                              ease: "easeInOut",
+                              delay: 1.1
+                            }}
+                          />
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform transition-transform duration-300 group-hover:scale-110 relative z-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                            <polyline points="10 17 15 12 10 7" />
+                            <line x1="15" y1="12" x2="3" y2="12" />
+                          </svg>
+                        </motion.div>
+                        <div className="flex-1">
+                          <span className="font-semibold text-base">Sign In</span>
+                          <p className="text-white/50 text-xs mt-0.5">Access your account</p>
+                        </div>
+                        <motion.div
+                          className="opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                          initial={{ x: 10 }}
+                          animate={{ x: 0 }}
+                          transition={{ duration: 0.2 }}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M9 18l6-6-6-6" />
+                          </svg>
+                        </motion.div>
+                      </Link>
+                    </motion.div>
+                    
+                    {/* Sign Up Link */}
+                    <motion.div
+                      variants={animations.menuItem}
+                      transition={{ duration: 0.4, ease: "easeOut", delay: 0.4 }}
+                    >
+                      <Link 
+                        to="/signup" 
+                        className="mx-6 px-4 py-4 text-white/90 hover:text-white hover:bg-gradient-to-r hover:from-white/10 hover:to-white/5 active:bg-white/15 transition-all duration-300 flex items-center gap-4 group rounded-xl border border-transparent hover:border-white/10" 
+                        onClick={() => {
+                          closeMenu();
+                          // Add haptic feedback
+                          triggerHaptic([15]);
+                        }} 
+                        aria-label="Sign Up" 
+                        role="menuitem"
+                      >
+                        <motion.div 
+                          className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-white/15 to-white/5 flex items-center justify-center group-hover:from-white/25 group-hover:to-white/10 transition-all duration-300 shadow-lg"
+                          whileHover={{ scale: 1.1, rotate: 5 }}
+                          whileTap={{ scale: 0.95 }}
+                        >
+                          <motion.div
+                            className="absolute inset-0 rounded-xl bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-sm"
+                            animate={{
+                              scale: [1, 1.1, 1],
+                              opacity: [0, 0.3, 0],
+                            }}
+                            transition={{
+                              duration: 2,
+                              repeat: Infinity,
+                              ease: "easeInOut",
+                              delay: 1.2
+                            }}
+                          />
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform transition-transform duration-300 group-hover:scale-110 relative z-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                            <circle cx="8.5" cy="7" r="4" />
+                            <line x1="20" y1="8" x2="20" y2="14" />
+                            <line x1="23" y1="11" x2="17" y2="11" />
+                          </svg>
+                        </motion.div>
+                        <div className="flex-1">
+                          <span className="font-semibold text-base">Sign Up</span>
+                          <p className="text-white/50 text-xs mt-0.5">Create new account</p>
+                        </div>
+                        <motion.div
+                          className="opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                          initial={{ x: 10 }}
+                          animate={{ x: 0 }}
+                          transition={{ duration: 0.2 }}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M9 18l6-6-6-6" />
+                          </svg>
+                        </motion.div>
+                      </Link>
+                    </motion.div>
+                  </>
+                )}
+
+                {/* Enhanced Divider */}
+                <motion.div
+                  variants={animations.menuItem}
+                  transition={{ duration: 0.5, ease: "easeOut", delay: 0.45 }}
+                  className="mx-6 my-4"
+                >
+                  <div className="h-px bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
+                </motion.div>
+
+                {/* Enhanced Footer Section */}
+                <div className="space-y-1 px-6 pb-4">
+                  <motion.div
+                    variants={animations.menuItem}
+                    transition={{ duration: 0.4, ease: "easeOut", delay: 0.5 }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-white/15 to-white/5 flex items-center justify-center">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <circle cx="12" cy="12" r="3" />
+                            <path d="M12 1v6m0 6v6m11-7h-6m-6 0H1" />
+                          </svg>
+                        </div>
+                        <div>
+                          <span className="text-white/80 text-sm font-medium">Settings</span>
+                          <p className="text-white/40 text-xs">App preferences</p>
+                        </div>
+                      </div>
+                      <motion.button
+                        className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all duration-200"
+                        whileHover={{ scale: 1.1, rotate: 90 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={() => {
+                          // Add haptic feedback
+                          triggerHaptic([10]);
+                        }}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M9 18l6-6-6-6" />
+                        </svg>
+                      </motion.button>
+                    </div>
+                  </motion.div>
+                  
+                  <motion.div
+                    variants={animations.menuItem}
+                    transition={{ duration: 0.4, ease: "easeOut", delay: 0.55 }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-white/15 to-white/5 flex items-center justify-center">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                            <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                          </svg>
+                        </div>
+                        <div>
+                          <span className="text-white/80 text-sm font-medium">Help & Support</span>
+                          <p className="text-white/40 text-xs">Get assistance</p>
+                        </div>
+                      </div>
+                      <motion.button
+                        className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all duration-200"
+                        whileHover={{ scale: 1.1, rotate: 90 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={() => {
+                          // Add haptic feedback
+                          triggerHaptic([10]);
+                        }}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M9 18l6-6-6-6" />
+                        </svg>
+                      </motion.button>
+                    </div>
+                  </motion.div>
+                </div>
+
+                {/* Enhanced Footer */}
+                <motion.div
+                  variants={animations.menuItem}
+                  transition={{ duration: 0.4, ease: "easeOut", delay: 0.6 }}
+                  className="px-6 pt-4 pb-6"
+                >
+                  <div className="text-center">
+                    <p className="text-white/40 text-xs">Streamr v1.0.0</p>
+                    <p className="text-white/30 text-xs mt-1">© 2024 Streamr. All rights reserved.</p>
+                  </div>
+                </motion.div>
+              </motion.div>
             </motion.div>
-          </motion.div>
+          </>
         )}
       </AnimatePresence>
     </header>

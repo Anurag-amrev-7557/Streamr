@@ -1,30 +1,53 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-import { compression } from 'vite-plugin-compression2'
-import { visualizer } from 'rollup-plugin-visualizer'
-import { VitePWA } from 'vite-plugin-pwa'
-import path from 'path'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import { compression } from 'vite-plugin-compression2';
+import { visualizer } from 'rollup-plugin-visualizer';
+import { VitePWA } from 'vite-plugin-pwa';
+import path from 'path';
+import { imagetools } from 'vite-imagetools';
+import zlib from 'zlib';
 
-// https://vite.dev/config/
 export default defineConfig({
   plugins: [
-    react(),
+    react({
+      fastRefresh: true,
+      jsxRuntime: 'automatic',
+      babel: {
+        plugins: [
+          [
+            '@babel/plugin-transform-react-jsx',
+            { runtime: 'automatic' }
+          ]
+        ]
+      }
+    }),
     compression({
       algorithm: 'gzip',
-      exclude: [/\.(br)$/, /\.(gz)$/],
+      exclude: [/\.(br|gz)$/],
+      threshold: 8192,
+      deleteOriginFile: false,
+      filter: /\.(js|mjs|json|css|html|svg)$/i,
+      compressionOptions: { level: 9 }
     }),
     compression({
       algorithm: 'brotliCompress',
-      exclude: [/\.(br)$/, /\.(gz)$/],
+      exclude: [/\.(br|gz)$/],
+      threshold: 8192,
+      deleteOriginFile: false,
+      filter: /\.(js|mjs|json|css|html|svg)$/i,
+      compressionOptions: { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 11 } }
     }),
     visualizer({
       filename: 'dist/stats.html',
-      open: true,
+      open: false,
       gzipSize: true,
       brotliSize: true,
+      template: 'treemap',
+      emitFile: true,
     }),
     VitePWA({
       registerType: 'autoUpdate',
+      injectRegister: 'auto',
       manifest: {
         name: 'Streamr',
         short_name: 'Streamr',
@@ -43,27 +66,68 @@ export default defineConfig({
         ]
       },
       workbox: {
+        cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
+        navigateFallback: '/offline.html',
         runtimeCaching: [
+          // Frequently updated: NetworkFirst
           {
-            urlPattern: /\/api\//,
+            urlPattern: /\/api\/community\/discussions/,
             handler: 'NetworkFirst',
             options: {
-              cacheName: 'api-cache',
-              expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 },
-              networkTimeoutSeconds: 10
+              cacheName: 'discussions-api-cache-v2',
+              expiration: { maxEntries: 50, maxAgeSeconds: 60 * 30 },
+              networkTimeoutSeconds: 8,
+              cacheableResponse: { statuses: [0, 200] }
+            }
+          },
+          // Rarely updated: StaleWhileRevalidate
+          {
+            urlPattern: /\/api\/user\/profile/,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'user-profile-cache-v2',
+              expiration: { maxEntries: 5, maxAgeSeconds: 60 * 60 * 24 * 7 },
+              cacheableResponse: { statuses: [0, 200] }
+            }
+          },
+          // Background sync for all critical POSTs
+          {
+            urlPattern: /\/api\/(community|watchlist|user)/,
+            handler: 'NetworkFirst',
+            method: 'POST',
+            options: {
+              backgroundSync: {
+                name: 'critical-post-queue',
+                options: { maxRetentionTime: 24 * 60 }
+              },
+              cacheName: 'critical-post-cache-v2',
+              cacheableResponse: { statuses: [0, 200] }
             }
           },
           {
-            urlPattern: /\.(?:png|jpg|jpeg|svg|webp|gif|ico)$/,
+            urlPattern: /\.(?:png|jpg|jpeg|svg|webp|gif|ico|avif|mp4|webm)$/,
             handler: 'CacheFirst',
             options: {
               cacheName: 'image-cache',
-              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 30 }
+              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheableResponse: { statuses: [0, 200] }
+            }
+          },
+          {
+            urlPattern: /^https:\/\/fonts\.(?:googleapis|gstatic)\.com\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'google-fonts-cache',
+              expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] }
             }
           }
         ]
       }
-    })
+    }),
+    imagetools()
   ],
   resolve: {
     alias: {
@@ -90,7 +154,7 @@ export default defineConfig({
       '@fixtures': path.resolve(__dirname, './src/fixtures'),
       '@public': path.resolve(__dirname, './public'),
       '@root': path.resolve(__dirname, '.')
-    },
+    }
   },
   build: {
     target: 'esnext',
@@ -99,63 +163,129 @@ export default defineConfig({
       compress: {
         drop_console: true,
         drop_debugger: true,
+        passes: 3,
+        pure_funcs: ['console.info', 'console.warn'],
+        ecma: 2020,
+        keep_fargs: false,
+        keep_infinity: true,
+        module: true,
+        unsafe: true,
+        unsafe_arrows: true,
+        unsafe_methods: true,
+        unsafe_proto: true,
+        unsafe_undefined: true,
       },
+      format: {
+        comments: false,
+      }
     },
     outDir: 'dist',
     rollupOptions: {
       output: {
         manualChunks: {
-          vendor: ['react', 'react-dom', 'react-router-dom'],
-          ui: ['@mui/material', '@mui/icons-material', '@emotion/react', '@emotion/styled']
+          vendor: [
+            'react',
+            'react-dom',
+            'react-router-dom'
+          ]
         },
         chunkFileNames: 'assets/js/[name]-[hash].js',
         entryFileNames: 'assets/js/[name]-[hash].js',
-        assetFileNames: 'assets/[ext]/[name]-[hash].[ext]',
-      },
+        assetFileNames: ({ name }) => {
+          if (/\.(css)$/.test(name ?? '')) {
+            return 'assets/css/[name]-[hash][extname]';
+          }
+          if (/\.(png|jpe?g|svg|gif|webp|ico|avif)$/.test(name ?? '')) {
+            return 'assets/images/[name]-[hash][extname]';
+          }
+          return 'assets/[ext]/[name]-[hash][extname]';
+        }
+      }
     },
-    chunkSizeWarningLimit: 1000,
+    chunkSizeWarningLimit: 700,
     cssCodeSplit: true,
-    sourcemap: true,
+    sourcemap: process.env.NODE_ENV !== 'production', // Disable sourcemaps in production for smaller builds
+    brotliSize: true,
+    reportCompressedSize: true,
+    emptyOutDir: true
   },
   css: {
     devSourcemap: false,
     modules: {
-      localsConvention: 'camelCase',
+      localsConvention: 'camelCaseOnly',
+      generateScopedName: '[local]__[hash:base64:6]'
     },
+    preprocessorOptions: {
+      scss: {
+        additionalData: `@import "@/styles/variables.scss";`
+      }
+    }
   },
   server: {
     hmr: {
       overlay: false,
+      timeout: 20000
     },
     watch: {
       usePolling: false,
+      interval: 100
     },
     port: 5173,
+    strictPort: true,
+    open: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        target: 'https://streamr-jjj9.onrender.com',
         changeOrigin: true,
         secure: false,
-        rewrite: (path) => path,
+        rewrite: (p) => p,
         configure: (proxy, _options) => {
           proxy.on('error', (err, _req, _res) => {
-            console.log('proxy error', err);
+            // eslint-disable-next-line no-console
+            console.error('[Proxy Error]', err);
           });
           proxy.on('proxyReq', (proxyReq, req, _res) => {
-            console.log('Sending Request to the Target:', req.method, req.url);
+            // eslint-disable-next-line no-console
+            if (process.env.NODE_ENV === 'development') {
+              console.info('[Proxy Request]', req.method, req.url);
+            }
           });
           proxy.on('proxyRes', (proxyRes, req, _res) => {
-            console.log('Received Response from the Target:', proxyRes.statusCode, req.url);
+            // eslint-disable-next-line no-console
+            if (process.env.NODE_ENV === 'development') {
+              console.info('[Proxy Response]', proxyRes.statusCode, req.url);
+            }
           });
         }
       }
     }
   },
   optimizeDeps: {
-    include: ['react', 'react-dom', 'react-router-dom'],
-    exclude: ['@headlessui/react', '@heroicons/react'],
+    include: [
+      'react',
+      'react-dom',
+      'react-router-dom'
+    ],
+    exclude: [
+      '@headlessui/react',
+      '@heroicons/react'
+    ]
   },
   esbuild: {
     logOverride: { 'this-is-undefined-in-esm': 'silent' },
+    target: 'esnext',
+    minify: true,
+    legalComments: 'none'
   },
-})
+  json: {
+    namedExports: true,
+    stringify: false
+  },
+  envPrefix: ['VITE_', 'REACT_APP_']
+});
+
+// Additional Recommendations:
+// 1. For Tailwind CSS, ensure purge is enabled in tailwind.config.js:
+//    purge: ['./src/**/*.{js,jsx,ts,tsx,html}'],
+// 2. For React code-splitting, use React.lazy and Suspense for large pages/components.
+// 3. Consider lazy loading images and using modern formats (WebP/AVIF) in your components.

@@ -831,6 +831,7 @@ const WatchlistPage = () => {
         <MovieDetailsOverlay
           movie={selectedMovie}
           onClose={() => setSelectedMovie(null)}
+          onMovieSelect={handleMovieSelect}
         />
       )}
     </div>

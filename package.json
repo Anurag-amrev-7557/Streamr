@@ -1,0 +1,9 @@
+{
+  "devDependencies": {
+    "@babel/plugin-transform-react-jsx": "^7.27.1",
+    "@tanstack/react-query-devtools": "^5.83.0"
+  },
+  "dependencies": {
+    "firebase": "^12.0.0"
+  }
+}

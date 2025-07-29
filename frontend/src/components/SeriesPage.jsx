@@ -274,7 +274,6 @@ const SeriesPage = () => {
 
   const handleCategoryClick = async (category) => {
     setActiveCategory(category);
-    setSeries([]);
     setLoading(true);
     setError(null);
     setPage(1);
@@ -316,11 +315,13 @@ const SeriesPage = () => {
         setSeries(transformedSeries);
         setHasMore(response.page < response.total_pages);
       } else {
+        setSeries([]); // Only clear if no results
         setError('No series found');
         setHasMore(false);
       }
     } catch (err) {
       console.error('Error fetching series:', err);
+      setSeries([]); // Only clear on error
       setError('Failed to load series');
       setHasMore(false);
     } finally {
@@ -647,8 +648,10 @@ const SeriesPage = () => {
           <div className="text-center text-red-500 py-8">{error}</div>
         ) : (
           <div className="mt-8">
-            {loading && series.length === 0 ? (
-              <p>Loading...</p>
+            {loading && series.length === 0 && !searchQuery ? (
+              <div className="flex justify-center py-8">
+                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white"></div>
+              </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-6">
                 {getDisplaySeries().map((s) => (
@@ -659,7 +662,15 @@ const SeriesPage = () => {
           </div>
         )}
 
-        {(loading || isSearching) && (
+        {/* Show loading spinner only when loading more content (not initial load) */}
+        {loading && series.length > 0 && (
+          <div className="flex justify-center py-8">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white"></div>
+          </div>
+        )}
+
+        {/* Show loading spinner for search */}
+        {isSearching && (
           <div className="flex justify-center py-8">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white"></div>
           </div>

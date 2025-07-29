@@ -2,6 +2,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { getMovieDetails, getMovieCredits, getMovieVideos, getSimilarMovies } from '../services/tmdbService';
 import { PageLoader, SectionLoader, CardLoader } from './Loader';
+import { getStreamingUrl, isStreamingAvailable, needsEpisodeSelection } from '../services/streamingService';
+import StreamingPlayer from './StreamingPlayer';
+import TVEpisodeSelector from './TVEpisodeSelector';
 
 const MovieDetails = () => {
   const { id } = useParams();
@@ -33,6 +36,11 @@ const MovieDetails = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const playerRef = useRef(null);
   const [modalPosition, setModalPosition] = useState({ top: 0, left: 0 });
+  
+  // Streaming state
+  const [showStreamingPlayer, setShowStreamingPlayer] = useState(false);
+  const [streamingUrl, setStreamingUrl] = useState(null);
+  const [showEpisodeSelector, setShowEpisodeSelector] = useState(false);
 
   const seasons = [
     { id: 1, label: 'Season 1' },
@@ -268,6 +276,60 @@ const MovieDetails = () => {
     return () => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
+  }, []);
+
+  // Streaming handlers
+  const handleStreamingClick = useCallback(() => {
+    if (!movieDetails) return;
+    
+    const movie = {
+      id: movieDetails.id,
+      type: movieDetails.type || 'movie'
+    };
+    
+    // Check if episode selection is needed for TV shows
+    if (needsEpisodeSelection(movie)) {
+      setShowEpisodeSelector(true);
+      return;
+    }
+    
+    const url = getStreamingUrl(movie);
+    if (url) {
+      setStreamingUrl(url);
+      setShowStreamingPlayer(true);
+    }
+  }, [movieDetails]);
+
+  const handleCloseStreaming = useCallback(() => {
+    setShowStreamingPlayer(false);
+    setStreamingUrl(null);
+  }, []);
+
+  const handleStreamingError = useCallback((error) => {
+    console.error('Streaming error:', error);
+    setShowStreamingPlayer(false);
+    setStreamingUrl(null);
+  }, []);
+
+  const handleEpisodeSelect = useCallback((season, episode) => {
+    if (!movieDetails) return;
+    
+    const movie = {
+      id: movieDetails.id,
+      type: movieDetails.type || 'movie',
+      season,
+      episode
+    };
+    
+    const url = getStreamingUrl(movie);
+    if (url) {
+      setStreamingUrl(url);
+      setShowStreamingPlayer(true);
+    }
+  }, [movieDetails]);
+
+  const handleCloseEpisodeSelector = useCallback(() => {
+    setShowEpisodeSelector(false);
   }, []);
 
   const renderDetailsTab = () => {
@@ -534,16 +596,17 @@ const MovieDetails = () => {
   if (!movieDetails || !isMounted) return null;
 
   return (
-    <div 
-      className="movie-details-overlay"
-      onClick={handleClose}
-      style={{
-        '--initial-top': `${modalPosition.top}px`,
-        '--initial-left': `${modalPosition.left}px`,
-        '--initial-width': '320px',
-        '--initial-height': '262.5px'
-      }}
-    >
+    <>
+      <div 
+        className="movie-details-overlay"
+        onClick={handleClose}
+        style={{
+          '--initial-top': `${modalPosition.top}px`,
+          '--initial-left': `${modalPosition.left}px`,
+          '--initial-width': '320px',
+          '--initial-height': '262.5px'
+        }}
+      >
       <div 
         className="movie-details-content"
         onClick={e => e.stopPropagation()}
@@ -576,7 +639,25 @@ const MovieDetails = () => {
           </div>
         </div>
       </div>
+      
+      {/* Streaming Player */}
+      <StreamingPlayer
+        streamingUrl={streamingUrl}
+        title={movieDetails?.title || movieDetails?.name}
+        isOpen={showStreamingPlayer}
+        onClose={handleCloseStreaming}
+        onError={handleStreamingError}
+      />
+
+      {/* TV Episode Selector */}
+      <TVEpisodeSelector
+        show={movieDetails}
+        isOpen={showEpisodeSelector}
+        onClose={handleCloseEpisodeSelector}
+        onEpisodeSelect={handleEpisodeSelect}
+      />
     </div>
+    </>
   );
 };
 
