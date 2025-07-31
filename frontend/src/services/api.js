@@ -1,4 +1,5 @@
 // Optimized API Service with Enhanced Performance
+// Import all tmdbService functions at the top to avoid hoisting issues
 import { 
   getTrendingMovies, 
   getPopularMovies, 
@@ -21,7 +22,7 @@ import {
   discoverMovies,
   transformMovieData,
   transformTVData
-} from './tmdbService';
+} from './tmdbService.js';
 
 // Network utilities are defined locally in this file
 

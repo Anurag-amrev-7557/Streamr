@@ -1,8 +1,15 @@
 import axios from 'axios';
-import { getNetworkAwareConfig, fetchWithRetry } from './api';
-import { getApiUrl } from '../config/api';
+import { getNetworkAwareConfig, fetchWithRetry } from './api.js';
+import { getApiUrl } from '../config/api.js';
 
-const API_URL = getApiUrl();
+// Lazy initialization to avoid hoisting issues
+let API_URL = null;
+const getApiUrlLazy = () => {
+  if (!API_URL) {
+    API_URL = getApiUrl();
+  }
+  return API_URL;
+};
 
 const getAuthHeader = () => {
   const token = localStorage.getItem('accessToken');
@@ -10,12 +17,17 @@ const getAuthHeader = () => {
 };
 
 // Create axios instance with default config
-const api = axios.create({
-  baseURL: API_URL,
-  headers: {
-    'Content-Type': 'application/json'
-  }
-});
+const createApiInstance = () => {
+  return axios.create({
+    baseURL: getApiUrlLazy(),
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  });
+};
+
+// Create the api instance
+const api = createApiInstance();
 
 // Add request interceptor to add auth token
 api.interceptors.request.use(
