@@ -17,6 +17,9 @@ backend/logs/
 .env.*
 frontend/.env
 backend/.env
+!.env.example
+!frontend/.env.example
+!backend/.env.example
 
 # OS files
 .DS_Store
