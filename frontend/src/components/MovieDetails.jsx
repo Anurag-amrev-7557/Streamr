@@ -110,10 +110,15 @@ const MovieDetails = () => {
           getSimilarMovies(id)
         ]);
         
+        // Check if details is null or undefined
+        if (!details) {
+          throw new Error('Movie not found or unavailable');
+        }
+        
         setMovieDetails(details);
-        setCredits(movieCredits);
-        setVideos(movieVideos);
-        setSimilarMovies(similar);
+        setCredits(movieCredits || { cast: [], crew: [] });
+        setVideos(movieVideos || { results: [] });
+        setSimilarMovies(similar?.results || []);
 
         // Start progressive loading
         setTimeout(() => setLoadedSections(prev => ({ ...prev, header: true })), 100);
@@ -603,10 +608,16 @@ const MovieDetails = () => {
                     getSimilarMovies(item.id)
                   ]);
                   
+                  // Check if details is null or undefined
+                  if (!details) {
+                    console.error('Movie details not found for ID:', item.id);
+                    return;
+                  }
+                  
                   setMovieDetails(details);
-                  setCredits(movieCredits);
-                  setVideos(movieVideos);
-                  setSimilarMovies(similar);
+                  setCredits(movieCredits || { cast: [], crew: [] });
+                  setVideos(movieVideos || { results: [] });
+                  setSimilarMovies(similar?.results || []);
                 } catch (error) {
                   console.error('Error fetching new movie details:', error);
                 } finally {

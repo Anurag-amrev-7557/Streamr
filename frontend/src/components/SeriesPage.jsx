@@ -17,6 +17,7 @@ import { debounce } from 'lodash';
 import { useWatchlist } from '../contexts/WatchlistContext';
 const EnhancedSearchBar = lazy(() => import('./EnhancedSearchBar'));
 import searchHistoryService from '../services/searchHistoryService';
+import { formatRating } from '../utils/ratingUtils';
 
 // Animation variants for smooth transitions
 const gridVariants = {
@@ -168,7 +169,7 @@ const SeriesCard = ({ series, onSeriesClick }) => {
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-yellow-400 mr-1" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
                 </svg>
-                {seriesRating?.toFixed(1)}
+                {formatRating(seriesRating)}
               </span>
             </p>
           </div>
@@ -584,19 +585,29 @@ const SeriesPage = () => {
 
   const handleSeriesClick = async (series) => {
     try {
+      console.log(`Fetching series details for ID: ${series.id}`);
       const seriesDetails = await getMovieDetails(series.id, 'tv');
+
+      // Check if seriesDetails is null or undefined
+      if (!seriesDetails) {
+        console.warn(`Series with ID ${series.id} not found or returned null`);
+        setError('Series not found or unavailable');
+        return;
+      }
+
+      console.log('Series details received:', seriesDetails);
 
       // Transform the series data to match the expected format
       const transformedSeries = {
         ...seriesDetails,
         type: 'tv',
-        title: seriesDetails.name,
-        release_date: seriesDetails.first_air_date,
+        title: seriesDetails.name || 'Unknown Title',
+        release_date: seriesDetails.first_air_date || null,
         runtime: seriesDetails.episode_run_time?.[0] || null,
         networks: seriesDetails.networks?.map(network => network.name).join(', ') || 'N/A',
-        number_of_seasons: seriesDetails.number_of_seasons,
-        number_of_episodes: seriesDetails.number_of_episodes,
-        status: seriesDetails.status,
+        number_of_seasons: seriesDetails.number_of_seasons || 0,
+        number_of_episodes: seriesDetails.number_of_episodes || 0,
+        status: seriesDetails.status || 'Unknown',
         similar: seriesDetails.similar?.results || [],
         videos: seriesDetails.videos?.results || [],
         credits: {
@@ -618,19 +629,29 @@ const SeriesPage = () => {
 
   const handleSimilarSeriesClick = async (similarSeries) => {
     try {
+      console.log(`Fetching similar series details for ID: ${similarSeries.id}`);
       const seriesDetails = await getMovieDetails(similarSeries.id, 'tv');
+
+      // Check if seriesDetails is null or undefined
+      if (!seriesDetails) {
+        console.warn(`Similar series with ID ${similarSeries.id} not found or returned null`);
+        setError('Series not found or unavailable');
+        return;
+      }
+
+      console.log('Similar series details received:', seriesDetails);
 
       // Transform the series data to match the expected format
       const transformedSeries = {
         ...seriesDetails,
         type: 'tv',
-        title: seriesDetails.name,
-        release_date: seriesDetails.first_air_date,
+        title: seriesDetails.name || 'Unknown Title',
+        release_date: seriesDetails.first_air_date || null,
         runtime: seriesDetails.episode_run_time?.[0] || null,
         networks: seriesDetails.networks?.map(network => network.name).join(', ') || 'N/A',
-        number_of_seasons: seriesDetails.number_of_seasons,
-        number_of_episodes: seriesDetails.number_of_episodes,
-        status: seriesDetails.status,
+        number_of_seasons: seriesDetails.number_of_seasons || 0,
+        number_of_episodes: seriesDetails.number_of_episodes || 0,
+        status: seriesDetails.status || 'Unknown',
         similar: seriesDetails.similar?.results || [],
         videos: seriesDetails.videos?.results || [],
         credits: {

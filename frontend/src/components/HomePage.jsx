@@ -315,10 +315,11 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
     };
     
     checkScreenSize();
-    window.addEventListener('resize', checkScreenSize);
+    const resizeHandler = checkScreenSize;
+    window.addEventListener('resize', resizeHandler);
     
     return () => {
-      window.removeEventListener('resize', checkScreenSize);
+      window.removeEventListener('resize', resizeHandler);
     };
   }, []);
 
@@ -841,10 +842,11 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
     };
     
     checkScreenSize();
-    window.addEventListener('resize', checkScreenSize);
+    const resizeHandler = checkScreenSize;
+    window.addEventListener('resize', resizeHandler);
     
     return () => {
-      window.removeEventListener('resize', checkScreenSize);
+      window.removeEventListener('resize', resizeHandler);
     };
   }, []);
 
@@ -3121,9 +3123,8 @@ const MOVIE_DETAILS_TTL = 60 * 60 * 1000; // 1 hour
 const MOVIE_DETAILS_CACHE_LIMIT = 100;
 
 const HomePage = () => {
-  // 🚀 ULTRA-OPTIMIZED: Performance monitoring and service worker
+  // 🚀 ULTRA-OPTIMIZED: Performance monitoring
   const performanceMetrics = usePerformanceMonitoring();
-  useServiceWorker();
 
   // Initialize ultra-smooth scrolling
   const { scrollState } = useSmoothScroll({
@@ -3249,6 +3250,121 @@ const HomePage = () => {
 
   // 📊 NEW: Performance monitoring
   const performanceObserver = useRef(null);
+  
+  // 🧹 NEW: Track all timeouts and intervals for proper cleanup
+  const timeoutRefs = useRef(new Set());
+  const intervalRefs = useRef(new Set());
+  const isMountedRef = useRef(true);
+
+  // 🧹 NEW: Comprehensive cleanup function
+  const cleanup = useCallback(() => {
+    // Clear all timeouts and intervals
+    if (performanceObserver.current) {
+      performanceObserver.current.disconnect();
+      performanceObserver.current = null;
+    }
+
+    // Clear pending requests
+    pendingRequests.current.clear();
+
+    // Clear caches
+    cacheRef.current.clear();
+    lruQueue.current = [];
+    memoryUsage.current = 0;
+
+    // Clear prefetch queue
+    setPrefetchQueue(new Set());
+    setIsPrefetching(false);
+
+    // Clear viewport items
+    setViewportItems(new Set());
+
+    // Clear visible sections
+    setVisibleSections(new Set(['trending', 'popular']));
+
+    // Reset memory optimization
+    setMemoryOptimization({
+      lastCleanup: Date.now(),
+      itemsInMemory: 0,
+      maxItemsAllowed: 500
+    });
+
+    // Clear network conditions
+    networkConditions.current = {
+      isSlow: false,
+      lastCheck: Date.now(),
+      averageResponseTime: 0
+    };
+
+    // Clear movie details cache
+    if (movieDetailsCache.current) {
+      movieDetailsCache.current = {};
+    }
+
+    // Clear prefetch analytics
+    if (prefetchAnalytics.current) {
+      prefetchAnalytics.current = {
+        prefetched: {},
+        used: {},
+        totalPrefetched: 0,
+        totalUsed: 0,
+      };
+    }
+
+    // Clear all tracked timeouts
+    timeoutRefs.current.forEach(timeoutId => {
+      clearTimeout(timeoutId);
+    });
+    timeoutRefs.current.clear();
+
+    // Clear all tracked intervals
+    intervalRefs.current.forEach(intervalId => {
+      clearInterval(intervalId);
+    });
+    intervalRefs.current.clear();
+
+    // Clear all timeouts and intervals
+    if (window.performanceObserver) {
+      window.performanceObserver.disconnect();
+    }
+
+    // Reset body overflow
+    document.body.style.overflow = 'unset';
+
+    // Mark as unmounted
+    isMountedRef.current = false;
+
+    console.log('🧹 HomePage cleanup completed');
+  }, []);
+
+  // 🧹 Utility functions for tracking timeouts and intervals
+  const trackedSetTimeout = useCallback((callback, delay) => {
+    const timeoutId = setTimeout(() => {
+      if (isMountedRef.current) {
+        callback();
+      }
+      timeoutRefs.current.delete(timeoutId);
+    }, delay);
+    timeoutRefs.current.add(timeoutId);
+    return timeoutId;
+  }, []);
+
+  const trackedSetInterval = useCallback((callback, delay) => {
+    const intervalId = setInterval(() => {
+      if (isMountedRef.current) {
+        callback();
+      }
+    }, delay);
+    intervalRefs.current.add(intervalId);
+    return intervalId;
+  }, []);
+
+  // 🧹 Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      cleanup();
+    };
+  }, [cleanup]);
 
   // 🧠 NEW: Memory optimization helpers
   const optimizeMemoryUsage = useCallback(() => {
@@ -3881,8 +3997,14 @@ const HomePage = () => {
     fetchInitialMovies();
     
     // Set up a periodic cleanup interval - more frequent to prevent quota issues
-    const interval = setInterval(cleanupCache, 5 * 60 * 1000); // Every 5 minutes
-    return () => clearInterval(interval);
+    const interval = trackedSetInterval(cleanupCache, 5 * 60 * 1000); // Every 5 minutes
+    
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+        intervalRefs.current.delete(interval);
+      }
+    };
   }, []); // Empty dependency array means this runs once on mount
 
   // Add loading state for initial data fetch
@@ -4013,7 +4135,7 @@ const HomePage = () => {
           setTimeout(() => reject(new Error('Featured content timeout')), 5000)
         )]),
         Promise.race([trendingPromise, new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Trending timeout')), 3000)
+          setTimeout(() => reject(new Error('Trending timeout')), 10000) // Increased from 3000 to 10000ms
         )])
       ]);
       
@@ -4593,17 +4715,24 @@ const HomePage = () => {
 
   // Add useEffect for auto-rotation
   useEffect(() => {
+    let intervalRef = null;
+    
     if (trendingMovies.length > 1) {
-      const interval = setInterval(() => {
+      intervalRef = trackedSetInterval(() => {
         if (!isTransitioning) {
           handleSlideChange((prevIndex) => 
             (prevIndex + 1) % trendingMovies.length
           );
         }
       }, 5000); // Change featured movie every 5 seconds
-
-      return () => clearInterval(interval);
     }
+
+    return () => {
+      if (intervalRef) {
+        clearInterval(intervalRef);
+        intervalRefs.current.delete(intervalRef);
+      }
+    };
   }, [trendingMovies, isTransitioning, currentFeaturedIndex]);
 
   // Enhanced movie details cache: { [id]: { data, timestamp } }
@@ -4646,8 +4775,14 @@ const HomePage = () => {
 
   // Periodically clean cache (every 10 min)
   useEffect(() => {
-    const interval = setInterval(cleanMovieDetailsCache, 10 * 60 * 1000);
-    return () => clearInterval(interval);
+    const interval = trackedSetInterval(cleanMovieDetailsCache, 10 * 60 * 1000);
+    
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+        intervalRefs.current.delete(interval);
+      }
+    };
   }, []);
 
   // Step 10: Prefetch analytics
@@ -4674,11 +4809,17 @@ const HomePage = () => {
   };
   // Log analytics summary every 30s
   useEffect(() => {
-    const interval = setInterval(() => {
+    const interval = trackedSetInterval(() => {
       const { totalPrefetched, totalUsed } = prefetchAnalytics.current;
       const efficiency = totalPrefetched > 0 ? ((totalUsed / totalPrefetched) * 100).toFixed(1) : 'N/A';
     }, 30000);
-    return () => clearInterval(interval);
+    
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+        intervalRefs.current.delete(interval);
+      }
+    };
   }, []);
 
   // Patch handleMovieHover to record prefetch
@@ -5760,35 +5901,45 @@ const usePerformanceMonitoring = () => {
     timeToInteractive: 0
   });
 
+  const observersRef = useRef([]);
+  const isMountedRef = useRef(true);
+
   useEffect(() => {
     // Monitor Core Web Vitals
     if ('PerformanceObserver' in window) {
       // First Contentful Paint
       const fcpObserver = new PerformanceObserver((list) => {
+        if (!isMountedRef.current) return;
         const entries = list.getEntries();
         const fcp = entries[entries.length - 1];
         setMetrics(prev => ({ ...prev, firstContentfulPaint: fcp.startTime }));
       });
       fcpObserver.observe({ entryTypes: ['paint'] });
+      observersRef.current.push(fcpObserver);
 
       // Largest Contentful Paint
       const lcpObserver = new PerformanceObserver((list) => {
+        if (!isMountedRef.current) return;
         const entries = list.getEntries();
         const lcp = entries[entries.length - 1];
         setMetrics(prev => ({ ...prev, largestContentfulPaint: lcp.startTime }));
       });
       lcpObserver.observe({ entryTypes: ['largest-contentful-paint'] });
+      observersRef.current.push(lcpObserver);
 
       // First Input Delay
       const fidObserver = new PerformanceObserver((list) => {
+        if (!isMountedRef.current) return;
         const entries = list.getEntries();
         const fid = entries[entries.length - 1];
         setMetrics(prev => ({ ...prev, firstInputDelay: fid.processingStart - fid.startTime }));
       });
       fidObserver.observe({ entryTypes: ['first-input'] });
+      observersRef.current.push(fidObserver);
 
       // Cumulative Layout Shift
       const clsObserver = new PerformanceObserver((list) => {
+        if (!isMountedRef.current) return;
         let clsValue = 0;
         for (const entry of list.getEntries()) {
           clsValue += entry.value;
@@ -5796,32 +5947,24 @@ const usePerformanceMonitoring = () => {
         setMetrics(prev => ({ ...prev, cumulativeLayoutShift: clsValue }));
       });
       clsObserver.observe({ entryTypes: ['layout-shift'] });
-
-      return () => {
-        fcpObserver.disconnect();
-        lcpObserver.disconnect();
-        fidObserver.disconnect();
-        clsObserver.disconnect();
-      };
+      observersRef.current.push(clsObserver);
     }
+
+    return () => {
+      isMountedRef.current = false;
+      // Disconnect all observers
+      observersRef.current.forEach(observer => {
+        if (observer && typeof observer.disconnect === 'function') {
+          observer.disconnect();
+        }
+      });
+      observersRef.current = [];
+    };
   }, []);
 
   return metrics;
 };
 
-// 🚀 ULTRA-OPTIMIZED: Service worker registration for offline support
-const useServiceWorker = () => {
-  useEffect(() => {
-    if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
-      navigator.serviceWorker.register('/sw.js')
-        .then((registration) => {
-          console.log('🚀 Service Worker registered successfully:', registration);
-        })
-        .catch((error) => {
-          console.warn('⚠️ Service Worker registration failed:', error);
-        });
-    }
-  }, []);
-};
+
 
 export default HomePage;

@@ -41,6 +41,7 @@ class SmoothScroll {
     this.animationFrame = null;
     this.lastScrollTime = 0;
     this.scrollThrottle = 16; // ~60fps
+    this.activeAnimations = new Set(); // Track active animations for cleanup
     
     // Bind methods for performance
     this.handleScroll = this.handleScroll.bind(this);
@@ -148,12 +149,15 @@ class SmoothScroll {
         
         if (progress < 1) {
           this.animationFrame = requestAnimationFrame(animate);
+          this.activeAnimations.add(this.animationFrame);
         } else {
+          this.activeAnimations.delete(this.animationFrame);
           resolve();
         }
       };
       
       this.animationFrame = requestAnimationFrame(animate);
+      this.activeAnimations.add(this.animationFrame);
     });
   }
 
@@ -186,12 +190,15 @@ class SmoothScroll {
         
         if (progress < 1) {
           this.animationFrame = requestAnimationFrame(animate);
+          this.activeAnimations.add(this.animationFrame);
         } else {
+          this.activeAnimations.delete(this.animationFrame);
           resolve();
         }
       };
       
       this.animationFrame = requestAnimationFrame(animate);
+      this.activeAnimations.add(this.animationFrame);
     });
   }
 
@@ -224,12 +231,15 @@ class SmoothScroll {
         
         if (progress < 1) {
           this.animationFrame = requestAnimationFrame(animate);
+          this.activeAnimations.add(this.animationFrame);
         } else {
+          this.activeAnimations.delete(this.animationFrame);
           resolve();
         }
       };
       
       this.animationFrame = requestAnimationFrame(animate);
+      this.activeAnimations.add(this.animationFrame);
     });
   }
 
@@ -314,8 +324,20 @@ class SmoothScroll {
   cancelScroll() {
     if (this.animationFrame) {
       cancelAnimationFrame(this.animationFrame);
+      this.activeAnimations.delete(this.animationFrame);
       this.animationFrame = null;
     }
+  }
+
+  /**
+   * Cancel all active animations
+   */
+  cancelAllAnimations() {
+    this.activeAnimations.forEach(animationId => {
+      cancelAnimationFrame(animationId);
+    });
+    this.activeAnimations.clear();
+    this.animationFrame = null;
   }
 
   /**
@@ -371,6 +393,24 @@ class SmoothScroll {
       root
     });
   }
+
+  /**
+   * Cleanup method to prevent memory leaks
+   */
+  cleanup() {
+    // Cancel all active animations
+    this.cancelAllAnimations();
+    
+    // Clear scroll timeout
+    if (this.scrollTimeout) {
+      clearTimeout(this.scrollTimeout);
+      this.scrollTimeout = null;
+    }
+    
+    // Reset state
+    this.isScrolling = false;
+    this.lastScrollTime = 0;
+  }
 }
 
 // Create singleton instance
@@ -382,9 +422,11 @@ export const scrollToTop = (options) => smoothScroll.scrollToTop(options);
 export const scrollToBottom = (options) => smoothScroll.scrollToBottom(options);
 export const handleScroll = (callback, options) => smoothScroll.handleScroll(callback, options);
 export const cancelScroll = () => smoothScroll.cancelScroll();
+export const cancelAllAnimations = () => smoothScroll.cancelAllAnimations();
 export const getScrollPosition = () => smoothScroll.getScrollPosition();
 export const isInViewport = (element, options) => smoothScroll.isInViewport(element, options);
 export const createScrollObserver = (callback, options) => smoothScroll.createScrollObserver(callback, options);
+export const cleanupSmoothScroll = () => smoothScroll.cleanup();
 
 // Export easing functions for custom use
 export { easingFunctions };

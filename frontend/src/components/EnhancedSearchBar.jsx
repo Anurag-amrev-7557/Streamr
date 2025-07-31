@@ -11,7 +11,7 @@ const EnhancedSearchBar = ({
   onBlur,
   className = "",
   initialValue = "",
-  searchDelay = 300,
+  searchDelay = 50, // Reduced from 100ms to 50ms for faster response
   showSuggestions = true,
   suggestions = [],
   onSuggestionSelect,
@@ -34,8 +34,17 @@ const EnhancedSearchBar = ({
   onTrendingSelect,
   ...props
 }) => {
-  // Add a stable identifier for keys
-  const componentId = useRef(Math.random().toString(36).substr(2, 9));
+  // Add a stable identifier for keys - use a more stable approach
+  const componentId = useRef(() => {
+    // Use a more stable ID that doesn't change on every render
+    if (!componentId.current._id) {
+      componentId.current._id = `search-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    }
+    return componentId.current._id;
+  });
+  
+  // Get the stable ID
+  const stableId = componentId.current();
   
   const [query, setQuery] = useState(initialValue);
   const [isFocused, setIsFocused] = useState(false);
@@ -61,11 +70,32 @@ const EnhancedSearchBar = ({
   const debouncedSearch = useMemo(
     () => debounce((searchQuery) => {
       if (onSearch && searchQuery.trim()) {
+        console.log('🔍 Triggering search for:', searchQuery.trim());
         onSearch(searchQuery.trim());
       }
     }, searchDelay),
     [onSearch, searchDelay]
   );
+
+  // Cleanup debounced function on unmount
+  useEffect(() => {
+    return () => {
+      if (debouncedSearch && debouncedSearch.cancel) {
+        debouncedSearch.cancel();
+      }
+    };
+  }, [debouncedSearch]);
+
+  // Cleanup component on unmount
+  useEffect(() => {
+    return () => {
+      // Clear any pending timeouts
+      if (window.searchBarTimeouts) {
+        window.searchBarTimeouts.forEach(timeout => clearTimeout(timeout));
+        window.searchBarTimeouts = [];
+      }
+    };
+  }, []);
 
   // Function to handle actual search submission (for history)
   const handleSearchSubmit = useCallback((searchQuery) => {
@@ -78,6 +108,7 @@ const EnhancedSearchBar = ({
   const handleInputChange = useCallback((e) => {
     try {
       const value = e.target.value || '';
+      console.log('📝 Input changed to:', value);
       setQuery(value);
       setSelectedSuggestionIndex(-1);
       
@@ -85,7 +116,21 @@ const EnhancedSearchBar = ({
         setShowSuggestionsDropdown(true);
         setShowHistoryDropdown(false);
         setShowTrendingDropdown(false);
+        console.log('🔍 Calling debouncedSearch with:', value);
         debouncedSearch(value);
+        
+        // Also trigger immediate search for short queries (3+ characters)
+        if (value.trim().length >= 3) {
+          console.log('⚡ Triggering immediate search for:', value.trim());
+          if (onSearch) onSearch(value.trim());
+        }
+        
+        // Fallback: trigger search for any non-empty query after a short delay
+        if (value.trim().length > 0) {
+          setTimeout(() => {
+            if (onSearch) onSearch(value.trim());
+          }, 100);
+        }
       } else {
         setShowSuggestionsDropdown(false);
         setShowHistoryDropdown(false);
@@ -101,7 +146,7 @@ const EnhancedSearchBar = ({
       setShowTrendingDropdown(false);
       setSelectedSuggestionIndex(-1);
     }
-  }, [debouncedSearch, onClear]);
+  }, [debouncedSearch, onClear, onSearch]);
 
   // Handle input focus
   const handleFocus = useCallback((e) => {
@@ -442,7 +487,7 @@ const EnhancedSearchBar = ({
                 }
                 
                 // Add component ID to ensure uniqueness
-                const renderId = componentId.current;
+                const renderId = stableId;
                 
                 const suggestionText = suggestion.title || suggestion.name || suggestion || '';
                 if (!suggestionText || typeof suggestionText !== 'string' || suggestionText.trim() === '') {
@@ -564,7 +609,7 @@ const EnhancedSearchBar = ({
                 }
                 
                 // Add component ID to ensure uniqueness
-                const renderId = componentId.current;
+                const renderId = stableId;
                 
                 const historyId = historyItem || `history-${index}`;
                 // Create a more robust unique key using multiple properties and a stable hash
@@ -670,7 +715,7 @@ const EnhancedSearchBar = ({
                 }
                 
                 // Add component ID to ensure uniqueness
-                const renderId = componentId.current;
+                const renderId = stableId;
                 
                 const trendingId = trendingItem || `trending-${index}`;
                 // Create a more robust unique key using multiple properties and a stable hash

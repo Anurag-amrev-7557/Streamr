@@ -1819,6 +1819,16 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
   // Enhanced scroll-based appearance with improved performance
   const [showTopFade, setShowTopFade] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
+  const [scrollDirection, setScrollDirection] = useState('down');
+  const [lastScrollY, setLastScrollY] = useState(0);
+  const [scrollVelocity, setScrollVelocity] = useState(0);
+  const [contentSections, setContentSections] = useState({
+    hero: { visible: true, opacity: 1, transform: 0 },
+    overview: { visible: false, opacity: 0, transform: 50 },
+    cast: { visible: false, opacity: 0, transform: 50 },
+    episodes: { visible: false, opacity: 0, transform: 50 },
+    similar: { visible: false, opacity: 0, transform: 50 }
+  });
   
   useEffect(() => {
     if (!isMobile) return;
@@ -1827,9 +1837,59 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
       if (scrollContainerRef.current) {
         const scrollTop = scrollContainerRef.current.scrollTop;
         const maxScroll = scrollContainerRef.current.scrollHeight - scrollContainerRef.current.clientHeight;
+        const currentTime = Date.now();
         
-        setShowTopFade(scrollTop > 24);
-        setScrollProgress(Math.min(scrollTop / Math.max(maxScroll, 1), 1));
+        // Calculate scroll progress and direction
+        const progress = Math.min(scrollTop / Math.max(maxScroll, 1), 1);
+        const direction = scrollTop > lastScrollY ? 'down' : 'up';
+        const velocity = Math.abs(scrollTop - lastScrollY) / (currentTime - (currentTime - 16)); // 60fps
+        
+        setScrollProgress(progress);
+        setScrollDirection(direction);
+        setScrollVelocity(velocity);
+        setLastScrollY(scrollTop);
+        
+        // Enhanced top fade with velocity-based threshold
+        setShowTopFade(scrollTop > 24 && velocity > 0.5);
+        
+        // Progressive content reveal based on scroll position
+        const heroThreshold = 0.1;
+        const overviewThreshold = 0.2;
+        const castThreshold = 0.4;
+        const episodesThreshold = 0.6;
+        const similarThreshold = 0.8;
+        
+        setContentSections(prev => ({
+          hero: {
+            ...prev.hero,
+            opacity: Math.max(0, 1 - (progress / heroThreshold)),
+            transform: Math.min(50, (progress / heroThreshold) * 50)
+          },
+          overview: {
+            ...prev.overview,
+            visible: progress >= overviewThreshold,
+            opacity: progress >= overviewThreshold ? Math.min(1, (progress - overviewThreshold) / 0.1) : 0,
+            transform: progress >= overviewThreshold ? Math.max(0, 50 - ((progress - overviewThreshold) / 0.1) * 50) : 50
+          },
+          cast: {
+            ...prev.cast,
+            visible: progress >= castThreshold,
+            opacity: progress >= castThreshold ? Math.min(1, (progress - castThreshold) / 0.1) : 0,
+            transform: progress >= castThreshold ? Math.max(0, 50 - ((progress - castThreshold) / 0.1) * 50) : 50
+          },
+          episodes: {
+            ...prev.episodes,
+            visible: progress >= episodesThreshold,
+            opacity: progress >= episodesThreshold ? Math.min(1, (progress - episodesThreshold) / 0.1) : 0,
+            transform: progress >= episodesThreshold ? Math.max(0, 50 - ((progress - episodesThreshold) / 0.1) * 50) : 50
+          },
+          similar: {
+            ...prev.similar,
+            visible: progress >= similarThreshold,
+            opacity: progress >= similarThreshold ? Math.min(1, (progress - similarThreshold) / 0.1) : 0,
+            transform: progress >= similarThreshold ? Math.max(0, 50 - ((progress - similarThreshold) / 0.1) * 50) : 50
+          }
+        }));
       }
     };
     
@@ -1843,9 +1903,9 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
         ref.removeEventListener('scroll', handleMobileScroll);
       }
     };
-  }, [isMobile]);
+  }, [isMobile, lastScrollY]);
 
-  // Enhanced utility animations with spring physics
+  // Enhanced utility animations with spring physics and scroll-based triggers
   const fadeInMotionProps = {
     initial: { opacity: 0, y: 20 },
     animate: { opacity: 1, y: 0 },
@@ -1868,6 +1928,73 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
       stiffness: 400,
       damping: 30
     },
+  };
+
+  // Enhanced scroll-triggered animation variants
+  const scrollTriggerVariants = {
+    hidden: { opacity: 0, y: 30, scale: 0.95 },
+    visible: (custom) => ({
+      opacity: 1,
+      y: 0,
+      scale: 1,
+      transition: {
+        duration: 0.6,
+        delay: custom * 0.1,
+        ease: [0.25, 0.46, 0.45, 0.94],
+        type: 'spring',
+        stiffness: 300,
+        damping: 25
+      }
+    }),
+    exit: {
+      opacity: 0,
+      y: -20,
+      scale: 0.95,
+      transition: {
+        duration: 0.3,
+        ease: [0.25, 0.46, 0.45, 0.94]
+      }
+    }
+  };
+
+  // Parallax scroll effect for background elements
+  const parallaxVariants = {
+    initial: { y: 0 },
+    animate: (custom) => ({
+      y: custom * scrollY * 0.3,
+      transition: {
+        duration: 0.1,
+        ease: "linear"
+      }
+    })
+  };
+
+  // Stagger animation for list items
+  const staggerContainerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.05,
+        delayChildren: 0.1,
+        type: 'spring',
+        stiffness: 300,
+        damping: 25
+      }
+    }
+  };
+
+  const staggerItemVariants = {
+    hidden: { opacity: 0, y: 20, scale: 0.95 },
+    visible: {
+      opacity: 1,
+      y: 0,
+      scale: 1,
+      transition: {
+        duration: 0.4,
+        ease: [0.25, 0.46, 0.45, 0.94]
+      }
+    }
   };
 
   // Memoize writers, directors, and production companies from credits (already added)
@@ -2066,6 +2193,10 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                   <div className="absolute inset-0 overflow-hidden">
                     <motion.div 
                       className="absolute -inset-y-[15%] inset-x-0"
+                      variants={parallaxVariants}
+                      initial="initial"
+                      animate="animate"
+                      custom={0.3}
                       style={{ y: scrollY * 0.3 }}
                     >
                       <div className="absolute inset-0 bg-[#1a1a1a] animate-pulse"></div>
@@ -2240,9 +2371,18 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                       )}
 
                       {/* Action Buttons and Info Section */}
-                      <div className="flex flex-col sm:flex-row items-center sm:items-end justify-between gap-4 my-4 sm:my-6">
+                      <motion.div 
+                        className="flex flex-col sm:flex-row items-center sm:items-end justify-between gap-4 my-4 sm:my-6"
+                        variants={staggerContainerVariants}
+                        initial="hidden"
+                        whileInView="visible"
+                        viewport={{ once: true, amount: 0.5 }}
+                      >
                       {/* Action Buttons */}
-                        <div className="flex flex-row items-center justify-center sm:justify-start gap-3 sm:gap-4 w-full">
+                        <motion.div 
+                          className="flex flex-row items-center justify-center sm:justify-start gap-3 sm:gap-4 w-full"
+                          variants={staggerItemVariants}
+                        >
                         {/* Watch Now Button - Only show if streaming is available and it's a movie */}
                         {isStreamingAvailable(movie) && movie.type === 'movie' && (
                           <button
@@ -2299,10 +2439,13 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                             <span className="truncate whitespace-nowrap">{isOptimisticallyInWatchlist ? 'Remove from List' : 'Add to List'}</span>
                           </div>
                         </button>
-                        </div>
+                        </motion.div>
 
                         {/* Desktop Info Section - Rightmost */}
-                        <div className="hidden lg:block text-white/60 text-sm text-right">
+                        <motion.div 
+                          className="hidden lg:block text-white/60 text-sm text-right"
+                          variants={staggerItemVariants}
+                        >
                           {/* Top Cast */}
                           {movieDetails.cast && movieDetails.cast.length > 0 && (
                             <div className="mb-2">
@@ -2334,8 +2477,8 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                               </span>
                             </div>
                           )}
-                        </div>
-                      </div>
+                        </motion.div>
+                      </motion.div>
                       
                       {/* Desktop Overview Section */}
                       {movieDetails.overview && movieDetails.overview.trim() !== "" && (
@@ -2349,11 +2492,31 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                       )}
 
                       {/* Mobile Minimalist Info Section */}
-                      <div className="lg:hidden mt-4">
-                        <div className="text-white/60 text-sm space-y-3">
+                      <motion.div 
+                        className="lg:hidden mt-4"
+                        variants={scrollTriggerVariants}
+                        initial="hidden"
+                        whileInView="visible"
+                        viewport={{ once: true, amount: 0.5 }}
+                        custom={3}
+                        style={{
+                          opacity: contentSections.overview.opacity,
+                          transform: `translateY(${contentSections.overview.transform}px)`
+                        }}
+                      >
+                        <motion.div 
+                          className="text-white/60 text-sm space-y-3"
+                          variants={staggerContainerVariants}
+                          initial="hidden"
+                          whileInView="visible"
+                          viewport={{ once: true, amount: 0.5 }}
+                        >
                           {/* Overview */}
                           {movieDetails.overview && movieDetails.overview.trim() !== "" && (
-                            <div className="mb-3">
+                            <motion.div 
+                              className="mb-3"
+                              variants={staggerItemVariants}
+                            >
                               <p
                                 className="text-white/90 text-sm leading-relaxed pl-0 text-justify text-left"
                                 style={{
@@ -2366,7 +2529,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                               >
                                 {movieDetails.overview}
                               </p>
-                            </div>
+                            </motion.div>
                           )}
                           
                           {/* Top Cast */}
@@ -2384,11 +2547,17 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                               </span>
                             </div>
                           )}
-                        </div>
-                      </div>
+                        </motion.div>
+                      </motion.div>
 
                                                                                          {/* Mobile Action Buttons - Above Overview */}
-                                             <div className="flex sm:hidden items-center justify-center gap-8 mt-4">
+                                             <motion.div 
+                                               className="flex sm:hidden items-center justify-center gap-8 mt-4"
+                                               variants={staggerContainerVariants}
+                                               initial="hidden"
+                                               whileInView="visible"
+                                               viewport={{ once: true, amount: 0.5 }}
+                                             >
                                                    {/* Add to List Button */}
                           <button 
                             onClick={handleWatchlistClick}
@@ -2549,7 +2718,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                                </svg>
                              </div>
                            </button>
-                       </div>
+                       </motion.div>
                     </div>
                   </motion.div>
                 </div>
@@ -2575,14 +2744,20 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                   <div className="w-full space-y-8 sm:space-y-12">
 
 
+
                     {/* TV Episodes Section - Only for TV shows */}
                     {movieDetails.type === 'tv' && seasons.length > 0 && (
                       <motion.div
-                        initial={{ opacity: 0, y: 32, scale: 0.98 }}
-                        whileInView={{ opacity: 1, y: 0, scale: 1 }}
+                        variants={scrollTriggerVariants}
+                        initial="hidden"
+                        whileInView="visible"
                         viewport={{ once: true, amount: 0.3 }}
-                        transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+                        custom={1}
                         className="relative"
+                        style={{
+                          opacity: contentSections.episodes.opacity,
+                          transform: `translateY(${contentSections.episodes.transform}px)`
+                        }}
                       >
                         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
                           <h3 className="text-lg sm:text-xl md:text-2xl font-bold text-white flex items-center gap-2">
@@ -2966,10 +3141,15 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                 {/* Similar Section */}
                 <motion.div 
                   className="pt-6 sm:pt-8 relative"
-                  initial={{ opacity: 0, y: 32, filter: "blur(8px)" }}
-                  whileInView={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                  variants={scrollTriggerVariants}
+                  initial="hidden"
+                  whileInView="visible"
                   viewport={{ once: true, amount: 0.1 }}
-                  transition={{ duration: 0.7, ease: "easeOut" }}
+                  custom={2}
+                  style={{
+                    opacity: contentSections.similar.opacity,
+                    transform: `translateY(${contentSections.similar.transform}px)`
+                  }}
                 >
                   {/* Enhanced border with matching radius */}
                   <div className="absolute -top-px left-0 w-full h-[1.5px] z-10 pointer-events-none">
@@ -2996,6 +3176,20 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
               </div>
             </div>
           ) : null}
+
+          {/* Scroll Progress Indicator */}
+          {isMobile && (
+            <motion.div
+              className="fixed top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary via-white/40 to-primary z-[999999999]"
+              style={{
+                transform: `scaleX(${scrollProgress})`,
+                transformOrigin: 'left'
+              }}
+              initial={{ scaleX: 0 }}
+              animate={{ scaleX: scrollProgress }}
+              transition={{ duration: 0.1, ease: "linear" }}
+            />
+          )}
 
           <button
             onClick={onClose}

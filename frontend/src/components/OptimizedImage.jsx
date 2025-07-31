@@ -49,13 +49,19 @@ const OptimizedImage = memo(({
     }
 
     // Set up load/error handlers
+    const isMountedRef = useRef(true);
+    
     const handleLoad = () => {
+      if (!isMountedRef.current) return;
+      
       setIsLoaded(true);
       setHasError(false);
       onLoad?.(img);
     };
 
     const handleError = () => {
+      if (!isMountedRef.current) return;
+      
       setHasError(true);
       setIsLoaded(false);
       onError?.(img);
@@ -66,12 +72,16 @@ const OptimizedImage = memo(({
       }
     };
 
-    img.addEventListener('load', handleLoad);
-    img.addEventListener('error', handleError);
+    const loadHandler = handleLoad;
+    const errorHandler = handleError;
+    
+    img.addEventListener('load', loadHandler);
+    img.addEventListener('error', errorHandler);
 
     return () => {
-      img.removeEventListener('load', handleLoad);
-      img.removeEventListener('error', handleError);
+      isMountedRef.current = false;
+      img.removeEventListener('load', loadHandler);
+      img.removeEventListener('error', errorHandler);
     };
   }, [src, optimizedSrc, priority, onLoad, onError]);
 

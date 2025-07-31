@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "preview:clean": "rm -rf dist && npm run build && vite preview",
+    "clear-cache": "rm -rf node_modules/.vite && rm -rf dist"
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
@@ -39,8 +41,7 @@
     "socket.io-client": "^4.8.1",
     "swiper": "^11.2.8",
     "vite-imagetools": "^7.1.0",
-    "vite-plugin-compression": "^0.5.1",
-    "vite-plugin-pwa": "^1.0.0"
+    "vite-plugin-compression": "^0.5.1"
   },
   "devDependencies": {
     "@babel/plugin-transform-react-jsx": "^7.27.1",

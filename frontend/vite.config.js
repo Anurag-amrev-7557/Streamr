@@ -2,7 +2,6 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { compression } from 'vite-plugin-compression2';
 import { visualizer } from 'rollup-plugin-visualizer';
-import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
 import { imagetools } from 'vite-imagetools';
 import zlib from 'zlib';
@@ -42,92 +41,10 @@ export default defineConfig({
       open: false,
       gzipSize: true,
       brotliSize: true,
-      template: 'treemap',
-      emitFile: true,
-    }),
-    VitePWA({
-      registerType: 'autoUpdate',
-      injectRegister: 'auto',
-      manifest: {
-        name: 'Streamr',
-        short_name: 'Streamr',
-        description: 'A modern streaming and community platform',
-        theme_color: '#121417',
-        background_color: '#121417',
-        display: 'standalone',
-        start_url: '/',
-        icons: [
-          {
-            src: '/icon.svg',
-            sizes: 'any',
-            type: 'image/svg+xml',
-            purpose: 'any maskable'
-          }
-        ]
-      },
-      workbox: {
-        cleanupOutdatedCaches: true,
-        clientsClaim: true,
-        skipWaiting: true,
-        navigateFallback: '/offline.html',
-        runtimeCaching: [
-          // Frequently updated: NetworkFirst
-          {
-            urlPattern: /\/api\/community\/discussions/,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'discussions-api-cache-v2',
-              expiration: { maxEntries: 50, maxAgeSeconds: 60 * 30 },
-              networkTimeoutSeconds: 8,
-              cacheableResponse: { statuses: [0, 200] }
-            }
-          },
-          // Rarely updated: StaleWhileRevalidate
-          {
-            urlPattern: /\/api\/user\/profile/,
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'user-profile-cache-v2',
-              expiration: { maxEntries: 5, maxAgeSeconds: 60 * 60 * 24 * 7 },
-              cacheableResponse: { statuses: [0, 200] }
-            }
-          },
-          // Background sync for all critical POSTs
-          {
-            urlPattern: /\/api\/(community|watchlist|user)/,
-            handler: 'NetworkFirst',
-            method: 'POST',
-            options: {
-              backgroundSync: {
-                name: 'critical-post-queue',
-                options: { maxRetentionTime: 24 * 60 }
-              },
-              cacheName: 'critical-post-cache-v2',
-              cacheableResponse: { statuses: [0, 200] }
-            }
-          },
-          {
-            urlPattern: /\.(?:png|jpg|jpeg|svg|webp|gif|ico|avif|mp4|webm)$/,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'image-cache',
-              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 30 },
-              cacheableResponse: { statuses: [0, 200] }
-            }
-          },
-          {
-            urlPattern: /^https:\/\/fonts\.(?:googleapis|gstatic)\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'google-fonts-cache',
-              expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 },
-              cacheableResponse: { statuses: [0, 200] }
-            }
-          }
-        ]
-      }
-    }),
-    imagetools()
+              template: 'treemap',
+        emitFile: true,
+      }),
+      imagetools()
   ],
   resolve: {
     alias: {
@@ -159,83 +76,18 @@ export default defineConfig({
   build: {
     target: 'esnext',
     minify: 'terser',
-    terserOptions: {
-      compress: {
-        drop_console: true,
-        drop_debugger: true,
-        passes: 3,
-        pure_funcs: ['console.info', 'console.warn'],
-        ecma: 2020,
-        keep_fargs: false,
-        keep_infinity: true,
-        module: true,
-        unsafe: true,
-        unsafe_arrows: true,
-        unsafe_methods: true,
-        unsafe_proto: true,
-        unsafe_undefined: true,
-      },
-      format: {
-        comments: false,
-      }
-    },
+    minifyIdentifiers: true,
+    minifySyntax: true,
+    minifyWhitespace: true,
     outDir: 'dist',
     rollupOptions: {
       output: {
         // Enhanced chunk splitting for better performance
-        manualChunks: {
-          // Core React libraries
-          'react-core': ['react', 'react-dom'],
-          
-          // Routing
-          'router': ['react-router-dom'],
-          
-          // UI Libraries (heavy)
-          'ui-animations': ['framer-motion'],
-          'ui-components': ['swiper', 'react-intersection-observer'],
-          
-          // Utilities
-          'utils': ['lodash', 'axios'],
-          
-          // Media players
-          'media': ['react-player', 'react-youtube'],
-          
-          // Icons and UI elements
-          'icons': ['react-icons', '@heroicons/react'],
-          
-          // Each major page gets its own chunk
-          'home': ['./src/components/HomePage.jsx'],
-          'movies': ['./src/components/MoviesPage.jsx'],
-          'series': ['./src/components/SeriesPage.jsx'],
-          'community': ['./src/components/CommunityPage.jsx'],
-          'profile': ['./src/pages/ProfilePage.jsx'],
-          'watchlist': ['./src/pages/WatchlistPage.jsx'],
-          
-          // Authentication pages
-          'auth': [
-            './src/pages/LoginPage.jsx',
-            './src/pages/SignupPage.jsx',
-            './src/pages/ForgotPasswordPage.jsx',
-            './src/pages/ResetPasswordPage.jsx',
-            './src/pages/VerifyEmailPage.jsx',
-            './src/pages/OAuthSuccessPage.jsx'
-          ],
-          
-          // Services
-          'services': [
-            './src/services/tmdbService.js',
-            './src/services/enhancedApiService.js',
-            './src/services/communityService.js'
-          ],
-          
-          // Context providers
-          'context': [
-            './src/contexts/AuthContext.jsx',
-            './src/contexts/LoadingContext.jsx',
-            './src/contexts/WatchlistContext.jsx',
-            './src/contexts/ThemeContext.jsx',
-            './src/contexts/SocketContext.jsx'
-          ]
+        manualChunks: (id) => {
+          // Keep everything in vendor chunk to avoid import issues
+          if (id.includes('node_modules') || id.includes('src/')) {
+            return 'vendor';
+          }
         },
         chunkFileNames: 'assets/js/[name]-[hash].js',
         entryFileNames: 'assets/js/[name]-[hash].js',

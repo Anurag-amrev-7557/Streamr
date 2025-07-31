@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { similarContentUtils } from '../services/enhancedSimilarContentService';
+import { formatRating } from '../utils/ratingUtils';
 
 // Custom Modern Minimalist Dropdown Component
 const CustomDropdown = React.memo(({ 
@@ -143,7 +144,7 @@ const EnhancedSimilarCard = React.memo(({ item, onClick, isMobile, showRelevance
               <svg className="w-3 h-3 text-yellow-400" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
               </svg>
-              {item.vote_average.toFixed(1)}
+              {formatRating(item.vote_average)}
             </div>
           </div>
         )}
@@ -185,7 +186,7 @@ const EnhancedSimilarCard = React.memo(({ item, onClick, isMobile, showRelevance
                       <svg className="w-3 h-3 text-yellow-400" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
                       </svg>
-                      {item.vote_average.toFixed(1)}
+                      {formatRating(item.vote_average)}
                     </span>
                   </>
                 )}
@@ -616,16 +617,16 @@ const EnhancedSimilarContent = ({
             : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
         }`}>
           {Array.from({ length: isMobile ? 6 : 8 }).map((_, i) => (
-            <motion.div 
-              key={i} 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.3, delay: i * 0.05 }}
-              className="group relative bg-gradient-to-br from-white/[0.08] via-white/[0.04] to-white/[0.02] rounded-xl overflow-hidden border border-white/[0.08] shadow-lg backdrop-blur-sm"
-            >
-              {/* Movie Poster Skeleton - Full Card */}
-              <div className={`${isMobile ? 'aspect-[3/4]' : 'aspect-[2/3]'} bg-gradient-to-br from-gray-800 to-gray-700 animate-pulse rounded-xl`}></div>
-            </motion.div>
+                          <motion.div 
+                key={i} 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.3, delay: i * 0.05 }}
+                className="group relative bg-gradient-to-br from-white/[0.08] via-white/[0.04] to-white/[0.02] rounded-xl overflow-hidden border border-white/[0.08] shadow-lg backdrop-blur-sm"
+              >
+                {/* Movie Poster Skeleton - Full Card */}
+                <div className={`${isMobile ? 'aspect-[3/4]' : 'aspect-[2/3]'} bg-gradient-to-br from-gray-800 to-gray-700 animate-pulse rounded-xl`}></div>
+              </motion.div>
           ))}
         </div>
       </div>

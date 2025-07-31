@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 
 // Authentication API functions
 const authAPI = {
@@ -221,15 +221,25 @@ export const AuthProvider = ({ children }) => {
   const [refreshTokenTimeout, setRefreshTokenTimeout] = useState(null);
   const [sessionWarning, setSessionWarning] = useState(false);
 
+  // Use refs to track timeouts and intervals for proper cleanup
+  const refreshTokenTimeoutRef = useRef(null);
+  const sessionCheckIntervalRef = useRef(null);
+  const activityListenersRef = useRef([]);
+  const isMountedRef = useRef(true);
+
   // Update last activity time
   const updateActivity = useCallback(() => {
-    setLastActivity(Date.now());
-    setSessionWarning(false);
+    if (isMountedRef.current) {
+      setLastActivity(Date.now());
+      setSessionWarning(false);
+    }
   }, []);
 
   // Check session timeout
   useEffect(() => {
     const checkSessionTimeout = () => {
+      if (!isMountedRef.current) return;
+      
       const timeLeft = SESSION_TIMEOUT - (Date.now() - lastActivity);
       
       // Show warning 1 hour before timeout
@@ -244,21 +254,34 @@ export const AuthProvider = ({ children }) => {
       }
     };
 
-    const interval = setInterval(checkSessionTimeout, 60000); // Check every minute
-    return () => clearInterval(interval);
+    sessionCheckIntervalRef.current = setInterval(checkSessionTimeout, 60000); // Check every minute
+    
+    return () => {
+      if (sessionCheckIntervalRef.current) {
+        clearInterval(sessionCheckIntervalRef.current);
+        sessionCheckIntervalRef.current = null;
+      }
+    };
   }, [lastActivity, rememberMe, sessionWarning]);
 
   // Add activity listeners
   useEffect(() => {
     const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
+    const listeners = [];
+    
     events.forEach(event => {
-      window.addEventListener(event, updateActivity);
+      const listener = () => updateActivity();
+      window.addEventListener(event, listener);
+      listeners.push({ event, listener });
     });
 
+    activityListenersRef.current = listeners;
+
     return () => {
-      events.forEach(event => {
-        window.removeEventListener(event, updateActivity);
+      listeners.forEach(({ event, listener }) => {
+        window.removeEventListener(event, listener);
       });
+      activityListenersRef.current = [];
     };
   }, [updateActivity]);
 
@@ -288,45 +311,49 @@ export const AuthProvider = ({ children }) => {
         return false;
       }
 
-      setUser(profileResponse.data);
-      setLastActivity(Date.now());
-      setSessionWarning(false);
+      if (isMountedRef.current) {
+        setUser(profileResponse.data);
+        setLastActivity(Date.now());
+        setSessionWarning(false);
+      }
       return true;
     } catch (err) {
       console.error('Token refresh failed:', err);
       localStorage.removeItem('accessToken');
-      setUser(null);
+      if (isMountedRef.current) {
+        setUser(null);
+      }
       return false;
     }
   }, []);
 
   // Automatic token refresh
   useEffect(() => {
-    let isMounted = true;
     let refreshTimeout = null;
 
     const scheduleRefresh = async () => {
-      if (!isMounted) return;
+      if (!isMountedRef.current) return;
 
       // Clear any existing timeout
       if (refreshTimeout) {
         clearTimeout(refreshTimeout);
+        refreshTimeout = null;
       }
 
       // Set new timeout - refresh 1 minute before token expires
       refreshTimeout = setTimeout(async () => {
-        if (!isMounted) return;
+        if (!isMountedRef.current) return;
         
         const success = await refreshTokenAndUserData();
-        if (success && isMounted) {
+        if (success && isMountedRef.current) {
           scheduleRefresh(); // Schedule next refresh only if successful
-        } else if (isMounted) {
+        } else if (isMountedRef.current) {
           // If refresh failed, try again in 30 seconds
           refreshTimeout = setTimeout(scheduleRefresh, 30000);
         }
       }, TOKEN_REFRESH_INTERVAL - 60000); // Refresh 1 minute before expiration
 
-      setRefreshTokenTimeout(refreshTimeout);
+      refreshTokenTimeoutRef.current = refreshTimeout;
     };
 
     if (user) {
@@ -334,22 +361,20 @@ export const AuthProvider = ({ children }) => {
     }
 
     return () => {
-      isMounted = false;
-      if (refreshTimeout) {
-        clearTimeout(refreshTimeout);
+      if (refreshTokenTimeoutRef.current) {
+        clearTimeout(refreshTokenTimeoutRef.current);
+        refreshTokenTimeoutRef.current = null;
       }
     };
   }, [user, refreshTokenAndUserData]);
 
   // Check for existing session on mount
   useEffect(() => {
-    let isMounted = true;
-
     const checkAuth = async () => {
       try {
         const token = localStorage.getItem('accessToken');
         if (!token) {
-          if (isMounted) {
+          if (isMountedRef.current) {
             setLoading(false);
             setUser(null);
           }
@@ -362,7 +387,7 @@ export const AuthProvider = ({ children }) => {
         try {
           // Get user profile first
           const profileResponse = await userAPI.getProfile();
-          if (!isMounted) return;
+          if (!isMountedRef.current) return;
 
           if (profileResponse.data) {
             setUser(profileResponse.data);
@@ -372,23 +397,23 @@ export const AuthProvider = ({ children }) => {
           }
         } catch (profileError) {
           console.error('Profile fetch failed, attempting to refresh token:', profileError);
-          if (!isMounted) return;
+          if (!isMountedRef.current) return;
           
           // If profile fetch fails, try to refresh token once
           const refreshSuccess = await refreshTokenAndUserData();
-          if (!refreshSuccess && isMounted) {
+          if (!refreshSuccess && isMountedRef.current) {
             // If refresh also fails, logout
             throw new Error('Token refresh failed');
           }
         }
       } catch (err) {
         console.error('Auth check failed:', err);
-        if (isMounted) {
+        if (isMountedRef.current) {
           localStorage.removeItem('accessToken');
           setUser(null);
         }
       } finally {
-        if (isMounted) {
+        if (isMountedRef.current) {
           setLoading(false);
         }
       }
@@ -397,7 +422,7 @@ export const AuthProvider = ({ children }) => {
     checkAuth();
 
     return () => {
-      isMounted = false;
+      isMountedRef.current = false;
     };
   }, [refreshTokenAndUserData]);
 
@@ -489,6 +514,17 @@ export const AuthProvider = ({ children }) => {
     } catch (err) {
       console.error('Logout failed:', err);
     } finally {
+      // Clear all timeouts and intervals
+      if (refreshTokenTimeoutRef.current) {
+        clearTimeout(refreshTokenTimeoutRef.current);
+        refreshTokenTimeoutRef.current = null;
+      }
+      
+      if (sessionCheckIntervalRef.current) {
+        clearInterval(sessionCheckIntervalRef.current);
+        sessionCheckIntervalRef.current = null;
+      }
+      
       setUser(null);
       setRememberMe(false);
       localStorage.removeItem('accessToken');
@@ -528,6 +564,30 @@ export const AuthProvider = ({ children }) => {
       throw error;
     }
   };
+
+  // Cleanup function for component unmount
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      
+      // Clear all timeouts and intervals
+      if (refreshTokenTimeoutRef.current) {
+        clearTimeout(refreshTokenTimeoutRef.current);
+        refreshTokenTimeoutRef.current = null;
+      }
+      
+      if (sessionCheckIntervalRef.current) {
+        clearInterval(sessionCheckIntervalRef.current);
+        sessionCheckIntervalRef.current = null;
+      }
+      
+      // Remove activity listeners
+      activityListenersRef.current.forEach(({ event, listener }) => {
+        window.removeEventListener(event, listener);
+      });
+      activityListenersRef.current = [];
+    };
+  }, []);
 
   const value = {
     user,

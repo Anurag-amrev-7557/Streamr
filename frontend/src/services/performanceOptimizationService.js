@@ -15,6 +15,7 @@ class PerformanceOptimizationService {
       imageLoadTimes: [],
       apiCallTimes: []
     };
+    this.observers = []; // Track observers for cleanup
     this.init();
   }
 
@@ -107,28 +108,34 @@ class PerformanceOptimizationService {
   // 📊 Performance Monitoring
   setupPerformanceObservers() {
     // First Contentful Paint
-    new PerformanceObserver((list) => {
+    const fcpObserver = new PerformanceObserver((list) => {
       const entries = list.getEntries();
       this.metrics.fcp = entries[entries.length - 1].startTime;
       this.logMetric('FCP', this.metrics.fcp);
-    }).observe({ entryTypes: ['paint'] });
+    });
+    fcpObserver.observe({ entryTypes: ['paint'] });
+    this.observers.push(fcpObserver);
     
     // Largest Contentful Paint
-    new PerformanceObserver((list) => {
+    const lcpObserver = new PerformanceObserver((list) => {
       const entries = list.getEntries();
       this.metrics.lcp = entries[entries.length - 1].startTime;
       this.logMetric('LCP', this.metrics.lcp);
-    }).observe({ entryTypes: ['largest-contentful-paint'] });
+    });
+    lcpObserver.observe({ entryTypes: ['largest-contentful-paint'] });
+    this.observers.push(lcpObserver);
     
     // First Input Delay
-    new PerformanceObserver((list) => {
+    const fidObserver = new PerformanceObserver((list) => {
       const entries = list.getEntries();
       this.metrics.fid = entries[0].processingStart - entries[0].startTime;
       this.logMetric('FID', this.metrics.fid);
-    }).observe({ entryTypes: ['first-input'] });
+    });
+    fidObserver.observe({ entryTypes: ['first-input'] });
+    this.observers.push(fidObserver);
     
     // Cumulative Layout Shift
-    new PerformanceObserver((list) => {
+    const clsObserver = new PerformanceObserver((list) => {
       let cls = 0;
       list.getEntries().forEach(entry => {
         if (!entry.hadRecentInput) {
@@ -137,7 +144,39 @@ class PerformanceOptimizationService {
       });
       this.metrics.cls = cls;
       this.logMetric('CLS', cls);
-    }).observe({ entryTypes: ['layout-shift'] });
+    });
+    clsObserver.observe({ entryTypes: ['layout-shift'] });
+    this.observers.push(clsObserver);
+  }
+
+  // 🧹 Cleanup method to prevent memory leaks
+  cleanup() {
+    // Disconnect all performance observers
+    this.observers.forEach(observer => {
+      if (observer && typeof observer.disconnect === 'function') {
+        observer.disconnect();
+      }
+    });
+    this.observers = [];
+
+    // Clear image observer
+    if (this.imageObserver) {
+      this.imageObserver.disconnect();
+      this.imageObserver = null;
+    }
+
+    // Clear caches
+    this.imageCache.clear();
+    this.apiCache.clear();
+
+    // Clear request queue
+    this.requestQueue = [];
+
+    // Clear batch timeout
+    if (this.batchTimeout) {
+      clearTimeout(this.batchTimeout);
+      this.batchTimeout = null;
+    }
   }
 
   logMetric(name, value) {
@@ -266,7 +305,9 @@ class PerformanceOptimizationService {
 
   // 🎯 Public API
   observeImage(img) {
-    this.imageObserver.observe(img);
+    if (this.imageObserver) {
+      this.imageObserver.observe(img);
+    }
   }
 
   getMetrics() {
@@ -341,4 +382,5 @@ export const observeImage = (img) => performanceService.observeImage(img);
 export const batchRequest = (request, priority) => performanceService.batchRequest(request, priority);
 export const getCachedData = (key, fetcher, options) => performanceService.getCachedData(key, fetcher, options);
 export const getMetrics = () => performanceService.getMetrics();
-export const getReport = () => performanceService.getReport(); 
+export const getReport = () => performanceService.getReport();
+export const cleanupPerformanceService = () => performanceService.cleanup(); 

@@ -2,12 +2,31 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   checkNetworkConnectivity, 
-  simulateNetworkError, 
   classifyNetworkError,
-  calculateRetryDelay,
-  networkMonitor,
-  fetchWithRetry
-} from '../utils/networkUtils';
+  calculateRetryDelay
+} from '../services/tmdbService';
+import { fetchWithRetry } from '../services/api';
+import { createNetworkMonitor } from '../utils/networkUtils';
+
+// Helper function to simulate network errors
+const simulateNetworkError = (errorType) => {
+  const errorMessages = {
+    'CONNECTION_RESET': 'Connection reset by peer',
+    'TIMEOUT': 'Request timeout',
+    'DNS_FAILURE': 'DNS resolution failed',
+    'SSL_ERROR': 'SSL certificate verification failed',
+    'NETWORK_UNREACHABLE': 'Network unreachable',
+    'HOST_UNREACHABLE': 'Host unreachable',
+    'CONNECTION_REFUSED': 'Connection refused',
+    'RATE_LIMIT': 'Too many requests',
+    'SERVER_ERROR': 'Internal server error'
+  };
+
+  const error = new Error(errorMessages[errorType] || 'Unknown network error');
+  error.type = errorType;
+  error.code = errorType;
+  return error;
+};
 
 const NetworkTestPage = () => {
   const [networkStatus, setNetworkStatus] = useState(null);
@@ -16,7 +35,7 @@ const NetworkTestPage = () => {
 
   useEffect(() => {
     // Subscribe to network status changes
-    const unsubscribe = networkMonitor.addListener((status) => {
+    const unsubscribe = createNetworkMonitor((status) => {
       setNetworkStatus(status);
       console.log('Network status changed:', status);
     });
@@ -36,8 +55,8 @@ const NetworkTestPage = () => {
       const connectivity = await checkNetworkConnectivity();
       results.push({
         test: 'Network Connectivity',
-        status: connectivity.isConnected ? '✅ Connected' : '❌ Disconnected',
-        details: connectivity
+        status: connectivity ? '✅ Connected' : '❌ Disconnected',
+        details: { isConnected: connectivity }
       });
 
       // Test 2: Error classification
@@ -75,10 +94,7 @@ const NetworkTestPage = () => {
 
       // Test 4: Enhanced fetch with retry
       try {
-        const response = await fetchWithRetry('https://httpbin.org/status/200', {}, {
-          maxRetries: 2,
-          timeout: 5000
-        });
+        const response = await fetchWithRetry('https://httpbin.org/status/200');
         results.push({
           test: 'Enhanced Fetch with Retry',
           status: '✅ Success',
@@ -134,8 +150,8 @@ const NetworkTestPage = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-white/10 rounded-lg p-4">
                 <h3 className="font-medium mb-2">Current Status</h3>
-                <p className={`text-lg ${networkStatus?.isConnected ? 'text-green-400' : 'text-red-400'}`}>
-                  {networkStatus?.isConnected ? '🟢 Online' : '🔴 Offline'}
+                <p className={`text-lg ${networkStatus ? 'text-green-400' : 'text-red-400'}`}>
+                  {networkStatus ? '🟢 Online' : '🔴 Offline'}
                 </p>
                 {networkStatus?.details && (
                   <div className="mt-2 text-sm text-white/60">

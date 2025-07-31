@@ -5,6 +5,7 @@ import { PageLoader } from '../components/Loader';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useWatchlist } from '../contexts/WatchlistContext';
 import { useAuth } from '../contexts/AuthContext';
+import { formatRating } from '../utils/ratingUtils';
 
 const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p';
 const PLACEHOLDER_IMAGE = 'https://placehold.co/500x750/1a1d21/ffffff?text=No+Image';
@@ -570,7 +571,9 @@ const WatchlistPage = () => {
                           >
                             <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
                           </svg>
-                          <span className="text-xs sm:text-sm text-white/80">{movie.rating?.toFixed(1)}</span>
+                          <span className="text-xs sm:text-sm text-white/80">
+                            {formatRating(movie.rating)}
+                          </span>
                         </div>
                       </div>
                     </div>

@@ -2,6 +2,7 @@ import React, { useMemo, useCallback, useState, useEffect } from 'react';
 import { FixedSizeGrid as Grid } from 'react-window';
 import { motion, AnimatePresence } from 'framer-motion';
 import OptimizedImage from './OptimizedImage';
+import { formatRating } from '../utils/ratingUtils';
 
 const VirtualizedMovieGrid = ({
   movies = [],
@@ -36,17 +37,25 @@ const VirtualizedMovieGrid = ({
 
   // Handle window resize
   useEffect(() => {
+    const isMountedRef = useRef(true);
+    
     const handleResize = () => {
+      if (!isMountedRef.current) return;
+      
       setDimensions({
         width: window.innerWidth,
         height: window.innerHeight
       });
     };
 
-    window.addEventListener('resize', handleResize);
+    const resizeHandler = handleResize;
+    window.addEventListener('resize', resizeHandler);
     handleResize(); // Initial call
 
-    return () => window.removeEventListener('resize', handleResize);
+    return () => {
+      isMountedRef.current = false;
+      window.removeEventListener('resize', resizeHandler);
+    };
   }, []);
 
   // Cell renderer for virtualized grid
@@ -100,7 +109,7 @@ const VirtualizedMovieGrid = ({
                         <svg className="w-3 h-3 text-yellow-400" fill="currentColor" viewBox="0 0 24 24">
                           <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
                         </svg>
-                        {movie.vote_average.toFixed(1)}
+                        {formatRating(movie.vote_average)}
                       </span>
                     </>
                   )}
@@ -225,7 +234,7 @@ export const OptimizedMovieCard = React.memo(({ movie, onClick, className = '' }
                     <svg className="w-3 h-3 text-yellow-400" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
                     </svg>
-                    {movie.vote_average.toFixed(1)}
+                                          {formatRating(movie.vote_average)}
                   </span>
                 </>
               )}

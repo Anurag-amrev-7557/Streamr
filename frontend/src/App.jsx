@@ -24,11 +24,15 @@ const NetworkTestPage = lazy(() => import('./components/NetworkTestPage'));
 import { SocketProvider } from './contexts/SocketContext'
 // Lazy load components that are not immediately needed
 const MovieDetailsOverlay = lazy(() => import('./components/MovieDetailsOverlay'));
-const NetworkStatus = lazy(() => import('./components/NetworkStatus'));
+// const NetworkStatus = lazy(() => import('./components/NetworkStatus'));
 const PerformanceDashboard = lazy(() => import('./components/PerformanceDashboard'));
 import { useSmoothScroll } from './hooks/useSmoothScroll'
 // Import performance service to initialize it
 import './services/performanceOptimizationService'
+// Import error boundary
+import { ErrorBoundary } from './utils/errorBoundary'
+// Import test utility (remove in production)
+import { testErrorBoundary } from './utils/testErrorHandling'
 
 const Layout = () => {
   const [selectedMovie, setSelectedMovie] = React.useState(null);
@@ -67,12 +71,20 @@ const Layout = () => {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [togglePerformanceDashboard]);
+
+  // Test error boundary in development
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      testErrorBoundary();
+    }
+  }, []);
   
   return (
     <div className="min-h-screen bg-[#121417] smooth-scroll performance-scroll">
-      <Suspense fallback={null}>
+      {/* NetworkStatus component removed */}
+      {/* <Suspense fallback={null}>
         <NetworkStatus />
-      </Suspense>
+      </Suspense> */}
       <Suspense>
         <Navbar onMovieSelect={handleMovieSelect} />
       </Suspense>
@@ -150,17 +162,19 @@ const AppRoutes = () => {
 
 const App = () => {
   return (
-    <Router>
-      <SocketProvider>
-        <LoadingProvider>
-          <WatchlistProvider>
-            <AuthProvider>
-              <Layout />
-            </AuthProvider>
-          </WatchlistProvider>
-        </LoadingProvider>
-      </SocketProvider>
-    </Router>
+    <ErrorBoundary>
+      <Router>
+        <SocketProvider>
+          <LoadingProvider>
+            <WatchlistProvider>
+              <AuthProvider>
+                <Layout />
+              </AuthProvider>
+            </WatchlistProvider>
+          </LoadingProvider>
+        </SocketProvider>
+      </Router>
+    </ErrorBoundary>
   )
 }
 

@@ -23,6 +23,7 @@ class PerformanceMonitor {
     
     this.observers = new Map();
     this.isMonitoring = false;
+    this.memoryInterval = null;
     
     this.init();
   }
@@ -284,7 +285,7 @@ class PerformanceMonitor {
     
     // Monitor memory usage
     if ('memory' in performance) {
-      setInterval(() => {
+      this.memoryInterval = setInterval(() => {
         const memory = performance.memory;
         this.recordMetric('memoryUsage', memory.usedJSHeapSize);
         this.recordMetric('memoryLimit', memory.jsHeapSizeLimit);
@@ -297,6 +298,12 @@ class PerformanceMonitor {
   // Stop monitoring
   stopMonitoring() {
     this.isMonitoring = false;
+    
+    // Clear memory monitoring interval
+    if (this.memoryInterval) {
+      clearInterval(this.memoryInterval);
+      this.memoryInterval = null;
+    }
     
     // Disconnect all observers
     this.observers.forEach(observer => {
@@ -349,6 +356,24 @@ class PerformanceMonitor {
 
 // Create singleton instance
 const performanceMonitor = new PerformanceMonitor();
+
+// Add cleanup method for app unmount
+performanceMonitor.cleanup = function() {
+  this.stopMonitoring();
+  this.observers.clear();
+  this.metrics = {
+    pageLoads: 0,
+    apiCalls: 0,
+    imageLoads: 0,
+    cacheHits: 0,
+    cacheMisses: 0,
+    errors: 0,
+    averageLoadTime: 0,
+    totalLoadTime: 0,
+    slowRequests: 0,
+    networkErrors: 0
+  };
+};
 
 // Export the monitor and utility functions
 export default performanceMonitor;

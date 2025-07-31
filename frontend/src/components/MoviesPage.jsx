@@ -778,77 +778,49 @@ const MoviesPage = () => {
   };
 
   const performSearch = async (query, pageNum = 1) => {
+    console.log('🎬 performSearch called with:', query, 'page:', pageNum);
+    
     if (!query.trim()) {
+      console.log('❌ Empty query, clearing results');
       setSearchResults([]);
       setHasMoreSearchResults(false);
       return;
     }
 
     try {
+      console.log('🔍 Starting search for:', query);
       setIsSearching(true);
+      setError(null); // Clear any previous errors
+      
       const response = await searchMovies(query, pageNum);
+      
+      console.log('📊 Search response:', response);
       
       if (pageNum === 1) {
         setSearchResults(response.results || []);
+        console.log('✅ Set search results:', response.results?.length || 0, 'movies');
       } else {
         const newResults = (response.results || []).filter(newMovie => 
           !searchResults.some(existingMovie => existingMovie.id === newMovie.id)
         );
         setSearchResults(prev => [...prev, ...newResults]);
+        console.log('✅ Added new results:', newResults.length, 'movies');
       }
 
       setHasMoreSearchResults(response.page < response.total_pages);
+      console.log('📄 Has more results:', response.page < response.total_pages);
     } catch (err) {
       console.error('Error searching movies:', err);
       setError('Failed to search movies');
+      setSearchResults([]);
+      setHasMoreSearchResults(false);
     } finally {
       setIsSearching(false);
     }
   };
 
-  // Debounced search function
-  const debouncedSearch = debounce((query) => {
-    setSearchPage(1);
-    performSearch(query, 1);
-  }, 500);
-
-  // Update the search handling
-  const handleSearchChange = (e) => {
-    const query = e.target.value;
-    setSearchQuery(query);
-    
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
-    }
-
-    if (query.trim()) {
-      setIsSearching(true);
-      searchTimeoutRef.current = setTimeout(async () => {
-        try {
-          const response = await searchMovies(query, 1);
-          
-          if (response.results) {
-            setSearchResults(response.results);
-            setHasMoreSearchResults(response.page < response.total_pages);
-            setSearchPage(1);
-          } else {
-            setSearchResults([]);
-            setHasMoreSearchResults(false);
-          }
-        } catch (error) {
-          console.error('Search error:', error);
-          setSearchResults([]);
-          setHasMoreSearchResults(false);
-        } finally {
-          setIsSearching(false);
-        }
-      }, 300);
-    } else {
-      setSearchResults([]);
-      setHasMoreSearchResults(false);
-      setIsSearching(false);
-    }
-  };
+  // Debounced search function - removed duplicate implementation
+  // The EnhancedSearchBar now handles the search logic
 
   // Update the load more search results
   const loadMoreSearchResults = async () => {
@@ -1011,6 +983,7 @@ const MoviesPage = () => {
   const getDisplayMovies = () => {
     try {
       const moviesToFilter = searchQuery.trim() && searchResults.length > 0 ? searchResults : movies;
+      console.log('🎬 getDisplayMovies - searchQuery:', searchQuery, 'searchResults.length:', searchResults.length, 'movies.length:', movies.length, 'displaying:', moviesToFilter.length, 'movies');
       return filterMovies(moviesToFilter);
     } catch (error) {
       console.error('Error in getDisplayMovies:', error);
@@ -1304,8 +1277,14 @@ const MoviesPage = () => {
                 placeholder="Search movies..."
                 initialValue={searchQuery}
                 onSearch={(query) => {
+                  console.log('🎬 MoviesPage onSearch called with:', query);
                   setSearchQuery(query);
-                  performSearch(query, 1);
+                  if (query.trim()) {
+                    performSearch(query, 1);
+                  } else {
+                    setSearchResults([]);
+                    setHasMoreSearchResults(false);
+                  }
                 }}
                 onSearchSubmit={(query) => {
                   // Only add to history when search is actually submitted
@@ -1317,6 +1296,7 @@ const MoviesPage = () => {
                   setHasMoreSearchResults(false);
                 }}
                 isLoading={isSearching}
+                showLoadingSpinner={true}
                 theme="dark"
                 variant="floating"
                 size="md"

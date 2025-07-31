@@ -2,7 +2,7 @@
 // Change this to switch between local and deployed backend
 const API_CONFIG = {
   // Set to 'local' for local development, 'deployed' for production backend
-  mode: 'local',
+  mode: 'local', // Switched to local to avoid deployed backend timeout issues
   
   // API URLs
   local: 'http://localhost:3001/api',
@@ -31,6 +31,36 @@ export const isLocalBackend = () => {
 // Check if we're using deployed backend
 export const isDeployedBackend = () => {
   return API_CONFIG.mode === 'deployed';
+};
+
+// Switch backend mode
+export const switchBackendMode = (mode) => {
+  if (mode === 'local' || mode === 'deployed') {
+    API_CONFIG.mode = mode;
+    console.log(`Switched to ${mode} backend`);
+    return true;
+  }
+  console.error('Invalid backend mode. Use "local" or "deployed"');
+  return false;
+};
+
+// Get current backend mode
+export const getCurrentBackendMode = () => {
+  return API_CONFIG.mode;
+};
+
+// Test backend connectivity
+export const testBackendConnectivity = async () => {
+  try {
+    const response = await fetch(`${getApiUrl()}/health`, {
+      method: 'GET',
+      timeout: 5000
+    });
+    return response.ok;
+  } catch (error) {
+    console.warn('Backend connectivity test failed:', error.message);
+    return false;
+  }
 };
 
 // Export the config for debugging

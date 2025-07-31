@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { toNumericRating } from '../utils/ratingUtils';
 
 const WatchlistContext = createContext();
 
@@ -78,7 +79,7 @@ export const WatchlistProvider = ({ children }) => {
         year: movie.release_date ? new Date(movie.release_date).getFullYear() : 
               movie.first_air_date ? new Date(movie.first_air_date).getFullYear() : 
               movie.year || 'N/A',
-        rating: movie.vote_average || movie.rating || 0,
+        rating: toNumericRating(movie.vote_average || movie.rating, 0),
         genres: movie.genre_ids || movie.genres || [],
         release_date: movie.release_date || movie.first_air_date,
         duration: movie.runtime ? `${Math.floor(movie.runtime / 60)}h ${movie.runtime % 60}m` : 

@@ -10,7 +10,7 @@
         50% { transform: scale(1.05); }
       }
       .logo-path {
-        fill: #ffffff;
+        fill: #3b82f6;
         animation: pulse 3s ease-in-out infinite, scale 3s ease-in-out infinite;
       }
     </style>
