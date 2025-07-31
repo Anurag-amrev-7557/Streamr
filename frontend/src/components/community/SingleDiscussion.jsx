@@ -98,6 +98,40 @@ const SingleDiscussion = () => {
     }
   };
 
+  const handleDelete = async () => {
+    if (!user) {
+      toast.error('Please log in to delete discussions');
+      navigate('/login', { state: { from: `/community/discussion/${id}` } });
+      return;
+    }
+
+    // Check if user is the author
+    if (discussion.author._id !== user.id) {
+      toast.error('You can only delete your own discussions');
+      return;
+    }
+
+    const confirmed = window.confirm('Are you sure you want to delete this discussion? This action cannot be undone.');
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await communityService.deleteDiscussion(id);
+      toast.success('Discussion deleted successfully');
+      navigate('/community');
+    } catch (error) {
+      console.error('Error deleting discussion:', error);
+      if (error.response?.status === 403) {
+        toast.error('You are not authorized to delete this discussion');
+      } else if (error.response?.status === 404) {
+        toast.error('Discussion not found');
+      } else {
+        toast.error('Failed to delete discussion. Please try again.');
+      }
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0f1114] text-white p-8">
@@ -151,33 +185,59 @@ const SingleDiscussion = () => {
           <div className="prose prose-invert max-w-none mb-6">
             {discussion.content}
           </div>
-          <div className="flex items-center gap-4">
-            <button
-              onClick={handleLike}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-                discussion.isLiked
-                  ? 'bg-red-500/20 text-red-500 hover:bg-red-500/30'
-                  : 'bg-white/5 hover:bg-white/10'
-              }`}
-            >
-              <svg
-                className="w-5 h-5"
-                fill={discussion.isLiked ? 'currentColor' : 'none'}
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={handleLike}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                  discussion.isLiked
+                    ? 'bg-red-500/20 text-red-500 hover:bg-red-500/30'
+                    : 'bg-white/5 hover:bg-white/10'
+                }`}
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
-                />
-              </svg>
-              <span>{discussion.likes.length}</span>
-            </button>
-            <div className="text-sm text-white/60">
-              {discussion.views} views
+                <svg
+                  className="w-5 h-5"
+                  fill={discussion.isLiked ? 'currentColor' : 'none'}
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                  />
+                </svg>
+                <span>{discussion.likes.length}</span>
+              </button>
+              <div className="text-sm text-white/60">
+                {discussion.views} views
+              </div>
             </div>
+            
+            {/* Delete button - only show if user is the author */}
+            {user && discussion.author._id === user.id && (
+              <button
+                onClick={handleDelete}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/20 text-red-500 hover:bg-red-500/30 transition-colors"
+                title="Delete discussion"
+              >
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                  />
+                </svg>
+                <span>Delete</span>
+              </button>
+            )}
           </div>
         </div>
 

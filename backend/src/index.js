@@ -48,17 +48,25 @@ const io = socketIo(server, {
 const communityNamespace = io.of('/community');
 
 // Middleware
-const allowedOrigins = process.env.NODE_ENV === 'production'
-  ? ['https://streamr-see.web.app']
-  : [
-      'http://localhost:5173',
-      'http://localhost:3000',
-      'http://127.0.0.1:5173',
-      'http://127.0.0.1:3000'
-    ];
+const allowedOrigins = [
+  'https://streamr-see.web.app', // Always allow deployed frontend
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:3000'
+];
 
+// CORS middleware: allow deployed and local frontends
 app.use(cors({
-  origin: allowedOrigins,
+  origin: function (origin, callback) {
+    // allow requests with no origin (like mobile apps, curl, etc.)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -200,9 +208,19 @@ app.use('/api/user', authenticate, userRoutes);
 app.use('/api/tmdb', tmdbRoutes);
 app.use('/api/community', communityRoutes);
 
-// Add this:
+// Health check endpoints
 app.get('/', (req, res) => {
   res.send('Streamr Backend API is running.');
+});
+
+// Specific health check for network status component
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV || 'development'
+  });
 });
 
 // Serve uploaded files

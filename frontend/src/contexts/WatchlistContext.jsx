@@ -33,7 +33,7 @@ export const WatchlistProvider = ({ children }) => {
 
   const validateMovieData = (movie) => {
     // Ensure all required fields are present
-    const requiredFields = ['id', 'title', 'poster_path', 'type'];
+    const requiredFields = ['id', 'title'];
     const missingFields = requiredFields.filter(field => !movie[field]);
     
     if (missingFields.length > 0) {
@@ -41,10 +41,19 @@ export const WatchlistProvider = ({ children }) => {
       return false;
     }
     
+    // Check if we have at least one image field (poster_path, poster, or backdrop_path, backdrop)
+    const hasImage = movie.poster_path || movie.poster || movie.backdrop_path || movie.backdrop;
+    if (!hasImage) {
+      console.warn('Movie has no image data');
+      return false;
+    }
+    
     return true;
   };
 
   const addToWatchlist = (movie) => {
+    console.log('Attempting to add movie to watchlist:', movie);
+    
     // Validate movie data
     if (!validateMovieData(movie)) {
       console.error('Invalid movie data, cannot add to watchlist');
@@ -64,28 +73,39 @@ export const WatchlistProvider = ({ children }) => {
         title: movie.title || movie.name,
         poster_path: movie.poster_path || movie.poster,
         backdrop_path: movie.backdrop_path || movie.backdrop,
-        overview: movie.overview,
+        overview: movie.overview || '',
         type: movie.media_type || movie.type || 'movie',
         year: movie.release_date ? new Date(movie.release_date).getFullYear() : 
-              movie.first_air_date ? new Date(movie.first_air_date).getFullYear() : 'N/A',
-        rating: movie.vote_average || 0,
+              movie.first_air_date ? new Date(movie.first_air_date).getFullYear() : 
+              movie.year || 'N/A',
+        rating: movie.vote_average || movie.rating || 0,
         genres: movie.genre_ids || movie.genres || [],
         release_date: movie.release_date || movie.first_air_date,
         duration: movie.runtime ? `${Math.floor(movie.runtime / 60)}h ${movie.runtime % 60}m` : 
-                 movie.episode_run_time ? `${Math.floor(movie.episode_run_time[0] / 60)}h ${movie.episode_run_time[0] % 60}m` : 'N/A',
+                 movie.episode_run_time ? `${Math.floor(movie.episode_run_time[0] / 60)}h ${movie.episode_run_time[0] % 60}m` : 
+                 movie.duration || 'N/A',
         director: movie.director,
         cast: movie.cast || [],
         addedAt: new Date().toISOString()
       };
       
+      console.log('Formatted movie data:', formattedMovie);
+      
       // Add the new movie at the beginning of the list
       const newWatchlist = [formattedMovie, ...prev];
+      console.log('Added movie to watchlist:', formattedMovie.title);
+      console.log('New watchlist length:', newWatchlist.length);
       return newWatchlist;
     });
   };
 
   const removeFromWatchlist = (movieId) => {
-    setWatchlist(prev => prev.filter(movie => movie.id !== movieId));
+    console.log('Removing movie from watchlist:', movieId);
+    setWatchlist(prev => {
+      const newWatchlist = prev.filter(movie => movie.id !== movieId);
+      console.log('Updated watchlist length:', newWatchlist.length);
+      return newWatchlist;
+    });
   };
 
   // Clear all items from the watchlist

@@ -1,5 +1,209 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { authAPI, userAPI, api } from '../services/api';
+
+// Authentication API functions
+const authAPI = {
+  refreshToken: async () => {
+    try {
+      const response = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Token refresh failed');
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Token refresh error:', error);
+      throw error;
+    }
+  },
+  
+  login: async (credentials) => {
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(credentials),
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Login failed');
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Login error:', error);
+      throw error;
+    }
+  },
+  
+  logout: async () => {
+    try {
+      const response = await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+      });
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Logout error:', error);
+      throw error;
+    }
+  },
+  
+  forgotPassword: async (email) => {
+    try {
+      const response = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Forgot password request failed');
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Forgot password error:', error);
+      throw error;
+    }
+  },
+  
+  resetPassword: async (token, newPassword) => {
+    try {
+      const response = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ token, newPassword }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Password reset failed');
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Password reset error:', error);
+      throw error;
+    }
+  },
+  
+  verifyEmail: async (token) => {
+    try {
+      const response = await fetch('/api/auth/verify-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ token }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Email verification failed');
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Email verification error:', error);
+      throw error;
+    }
+  }
+};
+
+const userAPI = {
+  getProfile: async () => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        throw new Error('No access token');
+      }
+      
+      const response = await fetch('/api/user/profile', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to get user profile');
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Get profile error:', error);
+      throw error;
+    }
+  },
+  
+  updateProfile: async (userData) => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        throw new Error('No access token');
+      }
+      
+      const response = await fetch('/api/user/profile', {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(userData),
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to update profile');
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Update profile error:', error);
+      throw error;
+    }
+  },
+  
+  signup: async (userData) => {
+    try {
+      const response = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(userData),
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Signup failed');
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Signup error:', error);
+      throw error;
+    }
+  }
+};
 
 const AuthContext = createContext(null);
 
@@ -194,42 +398,6 @@ export const AuthProvider = ({ children }) => {
 
     return () => {
       isMounted = false;
-    };
-  }, [refreshTokenAndUserData]);
-
-  // Add request interceptor to handle token refresh
-  useEffect(() => {
-    const interceptor = api.interceptors.response.use(
-      (response) => response,
-      async (error) => {
-        const originalRequest = error.config;
-
-        // If error is 401 and we haven't tried to refresh token yet
-        if (error.response?.status === 401 && !originalRequest._retry) {
-          originalRequest._retry = true;
-
-          try {
-            const success = await refreshTokenAndUserData();
-            if (success) {
-              // Update the failed request's authorization header
-              const token = localStorage.getItem('accessToken');
-              originalRequest.headers.Authorization = `Bearer ${token}`;
-              // Retry the original request
-              return api(originalRequest);
-            }
-          } catch (refreshError) {
-            console.error('Token refresh failed:', refreshError);
-            // If refresh fails, redirect to login
-            window.location.href = '/login';
-          }
-        }
-
-        return Promise.reject(error);
-      }
-    );
-
-    return () => {
-      api.interceptors.response.eject(interceptor);
     };
   }, [refreshTokenAndUserData]);
 

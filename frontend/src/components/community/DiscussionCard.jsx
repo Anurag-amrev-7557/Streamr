@@ -198,6 +198,43 @@ const DiscussionCard = ({ discussion: initialDiscussion, onUpdate }) => {
     }
   };
 
+  const handleDelete = async () => {
+    if (!user) {
+      toast.error('Please log in to delete discussions');
+      navigate('/login', { state: { from: `/community/discussion/${discussion._id}` } });
+      return;
+    }
+
+    // Check if user is the author
+    if (discussion.author._id !== user.id) {
+      toast.error('You can only delete your own discussions');
+      return;
+    }
+
+    const confirmed = window.confirm('Are you sure you want to delete this discussion? This action cannot be undone.');
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await communityService.deleteDiscussion(discussion._id);
+      toast.success('Discussion deleted successfully');
+      // Remove the discussion from the list by calling onUpdate with null
+      if (onUpdate) {
+        onUpdate(null);
+      }
+    } catch (error) {
+      console.error('Error deleting discussion:', error);
+      if (error.response?.status === 403) {
+        toast.error('You are not authorized to delete this discussion');
+      } else if (error.response?.status === 404) {
+        toast.error('Discussion not found');
+      } else {
+        toast.error('Failed to delete discussion. Please try again.');
+      }
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -284,6 +321,31 @@ const DiscussionCard = ({ discussion: initialDiscussion, onUpdate }) => {
               />
             </svg>
           </button>
+          
+          {/* Delete button - only show if user is the author */}
+          {user && discussion.author._id === user.id && (
+            <button
+              onClick={handleDelete}
+              className="p-2 rounded-lg text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-all duration-200"
+              aria-label="Delete discussion"
+              title="Delete discussion"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
 

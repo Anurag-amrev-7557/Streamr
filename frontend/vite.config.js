@@ -182,11 +182,59 @@ export default defineConfig({
     outDir: 'dist',
     rollupOptions: {
       output: {
+        // Enhanced chunk splitting for better performance
         manualChunks: {
-          vendor: [
-            'react',
-            'react-dom',
-            'react-router-dom'
+          // Core React libraries
+          'react-core': ['react', 'react-dom'],
+          
+          // Routing
+          'router': ['react-router-dom'],
+          
+          // UI Libraries (heavy)
+          'ui-animations': ['framer-motion'],
+          'ui-components': ['swiper', 'react-intersection-observer'],
+          
+          // Utilities
+          'utils': ['lodash', 'axios'],
+          
+          // Media players
+          'media': ['react-player', 'react-youtube'],
+          
+          // Icons and UI elements
+          'icons': ['react-icons', '@heroicons/react'],
+          
+          // Each major page gets its own chunk
+          'home': ['./src/components/HomePage.jsx'],
+          'movies': ['./src/components/MoviesPage.jsx'],
+          'series': ['./src/components/SeriesPage.jsx'],
+          'community': ['./src/components/CommunityPage.jsx'],
+          'profile': ['./src/pages/ProfilePage.jsx'],
+          'watchlist': ['./src/pages/WatchlistPage.jsx'],
+          
+          // Authentication pages
+          'auth': [
+            './src/pages/LoginPage.jsx',
+            './src/pages/SignupPage.jsx',
+            './src/pages/ForgotPasswordPage.jsx',
+            './src/pages/ResetPasswordPage.jsx',
+            './src/pages/VerifyEmailPage.jsx',
+            './src/pages/OAuthSuccessPage.jsx'
+          ],
+          
+          // Services
+          'services': [
+            './src/services/tmdbService.js',
+            './src/services/enhancedApiService.js',
+            './src/services/communityService.js'
+          ],
+          
+          // Context providers
+          'context': [
+            './src/contexts/AuthContext.jsx',
+            './src/contexts/LoadingContext.jsx',
+            './src/contexts/WatchlistContext.jsx',
+            './src/contexts/ThemeContext.jsx',
+            './src/contexts/SocketContext.jsx'
           ]
         },
         chunkFileNames: 'assets/js/[name]-[hash].js',
@@ -202,9 +250,9 @@ export default defineConfig({
         }
       }
     },
-    chunkSizeWarningLimit: 700,
+    chunkSizeWarningLimit: 500, // Reduced from 700
     cssCodeSplit: true,
-    sourcemap: process.env.NODE_ENV !== 'production', // Disable sourcemaps in production for smaller builds
+    sourcemap: process.env.NODE_ENV !== 'production',
     brotliSize: true,
     reportCompressedSize: true,
     emptyOutDir: true
@@ -241,17 +289,14 @@ export default defineConfig({
         rewrite: (p) => p,
         configure: (proxy, _options) => {
           proxy.on('error', (err, _req, _res) => {
-            // eslint-disable-next-line no-console
             console.error('[Proxy Error]', err);
           });
           proxy.on('proxyReq', (proxyReq, req, _res) => {
-            // eslint-disable-next-line no-console
             if (process.env.NODE_ENV === 'development') {
               console.info('[Proxy Request]', req.method, req.url);
             }
           });
           proxy.on('proxyRes', (proxyRes, req, _res) => {
-            // eslint-disable-next-line no-console
             if (process.env.NODE_ENV === 'development') {
               console.info('[Proxy Response]', proxyRes.statusCode, req.url);
             }
@@ -264,7 +309,11 @@ export default defineConfig({
     include: [
       'react',
       'react-dom',
-      'react-router-dom'
+      'react-router-dom',
+      'framer-motion',
+      'swiper',
+      'lodash',
+      'axios'
     ],
     exclude: [
       '@headlessui/react',

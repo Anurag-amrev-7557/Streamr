@@ -3,6 +3,28 @@ export const TMDB_API_KEY = import.meta.env.VITE_TMDB_API_KEY;
 export const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 export const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p';
 
+// Enhanced network error handling constants
+const NETWORK_ERROR_TYPES = {
+  CONNECTION_RESET: 'CONNECTION_RESET',
+  TIMEOUT: 'TIMEOUT',
+  NETWORK_UNREACHABLE: 'NETWORK_UNREACHABLE',
+  DNS_FAILURE: 'DNS_FAILURE',
+  SSL_ERROR: 'SSL_ERROR',
+  RATE_LIMIT: 'RATE_LIMIT',
+  SERVER_ERROR: 'SERVER_ERROR',
+  UNKNOWN: 'UNKNOWN'
+};
+
+// Enhanced retry configuration
+const RETRY_CONFIG = {
+  MAX_RETRIES: 3, // Reduced from 5 to 3 for faster failure
+  BASE_DELAY: 500, // Reduced from 1000 to 500ms
+  MAX_DELAY: 10000, // Reduced from 30000 to 10000ms
+  JITTER_FACTOR: 0.2, // Reduced jitter for more predictable timing
+  BACKOFF_MULTIPLIER: 1.5, // Reduced from 2 to 1.5 for faster retries
+  TIMEOUT: 15000 // Reduced from 30000 to 15000ms
+};
+
 // Validate API key configuration
 if (!TMDB_API_KEY || TMDB_API_KEY === 'undefined' || TMDB_API_KEY === '') {
   console.error('❌ TMDB API Key is missing or invalid!');
@@ -15,248 +37,319 @@ if (!TMDB_API_KEY || TMDB_API_KEY === 'undefined' || TMDB_API_KEY === '') {
 // Enhanced cache with different durations for different types of data
 const cache = new Map();
 const CACHE_DURATIONS = {
-  LIST: 30 * 60 * 1000,    // 30 minutes for list data
-  DETAILS: 60 * 60 * 1000, // 60 minutes for detailed data
-  IMAGES: 24 * 60 * 60 * 1000 // 24 hours for images
+  LIST: 15 * 60 * 1000,    // Reduced from 30 to 15 minutes for fresher data
+  DETAILS: 30 * 60 * 1000, // Reduced from 60 to 30 minutes
+  IMAGES: 12 * 60 * 60 * 1000 // Reduced from 24 to 12 hours
 };
 
-// Request queue with priority and rate limiting
+// Optimized request queue with better concurrency
 const requestQueue = [];
 let isProcessingQueue = false;
-const MAX_CONCURRENT_REQUESTS = 2;
+const MAX_CONCURRENT_REQUESTS = 4; // Increased from 2 to 4
 let activeRequests = 0;
 let lastRequestTime = 0;
-const MIN_REQUEST_INTERVAL = 250; // Minimum time between requests in ms
+const MIN_REQUEST_INTERVAL = 100; // Reduced from 250ms to 100ms
 
-// Process the request queue with enhanced rate limiting, error handling, and performance monitoring
-const processQueue = async () => {
-  if (isProcessingQueue || requestQueue.length === 0) return;
+// Request batching for better performance
+const batchRequests = new Map();
+const BATCH_TIMEOUT = 50; // 50ms batch window
+
+// Enhanced network error detection and classification
+const classifyNetworkError = (error) => {
+  const errorMessage = error.message.toLowerCase();
+  const errorName = error.name;
   
-  isProcessingQueue = true;
-  const startTime = performance.now();
-  let processedCount = 0;
-  let errorCount = 0;
+  // Connection reset errors
+  if (errorMessage.includes('connection reset') || 
+      errorMessage.includes('net::err_connection_reset') ||
+      errorMessage.includes('fetch failed') ||
+      errorMessage.includes('network error')) {
+    return {
+      type: NETWORK_ERROR_TYPES.CONNECTION_RESET,
+      retryable: true,
+      severity: 'high',
+      userMessage: 'Connection was reset. Please check your internet connection.'
+    };
+  }
   
+  // Timeout errors
+  if (errorMessage.includes('timeout') || 
+      errorMessage.includes('aborted') ||
+      errorName === 'AbortError') {
+    return {
+      type: NETWORK_ERROR_TYPES.TIMEOUT,
+      retryable: true,
+      severity: 'medium',
+      userMessage: 'Request timed out. Please try again.'
+    };
+  }
+  
+  // DNS failures
+  if (errorMessage.includes('dns') || 
+      errorMessage.includes('name not resolved') ||
+      errorMessage.includes('getaddrinfo')) {
+    return {
+      type: NETWORK_ERROR_TYPES.DNS_FAILURE,
+      retryable: true,
+      severity: 'high',
+      userMessage: 'Unable to resolve server address. Please check your internet connection.'
+    };
+  }
+  
+  // SSL/TLS errors
+  if (errorMessage.includes('ssl') || 
+      errorMessage.includes('tls') ||
+      errorMessage.includes('certificate')) {
+    return {
+      type: NETWORK_ERROR_TYPES.SSL_ERROR,
+      retryable: false,
+      severity: 'high',
+      userMessage: 'SSL certificate error. Please check your connection.'
+    };
+  }
+  
+  // Rate limiting
+  if (errorMessage.includes('rate limit') || 
+      errorMessage.includes('429') ||
+      errorMessage.includes('too many requests')) {
+    return {
+      type: NETWORK_ERROR_TYPES.RATE_LIMIT,
+      retryable: true,
+      severity: 'medium',
+      userMessage: 'Rate limit exceeded. Please wait a moment and try again.'
+    };
+  }
+  
+  // Server errors
+  if (errorMessage.includes('500') || 
+      errorMessage.includes('502') ||
+      errorMessage.includes('503') ||
+      errorMessage.includes('504')) {
+    return {
+      type: NETWORK_ERROR_TYPES.SERVER_ERROR,
+      retryable: true,
+      severity: 'medium',
+      userMessage: 'Server error. Please try again.'
+    };
+  }
+  
+  // Unknown errors
+  return {
+    type: NETWORK_ERROR_TYPES.UNKNOWN,
+    retryable: true,
+    severity: 'low',
+    userMessage: 'An unexpected error occurred. Please try again.'
+  };
+};
+
+// Optimized retry delay calculation
+const calculateRetryDelayEnhanced = (attempt, errorType = 'unknown') => {
+  const baseDelay = RETRY_CONFIG.BASE_DELAY;
+  const maxDelay = RETRY_CONFIG.MAX_DELAY;
+  const backoffMultiplier = RETRY_CONFIG.BACKOFF_MULTIPLIER;
+  const jitterFactor = RETRY_CONFIG.JITTER_FACTOR;
+  
+  // Calculate exponential backoff
+  let delay = baseDelay * Math.pow(backoffMultiplier, attempt - 1);
+  
+  // Apply jitter for better distribution
+  const jitter = delay * jitterFactor * (Math.random() - 0.5);
+  delay += jitter;
+  
+  // Cap at maximum delay
+  delay = Math.min(delay, maxDelay);
+  
+  // Adjust based on error type
+  switch (errorType) {
+    case NETWORK_ERROR_TYPES.RATE_LIMIT:
+      delay = Math.max(delay, 2000); // Longer delay for rate limits
+      break;
+    case NETWORK_ERROR_TYPES.SERVER_ERROR:
+      delay = Math.max(delay, 1000); // Medium delay for server errors
+      break;
+    case NETWORK_ERROR_TYPES.CONNECTION_RESET:
+      delay = Math.max(delay, 500); // Shorter delay for connection issues
+      break;
+    default:
+      break;
+  }
+  
+  return Math.max(delay, 100); // Minimum 100ms delay
+};
+
+// Enhanced network connectivity check
+const checkNetworkConnectivity = async () => {
   try {
-    while (requestQueue.length > 0 && activeRequests < MAX_CONCURRENT_REQUESTS) {
-      const queueItem = requestQueue.shift();
-      const requestStartTime = performance.now();
-      activeRequests++;
-      
-      try {
-        // Enhanced rate limiting with dynamic adjustment based on response times
-        const timeSinceLastRequest = Date.now() - lastRequestTime;
-        const dynamicInterval = Math.max(MIN_REQUEST_INTERVAL, 
-          requestQueue.length > 10 ? MIN_REQUEST_INTERVAL * 1.5 : MIN_REQUEST_INTERVAL);
-        
-        if (timeSinceLastRequest < dynamicInterval) {
-          const delay = dynamicInterval - timeSinceLastRequest;
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
-        
-        // Execute the request with timeout protection
-        const requestPromise = queueItem.request();
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Request timeout')), 30000)
-        );
-        
-        await Promise.race([requestPromise, timeoutPromise]);
-        lastRequestTime = Date.now();
-        processedCount++;
-        
-        // Performance monitoring
-        const requestDuration = performance.now() - requestStartTime;
-        if (requestDuration > 5000) {
-          console.warn(`Slow request detected: ${requestDuration.toFixed(2)}ms`);
-        }
-        
-        // Log successful request processing with performance metrics
-        console.debug(`✅ Request processed in ${requestDuration.toFixed(2)}ms. Queue: ${requestQueue.length}, Active: ${activeRequests}`);
-        
-      } catch (error) {
-        errorCount++;
-        const requestDuration = performance.now() - requestStartTime;
-        
-        // Enhanced error categorization and handling
-        if (error.message === 'Request timeout') {
-          console.error(`⏰ Request timeout after ${requestDuration.toFixed(2)}ms`);
-        } else if (error.status === 429) {
-          console.error(`🚫 Rate limit exceeded. Backing off...`);
-          const backoffDelay = Math.min(2000 * Math.pow(2, errorCount), 10000);
-          await new Promise(resolve => setTimeout(resolve, backoffDelay));
-        } else if (error.status >= 500) {
-          console.error(`🔧 Server error (${error.status}): ${error.message}`);
-        } else {
-          console.error(`❌ Request failed after ${requestDuration.toFixed(2)}ms:`, error);
-        }
-        
-        // Implement exponential backoff with jitter for failed requests
-        const baseDelay = Math.min(1000 * Math.pow(2, Math.min(errorCount, 5)), 8000);
-        const jitter = Math.random() * 1000;
-        const retryDelay = baseDelay + jitter;
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
-        
-      } finally {
-        activeRequests--;
-        
-        // Adaptive delay based on queue load and error rate
-        const errorRate = errorCount / Math.max(processedCount + errorCount, 1);
-        const baseDelay = requestQueue.length > 10 ? 75 : 125;
-        const errorMultiplier = errorRate > 0.3 ? 2 : 1;
-        const adaptiveDelay = baseDelay * errorMultiplier;
-        
-        await new Promise(resolve => setTimeout(resolve, adaptiveDelay));
-      }
-    }
-  } catch (error) {
-    console.error('💥 Critical error in request queue processing:', error);
-    // Attempt to recover by resetting processing state
-    isProcessingQueue = false;
-    activeRequests = 0;
-  } finally {
-    isProcessingQueue = false;
-    const totalDuration = performance.now() - startTime;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
     
-    // Comprehensive queue status logging
-    if (requestQueue.length > 0) {
-      console.debug(`⏸️ Queue processing paused. Remaining: ${requestQueue.length}, Processed: ${processedCount}, Errors: ${errorCount}, Duration: ${totalDuration.toFixed(2)}ms`);
-    } else {
-      console.debug(`✅ Queue processing completed. Processed: ${processedCount}, Errors: ${errorCount}, Duration: ${totalDuration.toFixed(2)}ms`);
-    }
+    // Use a public CDN endpoint instead of TMDB API for network checks
+    const response = await fetch('https://www.google.com/favicon.ico', {
+      method: 'HEAD',
+      signal: controller.signal,
+      cache: 'no-cache'
+    });
+    
+    clearTimeout(timeoutId);
+    return response.ok;
+  } catch (error) {
+    return false;
   }
 };
 
-// Enhanced request queue with priority, rate limiting, request tracking, and advanced queue management
+// Optimized queue processing with better concurrency
+const processQueue = async () => {
+  if (isProcessingQueue || activeRequests >= MAX_CONCURRENT_REQUESTS) {
+    return;
+  }
+  
+  isProcessingQueue = true;
+  
+  while (requestQueue.length > 0 && activeRequests < MAX_CONCURRENT_REQUESTS) {
+    const request = requestQueue.shift();
+    activeRequests++;
+    
+    // Process request without blocking the queue
+    request().finally(() => {
+      activeRequests--;
+      if (requestQueue.length > 0) {
+        processQueue();
+      }
+    });
+  }
+  
+  isProcessingQueue = false;
+};
+
+// Enhanced request queuing with batching
 const queueRequest = async (request, priority = false, metadata = {}, options = {}) => {
-  return new Promise((resolve, reject) => {
-    const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const startTime = performance.now();
-    const { timeout = 30000, retries = 0, maxRetries = 3 } = options;
+  const requestId = Math.random().toString(36).substr(2, 9);
+  const timestamp = Date.now();
+  
+  // Check if we can batch this request
+  const batchKey = options.batchKey;
+  if (batchKey && batchRequests.has(batchKey)) {
+    const batch = batchRequests.get(batchKey);
+    batch.requests.push({ request, priority, metadata, requestId, timestamp });
+    return new Promise((resolve, reject) => {
+      batch.promises.push({ resolve, reject });
+    });
+  }
+  
+  // Create new batch if needed
+  if (batchKey) {
+    const batch = {
+      requests: [{ request, priority, metadata, requestId, timestamp }],
+      promises: [],
+      timeout: setTimeout(() => {
+        processBatch(batchKey);
+      }, BATCH_TIMEOUT)
+    };
+    batchRequests.set(batchKey, batch);
     
-    // Request timeout handler
-    const timeoutId = setTimeout(() => {
-      const error = new Error(`Request timeout after ${timeout}ms`);
-      error.code = 'TIMEOUT';
-      error.requestId = requestId;
-      reject(error);
-    }, timeout);
-    
-    const wrappedRequest = async (attempt = 1) => {
-      try {
-        // Enhanced request metadata for comprehensive debugging
-        const requestInfo = {
-          id: requestId,
-          priority,
-          metadata,
-          attempt,
-          queuedAt: startTime,
-          startedAt: performance.now(),
-          queuePosition: requestQueue.findIndex(item => item.id === requestId),
-          queueSize: requestQueue.length
-        };
-        
-        console.debug(`🚀 Executing queued request: ${requestId} (attempt ${attempt})`, requestInfo);
-        
-        const result = await request();
-        
-        clearTimeout(timeoutId);
-        const duration = performance.now() - startTime;
-        
-        // Enhanced success logging with performance metrics
-        console.debug(`✅ Request ${requestId} completed in ${duration.toFixed(2)}ms`, {
-          duration,
-          attempt,
-          priority,
-          queueWaitTime: requestInfo.startedAt - startTime
-        });
-        
-        resolve(result);
-      } catch (error) {
-        const duration = performance.now() - startTime;
-        
-        // Enhanced error handling with retry logic
-        if (attempt < maxRetries && shouldRetry(error)) {
-          const retryDelay = calculateRetryDelay(attempt, error);
-          console.warn(`🔄 Retrying request ${requestId} (${attempt}/${maxRetries}) after ${retryDelay}ms:`, error.message);
-          
-          setTimeout(() => {
-            wrappedRequest(attempt + 1);
-          }, retryDelay);
-          return;
+    return new Promise((resolve, reject) => {
+      batch.promises.push({ resolve, reject });
+    });
+  }
+  
+  // Regular request processing
+  const wrappedRequest = async (attempt = 1) => {
+    try {
+      // Rate limiting
+      const now = Date.now();
+      const timeSinceLastRequest = now - lastRequestTime;
+      if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
+        await new Promise(resolve => setTimeout(resolve, MIN_REQUEST_INTERVAL - timeSinceLastRequest));
+      }
+      lastRequestTime = Date.now();
+      
+      // Network connectivity check (only on first attempt and if not recently checked)
+      const lastNetworkCheck = Date.now() - (window.lastNetworkCheck || 0);
+      if (attempt === 1 && lastNetworkCheck > 30000) { // Check every 30 seconds max
+        const isConnected = await checkNetworkConnectivity();
+        window.lastNetworkCheck = Date.now();
+        if (!isConnected) {
+          throw new Error('No network connectivity');
         }
-        
+      }
+      
+      // Execute request with timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), RETRY_CONFIG.TIMEOUT);
+      
+      try {
+        const result = await request();
         clearTimeout(timeoutId);
-        console.error(`❌ Request ${requestId} failed after ${duration.toFixed(2)}ms (${attempt} attempts):`, {
+        return result;
+      } catch (error) {
+        clearTimeout(timeoutId);
+        throw error;
+      }
+    } catch (error) {
+      const classifiedError = classifyNetworkError(error);
+      
+      // Check if we should retry
+      if (attempt < RETRY_CONFIG.MAX_RETRIES && classifiedError.retryable) {
+        const delay = calculateRetryDelayEnhanced(attempt, classifiedError.type);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return wrappedRequest(attempt + 1);
+      }
+      
+      // Log error for debugging
+      if (import.meta.env.DEV) {
+        console.error(`Request failed after ${attempt} attempts:`, {
           error: error.message,
-          code: error.code,
-          status: error.status,
-          priority,
+          type: classifiedError.type,
+          severity: classifiedError.severity,
           metadata
         });
-        reject(error);
       }
-    };
-
-    // Enhanced queue management with dynamic size limits and overflow strategies
-    const maxQueueSize = priority ? 50 : 100; // Smaller limit for priority requests
-    const currentQueueSize = requestQueue.length;
-    
-    if (currentQueueSize >= maxQueueSize) {
-      // Implement overflow strategies
-      if (priority) {
-        // For priority requests, remove oldest normal priority request
-        const oldestNormalIndex = requestQueue.findIndex(item => !item.priority);
-        if (oldestNormalIndex !== -1) {
-          const removed = requestQueue.splice(oldestNormalIndex, 1)[0];
-          console.warn(`⚠️ Queue overflow - removed normal priority request ${removed.id} for priority request ${requestId}`);
-        } else {
-          const error = new Error(`Priority queue overflow: ${currentQueueSize}/${maxQueueSize} requests`);
-          console.error(`💥 Priority queue overflow, rejecting request ${requestId}:`, error.message);
-          reject(error);
-          return;
-        }
-      } else {
-        const error = new Error(`Request queue overflow: ${currentQueueSize}/${maxQueueSize} requests`);
-        console.warn(`⚠️ Queue overflow, rejecting request ${requestId}:`, error.message);
-        reject(error);
-        return;
-      }
+      
+      throw new Error(classifiedError.userMessage);
     }
+  };
+  
+  // Add to queue with priority
+  if (priority) {
+    requestQueue.unshift(wrappedRequest);
+  } else {
+    requestQueue.push(wrappedRequest);
+  }
+  
+  // Process queue
+  processQueue();
+  
+  return wrappedRequest();
+};
 
-    // Enhanced priority-based insertion with intelligent positioning
-    const queueItem = {
-      request: wrappedRequest,
-      priority,
-      timestamp: Date.now(),
-      id: requestId,
-      metadata,
-      options,
-      estimatedDuration: metadata.estimatedDuration || 1000 // Default 1 second estimate
-    };
-
-    if (priority) {
-      // Smart priority insertion - place after other priority requests but before normal ones
-      const lastPriorityIndex = requestQueue.findLastIndex(item => item.priority);
-      const insertIndex = lastPriorityIndex + 1;
-      requestQueue.splice(insertIndex, 0, queueItem);
-      console.debug(`⚡ High priority request ${requestId} queued at position ${insertIndex}`);
+// Process batched requests
+const processBatch = async (batchKey) => {
+  const batch = batchRequests.get(batchKey);
+  if (!batch) return;
+  
+  batchRequests.delete(batchKey);
+  clearTimeout(batch.timeout);
+  
+  // Sort requests by priority
+  batch.requests.sort((a, b) => (b.priority ? 1 : 0) - (a.priority ? 1 : 0));
+  
+  // Execute requests in parallel
+  const results = await Promise.allSettled(
+    batch.requests.map(req => req.request())
+  );
+  
+  // Resolve promises with results
+  results.forEach((result, index) => {
+    const { resolve, reject } = batch.promises[index];
+    if (result.status === 'fulfilled') {
+      resolve(result.value);
     } else {
-      // Normal priority insertion with load balancing consideration
-      requestQueue.push(queueItem);
-      console.debug(`📋 Normal priority request ${requestId} queued at position ${requestQueue.length - 1}`);
-    }
-
-    // Enhanced queue processing trigger with health checks
-    if (!isProcessingQueue) {
-      // Add small delay to batch similar requests
-      setTimeout(() => {
-        if (!isProcessingQueue) {
-          processQueue();
-        }
-      }, priority ? 0 : 50);
+      reject(result.reason);
     }
   });
 };
+
+
 
 // Helper functions for enhanced queue management
 const shouldRetry = (error) => {
@@ -269,10 +362,9 @@ const shouldRetry = (error) => {
 };
 
 const calculateRetryDelay = (attempt, error) => {
-  const baseDelay = error.status === 429 ? 2000 : 1000;
-  const exponentialDelay = baseDelay * Math.pow(2, attempt - 1);
-  const jitter = Math.random() * 1000;
-  return Math.min(exponentialDelay + jitter, 10000);
+  // Use enhanced network error classification
+  const networkError = classifyNetworkError(error);
+  return calculateRetryDelayEnhanced(attempt, networkError.type);
 };
 
 // Enhanced cache management
@@ -311,10 +403,9 @@ export const fetchWithCache = async (url, options = {}, type = 'LIST') => {
 
   // Intelligent retry delay calculation with jitter
   const calculateRetryDelay = (attempt, error) => {
-    const baseDelay = error?.status === 429 ? 2000 : INITIAL_RETRY_DELAY;
-    const exponentialDelay = baseDelay * Math.pow(2, attempt - 1);
-    const jitter = Math.random() * 500;
-    return Math.min(exponentialDelay + jitter, MAX_RETRY_DELAY);
+    // Use enhanced network error classification
+    const networkError = classifyNetworkError(error);
+    return calculateRetryDelayEnhanced(attempt, networkError.type);
   };
 
   // Enhanced error classification and handling
@@ -394,21 +485,23 @@ export const fetchWithCache = async (url, options = {}, type = 'LIST') => {
 
       // Enhanced response handling with detailed error classification
       if (!response.ok) {
-        const errorInfo = classifyError(new Error(), response.status);
+        const error = new Error(`HTTP ${response.status}: ${response.statusText}`);
+        error.status = response.status;
+        const networkError = classifyNetworkError(error);
         
-        if (errorInfo.type === 'NOT_FOUND') {
+        if (response.status === 404) {
           console.debug(`🔍 Resource not found: ${url}`);
           return null;
         }
         
-        if (errorInfo.retryable && attempt < MAX_RETRIES) {
-          const delay = calculateRetryDelay(attempt, { status: response.status });
-          console.warn(`🔄 Retrying ${errorInfo.type} (${response.status}) - attempt ${attempt}/${MAX_RETRIES} in ${delay}ms`);
+        if (networkError.retryable && attempt < MAX_RETRIES) {
+          const delay = calculateRetryDelayEnhanced(attempt, networkError.type);
+          console.warn(`🔄 Retrying ${networkError.type} (${response.status}) - attempt ${attempt}/${MAX_RETRIES} in ${delay}ms`);
           await sleep(delay);
           return fetchWithRetry(url, attempt + 1);
         }
         
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        throw error;
       }
 
       // Enhanced response parsing with validation
@@ -441,28 +534,30 @@ export const fetchWithCache = async (url, options = {}, type = 'LIST') => {
 
     } catch (error) {
       const duration = performance.now() - requestStartTime;
-      const errorInfo = classifyError(error, error.status);
+      const networkError = classifyNetworkError(error);
       
       // Enhanced error logging with context
       console.error(`❌ Request ${requestId} failed after ${duration.toFixed(2)}ms (attempt ${attempt}/${MAX_RETRIES}):`, {
         error: error.message,
-        type: errorInfo.type,
-        retryable: errorInfo.retryable,
+        type: networkError.type,
+        retryable: networkError.retryable,
+        userMessage: networkError.userMessage,
         url: url,
         duration
       });
 
       // Enhanced retry logic with better error handling
-      if (errorInfo.retryable && attempt < MAX_RETRIES) {
-        const delay = calculateRetryDelay(attempt, error);
-        console.warn(`🔄 Retrying ${errorInfo.type} - attempt ${attempt + 1}/${MAX_RETRIES} in ${delay}ms`);
+      if (networkError.retryable && attempt < MAX_RETRIES) {
+        const delay = calculateRetryDelayEnhanced(attempt, networkError.type);
+        console.warn(`🔄 Retrying ${networkError.type} - attempt ${attempt + 1}/${MAX_RETRIES} in ${delay}ms`);
         await sleep(delay);
         return fetchWithRetry(url, attempt + 1);
       }
 
       // Enhanced error propagation with context
-      const enhancedError = new Error(`Request failed: ${error.message}`);
+      const enhancedError = new Error(`Request failed: ${networkError.userMessage}`);
       enhancedError.originalError = error;
+      enhancedError.networkError = networkError;
       enhancedError.requestId = requestId;
       enhancedError.attempts = attempt;
       enhancedError.url = url;
@@ -900,12 +995,21 @@ const fetchMovies = async (endpoint, page = 1) => {
 // Optimized getMovieDetails function
 export const getMovieDetails = async (id, type = 'movie') => {
   try {
+    // Check if this movie ID is known to not exist
+    if (nonExistentMovieCache.has(`${type}_${id}`)) {
+      console.debug(`🎯 Skipping request for non-existent ${type} ${id}`);
+      return null;
+    }
+
     const endpoint = type === 'movie' ? 'movie' : 'tv';
     const data = await fetchWithCache(
       `${TMDB_BASE_URL}/${endpoint}/${id}?api_key=${TMDB_API_KEY}&append_to_response=videos,credits,similar,images&include_image_language=en`
     );
 
     if (!data) {
+      // Cache this movie ID as non-existent to prevent future requests
+      nonExistentMovieCache.add(`${type}_${id}`);
+      console.debug(`🔍 Caching non-existent ${type} ${id}`);
       return null; // Not found
     }
 
@@ -1019,13 +1123,97 @@ export const getMovieVideos = async (id, type = 'movie') => {
   return data;
 };
 
-// Optimized getSimilarMovies function
-export const getSimilarMovies = async (id, type = 'movie', page = 1) => {
+// Enhanced getSimilarMovies function with intelligent recommendations
+export const getSimilarMovies = async (id, type = 'movie', page = 1, options = {}) => {
   if (!id) return null;
-  const url = `${TMDB_BASE_URL}/${type}/${id}/recommendations?page=${page}`;
-  const data = await fetchWithCache(url, {}, 'LIST');
-  if (!data) return null; // Not found
-  return data;
+  
+  // Check if this movie ID is known to not exist
+  if (nonExistentMovieCache.has(`${type}_${id}`)) {
+    console.debug(`🎯 Skipping similar movies request for non-existent ${type} ${id}`);
+    return null;
+  }
+  
+  try {
+    // For the initial similar movies fetch, use a more focused approach
+    // that prioritizes actual similar content over generic popular content
+    
+    // First, try to get recommendations (most reliable for actual similar content)
+    const recommendationsUrl = `${TMDB_BASE_URL}/${type}/${id}/recommendations?page=${page}`;
+    const recommendationsData = await fetchWithCache(recommendationsUrl, {}, 'LIST');
+    
+    // Then, try to get similar content
+    const similarUrl = `${TMDB_BASE_URL}/${type}/${id}/similar?page=${page}`;
+    const similarData = await fetchWithCache(similarUrl, {}, 'LIST');
+    
+    // If both requests return null, cache this movie as non-existent
+    if (!recommendationsData && !similarData) {
+      nonExistentMovieCache.add(`${type}_${id}`);
+      console.debug(`🔍 Caching non-existent ${type} ${id} (similar movies)`);
+      return null;
+    }
+    
+    // Combine and deduplicate results
+    const allResults = [];
+    const existingIds = new Set();
+    
+    // Add recommendations first (they're usually more relevant)
+    if (recommendationsData && recommendationsData.results) {
+      recommendationsData.results.forEach(item => {
+        if (item && item.id && !existingIds.has(item.id)) {
+          existingIds.add(item.id);
+          allResults.push(item);
+        }
+      });
+    }
+    
+    // Add similar content (avoiding duplicates)
+    if (similarData && similarData.results) {
+      similarData.results.forEach(item => {
+        if (item && item.id && !existingIds.has(item.id)) {
+          existingIds.add(item.id);
+          allResults.push(item);
+        }
+      });
+    }
+    
+    // If we have results, return them
+    if (allResults.length > 0) {
+      return {
+        page: page,
+        results: allResults,
+        total_pages: Math.max(
+          recommendationsData?.total_pages || 1,
+          similarData?.total_pages || 1
+        ),
+        total_results: allResults.length
+      };
+    }
+    
+    // Fallback to original recommendations if no combined results
+    if (recommendationsData) {
+      return recommendationsData;
+    }
+    
+    // Final fallback to similar data
+    if (similarData) {
+      return similarData;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error fetching similar movies:', error);
+    
+    // Fallback to original implementation
+    const url = `${TMDB_BASE_URL}/${type}/${id}/recommendations?page=${page}`;
+    const data = await fetchWithCache(url, {}, 'LIST');
+    if (!data) {
+      // Cache this movie ID as non-existent to prevent future requests
+      nonExistentMovieCache.add(`${type}_${id}`);
+      console.debug(`🔍 Caching non-existent ${type} ${id} (fallback)`);
+      return null; // Not found
+    }
+    return data;
+  }
 };
 
 // Optimized getTrendingMovies function with better retry logic
@@ -5001,5 +5189,96 @@ export const getTVSeasons = async (tvId) => {
     console.error('Error fetching TV seasons:', error);
     throw error;
   }
+};
+
+// Cache for non-existent movie IDs to prevent repeated requests
+const nonExistentMovieCache = new Set();
+const NON_EXISTENT_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+
+// Add specific known non-existent movie IDs to prevent 404 errors
+const KNOWN_NON_EXISTENT_MOVIES = [
+  'movie_109974', // This specific movie ID that's causing 404 errors
+  'movie_206992'  // Another known non-existent movie ID
+];
+
+// Initialize cache with known non-existent movies
+KNOWN_NON_EXISTENT_MOVIES.forEach(id => {
+  nonExistentMovieCache.add(id);
+});
+
+// Clear non-existent movie cache periodically to prevent memory leaks
+setInterval(() => {
+  if (nonExistentMovieCache.size > 1000) {
+    console.debug(`🧹 Clearing non-existent movie cache (${nonExistentMovieCache.size} entries)`);
+    nonExistentMovieCache.clear();
+    // Re-add known non-existent movies after clearing
+    KNOWN_NON_EXISTENT_MOVIES.forEach(id => {
+      nonExistentMovieCache.add(id);
+    });
+  }
+}, NON_EXISTENT_CACHE_DURATION);
+
+// Function to manually add movie IDs to the non-existent cache
+export const addToNonExistentCache = (id, type = 'movie') => {
+  const cacheKey = `${type}_${id}`;
+  nonExistentMovieCache.add(cacheKey);
+  console.debug(`🔍 Manually added ${type} ${id} to non-existent cache`);
+  return cacheKey;
+};
+
+// Function to check if a movie ID is in the non-existent cache
+export const isInNonExistentCache = (id, type = 'movie') => {
+  return nonExistentMovieCache.has(`${type}_${id}`);
+};
+
+// Utility function to check if a movie exists
+export const checkMovieExists = async (id, type = 'movie') => {
+  if (!id) return false;
+  
+  // Check cache first
+  if (nonExistentMovieCache.has(`${type}_${id}`)) {
+    return false;
+  }
+  
+  try {
+    const endpoint = type === 'movie' ? 'movie' : 'tv';
+    const response = await fetch(`${TMDB_BASE_URL}/${endpoint}/${id}?api_key=${TMDB_API_KEY}`);
+    
+    if (response.status === 404) {
+      nonExistentMovieCache.add(`${type}_${id}`);
+      console.debug(`🔍 Caching non-existent ${type} ${id} (checkMovieExists)`);
+      return false;
+    }
+    
+    if (response.ok) {
+      return true;
+    }
+    
+    return false;
+  } catch (error) {
+    console.error('Error checking if movie exists:', error);
+    return false;
+  }
+};
+
+// Function to clear non-existent movie cache
+export const clearNonExistentMovieCache = () => {
+  const size = nonExistentMovieCache.size;
+  nonExistentMovieCache.clear();
+  // Re-add known non-existent movies after clearing
+  KNOWN_NON_EXISTENT_MOVIES.forEach(id => {
+    nonExistentMovieCache.add(id);
+  });
+  console.debug(`🧹 Cleared non-existent movie cache (${size} entries)`);
+  return size;
+};
+
+// Function to get non-existent movie cache stats
+export const getNonExistentMovieCacheStats = () => {
+  return {
+    size: nonExistentMovieCache.size,
+    entries: Array.from(nonExistentMovieCache),
+    knownNonExistent: KNOWN_NON_EXISTENT_MOVIES
+  };
 };
 

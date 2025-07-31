@@ -1,15 +1,28 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
-import MovieDetailsOverlay from '../components/MovieDetailsOverlay';
+const MovieDetailsOverlay = lazy(() => import('../components/MovieDetailsOverlay'));
 import { PageLoader } from '../components/Loader';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useWatchlist } from '../contexts/WatchlistContext';
+import { useAuth } from '../contexts/AuthContext';
 
 const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p';
 const PLACEHOLDER_IMAGE = 'https://placehold.co/500x750/1a1d21/ffffff?text=No+Image';
 
 const WatchlistPage = () => {
   const { watchlist, removeFromWatchlist, clearWatchlist, setWatchlist } = useWatchlist();
+  const { user } = useAuth();
+
+  // Reset banner state when user logs in (so they can see it again if they log out)
+  useEffect(() => {
+    if (user) {
+      try {
+        localStorage.removeItem('watchlist_banner_dismissed');
+      } catch (error) {
+        console.error('Error resetting banner state:', error);
+      }
+    }
+  }, [user]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedMovie, setSelectedMovie] = useState(null);
@@ -18,6 +31,16 @@ const WatchlistPage = () => {
   const [showSortDropdown, setShowSortDropdown] = useState(false);
   const [loadedImages, setLoadedImages] = useState({});
   const [showClearDialog, setShowClearDialog] = useState(false);
+  const [showLoginBanner, setShowLoginBanner] = useState(() => {
+    // Check if user has dismissed the banner before
+    try {
+      const hasSeenBanner = localStorage.getItem('watchlist_banner_dismissed');
+      return !hasSeenBanner;
+    } catch (error) {
+      console.error('Error checking banner state:', error);
+      return true;
+    }
+  });
   const navigate = useNavigate();
   const sortDropdownRef = useRef(null);
   const clearDialogRef = useRef(null);
@@ -158,6 +181,24 @@ const WatchlistPage = () => {
     return 'This will remove all movies and TV shows from your watchlist. This action cannot be undone.';
   };
 
+  const handleDismissBanner = () => {
+    setShowLoginBanner(false);
+    try {
+      localStorage.setItem('watchlist_banner_dismissed', 'true');
+    } catch (error) {
+      console.error('Error saving banner state:', error);
+    }
+  };
+
+  // Check if user has dismissed the banner before
+  const hasDismissedBanner = () => {
+    try {
+      return localStorage.getItem('watchlist_banner_dismissed') === 'true';
+    } catch (error) {
+      return false;
+    }
+  };
+
   if (loading) {
     return <PageLoader />;
   }
@@ -181,6 +222,59 @@ const WatchlistPage = () => {
   return (
     <div className="min-h-screen bg-[#0f1114] text-white">
       <div className="container mx-auto px-3 sm:px-6 py-4 sm:py-8">
+        {/* Login Banner for non-authenticated users */}
+        {!user && showLoginBanner && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="mb-6 bg-gradient-to-r from-white/5 to-white/10 border border-white/20 rounded-lg p-4 backdrop-blur-sm"
+          >
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-2">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <h3 className="text-white font-medium">Using Local Watchlist</h3>
+                </div>
+                <p className="text-white/70 text-sm mb-3">
+                  {hasDismissedBanner() 
+                    ? "Still using local storage? Sign in to sync your watchlist across all devices."
+                    : "You're viewing your local watchlist. Sign in to sync your watchlist across all your devices and never lose your saved movies."
+                  }
+                </p>
+                <div className="flex gap-2">
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => navigate('/login')}
+                    className="px-4 py-2 bg-white text-black hover:bg-white/90 text-sm font-medium rounded-lg transition-colors"
+                  >
+                    Sign In
+                  </motion.button>
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleDismissBanner}
+                    className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white/70 hover:text-white text-sm font-medium rounded-lg transition-colors"
+                  >
+                    Dismiss
+                  </motion.button>
+                </div>
+              </div>
+              <button
+                onClick={handleDismissBanner}
+                className="text-white/50 hover:text-white/70 transition-colors ml-4"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </motion.div>
+        )}
+        
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8 gap-3 sm:gap-0">
           {/* Heading row for mobile: My List + Clear All */}
@@ -424,7 +518,7 @@ const WatchlistPage = () => {
         {filteredWatchlist.length > 0 ? (
           <motion.div
             layout
-            className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-3 sm:gap-4"
+            className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-3 sm:gap-4"
           >
             <AnimatePresence>
               {filteredWatchlist.map((movie) => (
@@ -792,7 +886,10 @@ const WatchlistPage = () => {
                 transition={{ duration: 0.4, delay: 0.3 }}
                 className="text-white/60 mb-6"
               >
-                Add movies and TV shows to your watchlist to keep track of what you want to watch
+                {user ? 
+                  "Add movies and TV shows to your watchlist to keep track of what you want to watch" :
+                  "Add movies and TV shows to your local watchlist. Sign in to sync across devices."
+                }
               </motion.p>
             </motion.div>
 
@@ -828,11 +925,13 @@ const WatchlistPage = () => {
 
       {/* Movie Details Overlay */}
       {selectedMovie && (
-        <MovieDetailsOverlay
-          movie={selectedMovie}
-          onClose={() => setSelectedMovie(null)}
-          onMovieSelect={handleMovieSelect}
-        />
+        <Suspense fallback={null}>
+          <MovieDetailsOverlay
+            movie={selectedMovie}
+            onClose={() => setSelectedMovie(null)}
+            onMovieSelect={handleMovieSelect}
+          />
+        </Suspense>
       )}
     </div>
   );

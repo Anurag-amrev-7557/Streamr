@@ -198,6 +198,64 @@ const ReplySection = ({ discussionId, replies: initialReplies, onReplyAdded }) =
     setShowReplyForm(true);
   };
 
+  const handleDeleteReply = async (replyId) => {
+    if (!user) {
+      toast.error('Please log in to delete replies');
+      navigate('/login', { state: { from: `/community/discussion/${discussionId}` } });
+      return;
+    }
+
+    // Check if user is the author of the reply
+    const reply = replies.find(r => r._id === replyId) || 
+                  replies.flatMap(r => r.replies || []).find(r => r._id === replyId);
+    
+    if (!reply || reply.author._id !== user.id) {
+      toast.error('You can only delete your own replies');
+      return;
+    }
+
+    const confirmed = window.confirm('Are you sure you want to delete this reply? This action cannot be undone.');
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await communityService.deleteReply(discussionId, replyId);
+      toast.success('Reply deleted successfully');
+      
+      // Remove the reply from the local state
+      setReplies(prev => {
+        const removeReply = (replies) => {
+          return replies.filter(reply => reply._id !== replyId);
+        };
+        
+        return prev.map(reply => {
+          if (reply.replies) {
+            return {
+              ...reply,
+              replies: removeReply(reply.replies)
+            };
+          }
+          return reply;
+        }).filter(reply => reply._id !== replyId);
+      });
+      
+      // Notify parent component
+      if (onReplyAdded) {
+        onReplyAdded();
+      }
+    } catch (error) {
+      console.error('Error deleting reply:', error);
+      if (error.response?.status === 403) {
+        toast.error('You are not authorized to delete this reply');
+      } else if (error.response?.status === 404) {
+        toast.error('Reply not found');
+      } else {
+        toast.error('Failed to delete reply. Please try again.');
+      }
+    }
+  };
+
   const renderReply = (reply, level = 0) => {
     return (
       <div key={reply._id} className={`ml-${level * 4} mt-4`}>
@@ -238,6 +296,30 @@ const ReplySection = ({ discussionId, replies: initialReplies, onReplyAdded }) =
               </svg>
               Reply
             </button>
+            
+            {/* Delete button - only show if user is the author */}
+            {user && reply.author._id === user.id && (
+              <button
+                onClick={() => handleDeleteReply(reply._id)}
+                className="text-red-400 hover:text-red-300 text-sm flex items-center gap-1"
+                title="Delete reply"
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                  />
+                </svg>
+                Delete
+              </button>
+            )}
           </div>
         </div>
         {reply.replies?.map((nestedReply) => renderReply(nestedReply, level + 1))}

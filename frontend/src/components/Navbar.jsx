@@ -2258,96 +2258,94 @@ const Navbar = ({ onMovieSelect }) => {
             </span>
             <span className={`absolute -bottom-1 left-0 h-0.5 bg-gradient-to-r from-white/90 via-white/60 to-white/30 transition-all duration-500 ${location.pathname === '/community' ? 'w-full' : 'w-0 group-hover:w-full'}`} />
           </Link>
-          {user && (
-            <Link
-              to="/watchlist"
-              className={`relative ${location.pathname === '/watchlist' ? 'text-white' : 'text-white/80 hover:text-white'} transition-all duration-300 group`}
-            >
-              <span className="relative z-10 flex items-center gap-1.5">
-                <div className={`relative w-5 h-5 sm:w-6 sm:h-6 rounded-lg ${location.pathname === '/watchlist' ? 'bg-white/10' : 'bg-white/5 group-hover:bg-white/10'} flex items-center justify-center transition-all duration-300 shadow-sm shadow-black/10`}>
-                  {/* Animated Background Glow */}
+          <Link
+            to="/watchlist"
+            className={`relative ${location.pathname === '/watchlist' ? 'text-white' : 'text-white/80 hover:text-white'} transition-all duration-300 group`}
+          >
+            <span className="relative z-10 flex items-center gap-1.5">
+              <div className={`relative w-5 h-5 sm:w-6 sm:h-6 rounded-lg ${location.pathname === '/watchlist' ? 'bg-white/10' : 'bg-white/5 group-hover:bg-white/10'} flex items-center justify-center transition-all duration-300 shadow-sm shadow-black/10`}>
+                {/* Animated Background Glow */}
+                <motion.div
+                  className={`absolute inset-0 rounded-lg ${location.pathname === '/watchlist' ? 'bg-white/20' : 'bg-white/10'} opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-sm`}
+                  animate={{
+                    scale: [1, 1.1, 1],
+                    opacity: location.pathname === '/watchlist' ? [0.2, 0.4, 0.2] : [0, 0.2, 0],
+                  }}
+                  transition={{
+                    duration: 3,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                    delay: 0.5
+                  }}
+                />
+                
+                {/* Animated Icon */}
+                <motion.svg 
+                  xmlns="http://www.w3.org/2000/svg" 
+                  className="h-3 w-3 sm:h-3.5 sm:w-3.5 transform transition-transform duration-300 group-hover:scale-110 relative z-10" 
+                  viewBox="0 0 24 24" 
+                  fill={location.pathname === '/watchlist' ? 'currentColor' : 'none'} 
+                  stroke="currentColor" 
+                  strokeWidth="2"
+                  animate={{
+                    scale: [1, 1.05, 1],
+                    rotate: location.pathname === '/watchlist' ? [0, 2, -2, 0] : [0, 0, 0, 0],
+                  }}
+                  transition={{
+                    duration: 2.5,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                    delay: 0.8
+                  }}
+                >
+                  <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                </motion.svg>
+                
+                {/* Floating Particles for Active State */}
+                {location.pathname === '/watchlist' && (
                   <motion.div
-                    className={`absolute inset-0 rounded-lg ${location.pathname === '/watchlist' ? 'bg-white/20' : 'bg-white/10'} opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-sm`}
-                    animate={{
-                      scale: [1, 1.1, 1],
-                      opacity: location.pathname === '/watchlist' ? [0.2, 0.4, 0.2] : [0, 0.2, 0],
-                    }}
-                    transition={{
-                      duration: 3,
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                      delay: 0.5
-                    }}
-                  />
-                  
-                  {/* Animated Icon */}
-                  <motion.svg 
-                    xmlns="http://www.w3.org/2000/svg" 
-                    className="h-3 w-3 sm:h-3.5 sm:w-3.5 transform transition-transform duration-300 group-hover:scale-110 relative z-10" 
-                    viewBox="0 0 24 24" 
-                    fill={location.pathname === '/watchlist' ? 'currentColor' : 'none'} 
-                    stroke="currentColor" 
-                    strokeWidth="2"
-                    animate={{
-                      scale: [1, 1.05, 1],
-                      rotate: location.pathname === '/watchlist' ? [0, 2, -2, 0] : [0, 0, 0, 0],
-                    }}
-                    transition={{
-                      duration: 2.5,
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                      delay: 0.8
-                    }}
+                    className="absolute inset-0 pointer-events-none"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.5 }}
                   >
-                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-                  </motion.svg>
-                  
-                  {/* Floating Particles for Active State */}
-                  {location.pathname === '/watchlist' && (
                     <motion.div
-                      className="absolute inset-0 pointer-events-none"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ duration: 0.5 }}
-                    >
-                      <motion.div
-                        className="absolute top-0 right-0 w-0.5 h-0.5 bg-white/40 rounded-full"
-                        animate={{
-                          x: [0, 2, 0],
-                          y: [0, -2, 0],
-                          opacity: [0.4, 0.8, 0.4],
-                          scale: [1, 1.5, 1],
-                        }}
-                        transition={{
-                          duration: 2,
-                          repeat: Infinity,
-                          ease: "easeInOut",
-                          delay: 1.1
-                        }}
-                      />
-                      <motion.div
-                        className="absolute bottom-0 left-0 w-0.5 h-0.5 bg-white/30 rounded-full"
-                        animate={{
-                          x: [0, -2, 0],
-                          y: [0, 2, 0],
-                          opacity: [0.3, 0.6, 0.3],
-                          scale: [1, 1.8, 1],
-                        }}
-                        transition={{
-                          duration: 2.5,
-                          repeat: Infinity,
-                          ease: "easeInOut",
-                          delay: 1.5
-                        }}
-                      />
-                    </motion.div>
-                  )}
-                </div>
-                <span className="font-medium tracking-wide text-sm sm:text-base">My List</span>
-              </span>
-              <span className={`absolute -bottom-1 left-0 h-0.5 bg-gradient-to-r from-white/90 via-white/60 to-white/30 transition-all duration-500 ${location.pathname === '/watchlist' ? 'w-full' : 'w-0 group-hover:w-full'}`} />
-            </Link>
-          )}
+                      className="absolute top-0 right-0 w-0.5 h-0.5 bg-white/40 rounded-full"
+                      animate={{
+                        x: [0, 2, 0],
+                        y: [0, -2, 0],
+                        opacity: [0.4, 0.8, 0.4],
+                        scale: [1, 1.5, 1],
+                      }}
+                      transition={{
+                        duration: 2,
+                        repeat: Infinity,
+                        ease: "easeInOut",
+                        delay: 1.1
+                      }}
+                    />
+                    <motion.div
+                      className="absolute bottom-0 left-0 w-0.5 h-0.5 bg-white/30 rounded-full"
+                      animate={{
+                        x: [0, -2, 0],
+                        y: [0, 2, 0],
+                        opacity: [0.3, 0.6, 0.3],
+                        scale: [1, 1.8, 1],
+                      }}
+                      transition={{
+                        duration: 2.5,
+                        repeat: Infinity,
+                        ease: "easeInOut",
+                        delay: 1.5
+                      }}
+                    />
+                  </motion.div>
+                )}
+              </div>
+              <span className="font-medium tracking-wide text-sm sm:text-base">My List</span>
+            </span>
+            <span className={`absolute -bottom-1 left-0 h-0.5 bg-gradient-to-r from-white/90 via-white/60 to-white/30 transition-all duration-500 ${location.pathname === '/watchlist' ? 'w-full' : 'w-0 group-hover:w-full'}`} />
+          </Link>
         </div>
       </div>
       {/* RIGHT: Desktop search and profile/auth menu (hidden on mobile) */}
@@ -3796,6 +3794,61 @@ const Navbar = ({ onMovieSelect }) => {
                   </motion.div>
                 </div>
 
+                {/* Watchlist Link - Always Visible */}
+                <motion.div
+                  variants={animations.menuItem}
+                  transition={{ duration: 0.4, ease: "easeOut", delay: 0.25 }}
+                >
+                  <Link 
+                    to="/watchlist" 
+                    className="mx-6 px-4 py-4 text-white/90 hover:text-white hover:bg-gradient-to-r hover:from-white/10 hover:to-white/5 active:bg-white/15 transition-all duration-300 flex items-center gap-4 group rounded-xl border border-transparent hover:border-white/10" 
+                    onClick={() => {
+                      closeMenu();
+                      // Add haptic feedback
+                      triggerHaptic([15]);
+                    }} 
+                    aria-label="My List" 
+                    role="menuitem"
+                  >
+                    <motion.div 
+                      className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-white/15 to-white/5 flex items-center justify-center group-hover:from-white/25 group-hover:to-white/10 transition-all duration-300 shadow-lg"
+                      whileHover={{ scale: 1.1, rotate: 5 }}
+                      whileTap={{ scale: 0.95 }}
+                    >
+                      <motion.div
+                        className="absolute inset-0 rounded-xl bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-sm"
+                        animate={{
+                          scale: [1, 1.1, 1],
+                          opacity: [0, 0.3, 0],
+                        }}
+                        transition={{
+                          duration: 2,
+                          repeat: Infinity,
+                          ease: "easeInOut",
+                          delay: 0.9
+                        }}
+                      />
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform transition-transform duration-300 group-hover:scale-110 relative z-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                      </svg>
+                    </motion.div>
+                    <div className="flex-1">
+                      <span className="font-semibold text-base">My List</span>
+                      <p className="text-white/50 text-xs mt-0.5">Your saved content</p>
+                    </div>
+                    <motion.div
+                      className="opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                      initial={{ x: 10 }}
+                      animate={{ x: 0 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M9 18l6-6-6-6" />
+                      </svg>
+                    </motion.div>
+                  </Link>
+                </motion.div>
+
                 {/* Enhanced User Section */}
                 {user ? (
                   <>
@@ -3811,65 +3864,10 @@ const Navbar = ({ onMovieSelect }) => {
                       </div>
                     </motion.div>
                     
-                    {/* Watchlist Link */}
-                    <motion.div
-                      variants={animations.menuItem}
-                      transition={{ duration: 0.4, ease: "easeOut", delay: 0.35 }}
-                    >
-                      <Link 
-                        to="/watchlist" 
-                        className="mx-6 px-4 py-4 text-white/90 hover:text-white hover:bg-gradient-to-r hover:from-white/10 hover:to-white/5 active:bg-white/15 transition-all duration-300 flex items-center gap-4 group rounded-xl border border-transparent hover:border-white/10" 
-                        onClick={() => {
-                          closeMenu();
-                          // Add haptic feedback
-                          triggerHaptic([15]);
-                        }} 
-                        aria-label="My List" 
-                        role="menuitem"
-                      >
-                        <motion.div 
-                          className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-white/15 to-white/5 flex items-center justify-center group-hover:from-white/25 group-hover:to-white/10 transition-all duration-300 shadow-lg"
-                          whileHover={{ scale: 1.1, rotate: 5 }}
-                          whileTap={{ scale: 0.95 }}
-                        >
-                          <motion.div
-                            className="absolute inset-0 rounded-xl bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-sm"
-                            animate={{
-                              scale: [1, 1.1, 1],
-                              opacity: [0, 0.3, 0],
-                            }}
-                            transition={{
-                              duration: 2,
-                              repeat: Infinity,
-                              ease: "easeInOut",
-                              delay: 0.9
-                            }}
-                          />
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform transition-transform duration-300 group-hover:scale-110 relative z-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-                          </svg>
-                        </motion.div>
-                        <div className="flex-1">
-                          <span className="font-semibold text-base">My List</span>
-                          <p className="text-white/50 text-xs mt-0.5">Your saved content</p>
-                        </div>
-                        <motion.div
-                          className="opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                          initial={{ x: 10 }}
-                          animate={{ x: 0 }}
-                          transition={{ duration: 0.2 }}
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M9 18l6-6-6-6" />
-                          </svg>
-                        </motion.div>
-                      </Link>
-                    </motion.div>
-                    
                     {/* Profile Link */}
                     <motion.div
                       variants={animations.menuItem}
-                      transition={{ duration: 0.4, ease: "easeOut", delay: 0.4 }}
+                      transition={{ duration: 0.4, ease: "easeOut", delay: 0.35 }}
                     >
                       <Link 
                         to="/profile" 

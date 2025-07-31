@@ -92,16 +92,6 @@ export const LoadingProvider = ({ children, defaultTimeout = 30000 }) => {
         [key]: value
       };
 
-      // Log state change for debugging (unless suppressed)
-      if (!suppressLogging) {
-        console.debug(`Loading state updated: ${key} = ${value}`, {
-          operationId,
-          priority,
-          timestamp: new Date(timestamp).toISOString(),
-          metadata
-        });
-      }
-
       return newStates;
     });
     

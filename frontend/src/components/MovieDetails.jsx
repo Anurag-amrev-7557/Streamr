@@ -5,6 +5,7 @@ import { PageLoader, SectionLoader, CardLoader } from './Loader';
 import { getStreamingUrl, isStreamingAvailable, needsEpisodeSelection } from '../services/streamingService';
 import StreamingPlayer from './StreamingPlayer';
 import TVEpisodeSelector from './TVEpisodeSelector';
+import EnhancedSimilarContent from './EnhancedSimilarContent';
 
 const MovieDetails = () => {
   const { id } = useParams();
@@ -366,7 +367,7 @@ const MovieDetails = () => {
             {movieDetails?.production_companies && movieDetails.production_companies.length > 0 && (
               <div className="mt-8">
                 <h3 className="text-xl font-semibold text-white mb-4">Production Companies</h3>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6">
+                <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6">
                   {movieDetails.production_companies.map((company) => (
                     <div key={company.id} className="flex flex-col items-center">
                       <div className="w-full aspect-[3/2] bg-white rounded-lg p-4 flex items-center justify-center">
@@ -556,7 +557,7 @@ const MovieDetails = () => {
                 {movieDetails?.production_companies && movieDetails.production_companies.length > 0 && (
                   <div className="mt-8">
                     <h3 className="text-xl font-semibold text-white mb-4">Production Companies</h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6">
+                    <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6">
                       {movieDetails.production_companies.map((company) => (
                         <div key={company.id} className="flex flex-col items-center">
                           {/* ... your existing production company content ... */}
@@ -578,16 +579,50 @@ const MovieDetails = () => {
           </div>
         </div>
 
-        {/* Similar Movies Section */}
+        {/* Enhanced Similar Content Section */}
         <div className={`transition-all duration-500 transform ${loadedSections.similar ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
-          <h2 className="text-white text-lg font-bold mb-4">Similar Movies</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
-            {similarMovies?.map((movie) => (
-              <div key={movie.id} className="flex flex-col">
-                {/* ... your existing similar movie card content ... */}
-              </div>
-            ))}
-          </div>
+          <EnhancedSimilarContent
+            contentId={movieDetails?.id}
+            contentType={movieDetails?.type || 'movie'}
+            onItemClick={(item) => {
+              // Update the current movie details instead of navigating
+              // This prevents scrolling to top and provides smoother UX
+              setMovieDetails(item);
+              setCredits(null);
+              setVideos([]);
+              setSimilarMovies([]);
+              setLoading(true);
+              
+              // Fetch new movie data
+              const fetchNewMovieData = async () => {
+                try {
+                  const [details, movieCredits, movieVideos, similar] = await Promise.all([
+                    getMovieDetails(item.id),
+                    getMovieCredits(item.id),
+                    getMovieVideos(item.id),
+                    getSimilarMovies(item.id)
+                  ]);
+                  
+                  setMovieDetails(details);
+                  setCredits(movieCredits);
+                  setVideos(movieVideos);
+                  setSimilarMovies(similar);
+                } catch (error) {
+                  console.error('Error fetching new movie details:', error);
+                } finally {
+                  setLoading(false);
+                }
+              };
+              
+              fetchNewMovieData();
+            }}
+            isMobile={false}
+            maxItems={24}
+            showFilters={true}
+            showTitle={true}
+            showLoadMore={true}
+            className=""
+          />
         </div>
       </>
     );

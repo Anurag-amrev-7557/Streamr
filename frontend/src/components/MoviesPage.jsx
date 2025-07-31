@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
   getTrendingMovies, 
@@ -18,14 +18,17 @@ import {
   getUpcomingMovies,
   getMoviesByCategory,
   discoverMovies,
-  getSimilarMovies
+  getSimilarMovies,
+  getNowPlayingMovies
 } from '../services/tmdbService';
 import { useLoading } from '../contexts/LoadingContext';
-import MovieDetailsOverlay from './MovieDetailsOverlay';
+const MovieDetailsOverlay = lazy(() => import('./MovieDetailsOverlay'));
 import { motion, AnimatePresence } from 'framer-motion';
 import { useInView } from 'react-intersection-observer';
 import { debounce } from 'lodash';
 import { useWatchlist } from '../contexts/WatchlistContext';
+const EnhancedSearchBar = lazy(() => import('./EnhancedSearchBar'));
+import searchHistoryService from '../services/searchHistoryService';
 
 const fadeInAnimation = {
   '@keyframes fadeIn': {
@@ -48,12 +51,18 @@ const styles = {
 };
 
 const gridVariants = {
-  hidden: { opacity: 0 },
+  hidden: { 
+    opacity: 0,
+    y: 10
+  },
   visible: {
     opacity: 1,
+    y: 0,
     transition: {
-      staggerChildren: 0.01,
-      delayChildren: 0
+      duration: 0.4,
+      ease: [0.25, 0.46, 0.45, 0.94],
+      staggerChildren: 0.02,
+      delayChildren: 0.05
     }
   }
 };
@@ -71,17 +80,8 @@ const cardVariants = {
     transition: {
       type: "spring",
       stiffness: 300,
-      damping: 25,
-      mass: 0.8,
-      delay: 0
-    }
-  },
-  exit: {
-    opacity: 0,
-    scale: 0.98,
-    transition: {
-      duration: 0.15,
-      ease: "easeOut"
+      damping: 30,
+      mass: 0.8
     }
   }
 };
@@ -115,9 +115,20 @@ const MovieCard = ({ movie, index, onClick, onPrefetch }) => {
 
   const handleBookmarkClick = (e) => {
     e.stopPropagation();
+    console.log('Bookmark clicked for movie:', movie);
+    console.log('Movie data structure:', {
+      id: movie.id,
+      title: movie.title,
+      poster_path: movie.poster_path,
+      poster: movie.poster,
+      type: movie.type
+    });
+    
     if (isBookmarked) {
+      console.log('Removing from watchlist:', movie.title);
       removeFromWatchlist(movie.id);
     } else {
+      console.log('Adding to watchlist:', movie.title);
       addToWatchlist({ ...movie, type: 'movie' });
     }
   };
@@ -273,6 +284,12 @@ const MovieCard = ({ movie, index, onClick, onPrefetch }) => {
       onClick={() => onClick(movie)}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
+      transition={{
+        type: "spring",
+        stiffness: 300,
+        damping: 30,
+        mass: 0.8
+      }}
     >
       {/* Prefetch indicator (subtle) - Removed to avoid visual distraction */}
       {/* {isPrefetching && (
@@ -433,6 +450,8 @@ const MoviesPage = () => {
   const [genreDropdownOpen, setGenreDropdownOpen] = useState(false);
   const [yearDropdownRef, setYearDropdownRef] = useState(null);
   const [genreDropdownRef, setGenreDropdownRef] = useState(null);
+  const [searchHistoryItems, setSearchHistoryItems] = useState([]);
+  const [trendingSearches, setTrendingSearches] = useState([]);
   
   // Enhanced prefetch state management
   const [prefetchedMovies, setPrefetchedMovies] = useState(new Set());
@@ -463,13 +482,10 @@ const MoviesPage = () => {
 
   // Define fetchMovies function before useEffect hooks
   const fetchMovies = async (category, pageNum = 1) => {
-    console.log('fetchMovies called - fetchInProgress:', fetchInProgress.current, 'category:', category, 'pageNum:', pageNum);
     if (fetchInProgress.current) {
-      console.log('fetchMovies: Already in progress, returning');
       return;
     }
     fetchInProgress.current = true;
-    
     try {
       if (pageNum === 1) {
         setLoading(true);
@@ -479,75 +495,35 @@ const MoviesPage = () => {
       }
 
       let response;
-      const apiKey = import.meta.env.VITE_TMDB_API_KEY;
-      
-      if (!apiKey) {
-        throw new Error('TMDB API key is not configured');
-      }
-      
-      // Use different endpoints based on category
-      let url;
-      if (category === 'now_playing') {
-        url = `https://api.themoviedb.org/3/movie/now_playing?api_key=${apiKey}&page=${pageNum}`;
-      } else if (category === 'popular') {
-        url = `https://api.themoviedb.org/3/movie/popular?api_key=${apiKey}&page=${pageNum}`;
-      } else if (category === 'top_rated') {
-        url = `https://api.themoviedb.org/3/movie/top_rated?api_key=${apiKey}&page=${pageNum}`;
-      } else if (category === 'upcoming') {
-        url = `https://api.themoviedb.org/3/movie/upcoming?api_key=${apiKey}&page=${pageNum}`;
-      } else {
-        // Build the URL with filters for other categories
-        url = `https://api.themoviedb.org/3/discover/movie?api_key=${apiKey}&page=${pageNum}`;
-        
-        // Add year filter if selected
-        if (selectedYear) {
-          url += `&primary_release_year=${selectedYear}`;
-        }
-        
-        // Add genre filter if selected
-        if (selectedGenre) {
-          url += `&with_genres=${selectedGenre}`;
-        }
-        
-        // Add sort parameter based on category
-        switch (category) {
-          case 'popular':
-            url += '&sort_by=popularity.desc';
-            break;
-          case 'top_rated':
-            url += '&sort_by=vote_average.desc';
-            break;
-          case 'upcoming':
-            url += '&sort_by=release_date.desc';
-            break;
-          default:
-            url += '&sort_by=popularity.desc';
-        }
-      }
+      let results = [];
+      let totalPages = 1;
 
-      console.log('Fetching movies from:', url);
-      response = await fetch(url);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      // Use category-based service functions
+      switch (category) {
+        case 'popular':
+          response = await getPopularMovies(pageNum);
+          break;
+        case 'top_rated':
+          response = await getTopRatedMovies(pageNum);
+          break;
+        case 'upcoming':
+          response = await getUpcomingMovies(pageNum);
+          break;
+        case 'now_playing':
+          response = await getNowPlayingMovies(pageNum);
+          break;
+        default:
+          response = await getPopularMovies(pageNum);
       }
-      
-      const data = await response.json();
-      
-      if (!data.results) {
-        throw new Error('Invalid response format from TMDB API');
-      }
-      
-      console.log(`Fetched ${data.results.length} movies for category: ${category}, page: ${pageNum}`);
-      console.log('First movie:', data.results[0]);
-      
+      results = response.movies || response.results || [];
+      totalPages = response.totalPages || response.total_pages || 1;
+
       if (pageNum === 1) {
-        console.log('Setting movies for page 1:', data.results.length, 'movies');
-        setMovies(data.results);
+        setMovies(results);
       } else {
         setMovies(prevMovies => {
           const uniqueMovies = [...prevMovies];
-          data.results.forEach(newMovie => {
+          results.forEach(newMovie => {
             if (!uniqueMovies.some(movie => movie.id === newMovie.id)) {
               uniqueMovies.push(newMovie);
             }
@@ -555,28 +531,28 @@ const MoviesPage = () => {
           return uniqueMovies;
         });
       }
-      
-      setHasMore(data.page < data.total_pages);
+      setHasMore(pageNum < totalPages);
       setCurrentPage(pageNum);
       setLoadedSections(prev => ({ ...prev, [category]: true }));
-      console.log('Movies fetch completed, setting loading to false');
-
     } catch (err) {
-      console.error('Error fetching movies:', err);
-      setError('Failed to load movies: ' + err.message);
+      setError('Failed to load movies: ' + (err.message || 'Unknown error'));
     } finally {
       if (pageNum === 1) {
-        console.log('Finally block: Setting loading to false');
         setLoading(false);
       } else {
         setIsLoadingNextPage(false);
       }
-      console.log('Finally block: Setting fetchInProgress to false');
       fetchInProgress.current = false;
     }
   };
 
-  const handleCategoryChange = (category) => {
+  const handleCategoryChange = useCallback((category) => {
+    // Prevent multiple rapid clicks
+    if (activeCategory === category || isTransitioning) return;
+    
+    // Set transition state for smooth animations
+    setIsTransitioning(true);
+    
     // Reset all states when changing category
     setActiveCategory(category);
     setMovies([]);
@@ -587,14 +563,16 @@ const MoviesPage = () => {
     setIsLoadingNextPage(false);
     setNextPageMovies([]);
     
-    // Fetch movies for the new category
+    // Fetch movies for the new category immediately
     fetchMovies(category, 1);
-  };
+    
+    // Clear transition state after animation completes
+    setTimeout(() => {
+      setIsTransitioning(false);
+    }, 400);
+  }, [activeCategory, isTransitioning, fetchMovies]);
 
   const handleGenreSelect = async (genre) => {
-    if (fetchInProgress.current) return;
-    fetchInProgress.current = true;
-    
     setSelectedGenre(genre);
     setGenreDropdownOpen(false);
     
@@ -606,56 +584,6 @@ const MoviesPage = () => {
       searchParams.delete('genre');
     }
     navigate(`?${searchParams.toString()}`, { replace: true });
-
-    setLoading(true);
-    setCurrentPage(1); // Reset page when changing genre
-    
-    try {
-      let results = [];
-      if (genre) {
-        const response = await getMoviesByGenre(genre.id, 1);
-        results = response.movies || [];
-        
-        // Store the results in both refs
-        previousMovies.current = results;
-        moviesRef.current = results;
-        
-        if (isMounted.current) {
-          setMovies(() => {
-            return results;
-          });
-          setTotalPages(response.totalPages || 1);
-          setHasMore(response.totalPages > 1);
-          setError(null);
-        }
-      } else {
-        const response = await getMoviesByCategory(activeCategory);
-        results = response.results || [];
-        
-        // Store the results in both refs
-        previousMovies.current = results;
-        moviesRef.current = results;
-        
-        if (isMounted.current) {
-          setMovies(() => {
-            return results;
-          });
-          setTotalPages(response.total_pages || 1);
-          setHasMore(response.total_pages > 1);
-          setError(null);
-        }
-      }
-    } catch (error) {
-      if (isMounted.current) {
-        console.error('Error fetching movies by genre:', error);
-        setError('Failed to load movies');
-      }
-    } finally {
-      if (isMounted.current) {
-        setLoading(false);
-      }
-      fetchInProgress.current = false;
-    }
   };
 
   // Add URL parameter handling
@@ -663,6 +591,7 @@ const MoviesPage = () => {
     const searchParams = new URLSearchParams(window.location.search);
     const category = searchParams.get('category');
     const genreParam = searchParams.get('genre');
+    const yearParam = searchParams.get('year');
     
     if (category) {
       handleCategoryChange(category);
@@ -697,8 +626,14 @@ const MoviesPage = () => {
         const genreObj = genres.find(g => g.id === genreId);
         if (genreObj) {
           setSelectedGenre(genreObj);
-          handleGenreSelect(genreObj);
         }
+      }
+    }
+
+    if (yearParam) {
+      const year = parseInt(yearParam);
+      if (year && year >= 1900 && year <= new Date().getFullYear()) {
+        setSelectedYear(year);
       }
     }
   }, [window.location.search, genres]);
@@ -731,13 +666,13 @@ const MoviesPage = () => {
     }
   };
 
-  // Define categories with exact TMDB API category IDs
-  const categories = [
+  // Define categories with exact TMDB API category IDs - Memoized for performance
+  const categories = useMemo(() => [
     { id: 'popular', name: 'Popular' },
     { id: 'top_rated', name: 'Top Rated' },
     { id: 'upcoming', name: 'Upcoming' },
     { id: 'now_playing', name: 'Now Playing' }
-  ];
+  ], []);
 
   const getImageUrl = (path) => {
     if (!path) return null;
@@ -763,7 +698,7 @@ const MoviesPage = () => {
     setMovies([]);
     setHasMore(true);
     fetchMovies(activeCategory, 1);
-  }, [activeCategory, selectedGenre, selectedYear]);
+  }, [activeCategory]);
 
 
 
@@ -773,7 +708,7 @@ const MoviesPage = () => {
       setPage(nextPage);
       fetchMovies(activeCategory, nextPage);
     }
-  }, [inView, hasMore, loading, isLoadingMore, isLoadingNextPage, activeCategory, selectedGenre, selectedYear]);
+  }, [inView, hasMore, loading, isLoadingMore, isLoadingNextPage, activeCategory]);
 
   const handleMovieClick = (movie) => {
     // If we have prefetched data, use it immediately
@@ -813,71 +748,15 @@ const MoviesPage = () => {
   // Reset fetchInProgress on component mount
   useEffect(() => {
     fetchInProgress.current = false;
-    console.log('Component mounted, reset fetchInProgress to false');
   }, []);
 
 
 
   // Load more movies
   const handleLoadMore = async () => {
-    if (loading || page >= totalPages) return;
-    
-    setLoading(true);
-    try {
-      const nextPage = page + 1;
-      let newMovies = [];
-      
-      if (selectedYear) {
-        const response = await fetch(
-          `${TMDB_BASE_URL}/discover/movie?api_key=${TMDB_API_KEY}&page=${nextPage}&year=${selectedYear}${selectedGenre ? `&with_genres=${selectedGenre}` : ''}&sort_by=${sortBy}`
-        );
-        const data = await response.json();
-        newMovies = data.results || [];
-      } else {
-        let endpoint = '';
-        switch (sortBy) {
-          case 'popularity':
-            endpoint = 'popular';
-            break;
-          case 'top_rated':
-            endpoint = 'top_rated';
-            break;
-          case 'trending':
-            endpoint = 'trending/movie/day';
-            break;
-          default:
-            endpoint = 'popular';
-        }
-        
-        // Fix the URL structure for trending movies
-        const url = sortBy === 'trending'
-          ? `${TMDB_BASE_URL}/trending/movie/day?api_key=${TMDB_API_KEY}&page=${nextPage}`
-          : `${TMDB_BASE_URL}/movie/${endpoint}?api_key=${TMDB_API_KEY}&page=${nextPage}`;
-          
-        const response = await fetch(url);
-        const data = await response.json();
-        newMovies = data.results || [];
-        
-        if (selectedGenre) {
-          newMovies = newMovies.filter(movie => 
-            movie.genre_ids && movie.genre_ids.includes(selectedGenre)
-          );
-        }
-      }
-      
-      // Filter out duplicates
-      const existingIds = new Set(movies.map(m => m.id));
-      const uniqueNewMovies = newMovies.filter(movie => !existingIds.has(movie.id));
-      
-      if (uniqueNewMovies.length > 0) {
-        setMovies(prevMovies => [...prevMovies, ...uniqueNewMovies]);
-        setPage(nextPage);
-      }
-    } catch (error) {
-      console.error('Error loading more movies:', error);
-    } finally {
-      setLoading(false);
-    }
+    if (loading || currentPage >= totalPages) return;
+    const nextPage = currentPage + 1;
+    await fetchMovies(activeCategory, nextPage);
   };
 
   // Handle genre click
@@ -898,7 +777,7 @@ const MoviesPage = () => {
     setPage(1);
   };
 
-  const searchMovies = async (query, pageNum = 1) => {
+  const performSearch = async (query, pageNum = 1) => {
     if (!query.trim()) {
       setSearchResults([]);
       setHasMoreSearchResults(false);
@@ -907,22 +786,18 @@ const MoviesPage = () => {
 
     try {
       setIsSearching(true);
-      const apiKey = import.meta.env.VITE_TMDB_API_KEY;
-      const response = await fetch(
-        `https://api.themoviedb.org/3/search/movie?api_key=${apiKey}&query=${encodeURIComponent(query)}&page=${pageNum}`
-      );
-      const data = await response.json();
-
+      const response = await searchMovies(query, pageNum);
+      
       if (pageNum === 1) {
-        setSearchResults(data.results);
+        setSearchResults(response.results || []);
       } else {
-        const newResults = data.results.filter(newMovie => 
+        const newResults = (response.results || []).filter(newMovie => 
           !searchResults.some(existingMovie => existingMovie.id === newMovie.id)
         );
         setSearchResults(prev => [...prev, ...newResults]);
       }
 
-      setHasMoreSearchResults(data.page < data.total_pages);
+      setHasMoreSearchResults(response.page < response.total_pages);
     } catch (err) {
       console.error('Error searching movies:', err);
       setError('Failed to search movies');
@@ -934,7 +809,7 @@ const MoviesPage = () => {
   // Debounced search function
   const debouncedSearch = debounce((query) => {
     setSearchPage(1);
-    searchMovies(query, 1);
+    performSearch(query, 1);
   }, 500);
 
   // Update the search handling
@@ -950,15 +825,11 @@ const MoviesPage = () => {
       setIsSearching(true);
       searchTimeoutRef.current = setTimeout(async () => {
         try {
-          const apiKey = import.meta.env.VITE_TMDB_API_KEY;
-          const response = await fetch(
-            `https://api.themoviedb.org/3/search/movie?api_key=${apiKey}&query=${encodeURIComponent(query)}&page=1`
-          );
-          const data = await response.json();
+          const response = await searchMovies(query, 1);
           
-          if (data.results) {
-            setSearchResults(data.results);
-            setHasMoreSearchResults(data.page < data.total_pages);
+          if (response.results) {
+            setSearchResults(response.results);
+            setHasMoreSearchResults(response.page < response.total_pages);
             setSearchPage(1);
           } else {
             setSearchResults([]);
@@ -986,20 +857,16 @@ const MoviesPage = () => {
     try {
       setIsSearching(true);
       const nextPage = searchPage + 1;
-      const apiKey = import.meta.env.VITE_TMDB_API_KEY;
-      const response = await fetch(
-        `https://api.themoviedb.org/3/search/movie?api_key=${apiKey}&query=${encodeURIComponent(searchQuery)}&page=${nextPage}`
-      );
-      const data = await response.json();
+      const response = await searchMovies(searchQuery, nextPage);
 
-      if (data.results) {
+      if (response.results) {
         setSearchResults(prev => {
-          const newResults = data.results.filter(newMovie => 
+          const newResults = response.results.filter(newMovie => 
             !prev.some(existingMovie => existingMovie.id === newMovie.id)
           );
           return [...prev, ...newResults];
         });
-        setHasMoreSearchResults(data.page < data.total_pages);
+        setHasMoreSearchResults(response.page < response.total_pages);
         setSearchPage(nextPage);
       }
     } catch (error) {
@@ -1061,6 +928,26 @@ const MoviesPage = () => {
     };
   }, []);
 
+  // Load search history and trending searches
+  useEffect(() => {
+    const loadSearchData = () => {
+      const history = searchHistoryService.getHistoryByType('movie');
+      const trending = searchHistoryService.getTrendingSearches(5);
+      
+      setSearchHistoryItems(history.map(item => item.query));
+      setTrendingSearches(trending);
+    };
+
+    loadSearchData();
+    
+    // Subscribe to history changes
+    const unsubscribe = searchHistoryService.subscribe(() => {
+      loadSearchData();
+    });
+
+    return unsubscribe;
+  }, []);
+
   // Add click outside handler for dropdowns
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -1091,59 +978,58 @@ const MoviesPage = () => {
 
   // Update the filterMovies function to handle both regular movies and search results
   const filterMovies = (moviesToFilter) => {
-    return moviesToFilter.filter(movie => {
-      const matchesGenre = !selectedGenre || 
-        (movie.genre_ids && movie.genre_ids.includes(selectedGenre));
+    try {
+      if (!moviesToFilter || !Array.isArray(moviesToFilter)) {
+        return [];
+      }
       
-      const movieYear = movie.release_date ? new Date(movie.release_date).getFullYear() : null;
-      const matchesYear = !selectedYear || movieYear === selectedYear;
-      
-      return matchesGenre && matchesYear;
-    });
+      return moviesToFilter.filter(movie => {
+        if (!movie) return false;
+        
+        // Handle genre filtering
+        let matchesGenre = true;
+        if (selectedGenre && selectedGenre.id) {
+          matchesGenre = movie.genre_ids && Array.isArray(movie.genre_ids) && movie.genre_ids.includes(selectedGenre.id);
+        }
+        
+        // Handle year filtering
+        let matchesYear = true;
+        if (selectedYear) {
+          const movieYear = movie.release_date ? new Date(movie.release_date).getFullYear() : null;
+          matchesYear = movieYear && movieYear === parseInt(selectedYear);
+        }
+        
+        return matchesGenre && matchesYear;
+      });
+    } catch (error) {
+      console.error('Error in filterMovies:', error);
+      return moviesToFilter || [];
+    }
   };
 
   // Get the current list of movies to display
   const getDisplayMovies = () => {
-    if (searchQuery.trim() && searchResults.length > 0) {
-      return searchResults;
+    try {
+      const moviesToFilter = searchQuery.trim() && searchResults.length > 0 ? searchResults : movies;
+      return filterMovies(moviesToFilter);
+    } catch (error) {
+      console.error('Error in getDisplayMovies:', error);
+      return [];
     }
-    return movies;
   };
 
   const handleYearSelect = async (year) => {
     setSelectedYear(year);
     setYearDropdownOpen(false);
-    setLoading(true);
-    try {
-      let results = [];
-      if (year) {
-        // Fetch movies for the selected year
-        const response = await discoverMovies({
-          primary_release_year: year,
-          with_genres: selectedGenre?.id,
-          sort_by: 'popularity.desc'
-        });
-        // Format the results to ensure all required fields are present
-        results = (response.results || []).map(movie => ({
-          ...movie,
-          title: movie.title || 'Untitled',
-          poster_path: movie.poster_path || null,
-          release_date: movie.release_date || null,
-          vote_average: movie.vote_average || 0,
-          genre_ids: movie.genre_ids || []
-        }));
-      } else {
-        // If no year selected, fetch based on current category
-        const response = await getMoviesByCategory(activeCategory);
-        results = response.results || [];
-      }
-      setMovies(results);
-    } catch (error) {
-      console.error('Error fetching movies by year:', error);
-      setError('Failed to load movies');
-    } finally {
-      setLoading(false);
+    
+    // Update URL with the new year
+    const searchParams = new URLSearchParams(window.location.search);
+    if (year) {
+      searchParams.set('year', year.toString());
+    } else {
+      searchParams.delete('year');
     }
+    navigate(`?${searchParams.toString()}`, { replace: true });
   };
 
   // Update the useEffect that tracks movies state changes
@@ -1165,34 +1051,20 @@ const MoviesPage = () => {
     try {
       const nextPage = currentPage + 1;
       let newMovies = [];
-      if (selectedGenre) {
-        const response = await getMoviesByGenre(selectedGenre.id, nextPage);
-        newMovies = response.movies || [];
-        
-        if (newMovies.length > 0) {
-          setMovies(prevMovies => {
-            const updatedMovies = [...prevMovies, ...newMovies];
-            return updatedMovies;
-          });
-          setCurrentPage(nextPage);
-          setHasMore(nextPage < response.totalPages);
-        } else {
-          setHasMore(false);
-        }
+      
+      // Load more movies for current category
+      const response = await getMoviesByCategory(activeCategory, nextPage);
+      newMovies = response.results || [];
+      
+      if (newMovies.length > 0) {
+        setMovies(prevMovies => {
+          const updatedMovies = [...prevMovies, ...newMovies];
+          return updatedMovies;
+        });
+        setCurrentPage(nextPage);
+        setHasMore(nextPage < response.total_pages);
       } else {
-        const response = await getMoviesByCategory(activeCategory, nextPage);
-        newMovies = response.results || [];
-        
-        if (newMovies.length > 0) {
-          setMovies(prevMovies => {
-            const updatedMovies = [...prevMovies, ...newMovies];
-            return updatedMovies;
-          });
-          setCurrentPage(nextPage);
-          setHasMore(nextPage < response.total_pages);
-        } else {
-          setHasMore(false);
-        }
+        setHasMore(false);
       }
     } catch (error) {
       console.error('Error loading more movies:', error);
@@ -1284,12 +1156,18 @@ const MoviesPage = () => {
               getSimilarMovies(movieId, 'movie', 1)
             ]);
 
-            // Cache the results
-            setPrefetchCache(prev => new Map(prev).set(movieId, {
-              details: details.status === 'fulfilled' ? details.value : null,
-              similar: similar.status === 'fulfilled' ? similar.value : null,
-              timestamp: Date.now()
-            }));
+            // Only cache if we have valid data
+            const detailsValue = details.status === 'fulfilled' ? details.value : null;
+            const similarValue = similar.status === 'fulfilled' ? similar.value : null;
+            
+            // Only cache if we have at least some data or if the movie is confirmed to not exist
+            if (detailsValue || similarValue || (detailsValue === null && similarValue === null)) {
+              setPrefetchCache(prev => new Map(prev).set(movieId, {
+                details: detailsValue,
+                similar: similarValue,
+                timestamp: Date.now()
+              }));
+            }
 
             handlePrefetch(movieId);
           } catch (error) {
@@ -1314,6 +1192,12 @@ const MoviesPage = () => {
   // Enhanced prefetch queue with priority based on visibility
   const queuePrefetchWithPriority = useCallback((movieId, priority = 'normal') => {
     if (prefetchedMovies.has(movieId) || prefetchCache.has(movieId)) {
+      return;
+    }
+    
+    // Skip prefetching if we've already determined this movie doesn't exist
+    const cachedData = prefetchCache.get(movieId);
+    if (cachedData && cachedData.details === null && cachedData.similar === null) {
       return;
     }
 
@@ -1400,64 +1284,101 @@ const MoviesPage = () => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#0F0F0F] text-white overflow-y-scroll scrollbar-gutter-stable">
-      <div className="container mx-auto px-4 py-8">
+    <motion.div 
+      className="min-h-screen bg-[#0F0F0F] text-white overflow-y-scroll scrollbar-gutter-stable"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.5, ease: "easeInOut" }}
+    >
+      <div className="w-full px-4 py-8">
         {/* Search and Filters Section */}
         <div className="flex flex-col items-center gap-6">
-          {/* Search Bar */}
-          <div className="relative w-full">
-            <div className="relative max-w-xl mx-auto">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={handleSearchChange}
+                  {/* Enhanced Search Bar */}
+        <div className="relative w-full">
+          <div className="relative max-w-xl mx-auto">
+            <Suspense fallback={
+              <div className="w-full h-12 bg-gray-800 rounded-lg animate-pulse"></div>
+            }>
+              <EnhancedSearchBar
                 placeholder="Search movies..."
-                className="w-full px-4 py-3 bg-[#2b3036] text-white rounded-lg pl-12 focus:outline-none focus:ring-2 focus:ring-white/20"
+                initialValue={searchQuery}
+                onSearch={(query) => {
+                  setSearchQuery(query);
+                  performSearch(query, 1);
+                }}
+                onSearchSubmit={(query) => {
+                  // Only add to history when search is actually submitted
+                  searchHistoryService.addToHistory(query, 'movie');
+                }}
+                onClear={() => {
+                  setSearchQuery('');
+                  setSearchResults([]);
+                  setHasMoreSearchResults(false);
+                }}
+                isLoading={isSearching}
+                theme="dark"
+                variant="floating"
+                size="md"
+                showSuggestions={true}
+                suggestions={searchResults.slice(0, 5).map(movie => ({
+                  title: movie.title,
+                  name: movie.title,
+                  id: movie.id,
+                  poster_path: movie.poster_path,
+                  year: movie.release_date ? new Date(movie.release_date).getFullYear() : null
+                }))}
+                onSuggestionSelect={(suggestion) => {
+                  const movie = searchResults.find(m => m.id === suggestion.id);
+                  if (movie) {
+                    handleMovieClick(movie);
+                  }
+                }}
+                searchHistory={searchHistoryItems}
+                showHistory={true}
+                onHistorySelect={(historyItem) => {
+                  setSearchQuery(historyItem);
+                  performSearch(historyItem, 1);
+                  searchHistoryService.incrementSearchCount(historyItem);
+                }}
+                clearHistory={() => searchHistoryService.clearHistoryByType('movie')}
+                showTrendingSearches={true}
+                trendingSearches={trendingSearches}
+                onTrendingSelect={(trending) => {
+                  setSearchQuery(trending);
+                  performSearch(trending, 1);
+                  searchHistoryService.addToHistory(trending, 'movie');
+                }}
               />
-              <svg
-                className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                />
-              </svg>
-              {isSearching && (
-                <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                </div>
-              )}
-            </div>
+            </Suspense>
           </div>
+        </div>
 
-          {/* Categories */}
-          <div className="relative inline-flex rounded-lg bg-[#1a1a1a] p-1 overflow-x-auto max-w-full">
-            {categories.map(category => (
-              <button
-                key={category.id}
-                onClick={() => handleCategoryChange(category.id)}
-                className={`relative px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-300 whitespace-nowrap focus:outline-none ${
-                  activeCategory === category.id
-                    ? 'text-black'
-                    : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                <span className="relative z-10">{category.name}</span>
-                {activeCategory === category.id && (
-                  <motion.div
-                    layoutId="activeCategoryBackground"
-                    className="absolute inset-0 bg-white rounded-lg"
-                    transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                  />
-                )}
-              </button>
-            ))}
-          </div>
+          {/* Category Selector */}
+          {!searchQuery && (
+            <div className="relative inline-flex rounded-lg bg-[#1a1a1a] p-1 overflow-x-auto max-w-full">
+              {categories.map((category) => (
+                <button
+                  key={category.id}
+                  onClick={() => handleCategoryChange(category.id)}
+                  className={`relative px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-300 whitespace-nowrap focus:outline-none ${
+                    activeCategory === category.id
+                      ? 'text-black'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  <span className="relative z-10">{category.name}</span>
+                  {activeCategory === category.id && (
+                    <motion.div
+                      layoutId="activeCategoryBackground"
+                      className="absolute inset-0 bg-white rounded-lg"
+                      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                    />
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Filters */}
           <div className="flex gap-4 justify-center w-full">
@@ -1465,9 +1386,20 @@ const MoviesPage = () => {
             <div className="relative" ref={yearDropdownRef}>
               <button
                 onClick={() => setYearDropdownOpen(!yearDropdownOpen)}
-                className="flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] rounded-lg text-sm font-medium text-gray-400 hover:text-white transition-colors"
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${
+                  selectedYear 
+                    ? 'bg-white text-black shadow-lg' 
+                    : 'bg-[#1a1a1a] text-gray-400 hover:text-white'
+                }`}
               >
-                {selectedYear || 'Year'}
+                {selectedYear ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-2 h-2 bg-black rounded-full"></span>
+                    {selectedYear}
+                  </span>
+                ) : (
+                  'Year'
+                )}
                 <svg
                   className={`w-4 h-4 transition-transform ${yearDropdownOpen ? 'rotate-180' : ''}`}
                   fill="none"
@@ -1489,7 +1421,9 @@ const MoviesPage = () => {
                     <button
                       key={year}
                       onClick={() => handleYearSelect(year)}
-                      className="w-full px-4 py-2 text-left text-sm text-gray-400 hover:text-white hover:bg-[#2b3036]"
+                      className={`w-full px-4 py-2 text-left text-sm hover:bg-[#2b3036] ${
+                        selectedYear === year ? 'text-white bg-[#2b3036]' : 'text-gray-400 hover:text-white'
+                      }`}
                     >
                       {year}
                     </button>
@@ -1502,9 +1436,20 @@ const MoviesPage = () => {
             <div className="relative" ref={genreDropdownRef}>
               <button
                 onClick={() => setGenreDropdownOpen(!genreDropdownOpen)}
-                className="flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] rounded-lg text-sm font-medium text-gray-400 hover:text-white transition-colors"
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${
+                  selectedGenre 
+                    ? 'bg-white text-black shadow-lg' 
+                    : 'bg-[#1a1a1a] text-gray-400 hover:text-white'
+                }`}
               >
-                {selectedGenre?.name || 'Genre'}
+                {selectedGenre ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-2 h-2 bg-black rounded-full"></span>
+                    {selectedGenre.name}
+                  </span>
+                ) : (
+                  'Genre'
+                )}
                 <svg
                   className={`w-4 h-4 transition-transform ${genreDropdownOpen ? 'rotate-180' : ''}`}
                   fill="none"
@@ -1526,7 +1471,9 @@ const MoviesPage = () => {
                     <button
                       key={genre.id}
                       onClick={() => handleGenreSelect(genre)}
-                      className="w-full px-4 py-2 text-left text-sm text-gray-400 hover:text-white hover:bg-[#2b3036]"
+                      className={`w-full px-4 py-2 text-left text-sm hover:bg-[#2b3036] ${
+                        selectedGenre?.id === genre.id ? 'text-white bg-[#2b3036]' : 'text-gray-400 hover:text-white'
+                      }`}
                     >
                       {genre.name}
                     </button>
@@ -1537,12 +1484,70 @@ const MoviesPage = () => {
           </div>
         </div>
 
-        {/* Movies grid */}
-        <div className="w-full mt-8">
-          {console.log('Render debug - loading:', loading, 'movies.length:', movies.length, 'error:', error, 'isLoadingMore:', isLoadingMore)}
+        {/* Active Filters Summary */}
+        {(selectedYear || selectedGenre) && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex justify-center items-center gap-2 mt-4"
+          >
+            <span className="text-sm text-gray-400">Showing:</span>
+            <div className="flex gap-2">
+              {selectedGenre && (
+                <span className="px-3 py-1 bg-white text-black text-sm rounded-full font-medium">
+                  {selectedGenre.name}
+                </span>
+              )}
+              {selectedYear && (
+                <span className="px-3 py-1 bg-white text-black text-sm rounded-full font-medium">
+                  {selectedYear}
+                </span>
+              )}
+              <button
+                onClick={() => {
+                  try {
+                    setSelectedYear(null);
+                    setSelectedGenre(null);
+                    
+                    // Clear URL parameters
+                    const searchParams = new URLSearchParams(window.location.search);
+                    searchParams.delete('genre');
+                    searchParams.delete('year');
+                    navigate(`?${searchParams.toString()}`, { replace: true });
+                  } catch (error) {
+                    console.error('Error clearing filters:', error);
+                  }
+                }}
+                className="px-3 py-1 bg-gray-600 text-white text-sm rounded-full hover:bg-gray-500 transition-colors"
+              >
+                Clear All
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Movies grid with smooth category transitions */}
+        <motion.div 
+          className="w-full mt-8"
+          key={activeCategory}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ 
+            duration: 0.3,
+            ease: [0.25, 0.46, 0.45, 0.94]
+          }}
+        >
           {error ? (
-            <div className="text-center text-red-500 py-8">{error}</div>
-          ) : loading && !isLoadingMore ? (
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+              className="text-center text-red-500 py-8"
+            >
+              {error}
+            </motion.div>
+          ) : (loading && movies.length === 0) || (loading && !isLoadingMore) ? (
             <motion.div 
               initial="hidden"
               animate="visible"
@@ -1552,19 +1557,24 @@ const MoviesPage = () => {
             >
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
             </motion.div>
-          ) : (
-            <AnimatePresence mode="wait">
+                      ) : (
               <motion.div
-                key={searchQuery.trim() ? 'search' : 'movies'}
+                key={`${activeCategory}-${searchQuery.trim() ? 'search' : 'movies'}`}
                 variants={gridVariants}
                 initial="hidden"
                 animate="visible"
-                exit="hidden"
-                className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4"
+                transition={{
+                  duration: 0.4,
+                  ease: [0.25, 0.46, 0.45, 0.94],
+                  staggerChildren: 0.02,
+                  delayChildren: 0.05
+                }}
+                                  className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 3xl:grid-cols-10 gap-4"
               >
-                {console.log('Rendering movies:', (searchQuery.trim() ? searchResults : movies).length, 'movies')}
-                {(searchQuery.trim() ? searchResults : movies).map((movie, index) => {
-                  console.log('Rendering movie:', movie.title, 'at index:', index);
+                {getDisplayMovies().map((movie, index) => {
+                  if (!movie || !movie.id) {
+                    return null;
+                  }
                   return (
                     <MovieCard
                       key={`${movie.id}-${index}`}
@@ -1577,14 +1587,13 @@ const MoviesPage = () => {
                 })}
                 {/* Show loading placeholders for next page */}
                 {isLoadingNextPage && (
-                  <AnimatePresence>
+                  <>
                     {nextPageMovies.map((_, index) => (
                       <motion.div
                         key={`loading-${index}`}
                         variants={cardVariants}
                         initial="hidden"
                         animate="visible"
-                        exit="exit"
                         className="aspect-[2/3] rounded-lg overflow-hidden bg-gray-800"
                       >
                         <motion.div 
@@ -1600,11 +1609,10 @@ const MoviesPage = () => {
                         />
                       </motion.div>
                     ))}
-                  </AnimatePresence>
+                  </>
                 )}
               </motion.div>
-            </AnimatePresence>
-          )}
+            )}
           
           {/* Load more trigger */}
           {hasMore && (
@@ -1627,7 +1635,7 @@ const MoviesPage = () => {
               )}
             </motion.div>
           )}
-        </div>
+        </motion.div>
 
         {/* Prefetch Performance Monitor (Development Only) */}
         {import.meta.env.DEV && (
@@ -1651,11 +1659,13 @@ const MoviesPage = () => {
         {/* Movie Details Overlay */}
         <AnimatePresence>
           {selectedMovie && (
-            <MovieDetailsOverlay
-              movie={selectedMovie}
-              onClose={handleCloseOverlay}
-              onMovieSelect={handleSimilarMovieClick}
-            />
+            <Suspense fallback={null}>
+              <MovieDetailsOverlay
+                movie={selectedMovie}
+                onClose={handleCloseOverlay}
+                onMovieSelect={handleSimilarMovieClick}
+              />
+            </Suspense>
           )}
         </AnimatePresence>
       </div>
@@ -1680,7 +1690,7 @@ const MoviesPage = () => {
         }
         ${styles}
       `}</style>
-    </div>
+    </motion.div>
   );
 };
 

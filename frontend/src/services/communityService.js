@@ -1,7 +1,8 @@
 import axios from 'axios';
 import { getNetworkAwareConfig, fetchWithRetry } from './api';
+import { getApiUrl } from '../config/api';
 
-const API_URL = 'http://localhost:3001/api/community';
+const API_URL = getApiUrl();
 
 const getAuthHeader = () => {
   const token = localStorage.getItem('accessToken');
@@ -63,7 +64,7 @@ export const communityService = {
       ...(tag && { tag })
     });
     return fetchWithRetry(() =>
-      api.get(`/discussions?${params}`, { timeout })
+      api.get(`/community/discussions?${params}`, { timeout })
         .then(response => response.data)
     );
   },
@@ -71,7 +72,7 @@ export const communityService = {
   getDiscussion: async (id) => {
     const { timeout } = getNetworkAwareConfig();
     return fetchWithRetry(() =>
-      api.get(`/discussions/${id}`, { timeout })
+      api.get(`/community/discussions/${id}`, { timeout })
         .then(response => response.data)
     );
   },
@@ -79,7 +80,7 @@ export const communityService = {
   createDiscussion: async (discussionData) => {
     const { timeout } = getNetworkAwareConfig();
     return fetchWithRetry(() =>
-      api.post('/discussions', discussionData, { timeout })
+      api.post('/community/discussions', discussionData, { timeout })
         .then(response => response.data)
     );
   },
@@ -87,7 +88,7 @@ export const communityService = {
   updateDiscussion: async (id, discussionData) => {
     const { timeout } = getNetworkAwareConfig();
     return fetchWithRetry(() =>
-      api.put(`/discussions/${id}`, discussionData, { timeout })
+      api.put(`/community/discussions/${id}`, discussionData, { timeout })
         .then(response => response.data)
     );
   },
@@ -95,7 +96,7 @@ export const communityService = {
   deleteDiscussion: async (id) => {
     const { timeout } = getNetworkAwareConfig();
     return fetchWithRetry(() =>
-      api.delete(`/discussions/${id}`, { timeout })
+      api.delete(`/community/discussions/${id}`, { timeout })
         .then(response => response.data)
     );
   },
@@ -106,7 +107,7 @@ export const communityService = {
     const token = localStorage.getItem('accessToken');
     if (!token) throw new Error('Authentication required');
     return fetchWithRetry(() =>
-      api.post(`/discussions/${discussionId}/replies`, {
+      api.post(`/community/discussions/${discussionId}/replies`, {
         content: replyData.content,
         parentReplyId: replyData.parentReplyId
       }, {
@@ -120,7 +121,7 @@ export const communityService = {
     const { timeout } = getNetworkAwareConfig();
     return fetchWithRetry(() =>
       api.put(
-        `/discussions/${discussionId}/replies/${replyId}`,
+        `/community/discussions/${discussionId}/replies/${replyId}`,
         replyData,
         { timeout }
       ).then(response => response.data)
@@ -131,7 +132,7 @@ export const communityService = {
     const { timeout } = getNetworkAwareConfig();
     return fetchWithRetry(() =>
       api.delete(
-        `/discussions/${discussionId}/replies/${replyId}`,
+        `/community/discussions/${discussionId}/replies/${replyId}`,
         { timeout }
       ).then(response => response.data)
     );
@@ -143,7 +144,7 @@ export const communityService = {
     const token = localStorage.getItem('accessToken');
     if (!token) throw new Error('Authentication required');
     return fetchWithRetry(() =>
-      api.post(`/discussions/${discussionId}/like`, {}, {
+      api.post(`/community/discussions/${discussionId}/like`, {}, {
         headers: { Authorization: `Bearer ${token}` },
         timeout
       }).then(response => response.data)
@@ -156,7 +157,7 @@ export const communityService = {
     if (!token) throw new Error('Authentication required');
     return fetchWithRetry(() =>
       api.post(
-        `/discussions/${discussionId}/replies/${replyId}/like`,
+        `/community/discussions/${discussionId}/replies/${replyId}/like`,
         {},
         {
           headers: { Authorization: `Bearer ${token}` },
@@ -170,7 +171,7 @@ export const communityService = {
   searchDiscussions: async (query) => {
     const { timeout } = getNetworkAwareConfig();
     return fetchWithRetry(() =>
-      api.get(`/search?q=${encodeURIComponent(query)}`, { timeout })
+      api.get(`/community/search?q=${encodeURIComponent(query)}`, { timeout })
         .then(response => response.data)
     );
   },
@@ -178,7 +179,7 @@ export const communityService = {
   getCategories: async () => {
     const { timeout } = getNetworkAwareConfig();
     return fetchWithRetry(() =>
-      api.get('/categories', { timeout })
+      api.get('/community/categories', { timeout })
         .then(response => response.data)
     );
   },
@@ -186,7 +187,7 @@ export const communityService = {
   getTopTags: async () => {
     const { timeout } = getNetworkAwareConfig();
     return fetchWithRetry(() =>
-      api.get('/tags', { timeout })
+      api.get('/community/tags', { timeout })
         .then(response => response.data)
     );
   },
@@ -195,7 +196,7 @@ export const communityService = {
   getTrendingTopics: async () => {
     const { timeout } = getNetworkAwareConfig();
     return fetchWithRetry(() =>
-      api.get('/trending', { timeout })
+      api.get('/community/trending', { timeout })
         .then(response => response.data)
     );
   },
@@ -203,7 +204,7 @@ export const communityService = {
   getCommunityStats: async () => {
     const { timeout } = getNetworkAwareConfig();
     return fetchWithRetry(() =>
-      api.get('/stats', { timeout })
+      api.get('/community/stats', { timeout })
         .then(response => response.data)
     );
   }

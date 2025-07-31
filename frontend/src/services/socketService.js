@@ -1,4 +1,5 @@
 import { io } from 'socket.io-client';
+import { getSocketUrl } from '../config/api';
 
 class SocketService {
   constructor() {
@@ -24,7 +25,7 @@ class SocketService {
         clearTimeout(this.connectionTimeout);
       }
 
-      this.socket = io(`http://localhost:3001/community`, {
+      this.socket = io(getSocketUrl(), {
         withCredentials: true,
         transports: ['websocket'],
         reconnection: true,

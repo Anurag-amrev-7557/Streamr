@@ -166,6 +166,63 @@
   scroll-snap-stop: always;
 }
 
+/* Ultra-Smooth Scrolling Enhancements */
+@layer components {
+  /* Enhanced smooth scrolling with GPU acceleration */
+  .ultra-smooth-scroll {
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    will-change: scroll-position;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+  }
+
+  /* Performance optimized scrolling */
+  .performance-scroll {
+    will-change: scroll-position;
+    contain: layout style paint;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+  }
+
+  /* Momentum scrolling for natural feel */
+  .momentum-scroll {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+    overscroll-behavior: contain;
+    will-change: scroll-position;
+    scroll-snap-type: y proximity;
+    scroll-padding: 1rem;
+  }
+
+  /* Custom scroll easing */
+  .custom-scroll-ease {
+    scroll-behavior: smooth;
+    transition: scroll-behavior 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* GPU accelerated scrolling */
+  .gpu-scroll {
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    perspective: 1000px;
+    will-change: transform;
+  }
+
+  /* Inertial scrolling for mobile */
+  .inertial-scroll {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+    overscroll-behavior: contain;
+    will-change: scroll-position;
+    scroll-snap-type: y proximity;
+    scroll-padding: 1rem;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+  }
+}
+
 /* Modal Animation */
 @keyframes expandOverlay {
   0% {

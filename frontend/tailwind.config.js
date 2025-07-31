@@ -10,6 +10,10 @@ export default {
       fontFamily: {
         'inter': ['Inter', 'system-ui', 'sans-serif'],
       },
+      screens: {
+        '3xl': '1920px',
+        'xs': '400px', // Custom breakpoint for extremely small screens
+      },
       animation: {
         'gradient-x': 'gradient-x 15s ease infinite',
         'shimmer': 'shimmer 2s linear infinite',
