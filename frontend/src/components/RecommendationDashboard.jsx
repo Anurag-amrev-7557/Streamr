@@ -82,7 +82,7 @@ const ContentGrid = React.memo(({ items, title, isLoading = false }) => {
   return (
     <div className="space-y-4">
       <h3 className="text-xl font-bold text-white mb-4">{title}</h3>
-      <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
         {items.map((item) => (
           <motion.div
             key={item.id}

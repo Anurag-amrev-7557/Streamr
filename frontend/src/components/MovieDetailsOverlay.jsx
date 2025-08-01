@@ -2825,7 +2825,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                         {/* Episodes Content */}
                         {isEpisodesLoading ? (
                           episodesViewMode === 'card' ? (
-                            <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4 lg:gap-6">
+                            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4 lg:gap-6">
                               {[...Array(8)].map((_, index) => (
                                 <motion.div
                                   key={index}
@@ -2880,7 +2880,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                           )
                         ) : episodes.length > 0 ? (
                           episodesViewMode === 'card' ? (
-                            <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4 lg:gap-6">
+                            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4 lg:gap-6">
                               {episodes.slice(0, 100).map((episode, index) => (
                                 <motion.div
                                   key={episode.id}

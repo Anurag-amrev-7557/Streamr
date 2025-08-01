@@ -21,42 +21,10 @@ export const testNetworkConnectivity = async () => {
         try {
           const response = await fetch('/api/health', {
             method: 'HEAD',
-            cache: 'no-cache',
-            mode: 'cors'
+            cache: 'no-cache'
           });
           return response.ok;
         } catch (error) {
-          return false;
-        }
-      }
-    },
-    {
-      name: 'TMDB API Test',
-      test: async () => {
-        try {
-          // Import the API key from TMDB service
-          const { TMDB_API_KEY } = await import('../services/tmdbService.js');
-          
-          // Check if API key is properly configured
-          if (!TMDB_API_KEY || TMDB_API_KEY === 'undefined' || TMDB_API_KEY === '') {
-            console.warn('TMDB API key is not configured');
-            return false;
-          }
-          
-          const response = await fetch(`https://api.themoviedb.org/3/configuration?api_key=${TMDB_API_KEY}`, {
-            method: 'HEAD',
-            cache: 'no-cache',
-            mode: 'cors'
-          });
-          
-          if (response.status === 401) {
-            console.warn('TMDB API authentication failed - check API key');
-            return false;
-          }
-          
-          return response.ok;
-        } catch (error) {
-          console.warn('TMDB API test failed:', error.message);
           return false;
         }
       }
@@ -67,8 +35,7 @@ export const testNetworkConnectivity = async () => {
         try {
           const response = await fetch('https://httpbin.org/status/200', {
             method: 'HEAD',
-            cache: 'no-cache',
-            mode: 'cors'
+            cache: 'no-cache'
           });
           return response.ok;
         } catch (error) {
@@ -82,8 +49,7 @@ export const testNetworkConnectivity = async () => {
         try {
           const response = await fetch('https://jsonplaceholder.typicode.com/posts/1', {
             method: 'HEAD',
-            cache: 'no-cache',
-            mode: 'cors'
+            cache: 'no-cache'
           });
           return response.ok;
         } catch (error) {
@@ -119,6 +85,17 @@ export const testNetworkConnectivity = async () => {
 };
 
 /**
+ * Check network connectivity (alias for testNetworkConnectivity)
+ */
+export const checkNetworkConnectivity = async () => {
+  const results = await testNetworkConnectivity();
+  return {
+    isConnected: results.overall,
+    details: results
+  };
+};
+
+/**
  * Monitor network status changes
  */
 export const createNetworkMonitor = (onStatusChange) => {
@@ -149,6 +126,150 @@ export const createNetworkMonitor = (onStatusChange) => {
 };
 
 /**
+ * Network monitor instance with listener support
+ */
+export const networkMonitor = {
+  listeners: new Set(),
+  
+  addListener: (callback) => {
+    networkMonitor.listeners.add(callback);
+    return () => networkMonitor.listeners.delete(callback);
+  },
+  
+  notifyListeners: (status) => {
+    networkMonitor.listeners.forEach(callback => callback(status));
+  }
+};
+
+// Initialize network monitor
+if (typeof window !== 'undefined') {
+  const cleanup = createNetworkMonitor((status) => {
+    networkMonitor.notifyListeners(status);
+  });
+  
+  // Cleanup on page unload
+  window.addEventListener('beforeunload', cleanup);
+}
+
+/**
+ * Simulate network errors for testing
+ */
+export const simulateNetworkError = (errorType) => {
+  const errors = {
+    CONNECTION_RESET: new Error('Connection reset by peer'),
+    TIMEOUT: new Error('Request timeout'),
+    DNS_FAILURE: new Error('DNS resolution failed'),
+    SSL_ERROR: new Error('SSL certificate error'),
+    NETWORK_UNREACHABLE: new Error('Network unreachable'),
+    HOST_UNREACHABLE: new Error('Host unreachable')
+  };
+  
+  const error = errors[errorType] || new Error('Unknown network error');
+  error.type = errorType;
+  return error;
+};
+
+/**
+ * Classify network errors
+ */
+export const classifyNetworkError = (error) => {
+  const message = error.message?.toLowerCase() || '';
+  const name = error.name?.toLowerCase() || '';
+  
+  if (message.includes('timeout') || name.includes('timeout')) {
+    return { type: 'TIMEOUT', retryable: true, delay: 1000 };
+  }
+  
+  if (message.includes('dns') || message.includes('resolve')) {
+    return { type: 'DNS_FAILURE', retryable: true, delay: 2000 };
+  }
+  
+  if (message.includes('ssl') || message.includes('certificate')) {
+    return { type: 'SSL_ERROR', retryable: false, delay: 0 };
+  }
+  
+  if (message.includes('reset') || message.includes('connection')) {
+    return { type: 'CONNECTION_RESET', retryable: true, delay: 1500 };
+  }
+  
+  if (message.includes('unreachable') || message.includes('network')) {
+    return { type: 'NETWORK_UNREACHABLE', retryable: true, delay: 3000 };
+  }
+  
+  return { type: 'UNKNOWN', retryable: true, delay: 1000 };
+};
+
+/**
+ * Calculate retry delay based on attempt and error type
+ */
+export const calculateRetryDelay = (attempt, errorType = 'unknown') => {
+  const baseDelays = {
+    TIMEOUT: 1000,
+    DNS_FAILURE: 2000,
+    SSL_ERROR: 0,
+    CONNECTION_RESET: 1500,
+    NETWORK_UNREACHABLE: 3000,
+    UNKNOWN: 1000
+  };
+  
+  const baseDelay = baseDelays[errorType] || 1000;
+  const exponentialBackoff = Math.min(baseDelay * Math.pow(2, attempt - 1), 30000);
+  const jitter = Math.random() * 1000;
+  
+  return exponentialBackoff + jitter;
+};
+
+/**
+ * Enhanced fetch with retry logic
+ */
+export const fetchWithRetry = async (url, options = {}, retryConfig = {}) => {
+  const {
+    maxRetries = 3,
+    timeout = 10000,
+    retryableErrors = ['TIMEOUT', 'CONNECTION_RESET', 'DNS_FAILURE']
+  } = retryConfig;
+  
+  let lastError;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+      
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      return response;
+    } catch (error) {
+      lastError = error;
+      
+      if (attempt === maxRetries) {
+        break;
+      }
+      
+      const classification = classifyNetworkError(error);
+      
+      if (!retryableErrors.includes(classification.type)) {
+        break;
+      }
+      
+      const delay = calculateRetryDelay(attempt, classification.type);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  
+  throw lastError;
+};
+
+/**
  * Get network information
  */
 export const getNetworkInfo = () => {
@@ -162,79 +283,24 @@ export const getNetworkInfo = () => {
   };
 };
 
-/**
- * Check if we can access external APIs
- */
-export const checkExternalAPIAccess = async () => {
-  const apis = [
-    {
-      name: 'TMDB API',
-      url: 'https://api.themoviedb.org/3/configuration',
-      test: async () => {
-        try {
-          // Import the API key from TMDB service
-          const { TMDB_API_KEY } = await import('../services/tmdbService.js');
-          
-          // Check if API key is properly configured
-          if (!TMDB_API_KEY || TMDB_API_KEY === 'undefined' || TMDB_API_KEY === '') {
-            console.warn('TMDB API key is not configured');
-            return false;
-          }
-          
-          const response = await fetch(`https://api.themoviedb.org/3/configuration?api_key=${TMDB_API_KEY}`, {
-            method: 'GET',
-            mode: 'cors',
-            headers: {
-              'Accept': 'application/json'
-            }
-          });
-          
-          if (response.status === 401) {
-            console.warn('TMDB API authentication failed - check API key');
-            return false;
-          }
-          
-          return response.ok;
-        } catch (error) {
-          console.warn('TMDB API access failed:', error.message);
-          return false;
-        }
-      }
-    }
-  ];
-
-  const results = [];
-  for (const api of apis) {
-    try {
-      const accessible = await api.test();
-      results.push({
-        name: api.name,
-        accessible,
-        timestamp: new Date().toISOString()
-      });
-    } catch (error) {
-      results.push({
-        name: api.name,
-        accessible: false,
-        error: error.message,
-        timestamp: new Date().toISOString()
-      });
-    }
-  }
-
-  return results;
-};
-
 // Export for browser console testing
 if (typeof window !== 'undefined') {
   window.testNetworkConnectivity = testNetworkConnectivity;
+  window.checkNetworkConnectivity = checkNetworkConnectivity;
   window.getNetworkInfo = getNetworkInfo;
   window.createNetworkMonitor = createNetworkMonitor;
-  window.checkExternalAPIAccess = checkExternalAPIAccess;
+  window.simulateNetworkError = simulateNetworkError;
+  window.classifyNetworkError = classifyNetworkError;
+  window.calculateRetryDelay = calculateRetryDelay;
+  window.fetchWithRetry = fetchWithRetry;
   
   console.log('🌐 Network utilities available:');
   console.log('- testNetworkConnectivity()');
+  console.log('- checkNetworkConnectivity()');
   console.log('- getNetworkInfo()');
   console.log('- createNetworkMonitor(callback)');
-  console.log('- checkExternalAPIAccess()');
+  console.log('- simulateNetworkError(type)');
+  console.log('- classifyNetworkError(error)');
+  console.log('- calculateRetryDelay(attempt, errorType)');
+  console.log('- fetchWithRetry(url, options, retryConfig)');
 } 

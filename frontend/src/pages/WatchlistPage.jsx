@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 const MovieDetailsOverlay = lazy(() => import('../components/MovieDetailsOverlay'));
 import { PageLoader } from '../components/Loader';
@@ -54,16 +54,20 @@ const WatchlistPage = () => {
   // Auto-hide sort dropdown on click outside or Escape
   useEffect(() => {
     if (!showSortDropdown) return;
-    function handleClick(e) {
+    
+    const handleClick = (e) => {
       if (sortDropdownRef.current && !sortDropdownRef.current.contains(e.target)) {
         setShowSortDropdown(false);
       }
-    }
-    function handleEscape(e) {
+    };
+    
+    const handleEscape = (e) => {
       if (e.key === 'Escape') setShowSortDropdown(false);
-    }
+    };
+    
     document.addEventListener('mousedown', handleClick);
     document.addEventListener('keydown', handleEscape);
+    
     return () => {
       document.removeEventListener('mousedown', handleClick);
       document.removeEventListener('keydown', handleEscape);
@@ -73,46 +77,49 @@ const WatchlistPage = () => {
   // Auto-hide clear dialog on click outside or Escape
   useEffect(() => {
     if (!showClearDialog) return;
-    function handleClick(e) {
+    
+    const handleClick = (e) => {
       if (clearDialogRef.current && !clearDialogRef.current.contains(e.target)) {
         setShowClearDialog(false);
       }
-    }
-    function handleEscape(e) {
+    };
+    
+    const handleEscape = (e) => {
       if (e.key === 'Escape') setShowClearDialog(false);
-    }
+    };
+    
     document.addEventListener('mousedown', handleClick);
     document.addEventListener('keydown', handleEscape);
+    
     return () => {
       document.removeEventListener('mousedown', handleClick);
       document.removeEventListener('keydown', handleEscape);
     };
   }, [showClearDialog]);
 
-  const handleMovieSelect = (movie) => {
+  const handleMovieSelect = useCallback((movie) => {
     setSelectedMovie(movie);
-  };
+  }, []);
 
-  const handleRemoveFromWatchlist = (movieId) => {
+  const handleRemoveFromWatchlist = useCallback((movieId) => {
     removeFromWatchlist(movieId);
-  };
+  }, [removeFromWatchlist]);
 
-  const handleImageLoad = (movieId) => {
+  const handleImageLoad = useCallback((movieId) => {
     setLoadedImages(prev => ({
       ...prev,
       [movieId]: true
     }));
-  };
+  }, []);
 
-  const handleImageError = (movieId) => {
+  const handleImageError = useCallback((movieId) => {
     setLoadedImages(prev => ({
       ...prev,
       [movieId]: 'error'
     }));
-  };
+  }, []);
 
-  const getImageUrl = (path) => {
-    
+  const getImageUrl = useCallback((path) => {
     if (!path) {
       console.log('No path provided, using placeholder');
       return PLACEHOLDER_IMAGE;
@@ -124,7 +131,7 @@ const WatchlistPage = () => {
     
     const fullUrl = `${TMDB_IMAGE_BASE_URL}/w500${path}`;
     return fullUrl;
-  };
+  }, []);
 
   const getFilteredWatchlist = () => {
     let filtered = [...watchlist];
@@ -519,7 +526,7 @@ const WatchlistPage = () => {
         {filteredWatchlist.length > 0 ? (
           <motion.div
             layout
-            className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-3 sm:gap-4"
+                            className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-3 sm:gap-4"
           >
             <AnimatePresence>
               {filteredWatchlist.map((movie) => (

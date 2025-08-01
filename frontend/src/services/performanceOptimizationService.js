@@ -15,7 +15,6 @@ class PerformanceOptimizationService {
       imageLoadTimes: [],
       apiCallTimes: []
     };
-    this.observers = []; // Track observers for cleanup
     this.init();
   }
 
@@ -108,34 +107,28 @@ class PerformanceOptimizationService {
   // 📊 Performance Monitoring
   setupPerformanceObservers() {
     // First Contentful Paint
-    const fcpObserver = new PerformanceObserver((list) => {
+    new PerformanceObserver((list) => {
       const entries = list.getEntries();
       this.metrics.fcp = entries[entries.length - 1].startTime;
       this.logMetric('FCP', this.metrics.fcp);
-    });
-    fcpObserver.observe({ entryTypes: ['paint'] });
-    this.observers.push(fcpObserver);
+    }).observe({ entryTypes: ['paint'] });
     
     // Largest Contentful Paint
-    const lcpObserver = new PerformanceObserver((list) => {
+    new PerformanceObserver((list) => {
       const entries = list.getEntries();
       this.metrics.lcp = entries[entries.length - 1].startTime;
       this.logMetric('LCP', this.metrics.lcp);
-    });
-    lcpObserver.observe({ entryTypes: ['largest-contentful-paint'] });
-    this.observers.push(lcpObserver);
+    }).observe({ entryTypes: ['largest-contentful-paint'] });
     
     // First Input Delay
-    const fidObserver = new PerformanceObserver((list) => {
+    new PerformanceObserver((list) => {
       const entries = list.getEntries();
       this.metrics.fid = entries[0].processingStart - entries[0].startTime;
       this.logMetric('FID', this.metrics.fid);
-    });
-    fidObserver.observe({ entryTypes: ['first-input'] });
-    this.observers.push(fidObserver);
+    }).observe({ entryTypes: ['first-input'] });
     
     // Cumulative Layout Shift
-    const clsObserver = new PerformanceObserver((list) => {
+    new PerformanceObserver((list) => {
       let cls = 0;
       list.getEntries().forEach(entry => {
         if (!entry.hadRecentInput) {
@@ -144,39 +137,7 @@ class PerformanceOptimizationService {
       });
       this.metrics.cls = cls;
       this.logMetric('CLS', cls);
-    });
-    clsObserver.observe({ entryTypes: ['layout-shift'] });
-    this.observers.push(clsObserver);
-  }
-
-  // 🧹 Cleanup method to prevent memory leaks
-  cleanup() {
-    // Disconnect all performance observers
-    this.observers.forEach(observer => {
-      if (observer && typeof observer.disconnect === 'function') {
-        observer.disconnect();
-      }
-    });
-    this.observers = [];
-
-    // Clear image observer
-    if (this.imageObserver) {
-      this.imageObserver.disconnect();
-      this.imageObserver = null;
-    }
-
-    // Clear caches
-    this.imageCache.clear();
-    this.apiCache.clear();
-
-    // Clear request queue
-    this.requestQueue = [];
-
-    // Clear batch timeout
-    if (this.batchTimeout) {
-      clearTimeout(this.batchTimeout);
-      this.batchTimeout = null;
-    }
+    }).observe({ entryTypes: ['layout-shift'] });
   }
 
   logMetric(name, value) {
@@ -305,9 +266,7 @@ class PerformanceOptimizationService {
 
   // 🎯 Public API
   observeImage(img) {
-    if (this.imageObserver) {
-      this.imageObserver.observe(img);
-    }
+    this.imageObserver.observe(img);
   }
 
   getMetrics() {
@@ -373,14 +332,22 @@ class PerformanceOptimizationService {
   }
 }
 
-// Export singleton instance
-export const performanceService = new PerformanceOptimizationService();
+// Lazy initialization to prevent hoisting issues
+let _performanceService = null;
+const getPerformanceService = () => {
+  if (!_performanceService) {
+    _performanceService = new PerformanceOptimizationService();
+  }
+  return _performanceService;
+};
 
-// Export utility functions
-export const getOptimizedImageUrl = (path, size) => performanceService.getOptimizedImageUrl(path, size);
-export const observeImage = (img) => performanceService.observeImage(img);
-export const batchRequest = (request, priority) => performanceService.batchRequest(request, priority);
-export const getCachedData = (key, fetcher, options) => performanceService.getCachedData(key, fetcher, options);
-export const getMetrics = () => performanceService.getMetrics();
-export const getReport = () => performanceService.getReport();
-export const cleanupPerformanceService = () => performanceService.cleanup(); 
+// Export singleton instance with lazy initialization
+export const performanceService = getPerformanceService();
+
+// Export convenience methods
+export const getOptimizedImageUrl = (path, size) => getPerformanceService().getOptimizedImageUrl(path, size);
+export const observeImage = (img) => getPerformanceService().observeImage(img);
+export const batchRequest = (request, priority) => getPerformanceService().batchRequest(request, priority);
+export const getCachedData = (key, fetcher, options) => getPerformanceService().getCachedData(key, fetcher, options);
+export const getMetrics = () => getPerformanceService().getMetrics();
+export const getReport = () => getPerformanceService().getReport(); 

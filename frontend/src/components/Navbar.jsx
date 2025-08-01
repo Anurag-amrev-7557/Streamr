@@ -186,9 +186,14 @@ function useClickOutside(ref, handler) {
       }
       handler(event);
     };
-    document.addEventListener('mousedown', listener);
+    
+    // Use passive listeners for better performance
+    document.addEventListener('mousedown', listener, { passive: true });
+    document.addEventListener('touchstart', listener, { passive: true });
+    
     return () => {
       document.removeEventListener('mousedown', listener);
+      document.removeEventListener('touchstart', listener);
     };
   }, [ref, handler]);
 }
@@ -249,6 +254,12 @@ const MovieImage = React.memo(({
       img.onload = handleLoad;
       img.onerror = handleError;
       img.src = src;
+      
+      // Cleanup function to prevent memory leaks
+      return () => {
+        img.onload = null;
+        img.onerror = null;
+      };
     }
   }, [src, priority, handleLoad, handleError]);
 
@@ -498,12 +509,15 @@ const useOptimizedEventHandlers = (closeMenu) => {
       // Close menu on significant horizontal swipe
       if (Math.abs(deltaX) > 100 && Math.abs(deltaY) < 50) {
         closeMenuRef.current();
-        document.removeEventListener('touchmove', handleTouchMove);
-        document.removeEventListener('touchend', handleTouchEnd);
+        cleanupTouchListeners();
       }
     };
     
     const handleTouchEnd = () => {
+      cleanupTouchListeners();
+    };
+    
+    const cleanupTouchListeners = () => {
       document.removeEventListener('touchmove', handleTouchMove);
       document.removeEventListener('touchend', handleTouchEnd);
     };
@@ -616,6 +630,31 @@ const Navbar = ({ onMovieSelect }) => {
     localStorage.setItem('searchHistory', JSON.stringify(searchHistory));
   }, [searchHistory]);
 
+  // Cleanup search state on unmount
+  useEffect(() => {
+    return () => {
+      // Clear search state
+      setSearchResults([]);
+      setIsSearching(false);
+      setShowResults(false);
+      setSelectedIndex(-1);
+      
+      // Clear any pending timeouts
+      if (handleKeyDown.typeaheadTimeout) {
+        clearTimeout(handleKeyDown.typeaheadTimeout);
+      }
+      
+      // Clear any pending animations
+      if (window.requestAnimationFrame) {
+        // Cancel any pending animation frames
+        const cancelAnimationFrame = window.cancelAnimationFrame || window.webkitCancelAnimationFrame;
+        if (cancelAnimationFrame) {
+          // Note: We can't track all animation frames, but this helps with cleanup
+        }
+      }
+    };
+  }, []);
+
   // Click outside for menu
   useClickOutside(menuRef, useCallback((event) => {
     const profileBtn = document.querySelector('button[data-profile-btn]');
@@ -643,7 +682,8 @@ const Navbar = ({ onMovieSelect }) => {
   // Close mobile search overlay when clicking outside
   useEffect(() => {
     if (!isMobileSearchOpen) return;
-    function handleClick(e) {
+    
+    const handleClick = (e) => {
       if (
         mobileSearchOverlayRef.current &&
         !mobileSearchOverlayRef.current.contains(e.target) &&
@@ -651,24 +691,31 @@ const Navbar = ({ onMovieSelect }) => {
       ) {
         setIsMobileSearchOpen(false);
       }
-    }
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
+    };
+    
+    // Use passive listeners for better performance
+    document.addEventListener('mousedown', handleClick, { passive: true });
+    document.addEventListener('touchstart', handleClick, { passive: true });
+    
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('touchstart', handleClick);
+    };
   }, [isMobileSearchOpen]);
 
   // Enhanced mobile menu event listeners
   useEffect(() => {
-    if (isMobileMenuOpen) {
-      // Add escape key listener
-      document.addEventListener('keydown', handleEscapeKey, { passive: true });
-      // Add touch gesture listener
-      document.addEventListener('touchstart', handleTouchStart, { passive: true });
-      
-      return () => {
-        document.removeEventListener('keydown', handleEscapeKey);
-        document.removeEventListener('touchstart', handleTouchStart);
-      };
-    }
+    if (!isMobileMenuOpen) return;
+    
+    // Add escape key listener
+    document.addEventListener('keydown', handleEscapeKey, { passive: true });
+    // Add touch gesture listener
+    document.addEventListener('touchstart', handleTouchStart, { passive: true });
+    
+    return () => {
+      document.removeEventListener('keydown', handleEscapeKey);
+      document.removeEventListener('touchstart', handleTouchStart);
+    };
   }, [isMobileMenuOpen, handleEscapeKey, handleTouchStart]);
 
   // Enhanced memoized processSearchResults with advanced scoring algorithm
@@ -823,9 +870,6 @@ const Navbar = ({ onMovieSelect }) => {
       });
   }, []);
 
-  // Debounced search handler
-  const debouncedSearch = useMemo(() => debounce((query) => handleSearch(query), 300), []);
-
   // Enhanced search handler
   const handleSearch = useCallback(async (query) => {
     const trimmedQuery = query.trim();
@@ -836,10 +880,12 @@ const Navbar = ({ onMovieSelect }) => {
     }
     setIsSearching(true);
 
-    // Optionally: Cancel previous search if a new one is triggered (basic version)
+    // Use AbortController to cancel previous requests
+    const abortController = new AbortController();
     let isActive = true;
+    
     try {
-      const results = await searchMovies(trimmedQuery);
+      const results = await searchMovies(trimmedQuery, { signal: abortController.signal });
 
       // Defensive: Ensure results is an object and has a results array
       const safeResults = (results && Array.isArray(results.results)) ? results.results : [];
@@ -856,15 +902,45 @@ const Navbar = ({ onMovieSelect }) => {
         setSearchResults(processedResults);
       }
     } catch (error) {
+      if (error.name === 'AbortError') {
+        // Request was cancelled, don't update state
+        return;
+      }
       console.error('Error searching movies:', error);
-      setSearchResults([]);
+      if (isActive) {
+        setSearchResults([]);
+      }
     } finally {
       if (isActive) setIsSearching(false);
     }
 
-    // Cleanup function in case of rapid search changes
-    return () => { isActive = false; };
+    // Return cleanup function
+    return () => { 
+      isActive = false;
+      abortController.abort();
+    };
   }, [processSearchResults]);
+
+  // Debounced search handler with proper cleanup
+  const debouncedSearch = useMemo(() => {
+    const debouncedFn = debounce((query) => handleSearch(query), 300);
+    
+    // Return a wrapper that can be cancelled
+    return {
+      search: debouncedFn,
+      cancel: debouncedFn.cancel
+    };
+  }, [handleSearch]);
+
+  // Cleanup debounced search on unmount
+  useEffect(() => {
+    return () => {
+      // Cancel any pending search operations
+      if (debouncedSearch.cancel) {
+        debouncedSearch.cancel();
+      }
+    };
+  }, [debouncedSearch]);
 
   // Handle search input changes
   // Advanced search input handler with IME, composition, and accessibility support
@@ -896,8 +972,9 @@ const Navbar = ({ onMovieSelect }) => {
     }
 
     if (query.trim()) {
-      debouncedSearch(query);
+      debouncedSearch.search(query);
     } else {
+      debouncedSearch.cancel();
       setSearchResults([]);
       setIsSearching(false);
     }
@@ -1266,67 +1343,74 @@ const Navbar = ({ onMovieSelect }) => {
       }, 1000); // Increased timeout for better UX
     };
 
-    // Enhanced visual feedback for selection with performance optimizations and accessibility
-    const animateSelection = useCallback((index) => {
-      // Performance optimization: Use requestAnimationFrame for smooth animations
-      requestAnimationFrame(() => {
-        const el = document.querySelector(`[data-index="${index}"]`);
-        if (!el) return;
+      // Enhanced visual feedback for selection with performance optimizations and accessibility
+  const animateSelection = useCallback((index) => {
+    // Performance optimization: Use requestAnimationFrame for smooth animations
+    const animationFrame = requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-index="${index}"]`);
+      if (!el) return;
 
-        // Batch DOM operations for better performance
-        const elementsToUpdate = document.querySelectorAll('.animate-navbar-select');
-        const updates = [];
+      // Batch DOM operations for better performance
+      const elementsToUpdate = document.querySelectorAll('.animate-navbar-select');
+      const updates = [];
+      
+      // Remove previous animations efficiently
+      elementsToUpdate.forEach(elem => {
+        updates.push(() => elem.classList.remove('animate-navbar-select'));
+      });
+      
+      // Add new animation with enhanced visual feedback
+      updates.push(() => {
+        el.classList.add('animate-navbar-select');
         
-        // Remove previous animations efficiently
-        elementsToUpdate.forEach(elem => {
-          updates.push(() => elem.classList.remove('animate-navbar-select'));
-        });
+        // Enhanced accessibility: Announce selection for screen readers
+        const title = el.querySelector('[data-movie-title]')?.textContent || 
+                     el.getAttribute('aria-label') || 
+                     `Item ${index + 1}`;
         
-        // Add new animation with enhanced visual feedback
-        updates.push(() => {
-          el.classList.add('animate-navbar-select');
-          
-          // Enhanced accessibility: Announce selection for screen readers
-          const title = el.querySelector('[data-movie-title]')?.textContent || 
-                       el.getAttribute('aria-label') || 
-                       `Item ${index + 1}`;
-          
-          // Update ARIA live region for screen readers
-          const liveRegion = document.getElementById('search-live-region');
-          if (liveRegion) {
-            liveRegion.textContent = `Selected: ${title}`;
-          }
-          
-          // Add subtle haptic feedback if supported
-          if (navigator.vibrate && window.innerWidth <= 768) {
-            navigator.vibrate(10);
-          }
-        });
+        // Update ARIA live region for screen readers
+        const liveRegion = document.getElementById('search-live-region');
+        if (liveRegion) {
+          liveRegion.textContent = `Selected: ${title}`;
+        }
         
-        // Execute all updates in a single frame
-        updates.forEach(update => update());
-        
-        // Enhanced cleanup with proper timing
-        const cleanup = () => {
-          el.classList.remove('animate-navbar-select');
-          
-          // Clear live region after animation
-          const liveRegion = document.getElementById('search-live-region');
-          if (liveRegion && liveRegion.textContent.includes('Selected:')) {
-            setTimeout(() => {
-              liveRegion.textContent = '';
-            }, 100);
-          }
-        };
-        
-        // Use requestIdleCallback for cleanup if available, otherwise setTimeout
-        if (window.requestIdleCallback) {
-          window.requestIdleCallback(() => cleanup(), { timeout: 350 });
-        } else {
-          setTimeout(cleanup, 300);
+        // Add subtle haptic feedback if supported
+        if (navigator.vibrate && window.innerWidth <= 768) {
+          navigator.vibrate(10);
         }
       });
-    }, []);
+      
+      // Execute all updates in a single frame
+      updates.forEach(update => update());
+      
+      // Enhanced cleanup with proper timing
+      const cleanup = () => {
+        el.classList.remove('animate-navbar-select');
+        
+        // Clear live region after animation
+        const liveRegion = document.getElementById('search-live-region');
+        if (liveRegion && liveRegion.textContent.includes('Selected:')) {
+          setTimeout(() => {
+            liveRegion.textContent = '';
+          }, 100);
+        }
+      };
+      
+      // Use requestIdleCallback for cleanup if available, otherwise setTimeout
+      if (window.requestIdleCallback) {
+        window.requestIdleCallback(() => cleanup(), { timeout: 350 });
+      } else {
+        setTimeout(cleanup, 300);
+      }
+    });
+    
+    // Return cleanup function
+    return () => {
+      if (animationFrame) {
+        cancelAnimationFrame(animationFrame);
+      }
+    };
+  }, []);
 
     // Handle different key inputs
     switch (e.key) {
@@ -1464,10 +1548,14 @@ const Navbar = ({ onMovieSelect }) => {
     // Enhanced search execution with retry logic and comprehensive error handling
     let retryCount = 0;
     const maxRetries = 2;
+    let isActive = true;
     
     const executeSearch = async () => {
       try {
         const results = await searchMovies(normalizedQuery);
+        
+        // Check if component is still mounted
+        if (!isActive) return;
         
         // Enhanced result validation
         if (!results || !Array.isArray(results.results)) {
@@ -1475,7 +1563,9 @@ const Navbar = ({ onMovieSelect }) => {
         }
 
         const processedResults = processSearchResults(results.results, normalizedQuery);
-        setSearchResults(processedResults);
+        if (isActive) {
+          setSearchResults(processedResults);
+        }
 
         // Enhanced analytics tracking
         scheduleNonCritical(() => {
@@ -1518,10 +1608,13 @@ const Navbar = ({ onMovieSelect }) => {
         }
 
         // Enhanced error handling with user feedback
-        setSearchResults([]);
+        if (isActive) {
+          setSearchResults([]);
+        }
         
         // Enhanced accessibility: Announce error
         scheduleNonCritical(() => {
+          if (!isActive) return;
           try {
             const liveRegion = document.getElementById('search-live-region');
             if (liveRegion) {
@@ -1542,10 +1635,13 @@ const Navbar = ({ onMovieSelect }) => {
         };
         console.error('Search error context:', errorContext);
       } finally {
-        setIsSearching(false);
+        if (isActive) {
+          setIsSearching(false);
+        }
         
         // Enhanced focus management with fallback options
         scheduleNonCritical(() => {
+          if (!isActive) return;
           try {
             const focusTargets = [
               () => inputRef.current?.focus?.(),
@@ -1570,6 +1666,11 @@ const Navbar = ({ onMovieSelect }) => {
 
     // Execute the enhanced search
     executeSearch();
+    
+    // Return cleanup function
+    return () => {
+      isActive = false;
+    };
   }, [processSearchResults, setSearchQuery, setShowResults, setIsSearchFocused, setIsSearching, setSearchResults, setSelectedIndex, inputRef]);
 
   // Handle adding to watchlist

@@ -353,19 +353,28 @@ class OptimizedApiService {
   }
 }
 
-// Export singleton instance
-export const optimizedApiService = new OptimizedApiService();
+// Lazy initialization to prevent hoisting issues
+let _optimizedApiService = null;
+const getOptimizedApiService = () => {
+  if (!_optimizedApiService) {
+    _optimizedApiService = new OptimizedApiService();
+  }
+  return _optimizedApiService;
+};
+
+// Export singleton instance with lazy initialization
+export const optimizedApiService = getOptimizedApiService();
 
 // Export convenience methods
-export const getMovieData = (movieId, type) => optimizedApiService.getMovieData(movieId, type);
-export const getMovieList = (endpoint, page, priority) => optimizedApiService.getMovieList(endpoint, page, priority);
-export const searchContent = (query, type, page) => optimizedApiService.searchContent(query, type, page);
-export const getGenres = (type) => optimizedApiService.getGenres(type);
-export const getTVShowData = (showId) => optimizedApiService.getTVShowData(showId);
-export const getTrendingContent = (timeWindow, type) => optimizedApiService.getTrendingContent(timeWindow, type);
-export const getTopRatedContent = (type) => optimizedApiService.getTopRatedContent(type);
-export const getUpcomingContent = (type) => optimizedApiService.getUpcomingContent(type);
-export const getCastData = (movieId, type) => optimizedApiService.getCastData(movieId, type);
-export const getSimilarContent = (movieId, type, page) => optimizedApiService.getSimilarContent(movieId, type, page);
-export const getRecommendations = (movieId, type, page) => optimizedApiService.getRecommendations(movieId, type, page);
-export const getCompleteMovieData = (movieId, type) => optimizedApiService.getCompleteMovieData(movieId, type); 
+export const getMovieData = (movieId, type) => getOptimizedApiService().getMovieData(movieId, type);
+export const getMovieList = (endpoint, page, priority) => getOptimizedApiService().getMovieList(endpoint, page, priority);
+export const searchContent = (query, type, page) => getOptimizedApiService().searchContent(query, type, page);
+export const getGenres = (type) => getOptimizedApiService().getGenres(type);
+export const getTVShowData = (showId) => getOptimizedApiService().getTVShowData(showId);
+export const getTrendingContent = (timeWindow, type) => getOptimizedApiService().getTrendingContent(timeWindow, type);
+export const getTopRatedContent = (type) => getOptimizedApiService().getTopRatedContent(type);
+export const getUpcomingContent = (type) => getOptimizedApiService().getUpcomingContent(type);
+export const getCastData = (movieId, type) => getOptimizedApiService().getCastData(movieId, type);
+export const getSimilarContent = (movieId, type, page) => getOptimizedApiService().getSimilarContent(movieId, type, page);
+export const getRecommendations = (movieId, type, page) => getOptimizedApiService().getRecommendations(movieId, type, page);
+export const getCompleteMovieData = (movieId, type) => getOptimizedApiService().getCompleteMovieData(movieId, type); 

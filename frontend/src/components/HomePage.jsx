@@ -1753,7 +1753,7 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
           {isViewAllMode ? (
             <div 
               ref={scrollContainerRef}
-              className={`grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 sm:gap-6 max-h-[600px] overflow-y-auto overflow-x-hidden w-full sm:px-4 scrollbar-hide justify-items-center`}
+                className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 sm:gap-6 max-h-[600px] overflow-y-auto overflow-x-hidden w-full sm:px-4 scrollbar-hide justify-items-center`}
               style={{
                 scrollbarWidth: 'thin',
                 scrollbarColor: isScrolling ? 'rgba(255, 255, 255, 0.2) transparent' : 'rgba(255, 255, 255, 0.1) transparent',

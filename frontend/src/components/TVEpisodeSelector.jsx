@@ -393,7 +393,7 @@ const TVEpisodeSelector = ({
                     <div>
                       {viewMode === 'grid' ? (
                         // Grid View
-                        <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-96 overflow-y-auto">
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-96 overflow-y-auto">
                           {paginatedEpisodes.map((episode) => (
                             <button
                               key={episode.id}

@@ -1109,7 +1109,7 @@ const SeriesPage = () => {
                   staggerChildren: 0.02,
                   delayChildren: 0.05
                 }}
-                className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 3xl:grid-cols-10 gap-6"
+                className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 3xl:grid-cols-10 gap-6"
               >
                 {getDisplaySeries().map((s, index) => {
                   // Ensure we have a valid series object

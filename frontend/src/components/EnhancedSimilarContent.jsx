@@ -114,7 +114,7 @@ const EnhancedSimilarCard = React.memo(({ item, onClick, isMobile, showRelevance
       whileTap={{ scale: 0.95 }}
       transition={{ type: "spring", stiffness: 300, damping: 20 }}
     >
-      <div className={`${isMobile ? 'aspect-[3/4]' : 'aspect-[2/3]'} rounded-xl overflow-hidden bg-gradient-to-br from-gray-800 to-gray-900 relative shadow-lg border border-white/5 hover:border-white/10 transition-all duration-300`}>
+      <div className="aspect-[2/3] rounded-xl overflow-hidden bg-gradient-to-br from-gray-800 to-gray-900 relative shadow-lg border border-white/5 hover:border-white/10 transition-all duration-300">
         {item.poster_path ? (
           <img 
             src={`https://image.tmdb.org/t/p/w500${item.poster_path}`} 
@@ -613,8 +613,8 @@ const EnhancedSimilarContent = ({
         )}
         <div className={`grid gap-4 ${
           isMobile 
-            ? 'grid-cols-2 gap-3' 
-            : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
+                          ? 'grid-cols-2 gap-3'
+              : 'grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
         }`}>
           {Array.from({ length: isMobile ? 6 : 8 }).map((_, i) => (
                           <motion.div 
@@ -625,7 +625,7 @@ const EnhancedSimilarContent = ({
                 className="group relative bg-gradient-to-br from-white/[0.08] via-white/[0.04] to-white/[0.02] rounded-xl overflow-hidden border border-white/[0.08] shadow-lg backdrop-blur-sm"
               >
                 {/* Movie Poster Skeleton - Full Card */}
-                <div className={`${isMobile ? 'aspect-[3/4]' : 'aspect-[2/3]'} bg-gradient-to-br from-gray-800 to-gray-700 animate-pulse rounded-xl`}></div>
+                <div className="aspect-[2/3] bg-gradient-to-br from-gray-800 to-gray-700 animate-pulse rounded-xl"></div>
               </motion.div>
           ))}
         </div>
@@ -736,8 +736,8 @@ const EnhancedSimilarContent = ({
       <motion.div 
         className={`grid gap-4 ${
           isMobile 
-            ? 'grid-cols-1 xs:grid-cols-2 gap-3' 
-            : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
+            ? 'grid-cols-2 gap-3'
+            : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 3xl:grid-cols-10 gap-4'
         }`}
         layout
       >

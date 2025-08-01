@@ -3,40 +3,6 @@ export const TMDB_API_KEY = import.meta.env.VITE_TMDB_API_KEY;
 export const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 export const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p';
 
-// Cache for non-existent movie IDs to prevent repeated requests
-const nonExistentMovieCache = new Set();
-const NON_EXISTENT_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
-
-// Add specific known non-existent movie IDs to prevent 404 errors
-const KNOWN_NON_EXISTENT_MOVIES = [
-  'movie_221725', // This specific movie ID that's causing 404 errors
-  'movie_211050', // Another known non-existent movie ID
-  'movie_109974', // Additional known non-existent movie ID
-  'movie_206992', // Another known non-existent movie ID
-  'movie_221725', // Duplicate to ensure it's covered
-  'movie_211050'  // Duplicate to ensure it's covered
-];
-
-// Initialize cache with known non-existent movies
-KNOWN_NON_EXISTENT_MOVIES.forEach(id => {
-  nonExistentMovieCache.add(id);
-});
-
-// Clear non-existent movie cache periodically to prevent memory leaks
-setInterval(() => {
-  if (nonExistentMovieCache.size > 1000) {
-    console.debug(`🧹 Clearing non-existent movie cache (${nonExistentMovieCache.size} entries)`);
-    nonExistentMovieCache.clear();
-    // Re-add known non-existent movies after clearing
-    KNOWN_NON_EXISTENT_MOVIES.forEach(id => {
-      nonExistentMovieCache.add(id);
-    });
-  }
-}, NON_EXISTENT_CACHE_DURATION);
-
-// Import error handling utilities
-import { classifyError, logError, retryWithBackoff } from './errorHandlingService';
-
 // Enhanced network error handling constants
 const NETWORK_ERROR_TYPES = {
   CONNECTION_RESET: 'CONNECTION_RESET',
@@ -51,12 +17,48 @@ const NETWORK_ERROR_TYPES = {
 
 // Enhanced retry configuration
 const RETRY_CONFIG = {
-  MAX_RETRIES: 5, // Increased from 3 to 5 for better reliability
-  BASE_DELAY: 1000, // Increased from 500 to 1000ms for better network recovery
-  MAX_DELAY: 15000, // Increased from 10000 to 15000ms
-  JITTER_FACTOR: 0.3, // Increased jitter for better retry distribution
-  BACKOFF_MULTIPLIER: 2, // Increased from 1.5 to 2 for better exponential backoff
-  TIMEOUT: 20000 // Increased from 15000 to 20000ms for better network tolerance
+  MAX_RETRIES: 3, // Reduced from 5 to 3 for faster failure
+  BASE_DELAY: 500, // Reduced from 1000 to 500ms
+  MAX_DELAY: 10000, // Reduced from 30000 to 10000ms
+  JITTER_FACTOR: 0.2, // Reduced jitter for more predictable timing
+  BACKOFF_MULTIPLIER: 1.5, // Reduced from 2 to 1.5 for faster retries
+  TIMEOUT: 15000 // Reduced from 30000 to 15000ms
+};
+
+// Shared fetchWithRetry function to avoid hoisting issues
+const sharedFetchWithRetry = async (url, attempt = 1, customTimeout = RETRY_CONFIG.TIMEOUT) => {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), customTimeout);
+    
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    return response;
+  } catch (error) {
+    if (attempt >= RETRY_CONFIG.MAX_RETRIES) {
+      throw error;
+    }
+    
+    const delay = Math.min(
+      RETRY_CONFIG.BASE_DELAY * Math.pow(RETRY_CONFIG.BACKOFF_MULTIPLIER, attempt - 1),
+      RETRY_CONFIG.MAX_DELAY
+    );
+    
+    await new Promise(resolve => setTimeout(resolve, delay));
+    return sharedFetchWithRetry(url, attempt + 1, customTimeout);
+  }
 };
 
 // Validate API key configuration
@@ -177,7 +179,7 @@ export const classifyNetworkError = (error) => {
 };
 
 // Optimized retry delay calculation
-const calculateRetryDelayEnhanced = (attempt, errorType = 'unknown') => {
+export const calculateRetryDelayEnhanced = (attempt, errorType = 'unknown') => {
   const baseDelay = RETRY_CONFIG.BASE_DELAY;
   const maxDelay = RETRY_CONFIG.MAX_DELAY;
   const backoffMultiplier = RETRY_CONFIG.BACKOFF_MULTIPLIER;
@@ -423,7 +425,7 @@ export const fetchWithCache = async (url, options = {}, type = 'LIST') => {
   const MAX_RETRIES = 3;
   const INITIAL_RETRY_DELAY = 1000;
   const MAX_RETRY_DELAY = 8000;
-  const REQUEST_TIMEOUT = 25000; // Increased from 15000 to 25000ms for better network tolerance
+  const REQUEST_TIMEOUT = 15000;
 
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -524,16 +526,7 @@ export const fetchWithCache = async (url, options = {}, type = 'LIST') => {
         const networkError = classifyNetworkError(error);
         
         if (response.status === 404) {
-          // Extract movie ID from URL for caching
-          const movieIdMatch = url.match(/\/movie\/(\d+)/);
-          if (movieIdMatch) {
-            const movieId = movieIdMatch[1];
-            addToNonExistentCache(movieId, 'movie');
-            // Reduced logging to prevent console spam
-            // console.debug(`🔍 Movie ${movieId} not found, added to non-existent cache`);
-          } else {
-            // console.debug(`🔍 Resource not found: ${url}`);
-          }
+          console.debug(`🔍 Resource not found: ${url}`);
           return null;
         }
         
@@ -1040,8 +1033,7 @@ export const getMovieDetails = async (id, type = 'movie') => {
   try {
     // Check if this movie ID is known to not exist
     if (nonExistentMovieCache.has(`${type}_${id}`)) {
-      // Reduced logging to prevent console spam
-      // console.debug(`🎯 Skipping request for non-existent ${type} ${id}`);
+      console.debug(`🎯 Skipping request for non-existent ${type} ${id}`);
       return null;
     }
 
@@ -1053,16 +1045,8 @@ export const getMovieDetails = async (id, type = 'movie') => {
     if (!data) {
       // Cache this movie ID as non-existent to prevent future requests
       nonExistentMovieCache.add(`${type}_${id}`);
-      // Reduced logging to prevent console spam
-      // console.debug(`🔍 Caching non-existent ${type} ${id}`);
+      console.debug(`🔍 Caching non-existent ${type} ${id}`);
       return null; // Not found
-    }
-
-    // Additional validation to ensure we have valid data
-    if (!data.id || (!data.title && !data.name)) {
-      console.warn(`Invalid data received for ${type} ${id}:`, data);
-      nonExistentMovieCache.add(`${type}_${id}`);
-      return null;
     }
 
     const baseData = type === 'movie' ? transformMovieData(data) : transformTVData(data);
@@ -1180,11 +1164,10 @@ export const getSimilarMovies = async (id, type = 'movie', page = 1, options = {
   if (!id) return null;
   
   // Check if this movie ID is known to not exist
-      if (nonExistentMovieCache.has(`${type}_${id}`)) {
-      // Reduced logging to prevent console spam
-      // console.debug(`🎯 Skipping similar movies request for non-existent ${type} ${id}`);
-      return null;
-    }
+  if (nonExistentMovieCache.has(`${type}_${id}`)) {
+    console.debug(`🎯 Skipping similar movies request for non-existent ${type} ${id}`);
+    return null;
+  }
   
   try {
     // For the initial similar movies fetch, use a more focused approach
@@ -1201,8 +1184,7 @@ export const getSimilarMovies = async (id, type = 'movie', page = 1, options = {
     // If both requests return null, cache this movie as non-existent
     if (!recommendationsData && !similarData) {
       nonExistentMovieCache.add(`${type}_${id}`);
-      // Reduced logging to prevent console spam
-      // console.debug(`🔍 Caching non-existent ${type} ${id} (similar movies)`);
+      console.debug(`🔍 Caching non-existent ${type} ${id} (similar movies)`);
       return null;
     }
     
@@ -1263,8 +1245,7 @@ export const getSimilarMovies = async (id, type = 'movie', page = 1, options = {
     if (!data) {
       // Cache this movie ID as non-existent to prevent future requests
       nonExistentMovieCache.add(`${type}_${id}`);
-      // Reduced logging to prevent console spam
-      // console.debug(`🔍 Caching non-existent ${type} ${id} (fallback)`);
+      console.debug(`🔍 Caching non-existent ${type} ${id} (fallback)`);
       return null; // Not found
     }
     return data;
@@ -1273,28 +1254,15 @@ export const getSimilarMovies = async (id, type = 'movie', page = 1, options = {
 
 // Optimized getTrendingMovies function with better retry logic
 export const getTrendingMovies = async (page = 1) => {
-  const MAX_RETRIES = 5; // Increased from 3 to 5
-  const INITIAL_RETRY_DELAY = 2000; // Increased from 1000 to 2000ms
-  const MAX_RETRY_DELAY = 10000; // Increased from 5000 to 10000ms
+  const MAX_RETRIES = 3;
+  const INITIAL_RETRY_DELAY = 1000;
+  const MAX_RETRY_DELAY = 5000;
 
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
   const fetchWithRetry = async (url, attempt = 1) => {
     try {
-      // Add timeout to the fetch request
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 second timeout
-      
-      const response = await fetch(url, {
-        signal: controller.signal,
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      clearTimeout(timeoutId);
-      
+      const response = await fetch(url);
       if (!response.ok) {
         if (response.status === 503 && attempt < MAX_RETRIES) {
           const delay = Math.min(INITIAL_RETRY_DELAY * Math.pow(2, attempt - 1), MAX_RETRY_DELAY);
@@ -2968,7 +2936,7 @@ export const discoverMovies = async ({
   const fetchWithRetry = async (url, attempt = 1) => {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
 
       const response = await fetch(url, {
         signal: controller.signal,
@@ -3188,7 +3156,7 @@ export const searchMovies = async (query, page = 1, options = {}) => {
   const sleep = (ms, attempt = 1) => {
     const jitter = Math.random() * 0.1 * ms; // 10% jitter
     const actualDelay = ms + jitter;
-    // Reduced console output to prevent spam
+    console.debug(`Sleeping for ${actualDelay.toFixed(0)}ms (attempt ${attempt})...`);
     return new Promise(resolve => setTimeout(resolve, actualDelay));
   };
 
@@ -3204,7 +3172,7 @@ export const searchMovies = async (query, page = 1, options = {}) => {
         console.warn(`Request timeout after ${customTimeout}ms: ${url}`);
       }, customTimeout);
 
-      // console.debug(`Fetching URL (attempt ${attempt}): ${url}`);
+      console.debug(`Fetching URL (attempt ${attempt}): ${url}`);
       
       const headers = {
         'Accept': 'application/json',
@@ -3221,7 +3189,7 @@ export const searchMovies = async (query, page = 1, options = {}) => {
 
       clearTimeout(timeoutId);
       const duration = Date.now() - startTime;
-      // console.debug(`Request completed in ${duration}ms with status ${response.status}`);
+      console.debug(`Request completed in ${duration}ms with status ${response.status}`);
 
       // Enhanced status code handling with detailed error categorization
       if (!response.ok) {
@@ -5259,14 +5227,38 @@ export const getTVSeasons = async (tvId) => {
   }
 };
 
-// Cache functions moved to top of file - removing duplicate definition
+// Cache for non-existent movie IDs to prevent repeated requests
+const nonExistentMovieCache = new Set();
+const NON_EXISTENT_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+
+// Add specific known non-existent movie IDs to prevent 404 errors
+const KNOWN_NON_EXISTENT_MOVIES = [
+  'movie_109974', // This specific movie ID that's causing 404 errors
+  'movie_206992'  // Another known non-existent movie ID
+];
+
+// Initialize cache with known non-existent movies
+KNOWN_NON_EXISTENT_MOVIES.forEach(id => {
+  nonExistentMovieCache.add(id);
+});
+
+// Clear non-existent movie cache periodically to prevent memory leaks
+setInterval(() => {
+  if (nonExistentMovieCache.size > 1000) {
+    console.debug(`🧹 Clearing non-existent movie cache (${nonExistentMovieCache.size} entries)`);
+    nonExistentMovieCache.clear();
+    // Re-add known non-existent movies after clearing
+    KNOWN_NON_EXISTENT_MOVIES.forEach(id => {
+      nonExistentMovieCache.add(id);
+    });
+  }
+}, NON_EXISTENT_CACHE_DURATION);
 
 // Function to manually add movie IDs to the non-existent cache
 export const addToNonExistentCache = (id, type = 'movie') => {
   const cacheKey = `${type}_${id}`;
   nonExistentMovieCache.add(cacheKey);
-  // Reduced logging to prevent console spam
-  // console.debug(`🔍 Manually added ${type} ${id} to non-existent cache`);
+  console.debug(`🔍 Manually added ${type} ${id} to non-existent cache`);
   return cacheKey;
 };
 
@@ -5290,8 +5282,7 @@ export const checkMovieExists = async (id, type = 'movie') => {
     
     if (response.status === 404) {
       nonExistentMovieCache.add(`${type}_${id}`);
-      // Reduced logging to prevent console spam
-      // console.debug(`🔍 Caching non-existent ${type} ${id} (checkMovieExists)`);
+      console.debug(`🔍 Caching non-existent ${type} ${id} (checkMovieExists)`);
       return false;
     }
     
