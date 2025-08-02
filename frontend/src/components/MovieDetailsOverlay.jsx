@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, Suspense, lazy } from 'react';
+import React, { useState, useRef, useEffect, useCallback, Suspense, lazy, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import { getMovieDetails, getMovieCredits, getMovieVideos, getSimilarMovies, getTVSeason, getTVSeasons } from '../services/tmdbService';
@@ -27,9 +27,11 @@ const CustomDropdown = React.memo(({
         setIsOpen(false);
       }
     };
-
+    
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, []);
 
   const selectedOption = options.find(option => option.value === value) || options[0];
@@ -200,28 +202,16 @@ class RealTimeUpdateManager {
       }
     }
   }
+
+  // Cleanup method to prevent memory leaks
+  cleanup() {
+    this.stopUpdates();
+    this.subscribers.clear();
+  }
 }
 
 // Global real-time update manager
 const realTimeManager = new RealTimeUpdateManager();
-
-// Hide scrollbars globally for MovieDetailsOverlay
-const style = document.createElement('style');
-style.innerHTML = `
-  .hide-scrollbar {
-    scrollbar-width: none !important;
-    -ms-overflow-style: none !important;
-  }
-  .hide-scrollbar::-webkit-scrollbar {
-    display: none !important;
-    width: 0 !important;
-    background: transparent !important;
-  }
-`;
-if (typeof window !== 'undefined' && !document.getElementById('movie-details-overlay-scrollbar-style')) {
-  style.id = 'movie-details-overlay-scrollbar-style';
-  document.head.appendChild(style);
-}
 
 const NetworkDisplay = ({ networks, network }) => {
   const getNetworkNames = () => {
@@ -248,63 +238,63 @@ const NetworkDisplay = ({ networks, network }) => {
   );
 };
 
-// Enhanced motion variants with improved performance and visual appeal
-const containerVariants = {
-  hidden: { 
-    opacity: 0,
-    scale: 0.98,
-  },
-  visible: {
-    opacity: 1,
-    scale: 1,
-    transition: {
-      staggerChildren: 0.03,
-      type: 'spring',
-      stiffness: 300,
-      damping: 25,
-      duration: 0.15,
-      delay: 0.05,
-      ease: [0.25, 0.46, 0.45, 0.94], // Custom easing for smoother animation
+  // Enhanced motion variants with improved performance and visual appeal
+  const containerVariants = {
+    hidden: { 
+      opacity: 0,
+      scale: 0.98,
     },
-  },
-  exit: {
-    opacity: 0,
-    scale: 0.98,
-    transition: {
-      duration: 0.2,
-      ease: [0.25, 0.46, 0.45, 0.94],
+    visible: {
+      opacity: 1,
+      scale: 1,
+      transition: {
+        staggerChildren: 0.02,
+        type: 'spring',
+        stiffness: 400,
+        damping: 30,
+        duration: 0.12,
+        delay: 0.03,
+        ease: [0.25, 0.46, 0.45, 0.94], // Custom easing for smoother animation
+      },
     },
-  },
-};
+    exit: {
+      opacity: 0,
+      scale: 0.98,
+      transition: {
+        duration: 0.15,
+        ease: [0.25, 0.46, 0.45, 0.94],
+      },
+    },
+  };
 
-const itemVariants = {
-  hidden: { 
-    y: 15, 
-    opacity: 0,
-    scale: 0.95,
-  },
-  visible: {
-    y: 0,
-    opacity: 1,
-    scale: 1,
-    transition: {
-      duration: 0.2,
-      type: 'spring',
-      stiffness: 300,
-      damping: 25,
-      ease: [0.25, 0.46, 0.45, 0.94],
+  const itemVariants = {
+    hidden: { 
+      y: 10, 
+      opacity: 0,
+      scale: 0.98,
     },
-  },
-  exit: {
-    y: -10,
-    opacity: 0,
-    scale: 0.95,
-    transition: {
-      duration: 0.15,
-      ease: [0.25, 0.46, 0.45, 0.94],
+    visible: {
+      y: 0,
+      opacity: 1,
+      scale: 1,
+      transition: {
+        duration: 0.15,
+        type: 'spring',
+        stiffness: 400,
+        damping: 30,
+        ease: [0.25, 0.46, 0.45, 0.94],
+      },
     },
-  },
-};
+    exit: {
+      y: -8,
+      opacity: 0,
+      scale: 0.98,
+      transition: {
+        duration: 0.12,
+        ease: [0.25, 0.46, 0.45, 0.94],
+      },
+    },
+  };
 
 // Additional variants for different animation types
 const fadeInVariants = {
@@ -341,15 +331,24 @@ const CastCard = React.memo(function CastCard({ person }) {
   return (
     <div className="text-center group">
       <div className="relative w-24 h-24 mx-auto mb-3">
-        <div className="rounded-full overflow-hidden w-full h-full transition-all duration-300 transform group-hover:scale-110 shadow-lg">
-          {person.image ? (
-            <img src={person.image} alt={person.name} className="w-full h-full object-cover will-change-transform" loading="lazy" style={{ backfaceVisibility: 'hidden' }} />
-          ) : (
-            <div className="w-full h-full bg-gradient-to-br from-white/5 to-transparent flex items-center justify-center">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white/30" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
-            </div>
-          )}
-        </div>
+                                <div className="rounded-full overflow-hidden w-full h-full transition-all duration-300 transform group-hover:scale-110 shadow-lg will-change-transform">
+                          {person.image ? (
+                            <img 
+                              src={person.image} 
+                              alt={person.name} 
+                              className="w-full h-full object-cover will-change-transform" 
+                              loading="lazy" 
+                              style={{ backfaceVisibility: 'hidden' }}
+                              onError={(e) => {
+                                console.warn('Failed to load cast image:', e.target.src);
+                              }}
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-gradient-to-br from-white/5 to-transparent flex items-center justify-center">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white/30" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                            </div>
+                          )}
+                        </div>
         <div className="absolute inset-0 rounded-full ring-2 ring-white/10 ring-inset opacity-50 group-hover:opacity-100 transition-opacity duration-300"></div>
       </div>
       <h4 className="text-white font-medium text-sm truncate transition-colors group-hover:text-white">{person.name}</h4>
@@ -373,7 +372,16 @@ const SimilarMovieCard = React.memo(function SimilarMovieCard({ similar, onClick
     <div className="group cursor-pointer" onClick={() => onClick(similar)}>
       <div className="aspect-[2/3] rounded-lg overflow-hidden bg-gray-800 relative shadow-lg">
         {similar.poster_path ? (
-          <img src={`https://image.tmdb.org/t/p/w500${similar.poster_path}`} alt={displayTitle} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 will-change-transform" style={{ backfaceVisibility: 'hidden' }} loading="lazy"/>
+          <img 
+            src={`https://image.tmdb.org/t/p/w500${similar.poster_path}`} 
+            alt={displayTitle} 
+            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 will-change-transform transform-gpu" 
+            style={{ backfaceVisibility: 'hidden' }} 
+            loading="lazy"
+            onError={(e) => {
+              console.warn('Failed to load similar movie poster:', e.target.src);
+            }}
+          />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-gray-400">
             <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
@@ -438,7 +446,10 @@ function useIsMobile() {
     window.addEventListener('resize', handleResize, { passive: true });
     
     return () => {
-      clearTimeout(timeoutId);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
       window.removeEventListener('resize', handleResize);
     };
   }, []);
@@ -476,16 +487,231 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
   const handleShowMoreSimilar = useCallback(() => setSimilarLimit(lim => lim + 20), []);
   // Add state to control how many rows of cast are shown
   const [castRowsShown, setCastRowsShown] = useState(1);
+
+  // Hide scrollbars globally for MovieDetailsOverlay
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    
+    // Check if style already exists to prevent duplicates
+    if (document.getElementById('movie-details-overlay-scrollbar-style')) return;
+    
+    const style = document.createElement('style');
+    style.id = 'movie-details-overlay-scrollbar-style';
+    style.innerHTML = `
+      .hide-scrollbar {
+        scrollbar-width: none !important;
+        -ms-overflow-style: none !important;
+      }
+      .hide-scrollbar::-webkit-scrollbar {
+        display: none !important;
+        width: 0 !important;
+        background: transparent !important;
+      }
+    `;
+    document.head.appendChild(style);
+    
+    // Cleanup function to remove style when component unmounts
+    return () => {
+      const existingStyle = document.getElementById('movie-details-overlay-scrollbar-style');
+      if (existingStyle && existingStyle.parentNode) {
+        existingStyle.parentNode.removeChild(existingStyle);
+      }
+    };
+  }, []);
+
+  // Enhanced motion variants with improved performance and visual appeal
+  const containerVariants = useMemo(() => ({
+    hidden: { 
+      opacity: 0,
+      scale: 0.98,
+    },
+    visible: {
+      opacity: 1,
+      scale: 1,
+      transition: {
+        staggerChildren: 0.02,
+        type: 'spring',
+        stiffness: 400,
+        damping: 30,
+        duration: 0.12,
+        delay: 0.03,
+        ease: [0.25, 0.46, 0.45, 0.94], // Custom easing for smoother animation
+      },
+    },
+    exit: {
+      opacity: 0,
+      scale: 0.98,
+      transition: {
+        duration: 0.15,
+        ease: [0.25, 0.46, 0.45, 0.94],
+      },
+    },
+  }), []);
+
+  const itemVariants = useMemo(() => ({
+    hidden: { 
+      y: 10, 
+      opacity: 0,
+      scale: 0.98,
+    },
+    visible: {
+      y: 0,
+      opacity: 1,
+      scale: 1,
+      transition: {
+        duration: 0.15,
+        type: 'spring',
+        stiffness: 400,
+        damping: 30,
+        ease: [0.25, 0.46, 0.45, 0.94],
+      },
+    },
+    exit: {
+      y: -8,
+      opacity: 0,
+      scale: 0.98,
+      transition: {
+        duration: 0.12,
+        ease: [0.25, 0.46, 0.45, 0.94],
+      },
+    },
+  }), []);
+
+  // Additional variants for different animation types
+  const fadeInVariants = useMemo(() => ({
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: {
+        duration: 0.3,
+        ease: [0.25, 0.46, 0.45, 0.94],
+      },
+    },
+  }), []);
+
+  const slideUpVariants = useMemo(() => ({
+    hidden: { 
+      y: 30, 
+      opacity: 0 
+    },
+    visible: {
+      y: 0,
+      opacity: 1,
+      transition: {
+        duration: 0.4,
+        ease: [0.25, 0.46, 0.45, 0.94],
+      },
+    },
+  }), []);
+
+  // Enhanced utility animations with spring physics and scroll-based triggers
+  const fadeInMotionProps = useMemo(() => ({
+    initial: { opacity: 0, y: 15 },
+    animate: { opacity: 1, y: 0 },
+    transition: { 
+      duration: 0.3, 
+      ease: [0.25, 0.46, 0.45, 0.94],
+      type: 'spring',
+      stiffness: 400,
+      damping: 30
+    },
+  }), []);
+
+  const slideUpMotionProps = useMemo(() => ({
+    initial: { y: 30, opacity: 0 },
+    animate: { y: 0, opacity: 1 },
+    transition: {
+      duration: 0.25,
+      ease: [0.25, 0.46, 0.45, 0.94],
+      type: 'spring',
+      stiffness: 500,
+      damping: 35
+    },
+  }), []);
+
+  // Parallax scroll effect for background elements
+  const parallaxVariants = useMemo(() => ({
+    initial: { y: 0 },
+    animate: (custom) => ({
+      y: custom * scrollY * 0.2,
+      transition: {
+        duration: 0.05,
+        ease: "linear"
+      }
+    })
+  }), [scrollY]);
+
+  // Stagger animation for list items
+  const staggerContainerVariants = useMemo(() => ({
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.03,
+        delayChildren: 0.05,
+        type: 'spring',
+        stiffness: 400,
+        damping: 30
+      }
+    }
+  }), []);
+
+  const staggerItemVariants = useMemo(() => ({
+    hidden: { opacity: 0, y: 15, scale: 0.98 },
+    visible: {
+      opacity: 1,
+      y: 0,
+      scale: 1,
+      transition: {
+        duration: 0.25,
+        ease: [0.25, 0.46, 0.45, 0.94]
+      }
+    }
+  }), []);
+
+  // Memoize writers, directors, and production companies from credits
+  const writers = React.useMemo(() => {
+    if (!credits?.crew) return [];
+    return credits.crew.filter(
+      (person) => person.job === 'Writer' || person.job === 'Screenplay' || person.job === 'Author'
+    );
+  }, [credits]);
+  
+  const directors = React.useMemo(() => {
+    if (!credits?.crew) return [];
+    return credits.crew.filter((person) => person.job === 'Director');
+  }, [credits]);
+  
+  const productionCompanies = React.useMemo(() => {
+    if (!movieDetails?.production_companies) return [];
+    return movieDetails.production_companies;
+  }, [movieDetails]);
+
+  // Memoize spoken languages
+  const spokenLanguages = React.useMemo(() => {
+    if (!movieDetails?.spoken_languages) return [];
+    return movieDetails.spoken_languages;
+  }, [movieDetails]);
+
+  // Memoize videos (trailers, teasers, etc.)
+  const videoList = React.useMemo(() => {
+    if (!videos?.results) return [];
+    return videos.results.filter(
+      (v) => v.site === 'YouTube' && (v.type === 'Trailer' || v.type === 'Teaser')
+    );
+  }, [videos]);
   
   // Streaming state
   const [showStreamingPlayer, setShowStreamingPlayer] = useState(false);
   const [streamingUrl, setStreamingUrl] = useState(null);
+  const [currentService, setCurrentService] = useState('MOVIES111');
   const [showEpisodeSelector, setShowEpisodeSelector] = useState(false);
   
   // TV Seasons and Episodes state
   const [seasons, setSeasons] = useState([]);
   const [currentSeason, setCurrentSeason] = useState(null);
   const [episodes, setEpisodes] = useState([]);
+  const [displayedEpisodes, setDisplayedEpisodes] = useState(10); // Show 10 episodes initially
   const [isSeasonsLoading, setIsSeasonsLoading] = useState(false);
   const [isEpisodesLoading, setIsEpisodesLoading] = useState(false);
   const [episodesViewMode, setEpisodesViewMode] = useState(() => {
@@ -503,6 +729,16 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
       localStorage.setItem('episodesViewMode', mode);
     }
   }, []);
+
+  // Load more episodes function
+  const handleLoadMoreEpisodes = useCallback(() => {
+    setDisplayedEpisodes(prev => prev + 10);
+  }, []);
+
+  // Check if there are more episodes to load
+  const hasMoreEpisodes = useMemo(() => {
+    return displayedEpisodes < episodes.length;
+  }, [displayedEpisodes, episodes.length]);
 
   // Get mobile/desktop state early to avoid initialization errors
   const { isMobile, isTablet, isDesktop } = useIsMobile();
@@ -593,15 +829,17 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
     let ticking = false;
     let lastScrollTime = 0;
     const scrollThrottle = 16; // ~60fps for scroll updates
+    let animationFrameId = null;
     
     const throttledHandleScroll = () => {
       const now = Date.now();
       
       if (!ticking && (now - lastScrollTime) >= scrollThrottle) {
-        requestAnimationFrame(() => {
+        animationFrameId = requestAnimationFrame(() => {
           handleScroll();
           ticking = false;
           lastScrollTime = now;
+          animationFrameId = null;
         });
         ticking = true;
       }
@@ -613,8 +851,12 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
       capture: false 
     });
     
-    // Enhanced cleanup with proper reference checking
+    // Enhanced cleanup with proper reference checking and animation frame cancellation
     return () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+      }
       if (currentRef && currentRef.removeEventListener) {
         currentRef.removeEventListener('scroll', throttledHandleScroll, { 
           capture: false 
@@ -756,11 +998,15 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
   }, [onClose]);
 
   useEffect(() => {
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleEscape);
+    const clickOutsideHandler = handleClickOutside;
+    const escapeHandler = handleEscape;
+    
+    document.addEventListener('mousedown', clickOutsideHandler);
+    document.addEventListener('keydown', escapeHandler);
+    
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleEscape);
+      document.removeEventListener('mousedown', clickOutsideHandler);
+      document.removeEventListener('keydown', escapeHandler);
     };
   }, [handleClickOutside, handleEscape]);
 
@@ -1031,8 +1277,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
       safeSet(setCastLimit, 20, "castLimit");
       safeSet(setSimilarLimit, 20, "similarLimit");
       safeSet(setScrollY, 0, "scrollY");
-      safeSet(setShowTopFade, false, "showTopFade");
-      safeSet(setScrollProgress, 0, "scrollProgress");
+
 
       // Clear any pending timeouts or intervals (robust)
       if (window.movieDetailsCleanupTimers && Array.isArray(window.movieDetailsCleanupTimers)) {
@@ -1088,15 +1333,23 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
         logReset("_movieDetailsOverlayListeners");
       }
       
-      // 🎯 NEW: Unsubscribe from real-time updates
-      if (movie?.id && movie?.type) {
-        try {
-          realTimeManager.unsubscribe(movie.id, movie.type);
-          logReset("realTimeManager.unsubscribe");
-        } catch (e) {
-          console.warn("[MovieDetailsOverlay] Failed to unsubscribe from real-time updates:", e);
-        }
+          // 🎯 NEW: Unsubscribe from real-time updates
+    if (movie?.id && movie?.type) {
+      try {
+        realTimeManager.unsubscribe(movie.id, movie.type);
+        logReset("realTimeManager.unsubscribe");
+      } catch (e) {
+        console.warn("[MovieDetailsOverlay] Failed to unsubscribe from real-time updates:", e);
       }
+    }
+
+    // Cleanup real-time manager to prevent memory leaks
+    try {
+      realTimeManager.cleanup();
+      logReset("realTimeManager.cleanup");
+    } catch (e) {
+      console.warn("[MovieDetailsOverlay] Failed to cleanup real-time manager:", e);
+    }
 
       // Optionally: Cancel any fetches or abort controllers
       if (window._movieDetailsOverlayAbortControllers) {
@@ -1176,6 +1429,8 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
   }, [movie, playerRef]);
 
   const handleCloseTrailer = useCallback((e) => {
+    console.log('handleCloseTrailer called', { showTrailer }); // Debug log
+    
     // Prevent event bubbling to avoid closing the main overlay
     if (e) {
       e.stopPropagation();
@@ -1213,16 +1468,16 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
 
   // Keyboard event handler for trailer modal
   useEffect(() => {
+    if (!showTrailer) return;
+    
     const handleKeyDown = (e) => {
-      if (showTrailer && e.key === 'Escape') {
+      if (e.key === 'Escape') {
         handleCloseTrailer(e);
       }
     };
 
-    if (showTrailer) {
-      document.addEventListener('keydown', handleKeyDown);
-      return () => document.removeEventListener('keydown', handleKeyDown);
-    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
   }, [showTrailer, handleCloseTrailer]);
 
   // Streaming handlers
@@ -1235,7 +1490,8 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
       return;
     }
     
-    const url = getStreamingUrl(movie);
+    // Directly open streaming player with default service
+    const url = getStreamingUrl(movie, currentService);
     if (url) {
       setStreamingUrl(url);
       setShowStreamingPlayer(true);
@@ -1249,7 +1505,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
         });
       }
     }
-  }, [movie]);
+  }, [movie, currentService]);
 
   const handleCloseStreaming = useCallback(() => {
     setShowStreamingPlayer(false);
@@ -1281,36 +1537,89 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
     }
   }, [movie]);
 
-  const handleEpisodeSelect = useCallback((season, episode) => {
+  const handleEpisodeSelect = useCallback((season, episode, episodeData = null) => {
     if (!movie) return;
     
+    console.log('handleEpisodeSelect called with:', { season, episode, episodeData });
+    
+    // Update the movie object with season and episode information
     const tvShow = {
       ...movie,
       season,
       episode
     };
     
-    const url = getStreamingUrl(tvShow);
-    if (url) {
-      setStreamingUrl(url);
-      setShowStreamingPlayer(true);
+    console.log('Setting movieDetails to:', tvShow);
+    
+    // Store the TV show with episode info
+    setMovieDetails(tvShow);
+    
+    // If episodeData is provided, use it for streaming service selection
+    if (episodeData) {
+      // Create content object for streaming service toggler
+      const content = {
+        id: episodeData.showId,
+        type: 'tv',
+        season: episodeData.season,
+        episode: episodeData.episode
+      };
       
-      // Analytics: Log episode selection event
-      if (window.gtag) {
-        window.gtag('event', 'episode_selected', {
-          event_category: 'MovieDetails',
-          event_label: movie?.title || movie?.name || movie?.id,
-          value: movie?.id,
-          season,
-          episode,
-        });
+      // Get streaming URL with current service
+      const url = getStreamingUrl(content, currentService);
+      if (url) {
+        setStreamingUrl(url);
+        setShowStreamingPlayer(true);
+        
+        // Analytics: Log episode selection event
+        if (window.gtag) {
+          window.gtag('event', 'episode_selected', {
+            event_category: 'MovieDetails',
+            event_label: movie?.title || movie?.name || movie?.id,
+            value: movie?.id,
+            season,
+            episode,
+          });
+        }
+      }
+    } else {
+      // Fallback to original logic
+      const url = getStreamingUrl(tvShow, currentService);
+      if (url) {
+        setStreamingUrl(url);
+        setShowStreamingPlayer(true);
+        
+        // Analytics: Log episode selection event
+        if (window.gtag) {
+          window.gtag('event', 'episode_selected', {
+            event_category: 'MovieDetails',
+            event_label: movie?.title || movie?.name || movie?.id,
+            value: movie?.id,
+            season,
+            episode,
+          });
+        }
       }
     }
-  }, [movie]);
+  }, [movie, currentService]);
 
   const handleCloseEpisodeSelector = useCallback(() => {
     setShowEpisodeSelector(false);
   }, []);
+
+  const handleServiceChange = useCallback((selectedService) => {
+    setCurrentService(selectedService.key);
+    setStreamingUrl(selectedService.url);
+    
+    // Analytics: Log streaming service change event
+    if (window.gtag && movie) {
+      window.gtag('event', 'streaming_service_changed', {
+        event_category: 'MovieDetails',
+        event_label: movie?.title || movie?.name || movie?.id,
+        value: movie?.id,
+        streaming_service: selectedService.name,
+      });
+    }
+  }, [movie]);
 
   // 🚀 Enhanced: Robust, analytics, accessibility, and smooth UX for similar movie click
   const handleSimilarMovieClick = useCallback((similarMovie, options = {}) => {
@@ -1486,6 +1795,15 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
         
         oscillator.start(audioContext.currentTime);
         oscillator.stop(audioContext.currentTime + 0.1);
+        
+        // Cleanup audio context after use
+        setTimeout(() => {
+          try {
+            audioContext.close();
+          } catch (error) {
+            console.debug('Audio context cleanup failed:', error);
+          }
+        }, 200);
       } catch (error) {
         // Silently fail if audio context is not available
         console.debug('Audio feedback not available:', error);
@@ -1501,13 +1819,13 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
       });
     }
     
-    // Clear animation after delay
-    setTimeout(() => {
+    // Clear animation after delay with proper cleanup
+    const animationTimeout = setTimeout(() => {
       setLikeAnimation(false);
     }, 600);
     
-    // Clear feedback message after delay
-    setTimeout(() => {
+    // Clear feedback message after delay with proper cleanup
+    const feedbackTimeout = setTimeout(() => {
       setLikeFeedback(null);
     }, 2000);
     
@@ -1714,6 +2032,20 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
   const handleEpisodeClick = useCallback((episode) => {
     if (!movie) return;
     
+    console.log('handleEpisodeClick called with episode:', episode);
+    
+    // Update the movie object with season and episode information
+    const tvShow = {
+      ...movie,
+      season: episode.season_number,
+      episode: episode.episode_number
+    };
+    
+    console.log('Setting movieDetails to:', tvShow);
+    
+    // Store the TV show with episode info
+    setMovieDetails(tvShow);
+    
     const streamingUrl = getStreamingUrl({
       id: movie.id,
       type: 'tv',
@@ -1734,6 +2066,11 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
     const handleRetryCast = useCallback(() => {
       fetchExtraInfo();
     }, [fetchExtraInfo]);
+
+  // Debug: Monitor movieDetails changes
+  useEffect(() => {
+    console.log('MovieDetailsOverlay: movieDetails changed:', movieDetails);
+  }, [movieDetails]);
 
   // 🚀 Enhanced: Robust mount/movie-change effect with race condition prevention, abort support, and analytics
   useEffect(() => {
@@ -1807,8 +2144,12 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
       fetchMovieData(0);
     }, BACKGROUND_REFRESH_INTERVAL);
     
-    return () => clearTimeout(backgroundRefreshTimer);
-  }, [movie?.id, movie?.type, movieDetails]);
+    return () => {
+      if (backgroundRefreshTimer) {
+        clearTimeout(backgroundRefreshTimer);
+      }
+    };
+  }, [movie?.id, movie?.type, movieDetails, fetchMovieData]);
   
   // Mobile drag functionality removed
   
@@ -1816,216 +2157,11 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
 
   // Mobile drag handlers removed
 
-  // Enhanced scroll-based appearance with improved performance
-  const [showTopFade, setShowTopFade] = useState(false);
-  const [scrollProgress, setScrollProgress] = useState(0);
-  const [scrollDirection, setScrollDirection] = useState('down');
-  const [lastScrollY, setLastScrollY] = useState(0);
-  const [scrollVelocity, setScrollVelocity] = useState(0);
-  const [contentSections, setContentSections] = useState({
-    hero: { visible: true, opacity: 1, transform: 0 },
-    overview: { visible: false, opacity: 0, transform: 50 },
-    cast: { visible: false, opacity: 0, transform: 50 },
-    episodes: { visible: false, opacity: 0, transform: 50 },
-    similar: { visible: false, opacity: 0, transform: 50 }
-  });
+
   
-  useEffect(() => {
-    if (!isMobile) return;
-    
-    const handleMobileScroll = () => {
-      if (scrollContainerRef.current) {
-        const scrollTop = scrollContainerRef.current.scrollTop;
-        const maxScroll = scrollContainerRef.current.scrollHeight - scrollContainerRef.current.clientHeight;
-        const currentTime = Date.now();
-        
-        // Calculate scroll progress and direction
-        const progress = Math.min(scrollTop / Math.max(maxScroll, 1), 1);
-        const direction = scrollTop > lastScrollY ? 'down' : 'up';
-        const velocity = Math.abs(scrollTop - lastScrollY) / (currentTime - (currentTime - 16)); // 60fps
-        
-        setScrollProgress(progress);
-        setScrollDirection(direction);
-        setScrollVelocity(velocity);
-        setLastScrollY(scrollTop);
-        
-        // Enhanced top fade with velocity-based threshold
-        setShowTopFade(scrollTop > 24 && velocity > 0.5);
-        
-        // Progressive content reveal based on scroll position
-        const heroThreshold = 0.1;
-        const overviewThreshold = 0.2;
-        const castThreshold = 0.4;
-        const episodesThreshold = 0.6;
-        const similarThreshold = 0.8;
-        
-        setContentSections(prev => ({
-          hero: {
-            ...prev.hero,
-            opacity: Math.max(0, 1 - (progress / heroThreshold)),
-            transform: Math.min(50, (progress / heroThreshold) * 50)
-          },
-          overview: {
-            ...prev.overview,
-            visible: progress >= overviewThreshold,
-            opacity: progress >= overviewThreshold ? Math.min(1, (progress - overviewThreshold) / 0.1) : 0,
-            transform: progress >= overviewThreshold ? Math.max(0, 50 - ((progress - overviewThreshold) / 0.1) * 50) : 50
-          },
-          cast: {
-            ...prev.cast,
-            visible: progress >= castThreshold,
-            opacity: progress >= castThreshold ? Math.min(1, (progress - castThreshold) / 0.1) : 0,
-            transform: progress >= castThreshold ? Math.max(0, 50 - ((progress - castThreshold) / 0.1) * 50) : 50
-          },
-          episodes: {
-            ...prev.episodes,
-            visible: progress >= episodesThreshold,
-            opacity: progress >= episodesThreshold ? Math.min(1, (progress - episodesThreshold) / 0.1) : 0,
-            transform: progress >= episodesThreshold ? Math.max(0, 50 - ((progress - episodesThreshold) / 0.1) * 50) : 50
-          },
-          similar: {
-            ...prev.similar,
-            visible: progress >= similarThreshold,
-            opacity: progress >= similarThreshold ? Math.min(1, (progress - similarThreshold) / 0.1) : 0,
-            transform: progress >= similarThreshold ? Math.max(0, 50 - ((progress - similarThreshold) / 0.1) * 50) : 50
-          }
-        }));
-      }
-    };
-    
-    const ref = scrollContainerRef.current;
-    if (ref) {
-      ref.addEventListener('scroll', handleMobileScroll, { passive: true });
-    }
-    
-    return () => {
-      if (ref) {
-        ref.removeEventListener('scroll', handleMobileScroll);
-      }
-    };
-  }, [isMobile, lastScrollY]);
 
-  // Enhanced utility animations with spring physics and scroll-based triggers
-  const fadeInMotionProps = {
-    initial: { opacity: 0, y: 20 },
-    animate: { opacity: 1, y: 0 },
-    transition: { 
-      duration: 0.5, 
-      ease: [0.25, 0.46, 0.45, 0.94],
-      type: 'spring',
-      stiffness: 300,
-      damping: 25
-    },
-  };
 
-  const slideUpMotionProps = {
-    initial: { y: 50, opacity: 0 },
-    animate: { y: 0, opacity: 1 },
-    transition: {
-      duration: 0.4,
-      ease: [0.25, 0.46, 0.45, 0.94],
-      type: 'spring',
-      stiffness: 400,
-      damping: 30
-    },
-  };
 
-  // Enhanced scroll-triggered animation variants
-  const scrollTriggerVariants = {
-    hidden: { opacity: 0, y: 30, scale: 0.95 },
-    visible: (custom) => ({
-      opacity: 1,
-      y: 0,
-      scale: 1,
-      transition: {
-        duration: 0.6,
-        delay: custom * 0.1,
-        ease: [0.25, 0.46, 0.45, 0.94],
-        type: 'spring',
-        stiffness: 300,
-        damping: 25
-      }
-    }),
-    exit: {
-      opacity: 0,
-      y: -20,
-      scale: 0.95,
-      transition: {
-        duration: 0.3,
-        ease: [0.25, 0.46, 0.45, 0.94]
-      }
-    }
-  };
-
-  // Parallax scroll effect for background elements
-  const parallaxVariants = {
-    initial: { y: 0 },
-    animate: (custom) => ({
-      y: custom * scrollY * 0.3,
-      transition: {
-        duration: 0.1,
-        ease: "linear"
-      }
-    })
-  };
-
-  // Stagger animation for list items
-  const staggerContainerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.05,
-        delayChildren: 0.1,
-        type: 'spring',
-        stiffness: 300,
-        damping: 25
-      }
-    }
-  };
-
-  const staggerItemVariants = {
-    hidden: { opacity: 0, y: 20, scale: 0.95 },
-    visible: {
-      opacity: 1,
-      y: 0,
-      scale: 1,
-      transition: {
-        duration: 0.4,
-        ease: [0.25, 0.46, 0.45, 0.94]
-      }
-    }
-  };
-
-  // Memoize writers, directors, and production companies from credits (already added)
-  const writers = React.useMemo(() => {
-    if (!credits?.crew) return [];
-    return credits.crew.filter(
-      (person) => person.job === 'Writer' || person.job === 'Screenplay' || person.job === 'Author'
-    );
-  }, [credits]);
-  const directors = React.useMemo(() => {
-    if (!credits?.crew) return [];
-    return credits.crew.filter((person) => person.job === 'Director');
-  }, [credits]);
-  const productionCompanies = React.useMemo(() => {
-    if (!movieDetails?.production_companies) return [];
-    return movieDetails.production_companies;
-  }, [movieDetails]);
-
-  // Memoize spoken languages (already added)
-  const spokenLanguages = React.useMemo(() => {
-    if (!movieDetails?.spoken_languages) return [];
-    return movieDetails.spoken_languages;
-  }, [movieDetails]);
-
-  // Memoize videos (trailers, teasers, etc.) (already added)
-  const videoList = React.useMemo(() => {
-    if (!videos?.results) return [];
-    return videos.results.filter(
-      (v) => v.site === 'YouTube' && (v.type === 'Trailer' || v.type === 'Teaser')
-    );
-  }, [videos]);
 
   // Memoize formatted rating
   const formattedRating = React.useMemo(() => {
@@ -2089,6 +2225,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
     // Unique ID for this overlay instance (supports stacking if needed)
     const PORTAL_ID = 'movie-details-portal';
     let container = document.getElementById(PORTAL_ID);
+    let isNewContainer = false;
 
     if (!container) {
       container = document.createElement('div');
@@ -2103,6 +2240,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
       container.style.zIndex = '2147483647'; // Max z-index for overlays
       container.style.pointerEvents = 'none'; // Let overlay content handle events
       document.body.appendChild(container);
+      isNewContainer = true;
 
       if (process.env.NODE_ENV === "development") {
         // eslint-disable-next-line no-console
@@ -2123,14 +2261,20 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
 
     // Cleanup: Remove portal only if it was created by this instance
     return () => {
-      // Only remove if no other overlays are using it (could be enhanced for stacking)
-      if (container && container.parentNode) {
-        container.parentNode.removeChild(container);
-        if (process.env.NODE_ENV === "development") {
-          // eslint-disable-next-line no-console
-          console.debug('[MovieDetailsOverlay] Portal container removed');
+      // Only remove if this instance created the container
+      if (isNewContainer && container && container.parentNode) {
+        try {
+          container.parentNode.removeChild(container);
+          if (process.env.NODE_ENV === "development") {
+            // eslint-disable-next-line no-console
+            console.debug('[MovieDetailsOverlay] Portal container removed');
+          }
+        } catch (error) {
+          console.warn('[MovieDetailsOverlay] Failed to remove portal container:', error);
         }
       }
+      // Clear portal container reference to prevent memory leaks
+      setPortalContainer(null);
     };
   }, []);
 
@@ -2156,16 +2300,20 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
         <motion.div
           ref={contentRef}
           layout
-          className="relative w-full max-w-6xl h-auto max-h-[calc(100vh-4rem)] z-[1000000000] sm:max-h-[90vh] bg-gradient-to-br from-[#1a1d24] to-[#121417] rounded-2xl shadow-2xl overflow-hidden flex flex-col transform-gpu will-change-transform contain-paint pointer-events-auto overflow-y-auto mt-8 sm:mt-12"
+          className="relative w-full max-w-6xl h-auto max-h-[calc(100vh-2rem)] z-[1000000000] sm:max-h-[95vh] bg-gradient-to-br from-[#1a1d24] to-[#121417] rounded-2xl shadow-2xl overflow-hidden flex flex-col transform-gpu will-change-transform contain-paint pointer-events-auto overflow-y-auto mt-4 sm:mt-6"
           initial={{ scale: 0.98, opacity: 0, y: 60 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.98, opacity: 0, y: 60 }}
           transition={{
-            duration: 0.32, type: 'spring', stiffness: 260, damping: 22, delay: 0
+            duration: 0.25, type: 'spring', stiffness: 400, damping: 30, delay: 0
           }}
           onClick={(e) => e.stopPropagation()}
           tabIndex={-1}
-          style={{ zIndex: 1000000000 }}
+          style={{ 
+            zIndex: 1000000000,
+            willChange: 'transform, opacity',
+            backfaceVisibility: 'hidden'
+          }}
         >
                       {/* Mobile drag functionality removed */}
           {basicLoading ? (
@@ -2188,7 +2336,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
             </div>
           ) : movieDetails ? (
             <div ref={scrollContainerRef} className="h-full overflow-y-auto hide-scrollbar">
-              <div className="relative h-[70vh] sm:h-[70vh]">
+              <div className="relative h-[75vh] sm:h-[80vh]">
                 {movieDetails.backdrop && (
                   <div className="absolute inset-0 overflow-hidden">
                     <motion.div 
@@ -2203,14 +2351,21 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                       <img
                         src={movieDetails.backdrop}
                         alt={movieDetails.title}
-                        className="w-full h-full object-cover hover:scale-105 opacity-0 animate-fadeIn will-change-transform"
+                        className="w-full h-full object-cover hover:scale-105 opacity-0 animate-fadeIn will-change-transform transform-gpu"
                         style={{ backfaceVisibility: 'hidden' }}
                         loading="eager"
                         decoding="async"
                         fetchPriority="high"
                         onLoad={(e) => {
-                          e.target.classList.remove('opacity-0');
-                          e.target.previousSibling.classList.remove('animate-pulse');
+                          if (e.target) {
+                            e.target.classList.remove('opacity-0');
+                            if (e.target.previousSibling) {
+                              e.target.previousSibling.classList.remove('animate-pulse');
+                            }
+                          }
+                        }}
+                        onError={(e) => {
+                          console.warn('Failed to load backdrop image:', e.target.src);
                         }}
                       />
                     </motion.div>
@@ -2230,14 +2385,21 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                         <img
                           src={movieDetails.image}
                           alt={movieDetails.title}
-                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110 opacity-0 will-change-transform"
+                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110 opacity-0 will-change-transform transform-gpu"
                           style={{ backfaceVisibility: 'hidden' }}
                           loading="eager"
                           decoding="async"
                           fetchPriority="high"
                           onLoad={(e) => {
-                            e.target.classList.remove('opacity-0');
-                            e.target.previousSibling.classList.remove('animate-pulse');
+                            if (e.target) {
+                              e.target.classList.remove('opacity-0');
+                              if (e.target.previousSibling) {
+                                e.target.previousSibling.classList.remove('animate-pulse');
+                              }
+                            }
+                          }}
+                          onError={(e) => {
+                            console.warn('Failed to load movie poster:', e.target.src);
                           }}
                         />
                         <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
@@ -2251,17 +2413,25 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                             <img
                               src={movieDetails.logo}
                               alt={movieDetails.title}
-                              className="w-[200px] sm:w-[250px] max-w-full h-auto object-contain transform transition-all duration-300 hover:scale-105 opacity-0 animate-fadeIn will-change-transform"
+                              className="w-[200px] sm:w-[250px] max-w-full h-auto object-contain transform transition-all duration-300 hover:scale-105 opacity-0 animate-fadeIn will-change-transform transform-gpu"
                               style={{ backfaceVisibility: 'hidden' }}
                               loading="eager"
                               decoding="async"
                               onError={(e) => {
-                                e.target.style.display = 'none';
-                                e.target.nextSibling.style.display = 'block';
+                                if (e.target) {
+                                  e.target.style.display = 'none';
+                                  if (e.target.nextSibling) {
+                                    e.target.nextSibling.style.display = 'block';
+                                  }
+                                }
                               }}
                               onLoad={(e) => {
-                                e.target.classList.remove('opacity-0');
-                                e.target.previousSibling.classList.remove('animate-pulse');
+                                if (e.target) {
+                                  e.target.classList.remove('opacity-0');
+                                  if (e.target.previousSibling) {
+                                    e.target.previousSibling.classList.remove('animate-pulse');
+                                  }
+                                }
                               }}
                             />
                             <h2 className="text-2xl sm:text-4xl font-bold text-white transform transition-all duration-300 hover:translate-x-1 hidden">
@@ -2387,7 +2557,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                         {isStreamingAvailable(movie) && movie.type === 'movie' && (
                           <button
                             onClick={handleStreamingClick}
-                            className="group relative px-4 sm:px-6 py-2 sm:py-3 rounded-full transition-all duration-300 flex items-center gap-2 font-medium hover:scale-105 hover:shadow-lg text-black bg-white flex-1 sm:flex-none w-full sm:w-auto justify-center min-w-0"
+                            className="group relative px-4 sm:px-6 py-2 sm:py-3 rounded-full transition-all duration-300 flex items-center gap-2 font-medium hover:scale-105 hover:shadow-lg text-black bg-white flex-1 sm:flex-none w-full sm:w-auto justify-center min-w-0 transform-gpu will-change-transform"
                           >
                             {/* Button content */}
                             <div className="relative flex items-center gap-2 min-w-0">
@@ -2402,7 +2572,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                         <button 
                           data-trailer-button
                           onClick={handleTrailerClick}
-                          className="group relative px-4 sm:px-6 py-2 sm:py-3 rounded-full transition-all duration-300 flex items-center gap-2 font-medium hover:scale-105 hover:shadow-lg text-white/80 overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 hover:bg-white/10 flex-1 sm:flex-none w-full sm:w-auto justify-center min-w-0"
+                          className="group relative px-4 sm:px-6 py-2 sm:py-3 rounded-full transition-all duration-300 flex items-center gap-2 font-medium hover:scale-105 hover:shadow-lg text-white/80 overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 hover:bg-white/10 flex-1 sm:flex-none w-full sm:w-auto justify-center min-w-0 transform-gpu will-change-transform"
                         >
                           {/* Animated background effect */}
                           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
@@ -2418,7 +2588,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
 
                         <button 
                           onClick={handleWatchlistClick}
-                          className={`group relative px-4 sm:px-6 py-3 rounded-full transition-all duration-300 flex items-center gap-2 font-medium hover:scale-105 hover:shadow-lg overflow-hidden w-full sm:w-auto justify-center min-w-0 hidden sm:flex ${
+                          className={`group relative px-4 sm:px-6 py-3 rounded-full transition-all duration-300 flex items-center gap-2 font-medium hover:scale-105 hover:shadow-lg overflow-hidden w-full sm:w-auto justify-center min-w-0 hidden sm:flex transform-gpu will-change-transform ${
                             isOptimisticallyInWatchlist
                               ? 'text-white/80 overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 hover:bg-white/10' 
                               : 'text-white/80 overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 hover:bg-white/10'
@@ -2494,15 +2664,9 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                       {/* Mobile Minimalist Info Section */}
                       <motion.div 
                         className="lg:hidden mt-4"
-                        variants={scrollTriggerVariants}
-                        initial="hidden"
-                        whileInView="visible"
-                        viewport={{ once: true, amount: 0.5 }}
-                        custom={3}
-                        style={{
-                          opacity: contentSections.overview.opacity,
-                          transform: `translateY(${contentSections.overview.transform}px)`
-                        }}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.5, delay: 0.2 }}
                       >
                         <motion.div 
                           className="text-white/60 text-sm space-y-3"
@@ -2561,7 +2725,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                                                    {/* Add to List Button */}
                           <button 
                             onClick={handleWatchlistClick}
-                            className={`group relative w-12 h-12 rounded-full transition-all duration-300 hover:scale-105 active:scale-95 overflow-hidden flex items-center justify-center ${
+                            className={`group relative w-12 h-12 rounded-full transition-all duration-300 hover:scale-105 active:scale-95 overflow-hidden flex items-center justify-center transform-gpu will-change-transform ${
                               isOptimisticallyInWatchlist 
                                 ? 'bg-red-500/20 border-t-[1px] border-b-[1px] border-red-400/30 text-red-400' 
                                 : 'bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 text-white/80 hover:bg-white/10'
@@ -2592,7 +2756,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                                  handleLikeClick(e);
                                }
                              }}
-                             className={`group relative w-12 h-12 rounded-full overflow-hidden backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] transition-all duration-300 hover:scale-105 active:scale-95 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-red-400/50 focus:ring-offset-2 focus:ring-offset-black/50 ${
+                             className={`group relative w-12 h-12 rounded-full overflow-hidden backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] transition-all duration-300 hover:scale-105 active:scale-95 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-red-400/50 focus:ring-offset-2 focus:ring-offset-black/50 transform-gpu will-change-transform ${
                                isLiked 
                                  ? 'bg-red-500/20 border-red-400/30 text-red-400' 
                                  : 'bg-[rgb(255,255,255,0.03)] border-white/30 text-white/80 hover:bg-white/10'
@@ -2684,7 +2848,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                                 // You could add a toast notification here
                               }
                             }}
-                            className="group relative w-12 h-12 rounded-full overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 text-white/80 hover:bg-white/10 transition-all duration-300 hover:scale-105 active:scale-95 flex items-center justify-center"
+                            className="group relative w-12 h-12 rounded-full overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 text-white/80 hover:bg-white/10 transition-all duration-300 hover:scale-105 active:scale-95 flex items-center justify-center transform-gpu will-change-transform"
                             title="Share"
                           >
                             {/* Animated background effect */}
@@ -2705,7 +2869,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                                console.log('Report clicked');
                                // You could add a modal or navigation to report page
                              }}
-                             className="group relative w-12 h-12 rounded-full overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 text-white/80 hover:bg-white/10 transition-all duration-300 hover:scale-105 active:scale-95 flex items-center justify-center"
+                             className="group relative w-12 h-12 rounded-full overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 text-white/80 hover:bg-white/10 transition-all duration-300 hover:scale-105 active:scale-95 flex items-center justify-center transform-gpu will-change-transform"
                              title="Report"
                            >
                              {/* Animated background effect */}
@@ -2746,18 +2910,12 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
 
 
                     {/* TV Episodes Section - Only for TV shows */}
-                    {movieDetails.type === 'tv' && seasons.length > 0 && (
+                    {movieDetails.type === 'tv' && (
                       <motion.div
-                        variants={scrollTriggerVariants}
-                        initial="hidden"
-                        whileInView="visible"
-                        viewport={{ once: true, amount: 0.3 }}
-                        custom={1}
+                        initial={{ opacity: 0, y: 30 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.5, delay: 0.3 }}
                         className="relative"
-                        style={{
-                          opacity: contentSections.episodes.opacity,
-                          transform: `translateY(${contentSections.episodes.transform}px)`
-                        }}
                       >
                         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
                           <h3 className="text-lg sm:text-xl md:text-2xl font-bold text-white flex items-center gap-2">
@@ -2769,61 +2927,63 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                             <span className="tracking-tight drop-shadow-sm">Episodes</span>
                           </h3>
                           
-                          {/* Controls */}
-                          <div className="flex items-center justify-between w-full sm:w-auto gap-3">
-                            {/* Season Selector - Left on mobile, right on desktop */}
-                            <div className="flex items-center gap-2 order-2 sm:order-2">
-                              <span className="text-white/60 text-sm">Season:</span>
-                              <CustomDropdown
-                                options={seasons.map((season) => ({
-                                  value: season.season_number,
-                                  label: season.name || `Season ${season.season_number}`
-                                }))}
-                                value={currentSeason?.season_number || ''}
-                                onChange={(seasonNumber) => {
-                                  const selectedSeason = seasons.find(s => s.season_number === seasonNumber);
-                                  if (selectedSeason) {
-                                    handleSeasonChange(selectedSeason);
-                                  }
-                                }}
-                                placeholder="Select season"
-                              />
+                          {/* Controls - Only show when seasons are loaded */}
+                          {seasons.length > 0 && (
+                            <div className="flex items-center justify-between w-full sm:w-auto gap-3">
+                              {/* Season Selector - Left on mobile, right on desktop */}
+                              <div className="flex items-center gap-2 order-2 sm:order-2">
+                                <span className="text-white/60 text-sm">Season:</span>
+                                <CustomDropdown
+                                  options={seasons.map((season) => ({
+                                    value: season.season_number,
+                                    label: season.name || `Season ${season.season_number}`
+                                  }))}
+                                  value={currentSeason?.season_number || ''}
+                                  onChange={(seasonNumber) => {
+                                    const selectedSeason = seasons.find(s => s.season_number === seasonNumber);
+                                    if (selectedSeason) {
+                                      handleSeasonChange(selectedSeason);
+                                    }
+                                  }}
+                                  placeholder="Select season"
+                                />
+                              </div>
+                              
+                              {/* View Toggle - Right on mobile, left on desktop */}
+                              <div className="flex items-center gap-2 order-1 sm:order-1">
+                                <button
+                                  onClick={() => setEpisodesViewModeWithStorage('card')}
+                                  className={`px-4 py-2 text-sm font-medium transition-all duration-200 transform-gpu will-change-transform ${
+                                    episodesViewMode === 'card'
+                                      ? 'text-white border-b-2 border-white/30'
+                                      : 'text-white/50 hover:text-white/70 border-b-2 border-transparent hover:border-white/15'
+                                  }`}
+                                  title="Card View"
+                                >
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={() => setEpisodesViewModeWithStorage('list')}
+                                  className={`px-4 py-2 text-sm font-medium transition-all duration-200 transform-gpu will-change-transform ${
+                                    episodesViewMode === 'list'
+                                      ? 'text-white border-b-2 border-white/30'
+                                      : 'text-white/50 hover:text-white/70 border-b-2 border-transparent hover:border-white/15'
+                                  }`}
+                                  title="List View"
+                                >
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                                  </svg>
+                                </button>
+                              </div>
                             </div>
-                            
-                            {/* View Toggle - Right on mobile, left on desktop */}
-                            <div className="flex items-center gap-2 order-1 sm:order-1">
-                              <button
-                                onClick={() => setEpisodesViewModeWithStorage('card')}
-                                className={`px-4 py-2 text-sm font-medium transition-all duration-200 ${
-                                  episodesViewMode === 'card'
-                                    ? 'text-white border-b-2 border-white/30'
-                                    : 'text-white/50 hover:text-white/70 border-b-2 border-transparent hover:border-white/15'
-                                }`}
-                                title="Card View"
-                              >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-                                </svg>
-                              </button>
-                              <button
-                                onClick={() => setEpisodesViewModeWithStorage('list')}
-                                className={`px-4 py-2 text-sm font-medium transition-all duration-200 ${
-                                  episodesViewMode === 'list'
-                                    ? 'text-white border-b-2 border-white/30'
-                                    : 'text-white/50 hover:text-white/70 border-b-2 border-transparent hover:border-white/15'
-                                }`}
-                                title="List View"
-                              >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                                </svg>
-                              </button>
-                            </div>
-                          </div>
+                          )}
                         </div>
 
                         {/* Episodes Content */}
-                        {isEpisodesLoading ? (
+                        {isSeasonsLoading || isEpisodesLoading ? (
                           episodesViewMode === 'card' ? (
                             <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4 lg:gap-6">
                               {[...Array(8)].map((_, index) => (
@@ -2878,10 +3038,26 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                               ))}
                             </div>
                           )
-                        ) : episodes.length > 0 ? (
+                        ) : seasons.length > 0 && isEpisodesLoading ? (
+                          // Show loading indicator when seasons are loaded but episodes are still loading
+                          <motion.div 
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.5 }}
+                            className="text-center text-white/40 py-8"
+                          >
+                            <div className="bg-gradient-to-br from-white/5 to-white/2 rounded-2xl p-6 border border-white/10">
+                              <div className="flex items-center justify-center mb-4">
+                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                              </div>
+                              <h3 className="text-lg font-semibold text-white/60 mb-2">Loading Episodes</h3>
+                              <p className="text-white/40 text-sm">Fetching episodes for this season...</p>
+                            </div>
+                          </motion.div>
+                        ) : seasons.length > 0 && episodes.length > 0 ? (
                           episodesViewMode === 'card' ? (
                             <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4 lg:gap-6">
-                              {episodes.slice(0, 100).map((episode, index) => (
+                              {episodes.slice(0, displayedEpisodes).map((episode, index) => (
                                 <motion.div
                                   key={episode.id}
                                   initial={{ opacity: 0 }}
@@ -2900,12 +3076,15 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                                   {/* Episode Thumbnail */}
                                   <div className="relative aspect-video overflow-hidden">
                                     {episode.still_path ? (
-                                      <img
-                                        src={`https://image.tmdb.org/t/p/w500${episode.still_path}`}
-                                        alt={episode.name}
-                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
-                                        loading="lazy"
-                                      />
+                                                                              <img
+                                          src={`https://image.tmdb.org/t/p/w500${episode.still_path}`}
+                                          alt={episode.name}
+                                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out transform-gpu will-change-transform"
+                                          loading="lazy"
+                                          onError={(e) => {
+                                            console.warn('Failed to load episode still:', e.target.src);
+                                          }}
+                                        />
                                     ) : (
                                       <div className="w-full h-full bg-gradient-to-br from-gray-800/60 to-gray-700/60 flex items-center justify-center">
                                         <svg className="w-8 h-8 sm:w-10 sm:h-10 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2968,10 +3147,34 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                                   </div>
                                 </motion.div>
                               ))}
+                              
+                              {/* Load More Button for Card View */}
+                              {hasMoreEpisodes && (
+                                <div className="col-span-full flex justify-center mt-6">
+                                  <motion.button
+                                    onClick={handleLoadMoreEpisodes}
+                                    className="flex items-center gap-2 px-6 py-3 bg-white/10 hover:bg-white/20 rounded-lg text-white/80 transition-colors duration-200"
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
+                                  >
+                                    <span className="text-sm font-medium">Load More Episodes</span>
+                                    <motion.svg 
+                                      className="w-4 h-4" 
+                                      fill="none" 
+                                      stroke="currentColor" 
+                                      viewBox="0 0 24 24"
+                                      animate={{ y: [0, 2, 0] }}
+                                      transition={{ duration: 1.5, repeat: Infinity }}
+                                    >
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7-7-7" />
+                                    </motion.svg>
+                                  </motion.button>
+                                </div>
+                              )}
                             </div>
                           ) : (
                             <div className="space-y-0">
-                              {episodes.slice(0, 50).map((episode, index) => (
+                              {episodes.slice(0, displayedEpisodes).map((episode, index) => (
                                 <motion.div
                                   key={episode.id}
                                   initial={{ opacity: 0 }}
@@ -2981,7 +3184,6 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                                     delay: index * 0.05,
                                     ease: [0.25, 0.46, 0.45, 0.94]
                                   }}
-
                                   className={`group relative cursor-pointer transition-all duration-300 hover:bg-white/[0.02] ${
                                     index < episodes.length - 1 ? 'border-b border-white/[0.08]' : ''
                                   }`}
@@ -3001,8 +3203,11 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                                         <img
                                           src={`https://image.tmdb.org/t/p/w500${episode.still_path}`}
                                           alt={episode.name}
-                                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 transform-gpu will-change-transform"
                                           loading="lazy"
+                                          onError={(e) => {
+                                            console.warn('Failed to load episode still (list view):', e.target.src);
+                                          }}
                                         />
                                       ) : (
                                         <div className="w-full h-full bg-gradient-to-br from-gray-800/60 to-gray-700/60 flex items-center justify-center">
@@ -3114,6 +3319,33 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                                   </div>
                                 </motion.div>
                               ))}
+                              
+                              {/* Debug log for Load More button visibility */}
+                              {(() => { console.log('DEBUG: episodes.length =', episodes.length, 'displayedEpisodes =', displayedEpisodes, 'hasMoreEpisodes =', hasMoreEpisodes); return null; })()}
+
+                              {/* Load More Button for List View */}
+                              {hasMoreEpisodes && (
+                                <div className="flex justify-center mt-6 pt-4 border-t border-white/10">
+                                  <motion.button
+                                    onClick={handleLoadMoreEpisodes}
+                                    className="flex items-center gap-2 px-6 py-3 bg-white/10 hover:bg-white/20 rounded-lg text-white/80 transition-colors duration-200"
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
+                                  >
+                                    <span className="text-sm font-medium">Load More Episodes</span>
+                                    <motion.svg 
+                                      className="w-4 h-4" 
+                                      fill="none" 
+                                      stroke="currentColor" 
+                                      viewBox="0 0 24 24"
+                                      animate={{ y: [0, 2, 0] }}
+                                      transition={{ duration: 1.5, repeat: Infinity }}
+                                    >
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7-7-7" />
+                                    </motion.svg>
+                                  </motion.button>
+                                </div>
+                              )}
                             </div>
                           )
                         ) : (
@@ -3141,15 +3373,9 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                 {/* Similar Section */}
                 <motion.div 
                   className="pt-6 sm:pt-8 relative"
-                  variants={scrollTriggerVariants}
-                  initial="hidden"
-                  whileInView="visible"
-                  viewport={{ once: true, amount: 0.1 }}
-                  custom={2}
-                  style={{
-                    opacity: contentSections.similar.opacity,
-                    transform: `translateY(${contentSections.similar.transform}px)`
-                  }}
+                  initial={{ opacity: 0, y: 30 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.4 }}
                 >
                   {/* Enhanced border with matching radius */}
                   <div className="absolute -top-px left-0 w-full h-[1.5px] z-10 pointer-events-none">
@@ -3177,23 +3403,11 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
             </div>
           ) : null}
 
-          {/* Scroll Progress Indicator */}
-          {isMobile && (
-            <motion.div
-              className="fixed top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary via-white/40 to-primary z-[999999999]"
-              style={{
-                transform: `scaleX(${scrollProgress})`,
-                transformOrigin: 'left'
-              }}
-              initial={{ scaleX: 0 }}
-              animate={{ scaleX: scrollProgress }}
-              transition={{ duration: 0.1, ease: "linear" }}
-            />
-          )}
+
 
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 z-10 p-2 rounded-full text-white transition-all duration-200 transform hover:scale-110 group overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-l-[1px] border-r-[1px] border-white/30 hover:bg-white/10"
+            className="absolute top-4 right-4 z-10 p-2 rounded-full text-white transition-all duration-200 transform hover:scale-110 group overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-l-[1px] border-r-[1px] border-white/30 hover:bg-white/10 transform-gpu will-change-transform"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
               <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
@@ -3205,15 +3419,16 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
         </motion.div>
 
         {/* Trailer Modal */}
-        <AnimatePresence>
+        <AnimatePresence mode="wait">
           {showTrailer && (
             <Suspense fallback={<div className="absolute inset-0 flex items-center justify-center bg-black/50"><Loader size="large" color="white" variant="circular" /></div>}>
               <motion.div 
+                key="trailer-modal"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.3 }}
-                className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90"
+                className="fixed inset-0 z-[1000000001] flex items-center justify-center bg-black/90"
                 onClick={handleCloseTrailer}
                 onMouseDown={(e) => e.stopPropagation()}
               >
@@ -3224,53 +3439,91 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                   transition={{ duration: 0.3, ease: "easeOut" }}
                   className="relative w-[90vw] max-w-4xl aspect-video"
                   onClick={(e) => e.stopPropagation()}
+                  style={{ pointerEvents: 'auto' }}
                 >
                   {/* Close Button */}
                   <button
                     id="trailer-close-btn"
                     onClick={(e) => {
                       e.stopPropagation();
+                      e.preventDefault();
+                      console.log('Trailer close button clicked'); // Debug log
                       handleCloseTrailer();
                     }}
-                    className="absolute -top-12 right-0 p-3 rounded-full bg-[#1a1a1a]/90 text-white hover:bg-[#1a1a1a] transition-all duration-200 transform hover:scale-110 group z-10"
+                    className="absolute top-4 right-4 p-3 rounded-full bg-black/80 text-white hover:bg-black transition-all duration-200 transform hover:scale-110 group z-[1000000002] transform-gpu will-change-transform cursor-pointer border border-white/20"
                     aria-label="Close trailer"
+                    type="button"
+                    style={{ pointerEvents: 'auto' }}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
                     </svg>
-                    <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-[#1a1a1a] rounded text-sm opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                    <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-black rounded text-sm opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
                       Close Trailer
                     </span>
                   </button>
                   
                   {/* Video Container */}
-                  <div className="relative w-full h-full rounded-lg overflow-hidden bg-black">
+                  <div 
+                    className="relative w-full h-full rounded-lg overflow-hidden bg-black"
+                    style={{ pointerEvents: 'auto' }}
+                  >
                     {isTrailerLoading && (
                       <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-10">
                         <Loader size="large" color="white" variant="circular" />
                       </div>
                     )}
                     {movieDetails.trailer ? (
-                      <LazyYouTube
-                        videoId={movieDetails.trailer}
-                        opts={{
-                          width: '100%',
-                          height: '100%',
-                          playerVars: {
-                            autoplay: 1,
-                            controls: 1,
-                            modestbranding: 1,
-                            rel: 0,
-                            showinfo: 0,
-                            iv_load_policy: 3,
-                          },
-                        }}
-                        onReady={(event) => {
-                          playerRef.current = event.target;
-                          setIsTrailerLoading(false);
-                        }}
-                        className="w-full h-full"
-                      />
+                      <div className="w-full h-full" style={{ pointerEvents: 'auto' }}>
+                        <LazyYouTube
+                          videoId={movieDetails.trailer}
+                          opts={{
+                            width: '100%',
+                            height: '100%',
+                            playerVars: {
+                              autoplay: 1,
+                              controls: 1,
+                              modestbranding: 1,
+                              rel: 0,
+                              showinfo: 0,
+                              iv_load_policy: 3,
+                              origin: window.location.origin,
+                              enablejsapi: 1,
+                              widget_referrer: window.location.origin,
+                            },
+                          }}
+                          onReady={(event) => {
+                            playerRef.current = event.target;
+                            setIsTrailerLoading(false);
+                            console.log('YouTube player ready');
+                          }}
+                          onError={(error) => {
+                            console.warn('YouTube player error:', error);
+                            setIsTrailerLoading(false);
+                          }}
+                          onStateChange={(event) => {
+                            // Handle player state changes
+                            console.log('YouTube player state changed:', event.data);
+                          }}
+                          className="w-full h-full"
+                          style={{ 
+                            pointerEvents: 'auto',
+                            position: 'relative',
+                            zIndex: 1
+                          }}
+                        />
+                        {/* Fallback link in case iframe is blocked */}
+                        <div className="absolute bottom-4 left-4 opacity-0 hover:opacity-100 transition-opacity">
+                          <a 
+                            href={`https://www.youtube.com/watch?v=${movieDetails.trailer}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-white/70 text-sm hover:text-white underline"
+                          >
+                            Open in YouTube
+                          </a>
+                        </div>
+                      </div>
                     ) : (
                       <div className="flex items-center justify-center h-full text-white/70 text-lg">No trailer available.</div>
                     )}
@@ -3288,6 +3541,21 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
           isOpen={showStreamingPlayer}
           onClose={handleCloseStreaming}
           onError={handleStreamingError}
+          content={(() => {
+            if (movieDetails?.type === 'tv') {
+              const content = {
+                id: movieDetails.id,
+                type: 'tv',
+                season: movieDetails.season,
+                episode: movieDetails.episode
+              };
+              console.log('StreamingPlayer: Content for TV show:', content);
+              return content;
+            }
+            return movieDetails;
+          })()}
+          currentService={currentService}
+          onServiceChange={handleServiceChange}
         />
 
         {/* TV Episode Selector */}
@@ -3299,7 +3567,11 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
           seasons={seasons}
           currentSeason={currentSeason}
           onSeasonChange={handleSeasonChange}
+          currentService={currentService}
+          onServiceChange={handleServiceChange}
         />
+
+
       </motion.div>
     </AnimatePresence>
   );

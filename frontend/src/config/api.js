@@ -2,7 +2,7 @@
 // Change this to switch between local and deployed backend
 const API_CONFIG = {
   // Set to 'local' for local development, 'deployed' for production backend
-  mode: 'local', // Switched to local to avoid deployed backend timeout issues
+  mode: 'deployed', // Use deployed backend by default for production
   
   // API URLs
   local: 'http://localhost:3001/api',
@@ -15,11 +15,23 @@ const API_CONFIG = {
 
 // Get the appropriate API URL based on mode
 export const getApiUrl = () => {
+  // Check for environment variable first (for deployment)
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  
+  // Fall back to config-based URL
   return API_CONFIG[API_CONFIG.mode];
 };
 
 // Get the appropriate Socket URL based on mode
 export const getSocketUrl = () => {
+  // Check for environment variable first (for deployment)
+  if (import.meta.env.VITE_SOCKET_URL) {
+    return import.meta.env.VITE_SOCKET_URL;
+  }
+  
+  // Fall back to config-based URL
   return API_CONFIG[`${API_CONFIG.mode}Socket`];
 };
 

@@ -17,12 +17,12 @@ const NETWORK_ERROR_TYPES = {
 
 // Enhanced retry configuration
 const RETRY_CONFIG = {
-  MAX_RETRIES: 3, // Reduced from 5 to 3 for faster failure
-  BASE_DELAY: 500, // Reduced from 1000 to 500ms
-  MAX_DELAY: 10000, // Reduced from 30000 to 10000ms
-  JITTER_FACTOR: 0.2, // Reduced jitter for more predictable timing
-  BACKOFF_MULTIPLIER: 1.5, // Reduced from 2 to 1.5 for faster retries
-  TIMEOUT: 15000 // Reduced from 30000 to 15000ms
+  MAX_RETRIES: 2, // Further reduced to 2 for faster failure and less API load
+  BASE_DELAY: 1000, // Increased to 1000ms to give more time between retries
+  MAX_DELAY: 5000, // Reduced max delay to 5 seconds
+  JITTER_FACTOR: 0.1, // Reduced jitter for more predictable timing
+  BACKOFF_MULTIPLIER: 2, // Increased backoff for better spacing
+  TIMEOUT: 10000 // Reduced timeout to 10 seconds for faster failure detection
 };
 
 // Shared fetchWithRetry function to avoid hoisting issues
@@ -47,17 +47,35 @@ const sharedFetchWithRetry = async (url, attempt = 1, customTimeout = RETRY_CONF
     
     return response;
   } catch (error) {
-    if (attempt >= RETRY_CONFIG.MAX_RETRIES) {
-      throw error;
+    // Check if this is a connection reset error
+    const isConnectionReset = error.message.includes('connection reset') || 
+                             error.message.includes('net::err_connection_reset') ||
+                             error.name === 'TypeError' && error.message.includes('fetch');
+    
+    // For connection reset errors, use longer delays
+    if (isConnectionReset && attempt < RETRY_CONFIG.MAX_RETRIES) {
+      const delay = Math.min(
+        RETRY_CONFIG.BASE_DELAY * Math.pow(RETRY_CONFIG.BACKOFF_MULTIPLIER, attempt - 1) * 2, // Double delay for connection resets
+        RETRY_CONFIG.MAX_DELAY
+      );
+      
+      console.log(`Connection reset detected, retrying in ${delay}ms (attempt ${attempt})`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return sharedFetchWithRetry(url, attempt + 1, customTimeout);
     }
     
-    const delay = Math.min(
-      RETRY_CONFIG.BASE_DELAY * Math.pow(RETRY_CONFIG.BACKOFF_MULTIPLIER, attempt - 1),
-      RETRY_CONFIG.MAX_DELAY
-    );
+    // For other errors, use normal retry logic
+    if (attempt < RETRY_CONFIG.MAX_RETRIES) {
+      const delay = Math.min(
+        RETRY_CONFIG.BASE_DELAY * Math.pow(RETRY_CONFIG.BACKOFF_MULTIPLIER, attempt - 1),
+        RETRY_CONFIG.MAX_DELAY
+      );
+      
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return sharedFetchWithRetry(url, attempt + 1, customTimeout);
+    }
     
-    await new Promise(resolve => setTimeout(resolve, delay));
-    return sharedFetchWithRetry(url, attempt + 1, customTimeout);
+    throw error;
   }
 };
 
@@ -81,10 +99,10 @@ const CACHE_DURATIONS = {
 // Optimized request queue with better concurrency
 const requestQueue = [];
 let isProcessingQueue = false;
-const MAX_CONCURRENT_REQUESTS = 4; // Increased from 2 to 4
+const MAX_CONCURRENT_REQUESTS = 2; // Reduced from 4 to 2 to prevent overwhelming the API
 let activeRequests = 0;
 let lastRequestTime = 0;
-const MIN_REQUEST_INTERVAL = 100; // Reduced from 250ms to 100ms
+const MIN_REQUEST_INTERVAL = 200; // Increased from 100ms to 200ms to reduce API load
 
 // Request batching for better performance
 const batchRequests = new Map();
@@ -219,8 +237,8 @@ export const checkNetworkConnectivity = async () => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
     
-    // Use a public CDN endpoint instead of TMDB API for network checks
-    const response = await fetch('https://www.google.com/favicon.ico', {
+    // Use a CORS-friendly endpoint for network checks
+    const response = await fetch('https://httpbin.org/status/200', {
       method: 'HEAD',
       signal: controller.signal,
       cache: 'no-cache'
@@ -229,7 +247,26 @@ export const checkNetworkConnectivity = async () => {
     clearTimeout(timeoutId);
     return response.ok;
   } catch (error) {
-    return false;
+    // If httpbin.org fails, try a fallback approach
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      
+      // Use navigator.onLine as a fallback
+      if (navigator.onLine) {
+        // Try a simple fetch to a reliable endpoint
+        const response = await fetch('https://api.themoviedb.org/3/configuration', {
+          method: 'HEAD',
+          signal: controller.signal,
+          cache: 'no-cache'
+        });
+        clearTimeout(timeoutId);
+        return response.ok;
+      }
+      return false;
+    } catch (fallbackError) {
+      return navigator.onLine; // Fallback to browser's online status
+    }
   }
 };
 
@@ -1254,32 +1291,14 @@ export const getSimilarMovies = async (id, type = 'movie', page = 1, options = {
 
 // Optimized getTrendingMovies function with better retry logic
 export const getTrendingMovies = async (page = 1) => {
-  const MAX_RETRIES = 3;
-  const INITIAL_RETRY_DELAY = 1000;
-  const MAX_RETRY_DELAY = 5000;
-
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
   const fetchWithRetry = async (url, attempt = 1) => {
     try {
-      const response = await fetch(url);
-      if (!response.ok) {
-        if (response.status === 503 && attempt < MAX_RETRIES) {
-          const delay = Math.min(INITIAL_RETRY_DELAY * Math.pow(2, attempt - 1), MAX_RETRY_DELAY);
-          console.log(`Attempt ${attempt} failed with 503, retrying in ${delay}ms...`);
-          await sleep(delay);
-          return fetchWithRetry(url, attempt + 1);
-        }
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+      const response = await sharedFetchWithRetry(url, attempt);
       return await response.json();
     } catch (error) {
-      if (attempt < MAX_RETRIES) {
-        const delay = Math.min(INITIAL_RETRY_DELAY * Math.pow(2, attempt - 1), MAX_RETRY_DELAY);
-        console.log(`Attempt ${attempt} failed, retrying in ${delay}ms...`);
-        await sleep(delay);
-        return fetchWithRetry(url, attempt + 1);
-      }
+      console.error(`Failed to fetch trending movies after ${attempt} attempts:`, error);
       throw error;
     }
   };

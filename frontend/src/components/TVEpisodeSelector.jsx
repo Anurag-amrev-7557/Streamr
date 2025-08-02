@@ -9,7 +9,9 @@ const VirtualizedEpisodeList = React.memo(({
   selectedEpisode, 
   onEpisodeSelect, 
   containerHeight = 300,
-  itemHeight = 50 
+  itemHeight = 50,
+  onLoadMore,
+  hasMore
 }) => {
   const [scrollTop, setScrollTop] = useState(0);
   const containerRef = useRef(null);
@@ -69,11 +71,35 @@ const VirtualizedEpisodeList = React.memo(({
           );
         })}
       </div>
+      
+      {/* Load More Arrow for List View */}
+      {hasMore && episodes.length > 0 && (
+        <div className="flex justify-center mt-4">
+          <motion.button
+            onClick={onLoadMore}
+            className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white/80 transition-colors duration-200"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <span className="text-sm font-medium">Load More Episodes</span>
+            <motion.svg 
+              className="w-4 h-4" 
+              fill="none" 
+              stroke="currentColor" 
+              viewBox="0 0 24 24"
+              animate={{ y: [0, 2, 0] }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7-7-7" />
+            </motion.svg>
+          </motion.button>
+        </div>
+      )}
     </div>
   );
 });
 
-// Enhanced TV Episode Selector with large episode handling
+// Enhanced TV Episode Selector with load more pagination
 const TVEpisodeSelector = ({ 
   show, 
   isOpen, 
@@ -81,7 +107,9 @@ const TVEpisodeSelector = ({
   onEpisodeSelect,
   seasons = [],
   currentSeason = null,
-  onSeasonChange = null
+  onSeasonChange = null,
+  currentService = null,
+  onServiceChange = null
 }) => {
   const [selectedSeason, setSelectedSeason] = useState(1);
   const [selectedEpisode, setSelectedEpisode] = useState(1);
@@ -90,11 +118,8 @@ const TVEpisodeSelector = ({
   const [isLoadingEpisodes, setIsLoadingEpisodes] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
-  const [episodesPerPage, setEpisodesPerPage] = useState(50);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [displayedEpisodes, setDisplayedEpisodes] = useState(10); // Show 10 episodes initially
   const [totalEpisodes, setTotalEpisodes] = useState(0);
-  
-
 
   // Create portal container for the modal
   useEffect(() => {
@@ -121,8 +146,7 @@ const TVEpisodeSelector = ({
       setSelectedSeason(currentSeason?.season_number || 1);
       setSelectedEpisode(1);
       setSearchTerm('');
-      setCurrentPage(1);
-      setViewMode('grid');
+      setDisplayedEpisodes(10); // Reset to show 10 episodes
     }
   }, [isOpen, currentSeason]);
 
@@ -136,7 +160,7 @@ const TVEpisodeSelector = ({
       const allEpisodes = seasonData.episodes || [];
       setEpisodes(allEpisodes);
       setTotalEpisodes(allEpisodes.length);
-      setCurrentPage(1);
+      setDisplayedEpisodes(10); // Reset to show 10 episodes
     } catch (error) {
       console.error('Failed to fetch episodes:', error);
       setEpisodes([]);
@@ -165,14 +189,15 @@ const TVEpisodeSelector = ({
     );
   }, [episodes, searchTerm]);
 
-  // Paginate episodes
-  const paginatedEpisodes = useMemo(() => {
-    const startIndex = (currentPage - 1) * episodesPerPage;
-    const endIndex = startIndex + episodesPerPage;
-    return filteredEpisodes.slice(startIndex, endIndex);
-  }, [filteredEpisodes, currentPage, episodesPerPage]);
+  // Get episodes to display (first N episodes)
+  const displayedEpisodesList = useMemo(() => {
+    return filteredEpisodes.slice(0, displayedEpisodes);
+  }, [filteredEpisodes, displayedEpisodes]);
 
-  const totalPages = Math.ceil(filteredEpisodes.length / episodesPerPage);
+  // Check if there are more episodes to load
+  const hasMoreEpisodes = useMemo(() => {
+    return displayedEpisodes < filteredEpisodes.length;
+  }, [displayedEpisodes, filteredEpisodes.length]);
 
   const handleClose = () => {
     onClose();
@@ -206,7 +231,7 @@ const TVEpisodeSelector = ({
     setSelectedSeason(season.season_number || season);
     setSelectedEpisode(1);
     setSearchTerm('');
-    setCurrentPage(1);
+    setDisplayedEpisodes(10); // Reset to show 10 episodes
     if (onSeasonChange) {
       onSeasonChange(season);
     }
@@ -214,17 +239,33 @@ const TVEpisodeSelector = ({
 
   const handleEpisodeSelect = (episode) => {
     setSelectedEpisode(episode.episode_number);
-    onEpisodeSelect(selectedSeason, episode.episode_number);
+    
+    // Create episode data with streaming service information
+    const episodeData = {
+      showId: show?.id,
+      season: selectedSeason,
+      episode: episode.episode_number,
+      episodeInfo: episode,
+      showInfo: show
+    };
+    
+    console.log('TVEpisodeSelector: handleEpisodeSelect called with:', {
+      selectedSeason,
+      episode: episode.episode_number,
+      episodeData
+    });
+    
+    onEpisodeSelect(selectedSeason, episode.episode_number, episodeData);
     handleClose();
   };
 
   const handleSearch = (e) => {
     setSearchTerm(e.target.value);
-    setCurrentPage(1); // Reset to first page when searching
+    setDisplayedEpisodes(10); // Reset to show 10 episodes when searching
   };
 
-  const handlePageChange = (page) => {
-    setCurrentPage(page);
+  const handleLoadMore = () => {
+    setDisplayedEpisodes(prev => prev + 10); // Load 10 more episodes
   };
 
   const handleViewModeChange = (mode) => {
@@ -338,7 +379,7 @@ const TVEpisodeSelector = ({
                 <div className="lg:col-span-2">
                   <div className="flex items-center justify-between mb-3">
                     <label className="block text-white/80 text-sm font-medium">
-                      Episodes ({filteredEpisodes.length} total)
+                      Episodes ({filteredEpisodes.length} total, showing {displayedEpisodesList.length})
                     </label>
                     <div className="flex items-center gap-2">
                       {/* View Mode Toggle */}
@@ -392,69 +433,101 @@ const TVEpisodeSelector = ({
                   ) : (
                     <div>
                       {viewMode === 'grid' ? (
-                        // Grid View
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-96 overflow-y-auto">
-                          {paginatedEpisodes.map((episode) => (
-                            <button
-                              key={episode.id}
-                              onClick={() => handleEpisodeSelect(episode)}
-                              className={`p-3 rounded-lg text-sm font-medium transition-all duration-200 text-left ${
-                                selectedEpisode === episode.episode_number
-                                  ? 'bg-red-600 text-white shadow-lg'
-                                  : 'bg-white/10 text-white/80 hover:bg-white/20'
-                              }`}
-                            >
-                              <div className="text-center">
-                                <div className="font-semibold">Episode {episode.episode_number}</div>
-                                {episode.name && (
-                                  <div className="text-xs opacity-70 truncate mt-1">
-                                    {episode.name}
+                        // Grid View with Load More Arrow
+                        <div className="relative">
+                          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-96 overflow-y-auto">
+                            {displayedEpisodesList.map((episode, index) => (
+                              <div key={episode.id} className="relative">
+                                <button
+                                  onClick={() => handleEpisodeSelect(episode)}
+                                  className={`w-full p-3 rounded-lg text-sm font-medium transition-all duration-200 text-left ${
+                                    selectedEpisode === episode.episode_number
+                                      ? 'bg-red-600 text-white shadow-lg'
+                                      : 'bg-white/10 text-white/80 hover:bg-white/20'
+                                  }`}
+                                >
+                                  <div className="text-center">
+                                    <div className="font-semibold">Episode {episode.episode_number}</div>
+                                    {episode.name && (
+                                      <div className="text-xs opacity-70 truncate mt-1">
+                                        {episode.name}
+                                      </div>
+                                    )}
+                                    {episode.runtime && (
+                                      <div className="text-xs opacity-50 mt-1">
+                                        {Math.floor(episode.runtime / 60)}m
+                                      </div>
+                                    )}
                                   </div>
-                                )}
-                                {episode.runtime && (
-                                  <div className="text-xs opacity-50 mt-1">
-                                    {Math.floor(episode.runtime / 60)}m
-                                  </div>
+                                </button>
+                                
+                                {/* Load More Arrow - Show at the 10th episode position */}
+                                {hasMoreEpisodes && index === 9 && (
+                                  <motion.div
+                                    className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 z-10"
+                                    initial={{ opacity: 0, y: -10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ duration: 0.3 }}
+                                  >
+                                    <motion.button
+                                      onClick={handleLoadMore}
+                                      className="flex items-center justify-center w-8 h-8 bg-white/20 hover:bg-white/30 rounded-full transition-colors duration-200 shadow-lg"
+                                      whileHover={{ scale: 1.1 }}
+                                      whileTap={{ scale: 0.9 }}
+                                    >
+                                      <motion.svg 
+                                        className="w-4 h-4 text-white" 
+                                        fill="none" 
+                                        stroke="currentColor" 
+                                        viewBox="0 0 24 24"
+                                        animate={{ y: [0, 2, 0] }}
+                                        transition={{ duration: 1.5, repeat: Infinity }}
+                                      >
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7-7-7" />
+                                      </motion.svg>
+                                    </motion.button>
+                                  </motion.div>
                                 )}
                               </div>
-                            </button>
-                          ))}
+                            ))}
+                          </div>
+                          
+                          {/* Load More Button for Grid View */}
+                          {hasMoreEpisodes && (
+                            <div className="flex justify-center mt-6">
+                              <motion.button
+                                onClick={handleLoadMore}
+                                className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white/80 transition-colors duration-200"
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                              >
+                                <span className="text-sm font-medium">Load More Episodes</span>
+                                <motion.svg 
+                                  className="w-4 h-4" 
+                                  fill="none" 
+                                  stroke="currentColor" 
+                                  viewBox="0 0 24 24"
+                                  animate={{ y: [0, 2, 0] }}
+                                  transition={{ duration: 1.5, repeat: Infinity }}
+                                >
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7-7-7" />
+                                </motion.svg>
+                              </motion.button>
+                            </div>
+                          )}
                         </div>
                       ) : (
                         // List View with Virtualization
                         <div className="max-h-96">
                           <VirtualizedEpisodeList
-                            episodes={paginatedEpisodes}
+                            episodes={displayedEpisodesList}
                             selectedEpisode={selectedEpisode}
                             onEpisodeSelect={handleEpisodeSelect}
                             containerHeight={384}
                             itemHeight={60}
+                            onLoadMore={handleLoadMore}
+                            hasMore={hasMoreEpisodes}
                           />
-                        </div>
-                      )}
-
-                      {/* Pagination */}
-                      {totalPages > 1 && (
-                        <div className="flex items-center justify-between mt-4 pt-4 border-t border-white/10">
-                          <div className="text-white/60 text-sm">
-                            Page {currentPage} of {totalPages}
-                          </div>
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => handlePageChange(currentPage - 1)}
-                              disabled={currentPage === 1}
-                              className="px-3 py-1 rounded bg-white/10 text-white/80 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                            >
-                              Previous
-                            </button>
-                            <button
-                              onClick={() => handlePageChange(currentPage + 1)}
-                              disabled={currentPage === totalPages}
-                              className="px-3 py-1 rounded bg-white/10 text-white/80 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                            >
-                              Next
-                            </button>
-                          </div>
                         </div>
                       )}
                     </div>

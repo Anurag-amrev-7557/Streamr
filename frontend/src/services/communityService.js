@@ -75,10 +75,25 @@ export const communityService = {
       ...(category && { category }),
       ...(tag && { tag })
     });
-    return fetchWithRetry(() =>
-      api.get(`/community/discussions?${params}`, { timeout })
-        .then(response => response.data)
-    );
+    
+    console.log('🔍 Community Service - Fetching discussions:', {
+      url: `/community/discussions?${params}`,
+      timeout,
+      apiUrl: getApiUrlLazy()
+    });
+    
+    try {
+      const result = await fetchWithRetry(() =>
+        api.get(`/community/discussions?${params}`, { timeout })
+          .then(response => response.data)
+      );
+      
+      console.log('✅ Community Service - Discussions fetched successfully:', result);
+      return result;
+    } catch (error) {
+      console.error('❌ Community Service - Failed to fetch discussions:', error);
+      throw error;
+    }
   },
 
   getDiscussion: async (id) => {

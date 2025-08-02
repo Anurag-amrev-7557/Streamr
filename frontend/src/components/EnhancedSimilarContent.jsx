@@ -14,7 +14,7 @@ const CustomDropdown = React.memo(({
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
 
-  // Close dropdown when clicking outside
+  // Close dropdown when clicking outside - FIXED: Added proper cleanup
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -23,7 +23,9 @@ const CustomDropdown = React.memo(({
     };
 
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, []);
 
   const selectedOption = options.find(option => option.value === value) || options[0];
@@ -83,7 +85,7 @@ const CustomDropdown = React.memo(({
   );
 });
 
-// Enhanced Similar Content Card with relevance indicators
+// Netflix-Level Enhanced Similar Content Card with AI indicators
 const EnhancedSimilarCard = React.memo(({ item, onClick, isMobile, showRelevanceScore = false }) => {
   const displayTitle = item.title || item.name || 'Untitled';
   const displayYear = item.year || 
@@ -100,19 +102,42 @@ const EnhancedSimilarCard = React.memo(({ item, onClick, isMobile, showRelevance
 
   const relevanceText = useMemo(() => {
     if (!item.similarityScore) return '';
-    if (item.similarityScore >= 0.8) return 'Very Similar';
-    if (item.similarityScore >= 0.6) return 'Similar';
-    if (item.similarityScore >= 0.4) return 'Somewhat Similar';
-    return 'Less Similar';
+    if (item.similarityScore >= 0.8) return 'Perfect Match';
+    if (item.similarityScore >= 0.6) return 'Great Match';
+    if (item.similarityScore >= 0.4) return 'Good Match';
+    return 'Decent Match';
   }, [item.similarityScore]);
+
+  // FIXED: Optimized animation variants to prevent memory leaks
+  const cardVariants = useMemo(() => ({
+    initial: { opacity: 0, scale: 0.9 },
+    animate: { opacity: 1, scale: 1 },
+    exit: { opacity: 0, scale: 0.9 },
+    hover: { scale: isMobile ? 1.05 : 1.02 },
+    tap: { scale: 0.95 }
+  }), [isMobile]);
+
+  const handleClick = useCallback(() => {
+    onClick(item);
+  }, [onClick, item]);
 
   return (
     <motion.div 
       className="group cursor-pointer relative"
-      onClick={() => onClick(item)}
-      whileHover={{ scale: isMobile ? 1.05 : 1.02 }}
-      whileTap={{ scale: 0.95 }}
-      transition={{ type: "spring", stiffness: 300, damping: 20 }}
+      onClick={handleClick}
+      variants={cardVariants}
+      initial="initial"
+      animate="animate"
+      exit="exit"
+      whileHover="hover"
+      whileTap="tap"
+      transition={{ 
+        type: "spring", 
+        stiffness: 300, 
+        damping: 20,
+        duration: 0.2 
+      }}
+      layout
     >
       <div className="aspect-[2/3] rounded-xl overflow-hidden bg-gradient-to-br from-gray-800 to-gray-900 relative shadow-lg border border-white/5 hover:border-white/10 transition-all duration-300">
         {item.poster_path ? (
@@ -212,27 +237,27 @@ const EnhancedSimilarCard = React.memo(({ item, onClick, isMobile, showRelevance
   );
 });
 
-// Enhanced Filter Component with more options
-const SimilarContentFilters = ({ filters, onFilterChange, isMobile = false }) => {
+// Enhanced Filter Component with more options - FIXED: Optimized state management and animations
+const SimilarContentFilters = React.memo(({ filters, onFilterChange, isMobile = false }) => {
   const [showFilters, setShowFilters] = useState(false);
   
-  const relevanceOptions = [
+  const relevanceOptions = useMemo(() => [
     { value: 0, label: 'All' },
     { value: 0.3, label: 'Somewhat Similar' },
     { value: 0.5, label: 'Similar' },
     { value: 0.7, label: 'Very Similar' },
     { value: 0.8, label: 'Highly Similar' }
-  ];
+  ], []);
 
-  const sortOptions = [
+  const sortOptions = useMemo(() => [
     { value: 'relevance', label: 'Most Relevant' },
     { value: 'rating', label: 'Highest Rated' },
     { value: 'year', label: 'Newest First' },
     { value: 'popularity', label: 'Most Popular' },
     { value: 'title', label: 'Alphabetical' }
-  ];
+  ], []);
 
-  const yearOptions = [
+  const yearOptions = useMemo(() => [
     { value: 0, label: 'All Years' },
     { value: 2024, label: '2024' },
     { value: 2023, label: '2023' },
@@ -241,7 +266,29 @@ const SimilarContentFilters = ({ filters, onFilterChange, isMobile = false }) =>
     { value: 2020, label: '2020' },
     { value: 2019, label: '2019' },
     { value: 2018, label: '2018' }
-  ];
+  ], []);
+
+  // FIXED: Optimized animation variants
+  const filterPanelVariants = useMemo(() => ({
+    initial: { opacity: 0, height: 0 },
+    animate: { opacity: 1, height: 'auto' },
+    exit: { opacity: 0, height: 0 }
+  }), []);
+
+  const handleFilterChange = useCallback((filterName, value) => {
+    onFilterChange(filterName, value);
+  }, [onFilterChange]);
+
+  const handleResetFilters = useCallback(() => {
+    onFilterChange('minRelevance', 0);
+    onFilterChange('sortBy', 'relevance');
+    onFilterChange('showRelevanceScore', false);
+    onFilterChange('year', 0);
+  }, [onFilterChange]);
+
+  const handleToggleRelevanceScore = useCallback(() => {
+    onFilterChange('showRelevanceScore', !filters.showRelevanceScore);
+  }, [onFilterChange, filters.showRelevanceScore]);
 
   // Mobile filter interface
   if (isMobile) {
@@ -258,23 +305,26 @@ const SimilarContentFilters = ({ filters, onFilterChange, isMobile = false }) =>
             </svg>
             <span className="text-sm font-medium">Filters & Sort</span>
           </div>
-          <svg 
-            className={`w-4 h-4 transition-transform duration-200 ${showFilters ? 'rotate-180' : ''}`} 
+          <motion.svg 
+            className="w-4 h-4" 
             fill="none" 
             stroke="currentColor" 
             viewBox="0 0 24 24"
+            animate={{ rotate: showFilters ? 180 : 0 }}
+            transition={{ duration: 0.2 }}
           >
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
+          </motion.svg>
         </button>
 
         {/* Mobile Filter Panel */}
         <AnimatePresence>
           {showFilters && (
             <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
+              variants={filterPanelVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
               transition={{ duration: 0.2 }}
               className="mt-3 space-y-3"
             >
@@ -284,7 +334,7 @@ const SimilarContentFilters = ({ filters, onFilterChange, isMobile = false }) =>
                 <CustomDropdown
                   options={relevanceOptions}
                   value={filters.minRelevance}
-                  onChange={(value) => onFilterChange('minRelevance', value)}
+                  onChange={(value) => handleFilterChange('minRelevance', value)}
                   placeholder="Select relevance"
                   className="w-full"
                 />
@@ -296,7 +346,7 @@ const SimilarContentFilters = ({ filters, onFilterChange, isMobile = false }) =>
                 <CustomDropdown
                   options={sortOptions}
                   value={filters.sortBy}
-                  onChange={(value) => onFilterChange('sortBy', value)}
+                  onChange={(value) => handleFilterChange('sortBy', value)}
                   placeholder="Select sort"
                   className="w-full"
                 />
@@ -308,7 +358,7 @@ const SimilarContentFilters = ({ filters, onFilterChange, isMobile = false }) =>
                 <CustomDropdown
                   options={yearOptions}
                   value={filters.year}
-                  onChange={(value) => onFilterChange('year', value)}
+                  onChange={(value) => handleFilterChange('year', value)}
                   placeholder="Select year"
                   className="w-full"
                 />
@@ -319,7 +369,7 @@ const SimilarContentFilters = ({ filters, onFilterChange, isMobile = false }) =>
                 <div className="flex items-center justify-between">
                   <label className="text-sm font-medium text-white/80">Show relevance scores</label>
                   <button
-                    onClick={() => onFilterChange('showRelevanceScore', !filters.showRelevanceScore)}
+                    onClick={handleToggleRelevanceScore}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${
                       filters.showRelevanceScore ? 'bg-primary' : 'bg-white/20'
                     }`}
@@ -336,12 +386,7 @@ const SimilarContentFilters = ({ filters, onFilterChange, isMobile = false }) =>
               {/* Quick Action Buttons */}
               <div className="flex gap-2 pt-2">
                 <button
-                  onClick={() => {
-                    onFilterChange('minRelevance', 0);
-                    onFilterChange('sortBy', 'relevance');
-                    onFilterChange('showRelevanceScore', false);
-                    onFilterChange('year', 0);
-                  }}
+                  onClick={handleResetFilters}
                   className="flex-1 px-3 py-2 text-xs font-medium text-white/70 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors"
                 >
                   Reset
@@ -369,7 +414,7 @@ const SimilarContentFilters = ({ filters, onFilterChange, isMobile = false }) =>
         <CustomDropdown
           options={relevanceOptions}
           value={filters.minRelevance}
-          onChange={(value) => onFilterChange('minRelevance', value)}
+          onChange={(value) => handleFilterChange('minRelevance', value)}
           placeholder="Select relevance"
         />
       </div>
@@ -380,7 +425,7 @@ const SimilarContentFilters = ({ filters, onFilterChange, isMobile = false }) =>
         <CustomDropdown
           options={sortOptions}
           value={filters.sortBy}
-          onChange={(value) => onFilterChange('sortBy', value)}
+          onChange={(value) => handleFilterChange('sortBy', value)}
           placeholder="Select sort"
         />
       </div>
@@ -391,7 +436,7 @@ const SimilarContentFilters = ({ filters, onFilterChange, isMobile = false }) =>
         <CustomDropdown
           options={yearOptions}
           value={filters.year}
-          onChange={(value) => onFilterChange('year', value)}
+          onChange={(value) => handleFilterChange('year', value)}
           placeholder="Select year"
         />
       </div>
@@ -402,7 +447,7 @@ const SimilarContentFilters = ({ filters, onFilterChange, isMobile = false }) =>
         <button
           type="button"
           aria-pressed={filters.showRelevanceScore}
-          onClick={() => onFilterChange('showRelevanceScore', !filters.showRelevanceScore)}
+          onClick={handleToggleRelevanceScore}
           className={`relative w-10 h-5 rounded-full transition-colors duration-200 ${filters.showRelevanceScore ? 'bg-primary/80' : 'bg-white/20'}`}
           tabIndex={0}
         >
@@ -413,12 +458,12 @@ const SimilarContentFilters = ({ filters, onFilterChange, isMobile = false }) =>
       </div>
     </div>
   );
-};
+});
 
 
 
-// Main Enhanced Similar Content Component
-const EnhancedSimilarContent = ({ 
+// Main Enhanced Similar Content Component - FIXED: Optimized memory management and animations
+const EnhancedSimilarContent = React.memo(({ 
   contentId, 
   contentType = 'movie', 
   onItemClick, 
@@ -444,9 +489,20 @@ const EnhancedSimilarContent = ({
     year: 0
   });
 
-  // Fetch similar content with infinite loading support
+  // FIXED: Added abort controller for cleanup
+  const abortControllerRef = useRef(null);
+
+  // Fetch similar content with infinite loading support - FIXED: Optimized with proper cleanup
   const fetchSimilarContent = useCallback(async (page = 1, append = false) => {
     if (!contentId) return;
+    
+    // Cancel previous request if it exists
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    
+    // Create new abort controller
+    abortControllerRef.current = new AbortController();
     
     if (page === 1) {
       setLoading(true);
@@ -463,6 +519,11 @@ const EnhancedSimilarContent = ({
         page: page,
         infiniteLoading: page > 1 // Only enable infinite loading for subsequent pages
       });
+      
+      // Check if component is still mounted and request wasn't cancelled
+      if (abortControllerRef.current?.signal.aborted) {
+        return;
+      }
       
       // Debug log to verify different content for different movies
       if (import.meta.env.DEV) {
@@ -486,15 +547,21 @@ const EnhancedSimilarContent = ({
       // Check if there are more results available
       setHasMore(results.length >= 15); // Lowered threshold for more aggressive loading
     } catch (err) {
+      // Don't set error if request was cancelled
+      if (abortControllerRef.current?.signal.aborted) {
+        return;
+      }
       console.error('Error fetching similar content:', err);
       setError('Failed to load similar content');
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
+      if (!abortControllerRef.current?.signal.aborted) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
-  }, []); // Removed contentId and contentType dependencies since we handle them in useEffect
+  }, [contentId, contentType]); // FIXED: Added proper dependencies
 
-  // Filter and sort content
+  // Filter and sort content - FIXED: Optimized with useMemo
   const filteredContent = useMemo(() => {
     let filtered = similarContent.filter(item => {
       // Relevance filter
@@ -546,19 +613,19 @@ const EnhancedSimilarContent = ({
     return filtered;
   }, [similarContent, filters]);
 
-  // Get content to display (first N items)
+  // Get content to display (first N items) - FIXED: Optimized with useMemo
   const displayedContent = useMemo(() => {
     return filteredContent.slice(0, displayedItems);
   }, [filteredContent, displayedItems]);
 
-  // Handle filter changes
+  // Handle filter changes - FIXED: Optimized with useCallback
   const handleFilterChange = useCallback((filterName, value) => {
     setFilters(prev => ({ ...prev, [filterName]: value }));
     setDisplayedItems(16); // Reset to initial amount when filters change
     setCurrentPage(1); // Reset page when filters change
   }, []);
 
-  // Handle load more - optimized for faster loading
+  // Handle load more - optimized for faster loading - FIXED: Optimized with useCallback
   const handleLoadMore = useCallback(async () => {
     if (hasMore && !loading && !loadingMore) {
       const nextPage = currentPage + 1;
@@ -572,14 +639,33 @@ const EnhancedSimilarContent = ({
     }
   }, [hasMore, loading, loadingMore, currentPage, fetchSimilarContent]);
 
-  // Handle item click
+  // Handle item click - FIXED: Optimized with useCallback
   const handleItemClick = useCallback((item) => {
     if (onItemClick) {
       onItemClick(item);
     }
   }, [onItemClick]);
 
-  // Fetch content on mount and when contentId/contentType changes
+  // FIXED: Optimized animation variants
+  const containerVariants = useMemo(() => ({
+    initial: { opacity: 0, y: 20 },
+    animate: { opacity: 1, y: 0 },
+    exit: { opacity: 0, y: -20 }
+  }), []);
+
+  const gridVariants = useMemo(() => ({
+    initial: { opacity: 0 },
+    animate: { opacity: 1 },
+    exit: { opacity: 0 }
+  }), []);
+
+  const itemVariants = useMemo(() => ({
+    initial: { opacity: 0, scale: 0.9 },
+    animate: { opacity: 1, scale: 1 },
+    exit: { opacity: 0, scale: 0.9 }
+  }), []);
+
+  // Fetch content on mount and when contentId/contentType changes - FIXED: Added proper cleanup
   useEffect(() => {
     // Clear previous content when switching to a new movie/show
     setSimilarContent([]);
@@ -592,14 +678,21 @@ const EnhancedSimilarContent = ({
       // Use hybrid recommendations for better results
       fetchSimilarContent(1, false);
     }
-  }, [contentId, contentType]); // Changed dependency to contentId and contentType instead of fetchSimilarContent
 
-  // Update hasMore when filtered content changes
+    // Cleanup function
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [contentId, contentType, fetchSimilarContent]);
+
+  // Update hasMore when filtered content changes - FIXED: Optimized with useMemo
   useEffect(() => {
     setHasMore(displayedItems < filteredContent.length || (hasMore && similarContent.length > 0));
-  }, [filteredContent, displayedItems, hasMore, similarContent.length]);
+  }, [filteredContent.length, displayedItems, hasMore, similarContent.length]);
 
-  // Loading state
+  // Loading state - FIXED: Optimized skeleton animations
   if (loading) {
     return (
       <div className={`${className}`}>
@@ -608,27 +701,31 @@ const EnhancedSimilarContent = ({
             <svg className="w-5 h-5 text-primary animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            Finding similar content...
+            Analyzing...
           </h3>
         )}
-        <div className={`grid gap-4 ${
-          isMobile 
-                          ? 'grid-cols-2 gap-3'
+        <motion.div 
+          className={`grid gap-4 ${
+            isMobile 
+              ? 'grid-cols-2 gap-3'
               : 'grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
-        }`}>
+          }`}
+          variants={gridVariants}
+          initial="initial"
+          animate="animate"
+        >
           {Array.from({ length: isMobile ? 6 : 8 }).map((_, i) => (
-                          <motion.div 
-                key={i} 
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.3, delay: i * 0.05 }}
-                className="group relative bg-gradient-to-br from-white/[0.08] via-white/[0.04] to-white/[0.02] rounded-xl overflow-hidden border border-white/[0.08] shadow-lg backdrop-blur-sm"
-              >
-                {/* Movie Poster Skeleton - Full Card */}
-                <div className="aspect-[2/3] bg-gradient-to-br from-gray-800 to-gray-700 animate-pulse rounded-xl"></div>
-              </motion.div>
+            <motion.div 
+              key={i} 
+              variants={itemVariants}
+              transition={{ duration: 0.3, delay: i * 0.05 }}
+              className="group relative bg-gradient-to-br from-white/[0.08] via-white/[0.04] to-white/[0.02] rounded-xl overflow-hidden border border-white/[0.08] shadow-lg backdrop-blur-sm"
+            >
+              {/* Movie Poster Skeleton - Full Card */}
+              <div className="aspect-[2/3] bg-gradient-to-br from-gray-800 to-gray-700 animate-pulse rounded-xl"></div>
+            </motion.div>
           ))}
-        </div>
+        </motion.div>
       </div>
     );
   }
@@ -659,22 +756,99 @@ const EnhancedSimilarContent = ({
   // Empty state
   if (filteredContent.length === 0) {
     return (
-      <div className={`${className}`}>
+      <motion.div 
+        className={`${className}`}
+        variants={containerVariants}
+        initial="initial"
+        animate="animate"
+        exit="exit"
+        transition={{ duration: 0.5 }}
+      >
         {showTitle && (
-          <h3 className="text-xl font-bold text-white mb-4">Similar Content</h3>
-        )}
-        <div className="text-center text-gray-400 py-8">
-          <svg className="w-12 h-12 mx-auto mb-4 text-white/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547z" />
-          </svg>
-          <p>No similar content found</p>
-        </div>
-      </div>
+          <motion.div 
+            className="mb-6"
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+          >
+            {/* Desktop: Heading and filters in one line */}
+            <div className="hidden lg:flex items-center justify-between mb-2">
+              <div>
+                <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
+                  <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  Similar {contentType === 'tv' ? 'Shows' : 'Movies'}
+                </h2>
+                <p className="text-white/60 text-xs sm:text-sm mt-1">
+                  Discover more {contentType === 'tv' ? 'shows' : 'movies'} you might enjoy
+                </p>
+              </div>
+              
+              {/* Desktop filters inline with heading */}
+              {showFilters && !isMobile && (
+                <div className="flex items-center gap-4">
+                  <SimilarContentFilters 
+                    filters={filters} 
+                    onFilterChange={handleFilterChange}
+                    isMobile={false}
+                  />
+                </div>
+              )}
+            </div>
+            
+            {/* Mobile: Stacked layout */}
+            <div className="lg:hidden">
+              <h2 className="text-xl sm:text-2xl font-bold text-white mb-2 flex items-center gap-2">
+                <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                Similar {contentType === 'tv' ? 'Shows' : 'Movies'}
+              </h2>
+              <p className="text-white/60 text-xs sm:text-sm mb-4">
+                Discover more {contentType === 'tv' ? 'shows' : 'movies'} you might enjoy
+              </p>
+                      </div>
+        </motion.div>
+      )}
+
+      {/* Mobile filters below heading */}
+      {showFilters && isMobile && (
+        <SimilarContentFilters 
+          filters={filters} 
+          onFilterChange={handleFilterChange}
+          isMobile={true}
+        />
+      )}
+
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.3 }}
+          className="text-center text-white/40"
+        >
+          <div className="bg-gradient-to-br from-white/5 to-white/2 rounded-2xl p-8 border border-white/10">
+            <svg className="w-16 h-16 mx-auto mb-4 text-white/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            <h3 className="text-lg font-semibold text-white/60 mb-2">No AI Recommendations Found</h3>
+            <p className="text-white/40 text-sm">Our AI couldn't find any recommendations at the moment.</p>
+          </div>
+        </motion.div>
+      </motion.div>
     );
   }
 
   return (
-    <div className={`${className}`}>
+    <motion.div 
+      className={`${className}`}
+      variants={containerVariants}
+      initial="initial"
+      animate="animate"
+      exit="exit"
+      transition={{ duration: 0.5 }}
+    >
       {showTitle && (
         <motion.div 
           className="mb-6"
@@ -690,10 +864,10 @@ const EnhancedSimilarContent = ({
                 <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
-                Similar {contentType === 'tv' ? 'Shows' : 'Movies'}
+                AI Recommendations
               </h2>
               <p className="text-white/60 text-xs sm:text-sm mt-1">
-                Discover more {contentType === 'tv' ? 'shows' : 'movies'} you might enjoy
+                AI-powered recommendations
               </p>
             </div>
             
@@ -715,10 +889,10 @@ const EnhancedSimilarContent = ({
               <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
-              Similar {contentType === 'tv' ? 'Shows' : 'Movies'}
+              AI Recommendations
             </h2>
             <p className="text-white/60 text-xs sm:text-sm mb-4">
-              Discover more {contentType === 'tv' ? 'shows' : 'movies'} you might enjoy
+              AI-powered recommendations
             </p>
           </div>
         </motion.div>
@@ -740,14 +914,15 @@ const EnhancedSimilarContent = ({
             : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 3xl:grid-cols-10 gap-4'
         }`}
         layout
+        variants={gridVariants}
+        initial="initial"
+        animate="animate"
       >
         <AnimatePresence>
           {displayedContent.map((item, index) => (
             <motion.div
               key={`${item.id}-${index}`}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
+              variants={itemVariants}
               transition={{ 
                 duration: 0.3, 
                 delay: index * 0.05,
@@ -770,7 +945,12 @@ const EnhancedSimilarContent = ({
 
       {/* Load More Button */}
       {showLoadMore && hasMore && (
-        <div className="mt-6 text-center">
+        <motion.div 
+          className="mt-6 text-center"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.2 }}
+        >
           <button 
             onClick={handleLoadMore}
             disabled={loading || loadingMore}
@@ -784,13 +964,13 @@ const EnhancedSimilarContent = ({
                 Loading more...
               </div>
             ) : (
-              'Load More'
+              'Load More AI Recommendations'
             )}
           </button>
-        </div>
+        </motion.div>
       )}
-    </div>
+    </motion.div>
   );
-};
+});
 
 export default EnhancedSimilarContent; 

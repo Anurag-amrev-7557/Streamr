@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { enhancedNetworkCheck, getNetworkStats } from '../utils/networkOptimizer';
+import { checkBasicConnectivity, checkApiConnectivity, getNetworkStatus } from '../utils/networkUtils';
 
 const NetworkStatus = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -42,9 +42,19 @@ const NetworkStatus = () => {
       if (!isMountedRef.current) return;
       
       try {
-        const isOnline = await enhancedNetworkCheck();
+        // First check basic connectivity
+        const basicOnline = checkBasicConnectivity();
+        if (!basicOnline) {
+          if (isMountedRef.current) {
+            setIsOnline(false);
+          }
+          return;
+        }
+        
+        // Then check API connectivity
+        const apiOnline = await checkApiConnectivity();
         if (isMountedRef.current) {
-          setIsOnline(isOnline);
+          setIsOnline(apiOnline);
         }
       } catch (error) {
         console.log('Network test failed:', error);
@@ -69,7 +79,7 @@ const NetworkStatus = () => {
     // Update network stats periodically
     const statsInterval = setInterval(() => {
       if (isMountedRef.current) {
-        setNetworkStats(getNetworkStats());
+        setNetworkStats(getNetworkStatus());
       }
     }, 5000);
 
@@ -112,8 +122,8 @@ const NetworkStatus = () => {
             </span>
             {networkStats && (
               <span className="text-xs opacity-75">
-                {networkStats.isDegraded && '(Slow)'}
-                {networkStats.timeoutCount > 0 && `(${networkStats.timeoutCount} timeouts)`}
+                {networkStats.connectionType !== 'unknown' && `(${networkStats.connectionType})`}
+                {networkStats.rtt && `(${networkStats.rtt}ms)`}
               </span>
             )}
             {isPreviewMode && (

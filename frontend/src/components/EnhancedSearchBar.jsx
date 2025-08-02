@@ -34,17 +34,8 @@ const EnhancedSearchBar = ({
   onTrendingSelect,
   ...props
 }) => {
-  // Add a stable identifier for keys - use a more stable approach
-  const componentId = useRef(() => {
-    // Use a more stable ID that doesn't change on every render
-    if (!componentId.current._id) {
-      componentId.current._id = `search-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-    }
-    return componentId.current._id;
-  });
-  
-  // Get the stable ID
-  const stableId = componentId.current();
+  // Use a stable identifier for keys that doesn't change on every render
+  const componentId = useRef(`search-${Math.random().toString(36).substr(2, 9)}`);
   
   const [query, setQuery] = useState(initialValue);
   const [isFocused, setIsFocused] = useState(false);
@@ -60,6 +51,31 @@ const EnhancedSearchBar = ({
     if (showTrendingDropdown && trendingSearches.length > 0 && showTrendingSearches) return 'trending';
     return null;
   }, [showSuggestionsDropdown, suggestions.length, showHistoryDropdown, searchHistory.length, showHistory, showTrendingDropdown, trendingSearches.length, showTrendingSearches]);
+
+  // Memoize filtered suggestions to prevent unnecessary re-renders
+  const filteredSuggestions = useMemo(() => {
+    return suggestions
+      .slice(0, maxSuggestions)
+      .filter(suggestion => {
+        if (!suggestion || typeof suggestion !== 'object') {
+          return false;
+        }
+        const suggestionText = suggestion.title || suggestion.name || suggestion;
+        return suggestionText && typeof suggestionText === 'string' && suggestionText.trim() !== '';
+      })
+      .filter((suggestion, index, array) => {
+        const suggestionId = suggestion.id || suggestion.title || suggestion.name || suggestion;
+        return array.findIndex(item => {
+          const itemId = item.id || item.title || item.name || item;
+          return itemId === suggestionId;
+        }) === index;
+      })
+      .filter(suggestion => {
+        const hasValidId = suggestion.id !== undefined && suggestion.id !== null;
+        const hasValidTitle = suggestion.title && typeof suggestion.title === 'string' && suggestion.title.trim() !== '';
+        return hasValidId || hasValidTitle;
+      });
+  }, [suggestions, maxSuggestions]);
   
   const inputRef = useRef(null);
   const suggestionsRef = useRef(null);
@@ -79,20 +95,36 @@ const EnhancedSearchBar = ({
 
   // Cleanup debounced function on unmount
   useEffect(() => {
+    const currentDebouncedSearch = debouncedSearch;
     return () => {
-      if (debouncedSearch && debouncedSearch.cancel) {
-        debouncedSearch.cancel();
+      if (currentDebouncedSearch && currentDebouncedSearch.cancel) {
+        currentDebouncedSearch.cancel();
       }
     };
   }, [debouncedSearch]);
+
+  // Track timeouts for cleanup
+  const timeoutsRef = useRef([]);
 
   // Cleanup component on unmount
   useEffect(() => {
     return () => {
       // Clear any pending timeouts
-      if (window.searchBarTimeouts) {
-        window.searchBarTimeouts.forEach(timeout => clearTimeout(timeout));
-        window.searchBarTimeouts = [];
+      timeoutsRef.current.forEach(timeout => clearTimeout(timeout));
+      timeoutsRef.current = [];
+      
+      // Clear refs to prevent memory leaks
+      if (inputRef.current) {
+        inputRef.current = null;
+      }
+      if (suggestionsRef.current) {
+        suggestionsRef.current = null;
+      }
+      if (historyRef.current) {
+        historyRef.current = null;
+      }
+      if (trendingRef.current) {
+        trendingRef.current = null;
       }
     };
   }, []);
@@ -127,9 +159,10 @@ const EnhancedSearchBar = ({
         
         // Fallback: trigger search for any non-empty query after a short delay
         if (value.trim().length > 0) {
-          setTimeout(() => {
+          const timeoutId = setTimeout(() => {
             if (onSearch) onSearch(value.trim());
           }, 100);
+          timeoutsRef.current.push(timeoutId);
         }
       } else {
         setShowSuggestionsDropdown(false);
@@ -176,7 +209,7 @@ const EnhancedSearchBar = ({
   // Handle input blur
   const handleBlur = useCallback((e) => {
     // Delay to allow for suggestion clicks
-    setTimeout(() => {
+    const timeoutId = setTimeout(() => {
       try {
         setIsFocused(false);
         setShowSuggestionsDropdown(false);
@@ -194,6 +227,7 @@ const EnhancedSearchBar = ({
         setSelectedSuggestionIndex(-1);
       }
     }, 150);
+    timeoutsRef.current.push(timeoutId);
   }, [onBlur]);
 
   // Handle key navigation
@@ -296,8 +330,13 @@ const EnhancedSearchBar = ({
   // Handle remove individual history item
   const handleRemoveHistoryItem = useCallback((historyItem, e) => {
     e.stopPropagation();
-    if (searchHistoryService && typeof searchHistoryService.removeFromHistory === 'function') {
-      searchHistoryService.removeFromHistory(historyItem);
+    try {
+      // Check if searchHistoryService is available (it might not be imported)
+      if (typeof window !== 'undefined' && window.searchHistoryService && typeof window.searchHistoryService.removeFromHistory === 'function') {
+        window.searchHistoryService.removeFromHistory(historyItem);
+      }
+    } catch (error) {
+      console.warn('searchHistoryService not available:', error);
     }
   }, []);
 
@@ -353,8 +392,9 @@ const EnhancedSearchBar = ({
           className={`relative flex items-center ${currentVariant} ${currentTheme.input} ${currentSize} transition-all duration-300 ${
             isFocused ? 'ring-2 ring-opacity-50' : ''
           } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-          whileHover={{ scale: disabled ? 1 : 1.01 }}
-          whileTap={{ scale: disabled ? 1 : 0.99 }}
+          whileHover={disabled ? {} : { scale: 1.01 }}
+          whileTap={disabled ? {} : { scale: 0.99 }}
+          layout={false}
         >
           {/* Search Icon */}
           {showSearchIcon && (
@@ -363,6 +403,9 @@ const EnhancedSearchBar = ({
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.3 }}
+              onError={(error) => {
+                console.warn('Animation error in search icon:', error);
+              }}
             >
               <svg
                 className="w-5 h-5"
@@ -392,6 +435,8 @@ const EnhancedSearchBar = ({
             placeholder={placeholder}
             disabled={disabled}
             autoFocus={autoFocus}
+            name="search-input"
+            id="search-input"
             className={`w-full bg-transparent outline-none ${showSearchIcon ? 'pl-10' : 'pl-4'} pr-12`}
             {...props}
           />
@@ -441,7 +486,6 @@ const EnhancedSearchBar = ({
 
       {/* Dropdowns */}
       <AnimatePresence>
-        {/* Suggestions Dropdown */}
         {activeDropdown === 'suggestions' && (
           <motion.div
             key="suggestions-dropdown"
@@ -451,43 +495,15 @@ const EnhancedSearchBar = ({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -10, scale: 0.95 }}
             transition={{ duration: 0.2 }}
+            layout={false}
           >
             {(() => {
-              const validSuggestions = suggestions
-                .slice(0, maxSuggestions)
-                .filter(suggestion => {
-                  // Ensure suggestion is a valid object
-                  if (!suggestion || typeof suggestion !== 'object') {
-                    return false;
-                  }
-                  // Ensure it has a valid text property
-                  const suggestionText = suggestion.title || suggestion.name || suggestion;
-                  return suggestionText && typeof suggestionText === 'string' && suggestionText.trim() !== '';
-                })
-                // Remove duplicates based on ID or title
-                .filter((suggestion, index, array) => {
-                  const suggestionId = suggestion.id || suggestion.title || suggestion.name || suggestion;
-                  return array.findIndex(item => {
-                    const itemId = item.id || item.title || item.name || item;
-                    return itemId === suggestionId;
-                  }) === index;
-                })
-                // Additional validation to ensure all suggestions have required properties
-                .filter(suggestion => {
-                  const hasValidId = suggestion.id !== undefined && suggestion.id !== null;
-                  const hasValidTitle = suggestion.title && typeof suggestion.title === 'string' && suggestion.title.trim() !== '';
-                  return hasValidId || hasValidTitle;
-                });
-
-              return validSuggestions.map((suggestion, index) => {
+              return filteredSuggestions.map((suggestion, index) => {
                 // Ensure we have a valid suggestion
                 if (!suggestion || typeof suggestion !== 'object') {
                   console.warn('Invalid suggestion detected:', suggestion);
                   return null;
                 }
-                
-                // Add component ID to ensure uniqueness
-                const renderId = stableId;
                 
                 const suggestionText = suggestion.title || suggestion.name || suggestion || '';
                 if (!suggestionText || typeof suggestionText !== 'string' || suggestionText.trim() === '') {
@@ -497,7 +513,7 @@ const EnhancedSearchBar = ({
                 const suggestionId = suggestion.id || suggestionText || `suggestion-${index}`;
                 // Create a more robust unique key using multiple properties and a stable hash
                 const contentHash = suggestionText ? suggestionText.split('').reduce((a, b) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a; }, 0) : index;
-                const uniqueKey = `suggestion-${suggestionId || 'unknown'}-${index}-${suggestionText?.substring(0, 10) || 'unknown'}-${contentHash}-${renderId}`;
+                const uniqueKey = `suggestion-${suggestionId || 'unknown'}-${index}-${suggestionText?.substring(0, 10) || 'unknown'}-${contentHash}-${componentId.current}`;
                 
                 // Ensure we never have an empty key
                 if (!uniqueKey || uniqueKey.trim() === '') {
@@ -514,7 +530,8 @@ const EnhancedSearchBar = ({
                     whileHover={{ backgroundColor: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }}
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.05 }}
+                    transition={{ delay: Math.min(index * 0.05, 0.3) }}
+                    layout={false}
                   >
                     <div className="flex items-center gap-3">
                       <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -528,8 +545,6 @@ const EnhancedSearchBar = ({
             })()}
           </motion.div>
         )}
-
-        {/* History Dropdown */}
         {activeDropdown === 'history' && (() => {
           const validHistoryItems = searchHistory
             .filter(item => item && typeof item === 'string' && item.trim() !== '')
@@ -547,6 +562,7 @@ const EnhancedSearchBar = ({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -10, scale: 0.95 }}
               transition={{ duration: 0.2 }}
+              layout={false}
             >
               <div className="px-4 py-3 border-b border-gray-700 flex items-center justify-between bg-gray-800/50">
                 <div className="flex items-center gap-2">
@@ -578,86 +594,67 @@ const EnhancedSearchBar = ({
                 )}
               </div>
               {(() => {
+                if (validHistoryItems.length === 0) {
+                  return (
+                    <motion.div
+                      key="empty-history"
+                      className="px-4 py-6 text-center"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ duration: 0.3 }}
+                    >
+                      <svg className="w-8 h-8 text-gray-500 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <p className="text-sm text-gray-500">No search history yet</p>
+                      <p className="text-xs text-gray-600 mt-1">Your recent searches will appear here</p>
+                    </motion.div>
+                  );
+                }
 
-              if (validHistoryItems.length === 0) {
-                return (
-                  <motion.div
-                    key="empty-history"
-                    className="px-4 py-6 text-center"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ duration: 0.3 }}
-                  >
-                    <svg className="w-8 h-8 text-gray-500 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    <p className="text-sm text-gray-500">No search history yet</p>
-                    <p className="text-xs text-gray-600 mt-1">Your recent searches will appear here</p>
-                  </motion.div>
-                );
-              }
-
-              return validHistoryItems.map((historyItem, index) => {
-                // Ensure we have a valid history item
-                if (!historyItem || typeof historyItem !== 'string' || historyItem.trim() === '') {
-                  return null;
-                }
-                
-                // Ensure we don't have duplicate items
-                if (index > 0 && validHistoryItems.slice(0, index).includes(historyItem)) {
-                  return null;
-                }
-                
-                // Add component ID to ensure uniqueness
-                const renderId = stableId;
-                
-                const historyId = historyItem || `history-${index}`;
-                // Create a more robust unique key using multiple properties and a stable hash
-                const contentHash = historyItem ? historyItem.split('').reduce((a, b) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a; }, 0) : index;
-                const uniqueKey = `history-${historyId || 'unknown'}-${index}-${historyItem?.substring(0, 10) || 'unknown'}-${contentHash}-${renderId}`;
-                
-                // Ensure we never have an empty key
-                if (!uniqueKey || uniqueKey.trim() === '') {
-                  return null;
-                }
-                return (
-                  <motion.button
-                    key={uniqueKey}
-                    onClick={() => handleHistoryClick(historyItem)}
-                    className={`w-full px-4 py-3 text-left ${currentTheme.item} transition-all duration-200 ${
-                      selectedSuggestionIndex === suggestions.length + index ? currentTheme.selected : ''
-                    }`}
-                    whileHover={{ 
-                      backgroundColor: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
-                      scale: 1.02,
-                      x: 5
-                    }}
-                    whileTap={{ scale: 0.98 }}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                  >
-                    <div className="flex items-center justify-between group">
-                      <div className="flex items-center gap-3 flex-1">
-                        <div className="relative">
-                          <svg className="w-4 h-4 text-gray-500 group-hover:text-blue-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                return validHistoryItems.map((historyItem, index) => {
+                  // Ensure we have a valid history item
+                  if (!historyItem || typeof historyItem !== 'string' || historyItem.trim() === '') {
+                    return null;
+                  }
+                  
+                  // Ensure we don't have duplicate items
+                  if (index > 0 && validHistoryItems.slice(0, index).includes(historyItem)) {
+                    return null;
+                  }
+                  
+                  const historyId = historyItem || `history-${index}`;
+                  // Create a more robust unique key using multiple properties and a stable hash
+                  const contentHash = historyItem ? historyItem.split('').reduce((a, b) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a; }, 0) : index;
+                  const uniqueKey = `history-${historyId || 'unknown'}-${index}-${historyItem?.substring(0, 10) || 'unknown'}-${contentHash}-${componentId.current}`;
+                  
+                  // Ensure we never have an empty key
+                  if (!uniqueKey || uniqueKey.trim() === '') {
+                    console.warn('Empty key detected for history item:', historyItem);
+                    return null;
+                  }
+                  return (
+                    <motion.button
+                      key={uniqueKey}
+                      onClick={() => handleHistoryClick(historyItem)}
+                      className={`w-full px-4 py-3 text-left ${currentTheme.item} transition-colors group ${
+                        selectedSuggestionIndex === suggestions.length + index ? currentTheme.selected : ''
+                      }`}
+                      whileHover={{ backgroundColor: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: Math.min(index * 0.05, 0.3) }}
+                      layout={false}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
-                          <div className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <span className="text-gray-300 group-hover:text-white transition-colors truncate block font-medium">
-                            {historyItem}
+                          <span>{historyItem}</span>
+                          <span className="text-xs text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                            Recently used
                           </span>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-xs text-gray-500 group-hover:text-gray-400 transition-colors">
-                              Click to search
-                            </span>
-                            <span className="text-xs text-gray-600">•</span>
-                            <span className="text-xs text-gray-500 group-hover:text-gray-400 transition-colors">
-                              Recently used
-                            </span>
-                          </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -674,16 +671,13 @@ const EnhancedSearchBar = ({
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
                         </svg>
                       </div>
-                    </div>
-                  </motion.button>
-                );
-              }).filter(Boolean);
-            })()}
-          </motion.div>
-        )}
-        )}
-
-        {/* Trending Searches Dropdown */}
+                    </motion.button>
+                  );
+                }).filter(Boolean);
+              })()}
+            </motion.div>
+          );
+        })()}
         {activeDropdown === 'trending' && (
           <motion.div
             key="trending-dropdown"
@@ -693,6 +687,7 @@ const EnhancedSearchBar = ({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -10, scale: 0.95 }}
             transition={{ duration: 0.2 }}
+            layout={false}
           >
             <div className="px-4 py-2 border-b border-gray-700">
               <span className="text-sm font-medium text-gray-400">Trending</span>
@@ -714,13 +709,10 @@ const EnhancedSearchBar = ({
                   return null;
                 }
                 
-                // Add component ID to ensure uniqueness
-                const renderId = stableId;
-                
                 const trendingId = trendingItem || `trending-${index}`;
                 // Create a more robust unique key using multiple properties and a stable hash
                 const contentHash = trendingItem ? trendingItem.split('').reduce((a, b) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a; }, 0) : index;
-                const uniqueKey = `trending-${trendingId || 'unknown'}-${index}-${trendingItem?.substring(0, 10) || 'unknown'}-${contentHash}-${renderId}`;
+                const uniqueKey = `trending-${trendingId || 'unknown'}-${index}-${trendingItem?.substring(0, 10) || 'unknown'}-${contentHash}-${componentId.current}`;
                 
                 // Ensure we never have an empty key
                 if (!uniqueKey || uniqueKey.trim() === '') {
@@ -737,7 +729,8 @@ const EnhancedSearchBar = ({
                     whileHover={{ backgroundColor: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }}
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.05 }}
+                    transition={{ delay: Math.min(index * 0.05, 0.3) }}
+                    layout={false}
                   >
                     <div className="flex items-center gap-3">
                       <svg className="w-4 h-4 text-red-500" fill="currentColor" viewBox="0 0 24 24">
@@ -752,8 +745,6 @@ const EnhancedSearchBar = ({
           </motion.div>
         )}
       </AnimatePresence>
-
-
     </div>
   );
 };

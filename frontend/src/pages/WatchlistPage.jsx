@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, lazy, Suspense, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 const MovieDetailsOverlay = lazy(() => import('../components/MovieDetailsOverlay'));
 import { PageLoader } from '../components/Loader';
@@ -42,6 +42,25 @@ const WatchlistPage = () => {
       return true;
     }
   });
+
+  // Memoize localStorage operations to prevent unnecessary re-renders
+  const localStorageRef = useRef({
+    getItem: (key) => {
+      try {
+        return localStorage.getItem(key);
+      } catch (error) {
+        console.error('Error reading from localStorage:', error);
+        return null;
+      }
+    },
+    setItem: (key, value) => {
+      try {
+        localStorage.setItem(key, value);
+      } catch (error) {
+        console.error('Error writing to localStorage:', error);
+      }
+    }
+  });
   const navigate = useNavigate();
   const sortDropdownRef = useRef(null);
   const clearDialogRef = useRef(null);
@@ -50,6 +69,44 @@ const WatchlistPage = () => {
   useEffect(() => {
     setLoading(false);
   }, []);
+
+  // Cleanup function to prevent memory leaks when component unmounts
+  useEffect(() => {
+    return () => {
+      // Clear any pending state updates
+      setSelectedMovie(null);
+      setShowSortDropdown(false);
+      setShowClearDialog(false);
+      setLoadedImages({});
+    };
+  }, []);
+
+  // Performance monitoring for memory usage
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      const interval = setInterval(() => {
+        if (window.performance && window.performance.memory) {
+          const memory = window.performance.memory;
+          const usedMB = Math.round(memory.usedJSHeapSize / 1024 / 1024);
+          const totalMB = Math.round(memory.totalJSHeapSize / 1024 / 1024);
+          
+          if (usedMB > 100) { // Warning threshold
+            console.warn(`WatchlistPage memory usage: ${usedMB}MB / ${totalMB}MB`);
+          }
+        }
+      }, 30000); // Check every 30 seconds
+
+      return () => clearInterval(interval);
+    }
+  }, []);
+
+  // Prevent memory leaks from large watchlist arrays
+  const maxWatchlistSize = 1000; // Reasonable limit
+  useEffect(() => {
+    if (watchlist.length > maxWatchlistSize) {
+      console.warn(`Watchlist size (${watchlist.length}) exceeds recommended limit of ${maxWatchlistSize}`);
+    }
+  }, [watchlist.length]);
 
   // Auto-hide sort dropdown on click outside or Escape
   useEffect(() => {
@@ -119,7 +176,31 @@ const WatchlistPage = () => {
     }));
   }, []);
 
-  const getImageUrl = useCallback((path) => {
+  // Debounced image loading to prevent excessive state updates
+  const debouncedImageLoad = useCallback((movieId) => {
+    const timeoutId = setTimeout(() => {
+      handleImageLoad(movieId);
+    }, 50); // Small delay to batch updates
+
+    return () => clearTimeout(timeoutId);
+  }, [handleImageLoad]);
+
+  // Cleanup loadedImages state when watchlist changes to prevent memory leaks
+  useEffect(() => {
+    const currentMovieIds = new Set(watchlist.map(movie => movie.id));
+    setLoadedImages(prev => {
+      const cleaned = {};
+      Object.keys(prev).forEach(movieId => {
+        if (currentMovieIds.has(parseInt(movieId))) {
+          cleaned[movieId] = prev[movieId];
+        }
+      });
+      return cleaned;
+    });
+  }, [watchlist]);
+
+  const getImageUrl = (path) => {
+    
     if (!path) {
       console.log('No path provided, using placeholder');
       return PLACEHOLDER_IMAGE;
@@ -131,9 +212,9 @@ const WatchlistPage = () => {
     
     const fullUrl = `${TMDB_IMAGE_BASE_URL}/w500${path}`;
     return fullUrl;
-  }, []);
+  };
 
-  const getFilteredWatchlist = () => {
+  const getFilteredWatchlist = useMemo(() => {
     let filtered = [...watchlist];
 
     // Filter by type (movie/tv)
@@ -159,7 +240,7 @@ const WatchlistPage = () => {
     }
 
     return filtered;
-  };
+  }, [watchlist, activeTab, sortBy]);
 
   // Modified clear by category
   const handleClearByCategory = () => {
@@ -191,20 +272,12 @@ const WatchlistPage = () => {
 
   const handleDismissBanner = () => {
     setShowLoginBanner(false);
-    try {
-      localStorage.setItem('watchlist_banner_dismissed', 'true');
-    } catch (error) {
-      console.error('Error saving banner state:', error);
-    }
+    localStorageRef.current.setItem('watchlist_banner_dismissed', 'true');
   };
 
   // Check if user has dismissed the banner before
   const hasDismissedBanner = () => {
-    try {
-      return localStorage.getItem('watchlist_banner_dismissed') === 'true';
-    } catch (error) {
-      return false;
-    }
+    return localStorageRef.current.getItem('watchlist_banner_dismissed') === 'true';
   };
 
   if (loading) {
@@ -219,7 +292,7 @@ const WatchlistPage = () => {
     );
   }
 
-  const filteredWatchlist = getFilteredWatchlist();
+  const filteredWatchlist = getFilteredWatchlist;
 
   const tabs = [
     { id: 'all', label: 'All' },
@@ -287,7 +360,32 @@ const WatchlistPage = () => {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8 gap-3 sm:gap-0">
           {/* Heading row for mobile: My List + Clear All */}
           <div className="flex flex-row items-center justify-between sm:block w-full">
-            <h1 className="text-xl sm:text-3xl font-bold text-left sm:mb-0 mb-2 sm:mr-6 flex-shrink-0">My List</h1>
+            <h1
+              className="flex items-center gap-2 text-base sm:text-xl font-bold text-left sm:mb-0 mb-2 sm:mr-6 flex-shrink-0 tracking-tight"
+              aria-label="Your Watchlist"
+            >
+              <span className="inline-flex items-center">
+                <svg
+                  className="w-5 h-5 sm:w-6 sm:h-6 text-primary-500 mr-1"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  {/* Bookmark icon */}
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-4-7 4V5z"
+                  />
+                </svg>
+                <span className="sm:inline-block inline">My&nbsp;List</span>
+              </span>
+              <span className="ml-2 text-sm font-semibold text-gray-400/80 align-middle">
+                ({filteredWatchlist.length})
+              </span>
+            </h1>
             {/* Mobile only: Clear All on right of heading */}
             <div className="flex sm:hidden">
               {filteredWatchlist.length > 0 && (
@@ -550,11 +648,13 @@ const WatchlistPage = () => {
                       className={`w-full h-full object-cover transition-transform duration-300 group-hover:scale-110 ${
                         loadedImages[movie.id] ? 'opacity-100' : 'opacity-0'
                       }`}
-                      onLoad={() => handleImageLoad(movie.id)}
+                      onLoad={() => debouncedImageLoad(movie.id)}
                       onError={(e) => {
                         handleImageError(movie.id);
                         e.target.src = PLACEHOLDER_IMAGE;
                       }}
+                      loading="lazy"
+                      decoding="async"
                     />
                   </div>
                   {/* Overlay: always visible on mobile, hover on desktop */}

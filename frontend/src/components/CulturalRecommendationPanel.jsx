@@ -374,7 +374,7 @@ const CulturalRecommendationPanel = ({ contentType = 'movie' }) => {
           transition={{ duration: 0.3 }}
           className="bg-white/5 rounded-xl p-6 border border-white/10"
         >
-          <AnimatePresence mode="wait">
+          <AnimatePresence>
             {activeTab === 'language' && (
               <LanguageSelector
                 key="language"

@@ -41,6 +41,7 @@ const MovieDetails = () => {
   // Streaming state
   const [showStreamingPlayer, setShowStreamingPlayer] = useState(false);
   const [streamingUrl, setStreamingUrl] = useState(null);
+  const [currentService, setCurrentService] = useState('MOVIES111');
   const [showEpisodeSelector, setShowEpisodeSelector] = useState(false);
 
   const seasons = [
@@ -299,12 +300,13 @@ const MovieDetails = () => {
       return;
     }
     
-    const url = getStreamingUrl(movie);
+    // Directly open streaming player with default service
+    const url = getStreamingUrl(movie, currentService);
     if (url) {
       setStreamingUrl(url);
       setShowStreamingPlayer(true);
     }
-  }, [movieDetails]);
+  }, [movieDetails, currentService]);
 
   const handleCloseStreaming = useCallback(() => {
     setShowStreamingPlayer(false);
@@ -317,25 +319,57 @@ const MovieDetails = () => {
     setStreamingUrl(null);
   }, []);
 
-  const handleEpisodeSelect = useCallback((season, episode) => {
+  const handleEpisodeSelect = useCallback((season, episode, episodeData = null) => {
     if (!movieDetails) return;
     
     const movie = {
-      id: movieDetails.id,
-      type: movieDetails.type || 'movie',
+      ...movieDetails,
       season,
       episode
     };
     
-    const url = getStreamingUrl(movie);
-    if (url) {
-      setStreamingUrl(url);
-      setShowStreamingPlayer(true);
+    // Update movie details with episode information
+    setMovieDetails(movie);
+    
+    // If episodeData is provided, use it for streaming service selection
+    if (episodeData) {
+      // Create content object for streaming service toggler
+      const content = {
+        id: episodeData.showId,
+        type: 'tv',
+        season: episodeData.season,
+        episode: episodeData.episode
+      };
+      
+      // Get streaming URL with current service
+      const url = getStreamingUrl(content, currentService);
+      if (url) {
+        setStreamingUrl(url);
+        setShowStreamingPlayer(true);
+      }
+    } else {
+      // Fallback to original logic
+      const url = getStreamingUrl(movie, currentService);
+      if (url) {
+        setStreamingUrl(url);
+        setShowStreamingPlayer(true);
+      }
     }
-  }, [movieDetails]);
+  }, [movieDetails, currentService]);
 
   const handleCloseEpisodeSelector = useCallback(() => {
     setShowEpisodeSelector(false);
+  }, []);
+
+  const handleStreamingServiceSelect = useCallback((selectedService) => {
+    setStreamingUrl(selectedService.url);
+    setShowStreamingPlayer(true);
+    setShowStreamingServiceSelector(false);
+  }, []);
+
+  const handleServiceChange = useCallback((selectedService) => {
+    setCurrentService(selectedService.key);
+    setStreamingUrl(selectedService.url);
   }, []);
 
   const renderDetailsTab = () => {
@@ -693,6 +727,14 @@ const MovieDetails = () => {
         isOpen={showStreamingPlayer}
         onClose={handleCloseStreaming}
         onError={handleStreamingError}
+        content={movieDetails?.type === 'tv' ? {
+          id: movieDetails.id,
+          type: 'tv',
+          season: movieDetails.season,
+          episode: movieDetails.episode
+        } : movieDetails}
+        currentService={currentService}
+        onServiceChange={handleServiceChange}
       />
 
       {/* TV Episode Selector */}
@@ -701,7 +743,11 @@ const MovieDetails = () => {
         isOpen={showEpisodeSelector}
         onClose={handleCloseEpisodeSelector}
         onEpisodeSelect={handleEpisodeSelect}
+        currentService={currentService}
+        onServiceChange={handleServiceChange}
       />
+
+
     </div>
     </>
   );

@@ -9,6 +9,7 @@ import CommunityStats from './community/CommunityStats';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { socketService } from '../services/socketService';
+import { debugCommunityAPI, testCommunityService } from '../utils/communityDebug';
 
 const CommunityPage = () => {
   const { user } = useAuth();
@@ -59,23 +60,25 @@ const CommunityPage = () => {
 
     const handleDiscussionLiked = (data) => {
       setDiscussions(prevDiscussions => 
-        prevDiscussions.map(discussion => 
-          discussion._id === data.discussionId 
+        prevDiscussions.map(discussion => {
+          const discussionId = discussion.id || discussion._id;
+          return discussionId === data.discussionId 
             ? { 
                 ...discussion, 
                 likes: data.likes,
                 isLiked: data.isLiked,
                 likesCount: data.likes.length
               }
-            : discussion
-        )
+            : discussion;
+        })
       );
     };
 
     const handleNewReply = (data) => {
       setDiscussions(prevDiscussions => 
         prevDiscussions.map(discussion => {
-          if (discussion._id === data.discussionId) {
+          const discussionId = discussion.id || discussion._id;
+          if (discussionId === data.discussionId) {
             return {
               ...discussion,
               replies: [...(discussion.replies || []), data.reply]
@@ -106,19 +109,21 @@ const CommunityPage = () => {
     const handleReplyLiked = (data) => {
       setDiscussions(prevDiscussions => 
         prevDiscussions.map(discussion => {
-          if (discussion._id === data.discussionId) {
+          const discussionId = discussion.id || discussion._id;
+          if (discussionId === data.discussionId) {
             return {
               ...discussion,
-              replies: discussion.replies.map(reply => 
-                reply._id === data.replyId
+              replies: discussion.replies.map(reply => {
+                const replyId = reply.id || reply._id;
+                return replyId === data.replyId
                   ? { 
                       ...reply, 
                       likes: data.likes,
                       isLiked: data.isLiked,
                       likesCount: data.likes.length
                     }
-                  : reply
-              )
+                  : reply;
+              })
             };
           }
           return discussion;
@@ -185,6 +190,8 @@ const CommunityPage = () => {
   const loadInitialData = async () => {
     try {
       setLoading(true);
+      console.log('🔄 Loading initial community data...');
+      
       const [discussionsData, trendingData, statsData, categoriesData, tagsData] = await Promise.all([
         communityService.getDiscussions(1, 10, sortBy, selectedCategory, selectedTag),
         communityService.getTrendingTopics(),
@@ -192,17 +199,35 @@ const CommunityPage = () => {
         communityService.getCategories(),
         communityService.getTopTags()
       ]);
+      
+      console.log('✅ Initial data loaded:', {
+        discussions: discussionsData,
+        trending: trendingData,
+        stats: statsData,
+        categories: categoriesData,
+        tags: tagsData
+      });
 
-      setDiscussions(discussionsData.discussions);
-      setTrendingTopics(trendingData);
-      setStats(statsData);
-      setCategories(categoriesData);
-      setTopTags(tagsData);
-      setHasMore(discussionsData.hasMore);
+      setDiscussions(discussionsData.discussions || []);
+      setTrendingTopics(trendingData || []);
+      setStats(statsData || {});
+      setCategories(categoriesData || []);
+      setTopTags(tagsData || []);
+      // Calculate hasMore based on currentPage and totalPages
+      setHasMore(discussionsData.currentPage < discussionsData.totalPages);
       setError(null);
     } catch (err) {
-      setError('Failed to load community data. Please try again later.');
-      console.error('Error loading initial data:', err);
+      console.error('❌ Error loading initial data:', err);
+      const errorMessage = err.message || err.error || 'Failed to load community data';
+      setError(`Error: ${errorMessage}. Please check the console for more details.`);
+      
+      // Log additional error details
+      if (err.response) {
+        console.error('Response error details:', err.response);
+      }
+      if (err.request) {
+        console.error('Request error details:', err.request);
+      }
     } finally {
       setLoading(false);
     }
@@ -211,6 +236,13 @@ const CommunityPage = () => {
   const loadDiscussions = async () => {
     try {
       setLoading(true);
+      console.log('🔄 Loading discussions with params:', {
+        page: currentPage,
+        sortBy,
+        category: selectedCategory,
+        tag: selectedTag
+      });
+      
       const data = await communityService.getDiscussions(
         currentPage,
         10,
@@ -218,12 +250,24 @@ const CommunityPage = () => {
         selectedCategory,
         selectedTag
       );
-      setDiscussions(data.discussions);
-      setHasMore(data.hasMore);
+      console.log('✅ Discussions loaded successfully:', data);
+      
+      setDiscussions(data.discussions || []);
+      // Calculate hasMore based on currentPage and totalPages
+      setHasMore(data.currentPage < data.totalPages);
       setError(null);
     } catch (err) {
-      setError('Failed to load discussions. Please try again later.');
-      console.error('Error loading discussions:', err);
+      console.error('❌ Error loading discussions:', err);
+      const errorMessage = err.message || err.error || 'Failed to load discussions';
+      setError(`Error: ${errorMessage}. Please check the console for more details.`);
+      
+      // Log additional error details
+      if (err.response) {
+        console.error('Response error details:', err.response);
+      }
+      if (err.request) {
+        console.error('Request error details:', err.request);
+      }
     } finally {
       setLoading(false);
     }
@@ -273,7 +317,8 @@ const CommunityPage = () => {
       );
       setDiscussions([...discussions, ...data.discussions]);
       setCurrentPage(nextPage);
-      setHasMore(data.hasMore);
+      // Calculate hasMore based on currentPage and totalPages
+      setHasMore(data.currentPage < data.totalPages);
     } catch (err) {
       setError('Failed to load more discussions. Please try again later.');
       console.error('Error loading more discussions:', err);
@@ -325,15 +370,16 @@ const CommunityPage = () => {
       
       // Update the discussions list with the new vote count
       setDiscussions(prevDiscussions => 
-        prevDiscussions.map(discussion => 
-          discussion.id === discussionId 
+        prevDiscussions.map(discussion => {
+          const currentDiscussionId = discussion.id || discussion._id;
+          return currentDiscussionId === discussionId 
             ? { 
                 ...discussion, 
                 likes: response.likes,
                 userVote: response.userVote 
               }
-            : discussion
-        )
+            : discussion;
+        })
       );
     } catch (error) {
       console.error('Error liking discussion:', error);
@@ -453,9 +499,28 @@ const CommunityPage = () => {
         <div className="flex flex-col space-y-4 mb-8">
           <div className="flex justify-between items-center">
             <h1 className="text-3xl font-bold text-white">Community</h1>
-            {user && (
-              <CreateDiscussion onDiscussionCreated={handleDiscussionCreated} />
-            )}
+            <div className="flex items-center gap-2">
+              {/* Debug buttons for development */}
+              {import.meta.env.DEV && (
+                <>
+                  <button
+                    onClick={debugCommunityAPI}
+                    className="px-3 py-1 bg-yellow-600 hover:bg-yellow-700 text-white text-sm rounded transition-colors"
+                  >
+                    Debug API
+                  </button>
+                  <button
+                    onClick={testCommunityService}
+                    className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-sm rounded transition-colors"
+                  >
+                    Test Service
+                  </button>
+                </>
+              )}
+              {user && (
+                <CreateDiscussion onDiscussionCreated={handleDiscussionCreated} />
+              )}
+            </div>
           </div>
           
           <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4">

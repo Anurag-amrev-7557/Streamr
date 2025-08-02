@@ -26,8 +26,11 @@ const DiscussionCard = ({ discussion: initialDiscussion, onUpdate }) => {
     // Set up socket listeners
     socketService.connect();
 
+    const discussionId = discussion.id || discussion._id;
+    if (!discussionId) return;
+
     const handleDiscussionLiked = (data) => {
-      if (data.discussionId === discussion._id) {
+      if (data.discussionId === discussionId) {
         setDiscussion(prev => ({
           ...prev,
           likes: data.likes,
@@ -37,7 +40,7 @@ const DiscussionCard = ({ discussion: initialDiscussion, onUpdate }) => {
     };
 
     const handleDiscussionUpdated = (data) => {
-      if (data._id === discussion._id) {
+      if (data._id === discussionId) {
         setDiscussion(prev => ({
           ...prev,
           ...data
@@ -50,14 +53,15 @@ const DiscussionCard = ({ discussion: initialDiscussion, onUpdate }) => {
 
     const handleNewReply = (data) => {
       console.log('Received new reply event:', data);
-      if (data.discussionId === discussion._id) {
+      if (data.discussionId === discussionId) {
         setDiscussion(prev => {
           const updatedReplies = [...(prev.replies || [])];
           if (data.reply.parentReplyId) {
             // If it's a reply to another reply, find and update the parent reply
             const updateNestedReplies = (replies) => {
               return replies.map(reply => {
-                if (reply._id === data.reply.parentReplyId) {
+                const replyId = reply.id || reply._id;
+                if (replyId === data.reply.parentReplyId) {
                   return {
                     ...reply,
                     replies: [...(reply.replies || []), data.reply]
@@ -89,11 +93,12 @@ const DiscussionCard = ({ discussion: initialDiscussion, onUpdate }) => {
 
     const handleReplyLiked = (data) => {
       console.log('Received reply liked event:', data);
-      if (data.discussionId === discussion._id) {
+      if (data.discussionId === discussionId) {
         setDiscussion(prev => {
           const updateReplyLikes = (replies) => {
             return replies.map(reply => {
-              if (reply._id === data.replyId) {
+              const replyId = reply.id || reply._id;
+              if (replyId === data.replyId) {
                 return {
                   ...reply,
                   likes: data.likes,
@@ -131,22 +136,28 @@ const DiscussionCard = ({ discussion: initialDiscussion, onUpdate }) => {
       socketService.removeListener('reply:new', handleNewReply);
       socketService.removeListener('reply:liked', handleReplyLiked);
     };
-  }, [discussion._id]);
+  }, [discussion.id, discussion._id]);
 
   const handleDiscussionClick = async (e) => {
     e.preventDefault();
+    const discussionId = discussion.id || discussion._id;
+    if (!discussionId) {
+      console.error('Discussion ID is undefined');
+      return;
+    }
+    
     try {
-      const updatedDiscussion = await communityService.getDiscussion(discussion._id);
+      const updatedDiscussion = await communityService.getDiscussion(discussionId);
       setViews(updatedDiscussion.views);
       if (onUpdate) {
         onUpdate(updatedDiscussion);
       }
       // Navigate after updating views
-      navigate(`/community/discussion/${discussion._id}`);
+      navigate(`/community/discussion/${discussionId}`);
     } catch (error) {
       console.error('Error updating views:', error);
       // Navigate even if there's an error
-      navigate(`/community/discussion/${discussion._id}`);
+      navigate(`/community/discussion/${discussionId}`);
     }
   };
 
@@ -156,11 +167,17 @@ const DiscussionCard = ({ discussion: initialDiscussion, onUpdate }) => {
       return;
     }
     
+    const discussionId = discussion.id || discussion._id;
+    if (!discussionId) {
+      setError('Discussion ID is undefined');
+      return;
+    }
+    
     setIsLiking(true);
     setError(null);
     
     try {
-      const updatedDiscussion = await communityService.likeDiscussion(discussion._id);
+      const updatedDiscussion = await communityService.likeDiscussion(discussionId);
       setDiscussion(prev => ({
         ...prev,
         likes: updatedDiscussion.likes,
@@ -168,7 +185,7 @@ const DiscussionCard = ({ discussion: initialDiscussion, onUpdate }) => {
       }));
       // Emit socket event for real-time updates
       socketService.emitDiscussionLike({
-        discussionId: discussion._id,
+        discussionId: discussionId,
         likes: updatedDiscussion.likes,
         isLiked: updatedDiscussion.isLiked
       });
@@ -181,11 +198,17 @@ const DiscussionCard = ({ discussion: initialDiscussion, onUpdate }) => {
   };
 
   const handleShare = async () => {
+    const discussionId = discussion.id || discussion._id;
+    if (!discussionId) {
+      console.error('Discussion ID is undefined');
+      return;
+    }
+    
     try {
       await navigator.share({
         title: discussion.title,
         text: discussion.content.substring(0, 100) + '...',
-        url: window.location.origin + `/community/discussion/${discussion._id}`
+        url: window.location.origin + `/community/discussion/${discussionId}`
       });
     } catch (error) {
       console.error('Error sharing:', error);
@@ -199,9 +222,15 @@ const DiscussionCard = ({ discussion: initialDiscussion, onUpdate }) => {
   };
 
   const handleDelete = async () => {
+    const discussionId = discussion.id || discussion._id;
+    if (!discussionId) {
+      toast.error('Discussion ID is undefined');
+      return;
+    }
+    
     if (!user) {
       toast.error('Please log in to delete discussions');
-      navigate('/login', { state: { from: `/community/discussion/${discussion._id}` } });
+      navigate('/login', { state: { from: `/community/discussion/${discussionId}` } });
       return;
     }
 
@@ -217,7 +246,7 @@ const DiscussionCard = ({ discussion: initialDiscussion, onUpdate }) => {
     }
 
     try {
-      await communityService.deleteDiscussion(discussion._id);
+      await communityService.deleteDiscussion(discussionId);
       toast.success('Discussion deleted successfully');
       // Remove the discussion from the list by calling onUpdate with null
       if (onUpdate) {
@@ -242,7 +271,7 @@ const DiscussionCard = ({ discussion: initialDiscussion, onUpdate }) => {
       whileHover={{ scale: 1.01 }}
       className="bg-white/5 border border-white/10 rounded-lg p-6 hover:bg-white/10 transition-all duration-200"
       role="article"
-      aria-labelledby={`discussion-title-${discussion._id}`}
+      aria-labelledby={`discussion-title-${discussion.id || discussion._id}`}
     >
       {error && (
         <div className="mb-4 p-2 bg-red-500/20 border border-red-500/30 rounded text-red-400 text-sm">
@@ -350,12 +379,12 @@ const DiscussionCard = ({ discussion: initialDiscussion, onUpdate }) => {
       </div>
 
       <Link 
-        to={`/community/discussion/${discussion._id}`}
+        to={`/community/discussion/${discussion.id || discussion._id}`}
         className="block group"
         onClick={handleDiscussionClick}
       >
         <h3 
-          id={`discussion-title-${discussion._id}`}
+          id={`discussion-title-${discussion.id || discussion._id}`}
           className="text-xl font-semibold mb-2 group-hover:text-white/80 transition-colors"
         >
           {discussion.title}
@@ -404,7 +433,7 @@ const DiscussionCard = ({ discussion: initialDiscussion, onUpdate }) => {
 
       {showReplies && (
         <ReplySection
-          discussionId={discussion._id}
+          discussionId={discussion.id || discussion._id}
           replies={discussion.replies}
           onReplyAdded={handleReplyAdded}
         />

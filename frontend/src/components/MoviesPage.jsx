@@ -255,9 +255,15 @@ const MovieCard = ({ movie, index, onClick, onPrefetch }) => {
     return () => {
       if (hoverTimeoutRef.current) {
         clearTimeout(hoverTimeoutRef.current);
+        hoverTimeoutRef.current = null;
       }
       if (prefetchTimeoutRef.current) {
         clearTimeout(prefetchTimeoutRef.current);
+        prefetchTimeoutRef.current = null;
+      }
+      // Clear any pending prefetch operations
+      if (imgRef.current) {
+        imgRef.current = null;
       }
     };
   }, []);
@@ -453,7 +459,7 @@ const MoviesPage = () => {
   const [searchHistoryItems, setSearchHistoryItems] = useState([]);
   const [trendingSearches, setTrendingSearches] = useState([]);
   
-  // Enhanced prefetch state management
+  // Enhanced prefetch state management with memory optimization
   const [prefetchedMovies, setPrefetchedMovies] = useState(new Set());
   const [prefetchCache, setPrefetchCache] = useState(new Map());
   const [prefetchStats, setPrefetchStats] = useState({
@@ -468,6 +474,10 @@ const MoviesPage = () => {
   // Predictive prefetching based on viewport visibility
   const [visibleMovies, setVisibleMovies] = useState(new Set());
   const visibilityObserverRef = useRef(null);
+  
+  // Memory optimization: Limit cache size to prevent memory leaks
+  const MAX_CACHE_SIZE = 100;
+  const MAX_VISIBLE_MOVIES = 50;
 
   // Add back missing state variables
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -572,7 +582,7 @@ const MoviesPage = () => {
     }, 400);
   }, [activeCategory, isTransitioning, fetchMovies]);
 
-  const handleGenreSelect = async (genre) => {
+  const handleGenreSelect = useCallback(async (genre) => {
     setSelectedGenre(genre);
     setGenreDropdownOpen(false);
     
@@ -584,7 +594,7 @@ const MoviesPage = () => {
       searchParams.delete('genre');
     }
     navigate(`?${searchParams.toString()}`, { replace: true });
-  };
+  }, [navigate]);
 
   // Add URL parameter handling
   useEffect(() => {
@@ -636,11 +646,45 @@ const MoviesPage = () => {
         setSelectedYear(year);
       }
     }
+    
+    return () => {
+      // Cleanup function for URL parameter handling
+    };
   }, [window.location.search, genres]);
 
   useEffect(() => {
     return () => {
       isMounted.current = false;
+      
+      // Comprehensive cleanup on component unmount
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+        searchTimeoutRef.current = null;
+      }
+      
+      if (visibilityObserverRef.current) {
+        visibilityObserverRef.current.disconnect();
+        visibilityObserverRef.current = null;
+      }
+      
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+        observerRef.current = null;
+      }
+      
+      // Clear all refs
+      moviesRef.current = [];
+      previousMovies.current = [];
+      prefetchQueueRef.current = [];
+      isProcessingPrefetchRef.current = false;
+      fetchInProgress.current = false;
+      
+      // Clear large state objects
+      setMovies([]);
+      setSearchResults([]);
+      setPrefetchedMovies(new Set());
+      setPrefetchCache(new Map());
+      setVisibleMovies(new Set());
     };
   }, []);
 
@@ -698,6 +742,10 @@ const MoviesPage = () => {
     setMovies([]);
     setHasMore(true);
     fetchMovies(activeCategory, 1);
+    
+    return () => {
+      // Cleanup for active category change
+    };
   }, [activeCategory]);
 
 
@@ -708,9 +756,13 @@ const MoviesPage = () => {
       setPage(nextPage);
       fetchMovies(activeCategory, nextPage);
     }
+    
+    return () => {
+      // Cleanup for intersection observer effect
+    };
   }, [inView, hasMore, loading, isLoadingMore, isLoadingNextPage, activeCategory]);
 
-  const handleMovieClick = (movie) => {
+  const handleMovieClick = useCallback((movie) => {
     // If we have prefetched data, use it immediately
     const cachedData = prefetchCache.get(movie.id);
     if (cachedData?.details) {
@@ -722,32 +774,52 @@ const MoviesPage = () => {
     } else {
       setSelectedMovie(movie);
     }
-  };
+  }, [prefetchCache]);
 
-  const handleCloseOverlay = () => {
+  const handleCloseOverlay = useCallback(() => {
     setSelectedMovie(null);
-  };
+  }, []);
 
-  const handleSimilarMovieClick = (similarMovie) => {
+  const handleSimilarMovieClick = useCallback((similarMovie) => {
     setSelectedMovie(similarMovie);
-  };
+  }, []);
 
   // Fetch genres on component mount
   useEffect(() => {
+    let isMounted = true;
+    
     const fetchGenres = async () => {
       try {
         const response = await getGenres();
-        setGenres(response.genres || []);
+        if (isMounted) {
+          setGenres(response.genres || []);
+        }
       } catch (error) {
         console.error('Error fetching genres:', error);
       }
     };
+    
     fetchGenres();
+    
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // Reset fetchInProgress on component mount
   useEffect(() => {
     fetchInProgress.current = false;
+    
+    return () => {
+      // Cleanup on unmount
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+        searchTimeoutRef.current = null;
+      }
+      if (fetchInProgress.current) {
+        fetchInProgress.current = false;
+      }
+    };
   }, []);
 
 
@@ -822,7 +894,7 @@ const MoviesPage = () => {
   // Debounced search function - removed duplicate implementation
   // The EnhancedSearchBar now handles the search logic
 
-  // Update the load more search results
+  // Update the load more search results with memory optimization
   const loadMoreSearchResults = async () => {
     if (!searchQuery.trim() || !hasMoreSearchResults || isSearching) return;
 
@@ -836,7 +908,15 @@ const MoviesPage = () => {
           const newResults = response.results.filter(newMovie => 
             !prev.some(existingMovie => existingMovie.id === newMovie.id)
           );
-          return [...prev, ...newResults];
+          const updatedResults = [...prev, ...newResults];
+          
+          // Memory optimization: Limit search results array size
+          const MAX_SEARCH_RESULTS = 200;
+          if (updatedResults.length > MAX_SEARCH_RESULTS) {
+            return updatedResults.slice(-MAX_SEARCH_RESULTS);
+          }
+          
+          return updatedResults;
         });
         setHasMoreSearchResults(response.page < response.total_pages);
         setSearchPage(nextPage);
@@ -853,6 +933,10 @@ const MoviesPage = () => {
     if (inView && hasMoreSearchResults && !isSearching && searchQuery.trim()) {
       loadMoreSearchResults();
     }
+    
+    return () => {
+      // Cleanup for search results intersection observer
+    };
   }, [inView, hasMoreSearchResults, isSearching, searchQuery]);
 
   // Generate year options (last 10 years)
@@ -917,7 +1001,11 @@ const MoviesPage = () => {
       loadSearchData();
     });
 
-    return unsubscribe;
+    return () => {
+      if (unsubscribe && typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
   }, []);
 
   // Add click outside handler for dropdowns
@@ -931,7 +1019,9 @@ const MoviesPage = () => {
     };
 
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, []);
 
   // Add escape key handler
@@ -945,11 +1035,13 @@ const MoviesPage = () => {
     };
 
     document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+    };
   }, []);
 
   // Update the filterMovies function to handle both regular movies and search results
-  const filterMovies = (moviesToFilter) => {
+  const filterMovies = useCallback((moviesToFilter) => {
     try {
       if (!moviesToFilter || !Array.isArray(moviesToFilter)) {
         return [];
@@ -977,21 +1069,20 @@ const MoviesPage = () => {
       console.error('Error in filterMovies:', error);
       return moviesToFilter || [];
     }
-  };
+  }, [selectedGenre, selectedYear]);
 
   // Get the current list of movies to display
-  const getDisplayMovies = () => {
+  const getDisplayMovies = useCallback(() => {
     try {
       const moviesToFilter = searchQuery.trim() && searchResults.length > 0 ? searchResults : movies;
-      console.log('🎬 getDisplayMovies - searchQuery:', searchQuery, 'searchResults.length:', searchResults.length, 'movies.length:', movies.length, 'displaying:', moviesToFilter.length, 'movies');
       return filterMovies(moviesToFilter);
-    } catch (error) {
+    } catch (error){
       console.error('Error in getDisplayMovies:', error);
       return [];
     }
-  };
+  }, [searchQuery, searchResults, movies, filterMovies]);
 
-  const handleYearSelect = async (year) => {
+  const handleYearSelect = useCallback(async (year) => {
     setSelectedYear(year);
     setYearDropdownOpen(false);
     
@@ -1003,16 +1094,21 @@ const MoviesPage = () => {
       searchParams.delete('year');
     }
     navigate(`?${searchParams.toString()}`, { replace: true });
-  };
+  }, [navigate]);
 
   // Update the useEffect that tracks movies state changes
   useEffect(() => {
     if (movies.length > 0) {
       moviesRef.current = movies;
     }
+    
+    return () => {
+      // Cleanup movies reference on unmount
+      moviesRef.current = [];
+    };
   }, [movies]);
 
-  // Update the loadMoreMovies function
+  // Update the loadMoreMovies function with memory optimization
   const loadMoreMovies = async () => {
     if (loading || !hasMore || fetchInProgress.current) {
       return;
@@ -1032,6 +1128,14 @@ const MoviesPage = () => {
       if (newMovies.length > 0) {
         setMovies(prevMovies => {
           const updatedMovies = [...prevMovies, ...newMovies];
+          
+          // Memory optimization: Limit movies array size to prevent memory leaks
+          const MAX_MOVIES = 500;
+          if (updatedMovies.length > MAX_MOVIES) {
+            // Keep only the most recent movies
+            return updatedMovies.slice(-MAX_MOVIES);
+          }
+          
           return updatedMovies;
         });
         setCurrentPage(nextPage);
@@ -1052,6 +1156,10 @@ const MoviesPage = () => {
     if (inView && hasMore && !loading && !isLoadingMore && !fetchInProgress.current) {
       loadMoreMovies();
     }
+    
+    return () => {
+      // Cleanup for load more movies intersection observer
+    };
   }, [inView, hasMore, loading, isLoadingMore]);
 
   // Update the movies grid section to use getDisplayMovies
@@ -1083,6 +1191,7 @@ const MoviesPage = () => {
       if (loadMoreRef.current) {
         observer.unobserve(loadMoreRef.current);
       }
+      observer.disconnect();
     };
   }, [searchQuery, selectedGenre, selectedYear, isLoadingNextPage, hasMore]);
 
@@ -1096,7 +1205,7 @@ const MoviesPage = () => {
     }));
   }, []);
 
-  // Intelligent prefetch queue processing
+  // Intelligent prefetch queue processing with memory optimization
   const processPrefetchQueue = useCallback(async () => {
     if (isProcessingPrefetchRef.current || prefetchQueueRef.current.length === 0) {
       return;
@@ -1135,11 +1244,26 @@ const MoviesPage = () => {
             
             // Only cache if we have at least some data or if the movie is confirmed to not exist
             if (detailsValue || similarValue || (detailsValue === null && similarValue === null)) {
-              setPrefetchCache(prev => new Map(prev).set(movieId, {
-                details: detailsValue,
-                similar: similarValue,
-                timestamp: Date.now()
-              }));
+              setPrefetchCache(prev => {
+                const newCache = new Map(prev);
+                
+                // Memory optimization: Limit cache size
+                if (newCache.size >= MAX_CACHE_SIZE) {
+                  // Remove oldest entries
+                  const entries = Array.from(newCache.entries());
+                  entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
+                  const toRemove = entries.slice(0, Math.floor(MAX_CACHE_SIZE * 0.2)); // Remove 20% of oldest entries
+                  toRemove.forEach(([key]) => newCache.delete(key));
+                }
+                
+                newCache.set(movieId, {
+                  details: detailsValue,
+                  similar: similarValue,
+                  timestamp: Date.now()
+                });
+                
+                return newCache;
+              });
             }
 
             handlePrefetch(movieId);
@@ -1162,7 +1286,7 @@ const MoviesPage = () => {
     }
   }, [prefetchCache, handlePrefetch]);
 
-  // Enhanced prefetch queue with priority based on visibility
+  // Enhanced prefetch queue with priority based on visibility and memory optimization
   const queuePrefetchWithPriority = useCallback((movieId, priority = 'normal') => {
     if (prefetchedMovies.has(movieId) || prefetchCache.has(movieId)) {
       return;
@@ -1175,6 +1299,16 @@ const MoviesPage = () => {
     }
 
     const queueItem = { movieId, priority, timestamp: Date.now() };
+    
+    // Memory optimization: Limit queue size to prevent memory leaks
+    const MAX_QUEUE_SIZE = 50;
+    if (prefetchQueueRef.current.length >= MAX_QUEUE_SIZE) {
+      // Remove oldest low priority items
+      prefetchQueueRef.current = prefetchQueueRef.current.filter(item => 
+        item.priority === 'high' || 
+        (Date.now() - item.timestamp) < 30000 // Keep items newer than 30 seconds
+      );
+    }
     
     // Add to queue with priority
     if (priority === 'high') {
@@ -1196,7 +1330,7 @@ const MoviesPage = () => {
     queuePrefetchWithPriority(movieId, priority);
   }, [visibleMovies, queuePrefetchWithPriority]);
 
-  // Enhanced visibility tracking for predictive prefetching
+  // Enhanced visibility tracking for predictive prefetching with memory optimization
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -1217,7 +1351,14 @@ const MoviesPage = () => {
           }
         });
         
-        setVisibleMovies(newVisibleMovies);
+        // Memory optimization: Limit visible movies set size
+        if (newVisibleMovies.size > MAX_VISIBLE_MOVIES) {
+          const visibleArray = Array.from(newVisibleMovies);
+          const trimmedSet = new Set(visibleArray.slice(-MAX_VISIBLE_MOVIES));
+          setVisibleMovies(trimmedSet);
+        } else {
+          setVisibleMovies(newVisibleMovies);
+        }
       },
       {
         rootMargin: '200px 0px', // Start prefetching 200px before movie comes into view
@@ -1232,7 +1373,10 @@ const MoviesPage = () => {
     movieCards.forEach(card => observer.observe(card));
 
     return () => {
-      observer.disconnect();
+      if (visibilityObserverRef.current) {
+        visibilityObserverRef.current.disconnect();
+        visibilityObserverRef.current = null;
+      }
     };
   }, [movies, searchResults, queuePrefetch, visibleMovies]);
 
@@ -1253,7 +1397,9 @@ const MoviesPage = () => {
       });
     }, 5 * 60 * 1000); // Clean up every 5 minutes
 
-    return () => clearInterval(cleanupInterval);
+    return () => {
+      clearInterval(cleanupInterval);
+    };
   }, []);
 
   return (

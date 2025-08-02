@@ -45,7 +45,8 @@ const ReplySection = ({ discussionId, replies: initialReplies, onReplyAdded }) =
         if (data.reply.parentReplyId) {
           setReplies(prev => 
             prev.map(reply => {
-              if (reply._id === data.reply.parentReplyId) {
+              const replyId = reply.id || reply._id;
+              if (replyId === data.reply.parentReplyId) {
                 return {
                   ...reply,
                   replies: [...(reply.replies || []), data.reply]
@@ -54,11 +55,12 @@ const ReplySection = ({ discussionId, replies: initialReplies, onReplyAdded }) =
               if (reply.replies) {
                 return {
                   ...reply,
-                  replies: reply.replies.map(r => 
-                    r._id === data.reply.parentReplyId
+                  replies: reply.replies.map(r => {
+                    const rId = r.id || r._id;
+                    return rId === data.reply.parentReplyId
                       ? { ...r, replies: [...(r.replies || []), data.reply] }
-                      : r
-                  )
+                      : r;
+                  })
                 };
               }
               return reply;
@@ -77,7 +79,8 @@ const ReplySection = ({ discussionId, replies: initialReplies, onReplyAdded }) =
         setReplies(prev => {
           const updateReplyLikes = (replies) => {
             return replies.map(reply => {
-              if (reply._id === data.replyId) {
+              const replyId = reply.id || reply._id;
+              if (replyId === data.replyId) {
                 return {
                   ...reply,
                   likes: data.likes,
@@ -125,9 +128,11 @@ const ReplySection = ({ discussionId, replies: initialReplies, onReplyAdded }) =
 
       // Update local state immediately with the reply from the server
       if (replyingTo?._id) {
+        const replyingToId = replyingTo.id || replyingTo._id;
         setReplies(prev => 
           prev.map(r => {
-            if (r._id === replyingTo._id) {
+            const rId = r.id || r._id;
+            if (rId === replyingToId) {
               return {
                 ...r,
                 replies: [...(r.replies || []), reply]
@@ -136,11 +141,12 @@ const ReplySection = ({ discussionId, replies: initialReplies, onReplyAdded }) =
             if (r.replies) {
               return {
                 ...r,
-                replies: r.replies.map(nestedReply => 
-                  nestedReply._id === replyingTo._id
+                replies: r.replies.map(nestedReply => {
+                  const nestedReplyId = nestedReply.id || nestedReply._id;
+                  return nestedReplyId === replyingToId
                     ? { ...nestedReply, replies: [...(nestedReply.replies || []), reply] }
-                    : nestedReply
-                )
+                    : nestedReply;
+                })
               };
             }
             return r;
@@ -206,8 +212,8 @@ const ReplySection = ({ discussionId, replies: initialReplies, onReplyAdded }) =
     }
 
     // Check if user is the author of the reply
-    const reply = replies.find(r => r._id === replyId) || 
-                  replies.flatMap(r => r.replies || []).find(r => r._id === replyId);
+    const reply = replies.find(r => (r.id || r._id) === replyId) || 
+                  replies.flatMap(r => r.replies || []).find(r => (r.id || r._id) === replyId);
     
     if (!reply || reply.author._id !== user.id) {
       toast.error('You can only delete your own replies');
@@ -226,7 +232,7 @@ const ReplySection = ({ discussionId, replies: initialReplies, onReplyAdded }) =
       // Remove the reply from the local state
       setReplies(prev => {
         const removeReply = (replies) => {
-          return replies.filter(reply => reply._id !== replyId);
+          return replies.filter(reply => (reply.id || reply._id) !== replyId);
         };
         
         return prev.map(reply => {
@@ -237,7 +243,7 @@ const ReplySection = ({ discussionId, replies: initialReplies, onReplyAdded }) =
             };
           }
           return reply;
-        }).filter(reply => reply._id !== replyId);
+        }).filter(reply => (reply.id || reply._id) !== replyId);
       });
       
       // Notify parent component
@@ -258,7 +264,7 @@ const ReplySection = ({ discussionId, replies: initialReplies, onReplyAdded }) =
 
   const renderReply = (reply, level = 0) => {
     return (
-      <div key={reply._id} className={`ml-${level * 4} mt-4`}>
+      <div key={reply.id || reply._id} className={`ml-${level * 4} mt-4`}>
         <div className="bg-white/5 rounded-lg p-4">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-2">
@@ -300,7 +306,7 @@ const ReplySection = ({ discussionId, replies: initialReplies, onReplyAdded }) =
             {/* Delete button - only show if user is the author */}
             {user && reply.author._id === user.id && (
               <button
-                onClick={() => handleDeleteReply(reply._id)}
+                onClick={() => handleDeleteReply(reply.id || reply._id)}
                 className="text-red-400 hover:text-red-300 text-sm flex items-center gap-1"
                 title="Delete reply"
               >
