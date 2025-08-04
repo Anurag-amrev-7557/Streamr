@@ -58,7 +58,9 @@ class PerformanceOptimizationService {
       original: 'original'
     };
     
-    return `${baseUrl}/${sizes[size] || size}${path}`;
+    // Ensure path starts with /
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    return `${baseUrl}/${sizes[size] || size}${cleanPath}`;
   }
 
   loadOptimizedImage(img) {
@@ -74,6 +76,9 @@ class PerformanceOptimizationService {
     
     if (!optimizedSrc) return;
     
+    // Set crossorigin attribute to handle CORS
+    img.crossOrigin = 'anonymous';
+    
     // Check cache first
     if (this.imageCache.has(optimizedSrc)) {
       img.src = this.imageCache.get(optimizedSrc);
@@ -83,6 +88,7 @@ class PerformanceOptimizationService {
     
     // Load image with error handling
     const tempImg = new Image();
+    tempImg.crossOrigin = 'anonymous'; // Handle CORS
     tempImg.onload = () => {
       img.src = optimizedSrc;
       this.imageCache.set(optimizedSrc, optimizedSrc);
@@ -141,14 +147,37 @@ class PerformanceOptimizationService {
   }
 
   logMetric(name, value) {
-    console.log(`📊 ${name}: ${value.toFixed(2)}ms`);
-    
-    // Send to analytics
-    if (window.gtag) {
-      window.gtag('event', 'performance_metric', {
-        metric_name: name,
-        metric_value: value
-      });
+    // Only log metrics in development and reduce frequency
+    if (process.env.NODE_ENV === 'development') {
+      // Only log if value is significant or has changed significantly
+      const lastValue = this.lastLoggedMetrics?.[name] || 0;
+      const changeThreshold = {
+        'FCP': 100, // 100ms threshold for FCP
+        'LCP': 200, // 200ms threshold for LCP
+        'CLS': 0.01, // 0.01 threshold for CLS
+        'FID': 50, // 50ms threshold for FID
+        'TTI': 500 // 500ms threshold for TTI
+      };
+      
+      const threshold = changeThreshold[name] || 100;
+      const hasSignificantChange = Math.abs(value - lastValue) > threshold;
+      
+      // Log only significant changes or first occurrence
+      if (hasSignificantChange || !this.lastLoggedMetrics?.[name]) {
+        console.log(`📊 ${name}: ${value.toFixed(2)}ms`);
+        
+        // Update last logged value
+        if (!this.lastLoggedMetrics) this.lastLoggedMetrics = {};
+        this.lastLoggedMetrics[name] = value;
+        
+        // Send to analytics
+        if (window.gtag) {
+          window.gtag('event', 'performance_metric', {
+            metric_name: name,
+            metric_value: value
+          });
+        }
+      }
     }
   }
 

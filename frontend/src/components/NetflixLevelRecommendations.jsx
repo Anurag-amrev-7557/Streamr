@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { similarContentUtils } from '../services/enhancedSimilarContentService';
 import enhancedRecommendationService from '../services/enhancedRecommendationService';
 import { formatRating } from '../utils/ratingUtils';
+import { getPosterProps } from '../utils/imageUtils';
 
 // Netflix-Level Recommendation Strategy Selector
 const RecommendationStrategySelector = React.memo(({ strategy, onStrategyChange, isMobile = false }) => {
@@ -168,10 +169,8 @@ const NetflixRecommendationCard = React.memo(({ item, onClick, isMobile, showAIS
       <div className="aspect-[2/3] rounded-xl overflow-hidden bg-gradient-to-br from-gray-800 to-gray-900 relative shadow-lg border border-white/5 hover:border-white/20 transition-all duration-300">
         {item.poster_path ? (
           <img 
-            src={`https://image.tmdb.org/t/p/w500${item.poster_path}`} 
-            alt={displayTitle} 
+            {...getPosterProps(item, 'w500')}
             className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110" 
-            loading="lazy"
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-gray-400 bg-gradient-to-br from-gray-700 to-gray-800">

@@ -2,6 +2,32 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion';
 import { similarContentUtils } from '../services/enhancedSimilarContentService';
 import { formatRating } from '../utils/ratingUtils';
+import memoryManager from '../utils/memoryManager';
+
+// FIXED: Memory optimization utility using centralized memory manager
+const memoryOptimizer = {
+  cleanup: () => {
+    // Clear any cached data
+    if (similarContentUtils.clearCache) {
+      similarContentUtils.clearCache();
+    }
+    
+    // Get memory stats from centralized manager
+    const stats = memoryManager.getStats();
+    if (stats && stats.current > 800) {
+      console.warn(`[MemoryOptimizer] Memory usage high: ${stats.current.toFixed(2)}MB, performing cleanup`);
+    }
+  },
+  
+  monitor: () => {
+    // Delegate to centralized memory manager
+    const stats = memoryManager.getStats();
+    if (stats && stats.current > 1000) {
+      console.warn(`[MemoryOptimizer] Critical memory usage: ${stats.current.toFixed(2)}MB`);
+      memoryOptimizer.cleanup();
+    }
+  }
+};
 
 // Custom Modern Minimalist Dropdown Component
 const CustomDropdown = React.memo(({ 
@@ -14,19 +40,22 @@ const CustomDropdown = React.memo(({
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
 
-  // Close dropdown when clicking outside - FIXED: Added proper cleanup
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
+  // Close dropdown when clicking outside - FIXED: Added proper cleanup with useCallback
+  const handleClickOutside = useCallback((event) => {
+    if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+      setIsOpen(false);
+    }
   }, []);
+
+  useEffect(() => {
+    // Only add listener if dropdown is open
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [isOpen, handleClickOutside]);
 
   const selectedOption = options.find(option => option.value === value) || options[0];
 
@@ -85,12 +114,17 @@ const CustomDropdown = React.memo(({
   );
 });
 
-// Netflix-Level Enhanced Similar Content Card with AI indicators
+// Netflix-Level Enhanced Similar Content Card with AI indicators - FIXED: Memory leak prevention
 const EnhancedSimilarCard = React.memo(({ item, onClick, isMobile, showRelevanceScore = false }) => {
-  const displayTitle = item.title || item.name || 'Untitled';
-  const displayYear = item.year || 
-    (item.release_date ? new Date(item.release_date).getFullYear() : 
-     item.first_air_date ? new Date(item.first_air_date).getFullYear() : 'N/A');
+  // FIXED: Memoize computed values to prevent unnecessary recalculations
+  const displayTitle = useMemo(() => item.title || item.name || 'Untitled', [item.title, item.name]);
+  
+  const displayYear = useMemo(() => {
+    if (item.year) return item.year;
+    if (item.release_date) return new Date(item.release_date).getFullYear();
+    if (item.first_air_date) return new Date(item.first_air_date).getFullYear();
+    return 'N/A';
+  }, [item.year, item.release_date, item.first_air_date]);
   
   const relevanceColor = useMemo(() => {
     if (!item.similarityScore) return 'text-gray-400';
@@ -117,9 +151,24 @@ const EnhancedSimilarCard = React.memo(({ item, onClick, isMobile, showRelevance
     tap: { scale: 0.95 }
   }), [isMobile]);
 
+  // FIXED: Optimized click handler with useCallback
   const handleClick = useCallback(() => {
-    onClick(item);
+    if (onClick) {
+      onClick(item);
+    }
   }, [onClick, item]);
+
+  // FIXED: Optimized image error handler
+  const handleImageError = useCallback((e) => {
+    if (e.target) {
+      e.target.style.display = 'none';
+      // Show fallback content
+      const fallback = e.target.parentNode.querySelector('.image-fallback');
+      if (fallback) {
+        fallback.style.display = 'flex';
+      }
+    }
+  }, []);
 
   return (
     <motion.div 
@@ -146,14 +195,16 @@ const EnhancedSimilarCard = React.memo(({ item, onClick, isMobile, showRelevance
             alt={displayTitle} 
             className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110" 
             loading="lazy"
+            onError={handleImageError}
           />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-gray-400 bg-gradient-to-br from-gray-700 to-gray-800">
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-            </svg>
-          </div>
-        )}
+        ) : null}
+        
+        {/* FIXED: Always show fallback, but hide when image loads */}
+        <div className={`w-full h-full flex items-center justify-center text-gray-400 bg-gradient-to-br from-gray-700 to-gray-800 ${item.poster_path ? 'image-fallback hidden' : ''}`}>
+          <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+          </svg>
+        </div>
         
         {/* Relevance Score Badge */}
         {showRelevanceScore && item.similarityScore && (
@@ -241,6 +292,7 @@ const EnhancedSimilarCard = React.memo(({ item, onClick, isMobile, showRelevance
 const SimilarContentFilters = React.memo(({ filters, onFilterChange, isMobile = false }) => {
   const [showFilters, setShowFilters] = useState(false);
   
+  // FIXED: Memoize filter options to prevent unnecessary re-renders
   const relevanceOptions = useMemo(() => [
     { value: 0, label: 'All' },
     { value: 0.3, label: 'Somewhat Similar' },
@@ -275,6 +327,7 @@ const SimilarContentFilters = React.memo(({ filters, onFilterChange, isMobile = 
     exit: { opacity: 0, height: 0 }
   }), []);
 
+  // FIXED: Optimized event handlers with useCallback
   const handleFilterChange = useCallback((filterName, value) => {
     onFilterChange(filterName, value);
   }, [onFilterChange]);
@@ -290,13 +343,17 @@ const SimilarContentFilters = React.memo(({ filters, onFilterChange, isMobile = 
     onFilterChange('showRelevanceScore', !filters.showRelevanceScore);
   }, [onFilterChange, filters.showRelevanceScore]);
 
+  const handleToggleFilters = useCallback(() => {
+    setShowFilters(prev => !prev);
+  }, []);
+
   // Mobile filter interface
   if (isMobile) {
     return (
       <div className="mb-4">
         {/* Mobile Filter Toggle Button */}
         <button
-          onClick={() => setShowFilters(!showFilters)}
+          onClick={handleToggleFilters}
           className="w-full flex items-center justify-between px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white/90 hover:bg-white/15 transition-all duration-200"
         >
           <div className="flex items-center gap-2">
@@ -468,7 +525,7 @@ const EnhancedSimilarContent = React.memo(({
   contentType = 'movie', 
   onItemClick, 
   isMobile = false,
-  maxItems = 24, // Increased from 12 to 24
+  maxItems = 16, // Reduced from 24 to 16 for better memory management
   showFilters = true,
   showTitle = true,
   showPagination = false, // Changed to false by default
@@ -478,7 +535,7 @@ const EnhancedSimilarContent = React.memo(({
   const [similarContent, setSimilarContent] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [displayedItems, setDisplayedItems] = useState(16); // Track how many items to show
+  const [displayedItems, setDisplayedItems] = useState(12); // Reduced from 16 to 12 for better performance
   const [hasMore, setHasMore] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -489,20 +546,48 @@ const EnhancedSimilarContent = React.memo(({
     year: 0
   });
 
-  // FIXED: Added abort controller for cleanup
+  // FIXED: Added abort controller for cleanup with proper memory management
   const abortControllerRef = useRef(null);
+  const isMountedRef = useRef(true);
 
-  // Fetch similar content with infinite loading support - FIXED: Optimized with proper cleanup
+  // FIXED: Enhanced cleanup on unmount
+  useEffect(() => {
+    isMountedRef.current = true;
+    
+    return () => {
+      isMountedRef.current = false;
+      // Abort any pending requests
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+    };
+  }, []);
+
+  // Fetch similar content with infinite loading support - FIXED: Optimized with proper cleanup and request deduplication
   const fetchSimilarContent = useCallback(async (page = 1, append = false) => {
-    if (!contentId) return;
+    if (!contentId || !isMountedRef.current) return;
+    
+    // FIXED: Prevent duplicate requests for the same page
+    const requestKey = `${contentId}-${contentType}-${page}`;
+    if (fetchSimilarContent.currentRequests?.has(requestKey)) {
+      return;
+    }
     
     // Cancel previous request if it exists
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
+      abortControllerRef.current = null;
     }
     
     // Create new abort controller
     abortControllerRef.current = new AbortController();
+    
+    // Track current request
+    if (!fetchSimilarContent.currentRequests) {
+      fetchSimilarContent.currentRequests = new Set();
+    }
+    fetchSimilarContent.currentRequests.add(requestKey);
     
     if (page === 1) {
       setLoading(true);
@@ -513,53 +598,75 @@ const EnhancedSimilarContent = React.memo(({
     
     try {
       const results = await similarContentUtils.getSimilarContent(contentId, contentType, {
-        limit: 200, // Increased limit for faster loading
-        minScore: 0.2, // Increased threshold for better relevance
+        limit: 50, // FIXED: Reduced from 100 to 50 for better memory management
+        minScore: 0.3, // FIXED: Increased threshold for better relevance and reduced data
         forceRefresh: false,
         page: page,
         infiniteLoading: page > 1 // Only enable infinite loading for subsequent pages
       });
       
       // Check if component is still mounted and request wasn't cancelled
-      if (abortControllerRef.current?.signal.aborted) {
+      if (!isMountedRef.current || abortControllerRef.current?.signal.aborted) {
         return;
       }
       
-      // Debug log to verify different content for different movies
-      if (import.meta.env.DEV) {
-        console.log(`[EnhancedSimilarContent] Fetched ${results.length} similar items for ${contentType} ${contentId} (page ${page}):`, 
-          results.slice(0, 3).map(item => ({ id: item.id, title: item.title || item.name }))
-        );
-      }
-      
-      if (append) {
-        // Append new results to existing content
-        setSimilarContent(prev => {
-          const existingIds = new Set(prev.map(item => item.id));
-          const newItems = results.filter(item => !existingIds.has(item.id));
-          return [...prev, ...newItems];
-        });
+      if (results && Array.isArray(results)) {
+        if (append) {
+          setSimilarContent(prev => {
+            // Enhanced duplicate handling with smart strategy
+            const combined = [...prev, ...results];
+            
+            // Use the service's enhanced duplicate removal
+            const uniqueItems = similarContentUtils.removeDuplicates ? 
+              similarContentUtils.removeDuplicates(combined, {
+                strategy: 'smart',
+                keepBestScore: true,
+                preserveOrder: false
+              }) : 
+              // Fallback to basic duplicate removal
+              combined.filter((item, index, self) => 
+                index === self.findIndex(t => t.id === item.id)
+              );
+            
+            // Limit total items to prevent memory issues
+            return uniqueItems.slice(0, maxItems);
+          });
+        } else {
+          // For initial load, also apply duplicate removal
+          const uniqueResults = similarContentUtils.removeDuplicates ? 
+            similarContentUtils.removeDuplicates(results, {
+              strategy: 'smart',
+              keepBestScore: true,
+              preserveOrder: false
+            }) : 
+            results;
+          
+          setSimilarContent(uniqueResults.slice(0, maxItems));
+        }
+        
+        setHasMore(results.length >= 10); // FIXED: Reduced threshold for better performance
       } else {
-        // Replace content for first load
-        setSimilarContent(results);
+        setSimilarContent([]);
+        setHasMore(false);
       }
-      
-      // Check if there are more results available
-      setHasMore(results.length >= 15); // Lowered threshold for more aggressive loading
-    } catch (err) {
-      // Don't set error if request was cancelled
-      if (abortControllerRef.current?.signal.aborted) {
+    } catch (error) {
+      if (!isMountedRef.current || abortControllerRef.current?.signal.aborted) {
         return;
       }
-      console.error('Error fetching similar content:', err);
+      
+      console.error('Error fetching similar content:', error);
       setError('Failed to load similar content');
+      setHasMore(false);
     } finally {
-      if (!abortControllerRef.current?.signal.aborted) {
+      // Remove request from tracking
+      fetchSimilarContent.currentRequests?.delete(requestKey);
+      
+      if (isMountedRef.current) {
         setLoading(false);
         setLoadingMore(false);
       }
     }
-  }, [contentId, contentType]); // FIXED: Added proper dependencies
+  }, [contentId, contentType, maxItems]);
 
   // Filter and sort content - FIXED: Optimized with useMemo
   const filteredContent = useMemo(() => {
@@ -625,19 +732,33 @@ const EnhancedSimilarContent = React.memo(({
     setCurrentPage(1); // Reset page when filters change
   }, []);
 
-  // Handle load more - optimized for faster loading - FIXED: Optimized with useCallback
+  // Handle load more - optimized for faster loading - FIXED: Optimized with useCallback and better error handling
   const handleLoadMore = useCallback(async () => {
-    if (hasMore && !loading && !loadingMore) {
+    if (hasMore && !loading && !loadingMore && isMountedRef.current) {
       const nextPage = currentPage + 1;
       setCurrentPage(nextPage);
       
-      // Fetch more content from the next page
-      await fetchSimilarContent(nextPage, true);
-      
-      // Increase displayed items more aggressively
-      setDisplayedItems(prev => prev + 16); // Increased from 8 to 16
+      try {
+        // FIXED: Check memory before loading more
+        memoryOptimizer.monitor();
+        
+        // Fetch more content from the next page
+        await fetchSimilarContent(nextPage, true);
+        
+        // FIXED: Limit displayed items to prevent memory issues
+        setDisplayedItems(prev => {
+          const newCount = Math.min(prev + 6, maxItems); // FIXED: Reduced from 8 to 6
+          return newCount;
+        });
+      } catch (error) {
+        // Reset page on error
+        if (isMountedRef.current) {
+          setCurrentPage(prev => prev - 1);
+        }
+        console.error('Error loading more content:', error);
+      }
     }
-  }, [hasMore, loading, loadingMore, currentPage, fetchSimilarContent]);
+  }, [hasMore, loading, loadingMore, currentPage, fetchSimilarContent, maxItems]);
 
   // Handle item click - FIXED: Optimized with useCallback
   const handleItemClick = useCallback((item) => {
@@ -646,7 +767,7 @@ const EnhancedSimilarContent = React.memo(({
     }
   }, [onItemClick]);
 
-  // FIXED: Optimized animation variants
+  // FIXED: Optimized animation variants with useMemo for better performance
   const containerVariants = useMemo(() => ({
     initial: { opacity: 0, y: 20 },
     animate: { opacity: 1, y: 0 },
@@ -665,68 +786,279 @@ const EnhancedSimilarContent = React.memo(({
     exit: { opacity: 0, scale: 0.9 }
   }), []);
 
-  // Fetch content on mount and when contentId/contentType changes - FIXED: Added proper cleanup
+  // FIXED: Optimized stagger variants for better performance
+  const staggerContainerVariants = useMemo(() => ({
+    initial: { opacity: 0 },
+    animate: { 
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.05,
+        delayChildren: 0.1
+      }
+    }
+  }), []);
+
+  const staggerItemVariants = useMemo(() => ({
+    initial: { opacity: 0, y: 20 },
+    animate: { 
+      opacity: 1, 
+      y: 0,
+      transition: {
+        type: "spring",
+        stiffness: 300,
+        damping: 30
+      }
+    }
+  }), []);
+
+  // Fetch content on mount and when contentId/contentType changes - FIXED: Added proper cleanup and request deduplication
   useEffect(() => {
+    // FIXED: Clear any existing requests
+    if (fetchSimilarContent.currentRequests) {
+      fetchSimilarContent.currentRequests.clear();
+    }
+    
     // Clear previous content when switching to a new movie/show
     setSimilarContent([]);
-    setDisplayedItems(16);
+    setDisplayedItems(12); // FIXED: Reduced from 16 to 12 for better performance
     setCurrentPage(1);
     setHasMore(true);
     setError(null);
     
-    if (contentId) {
-      // Use hybrid recommendations for better results
-      fetchSimilarContent(1, false);
+    if (contentId && isMountedRef.current) {
+      // FIXED: Add small delay to prevent rapid successive calls
+      const timeoutId = setTimeout(() => {
+        if (isMountedRef.current) {
+          fetchSimilarContent(1, false);
+        }
+      }, 100);
+      
+      return () => {
+        clearTimeout(timeoutId);
+      };
     }
 
-    // Cleanup function
+    // Cleanup function with comprehensive memory management
     return () => {
+      // Abort any ongoing requests
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
+        abortControllerRef.current = null;
       }
+      
+      // Clear request tracking
+      if (fetchSimilarContent.currentRequests) {
+        fetchSimilarContent.currentRequests.clear();
+      }
+      
+      // Clear any pending state updates to prevent memory leaks
+      setSimilarContent([]);
+      setLoading(false);
+      setLoadingMore(false);
+      setError(null);
     };
-  }, [contentId, contentType, fetchSimilarContent]);
+  }, [contentId, contentType]); // FIXED: Removed fetchSimilarContent from dependencies to prevent infinite loops
 
   // Update hasMore when filtered content changes - FIXED: Optimized with useMemo
   useEffect(() => {
     setHasMore(displayedItems < filteredContent.length || (hasMore && similarContent.length > 0));
   }, [filteredContent.length, displayedItems, hasMore, similarContent.length]);
 
-  // Loading state - FIXED: Optimized skeleton animations
+  // FIXED: Optimized performance monitoring with reduced logging and better memory management
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      const startTime = performance.now();
+      let isActive = true;
+      
+      return () => {
+        if (!isActive) return;
+        isActive = false;
+        
+        const endTime = performance.now();
+        const duration = endTime - startTime;
+        
+        // Only log if render takes too long
+        if (duration > 1000) {
+          console.warn(`[EnhancedSimilarContent] Component took ${duration.toFixed(2)}ms to render`);
+        }
+        
+        // FIXED: Only log memory usage if it's significantly high and component is still active
+        if (performance.memory && isMountedRef.current) {
+          const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
+          if (memoryMB > 500) { // Only log if memory usage is over 500MB
+            console.warn(`[EnhancedSimilarContent] High memory usage: ${memoryMB.toFixed(2)}MB`);
+          }
+        }
+      };
+    }
+  }, []); // FIXED: Removed dependencies to prevent excessive re-runs
+
+  // FIXED: Register cleanup with centralized memory manager
+  useEffect(() => {
+    // Register cleanup callback with memory manager
+    const unregisterCleanup = memoryManager.registerCleanupCallback(() => {
+      if (isMountedRef.current) {
+        memoryOptimizer.cleanup();
+      }
+    });
+    
+    return () => {
+      if (import.meta.env.DEV) {
+        console.log('[EnhancedSimilarContent] Component unmounted, cleaning up...');
+      }
+      
+      // Unregister cleanup callback
+      unregisterCleanup();
+      
+      // FIXED: Force garbage collection hint and clear references
+      memoryOptimizer.cleanup();
+      
+      // Clear any remaining references
+      setSimilarContent([]);
+      setLoading(false);
+      setLoadingMore(false);
+      setError(null);
+    };
+  }, []);
+
+  // Pixel-Perfect Loading Skeleton - Enhanced with detailed structure
   if (loading) {
     return (
-      <div className={`${className}`}>
+      <motion.div 
+        className={`${className}`}
+        variants={containerVariants}
+        initial="initial"
+        animate="animate"
+        exit="exit"
+        transition={{ duration: 0.5 }}
+      >
         {showTitle && (
-          <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-            <svg className="w-5 h-5 text-primary animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            Analyzing...
-          </h3>
+          <motion.div 
+            className="mb-6"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+          >
+                         {/* Desktop: Heading and filters skeleton */}
+             <div className="hidden lg:flex items-center justify-between mb-2">
+               <div className="flex items-center gap-2">
+                 <div className="w-5 h-5 bg-gradient-to-br from-primary/30 to-primary/20 rounded animate-skeleton-shimmer" />
+                 <div className="h-8 w-48 bg-gradient-to-br from-white/20 to-white/10 rounded animate-skeleton-shimmer" />
+               </div>
+               <div className="h-4 w-32 bg-gradient-to-br from-white/10 to-white/5 rounded animate-skeleton-shimmer" />
+             </div>
+             
+             {/* Mobile: Stacked layout skeleton */}
+             <div className="lg:hidden">
+               <div className="flex items-center gap-2 mb-2">
+                 <div className="w-5 h-5 bg-gradient-to-br from-primary/30 to-primary/20 rounded animate-skeleton-shimmer" />
+                 <div className="h-6 w-40 bg-gradient-to-br from-white/20 to-white/10 rounded animate-skeleton-shimmer" />
+               </div>
+               <div className="h-4 w-48 bg-gradient-to-br from-white/10 to-white/5 rounded animate-skeleton-shimmer mb-4" />
+             </div>
+          </motion.div>
         )}
+
+        {/* Mobile filters skeleton */}
+        {showFilters && isMobile && (
+          <div className="mb-4">
+            <div className="w-full h-12 bg-gradient-to-br from-white/10 to-white/5 rounded-lg border border-white/20 animate-skeleton-shimmer" />
+          </div>
+        )}
+
+        {/* Pixel-Perfect Grid Skeleton */}
         <motion.div 
           className={`grid gap-4 ${
             isMobile 
               ? 'grid-cols-2 gap-3'
-              : 'grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
+              : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 3xl:grid-cols-10 gap-4'
           }`}
+          layout
           variants={gridVariants}
           initial="initial"
           animate="animate"
         >
-          {Array.from({ length: isMobile ? 6 : 8 }).map((_, i) => (
-            <motion.div 
-              key={i} 
+          {Array.from({ length: isMobile ? 6 : 12 }).map((_, i) => (
+            <motion.div
+              key={i}
               variants={itemVariants}
-              transition={{ duration: 0.3, delay: i * 0.05 }}
-              className="group relative bg-gradient-to-br from-white/[0.08] via-white/[0.04] to-white/[0.02] rounded-xl overflow-hidden border border-white/[0.08] shadow-lg backdrop-blur-sm"
+              transition={{ 
+                duration: 0.3, 
+                delay: i * 0.05,
+                type: "spring",
+                stiffness: 300,
+                damping: 30
+              }}
+              layout
+              className="group cursor-pointer relative"
             >
-              {/* Movie Poster Skeleton - Full Card */}
-              <div className="aspect-[2/3] bg-gradient-to-br from-gray-800 to-gray-700 animate-pulse rounded-xl"></div>
+              {/* Enhanced Movie Card Skeleton */}
+              <div className="aspect-[2/3] rounded-xl overflow-hidden bg-gradient-to-br from-gray-800/80 to-gray-900/80 relative shadow-lg border border-white/10">
+                {/* Poster Skeleton with enhanced shimmer effect */}
+                <div className="w-full h-full relative overflow-hidden">
+                  <div className="w-full h-full bg-gradient-to-br from-gray-700 via-gray-600 to-gray-700 animate-skeleton-shimmer" />
+                </div>
+                
+                {/* Top badges skeleton */}
+                <div className="absolute top-2 left-2">
+                  <div className="w-8 h-5 bg-gradient-to-br from-black/60 to-black/40 rounded-full animate-skeleton-shimmer" />
+                </div>
+                <div className="absolute top-2 right-2">
+                  <div className="w-12 h-5 bg-gradient-to-br from-black/60 to-black/40 rounded-full animate-skeleton-shimmer" />
+                </div>
+                
+                                 {/* Bottom info skeleton - Desktop only */}
+                 {!isMobile && (
+                   <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-3">
+                     <div className="transform transition-transform duration-300 group-hover:-translate-y-2">
+                       <div className="h-4 w-3/4 bg-gradient-to-br from-white/20 to-white/10 rounded animate-skeleton-shimmer mb-2" />
+                       <div className="flex items-center gap-2">
+                         <div className="h-3 w-8 bg-gradient-to-br from-white/15 to-white/8 rounded animate-skeleton-shimmer" />
+                         <div className="w-1 h-1 rounded-full bg-white/30" />
+                         <div className="h-3 w-16 bg-gradient-to-br from-white/15 to-white/8 rounded animate-skeleton-shimmer" />
+                       </div>
+                     </div>
+                   </div>
+                 )}
+                
+                                 {/* Mobile info skeleton */}
+                 {isMobile && (
+                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-2">
+                     <div className="text-center">
+                       <div className="h-3 w-3/4 bg-gradient-to-br from-white/20 to-white/10 rounded animate-skeleton-shimmer mb-1 mx-auto" />
+                       <div className="flex items-center justify-center gap-1">
+                         <div className="h-3 w-6 bg-gradient-to-br from-white/15 to-white/8 rounded animate-skeleton-shimmer" />
+                         <div className="w-1 h-1 rounded-full bg-white/30" />
+                         <div className="h-3 w-8 bg-gradient-to-br from-white/15 to-white/8 rounded animate-skeleton-shimmer" />
+                       </div>
+                     </div>
+                   </div>
+                 )}
+                
+                                 {/* Play button skeleton */}
+                 <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                   <div className="w-12 h-12 bg-gradient-to-br from-white/20 to-white/10 rounded-full animate-skeleton-shimmer border border-white/30" />
+                 </div>
+              </div>
             </motion.div>
           ))}
         </motion.div>
-      </div>
+
+        {/* Loading indicator */}
+        <motion.div 
+          className="mt-6 text-center"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.4 }}
+        >
+          <div className="flex items-center justify-center gap-3 text-white/60">
+            <svg className="w-5 h-5 text-primary animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <span className="text-sm font-medium">Analyzing content patterns...</span>
+          </div>
+        </motion.div>
+      </motion.div>
     );
   }
 
@@ -918,6 +1250,7 @@ const EnhancedSimilarContent = React.memo(({
         initial="initial"
         animate="animate"
       >
+        {/* FIXED: Removed mode="wait" to prevent AnimatePresence warnings */}
         <AnimatePresence>
           {displayedContent.map((item, index) => (
             <motion.div
@@ -925,12 +1258,19 @@ const EnhancedSimilarContent = React.memo(({
               variants={itemVariants}
               transition={{ 
                 duration: 0.3, 
-                delay: index * 0.05,
+                delay: Math.min(index * 0.05, 0.5), // Cap delay to prevent long animations
                 type: "spring",
                 stiffness: 300,
                 damping: 30
               }}
               layout
+              // FIXED: Add intersection observer for lazy loading
+              whileInView={{ 
+                opacity: 1, 
+                scale: 1,
+                transition: { duration: 0.2 }
+              }}
+              viewport={{ once: true, margin: "50px" }}
             >
               <EnhancedSimilarCard
                 item={item}

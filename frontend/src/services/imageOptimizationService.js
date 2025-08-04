@@ -1,6 +1,9 @@
 // Optimized Image Optimization Service
 export const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p';
 
+// Backend proxy URL for images to handle CORS (keeping for fallback)
+export const BACKEND_IMAGE_PROXY_URL = 'http://localhost:5000/api/tmdb/image';
+
 // Image sizes for different use cases
 export const IMAGE_SIZES = {
   THUMBNAIL: 'w92',
@@ -24,20 +27,45 @@ export const PROGRESSIVE_SIZES = [
 const imageCache = new Map();
 const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 
-// Optimized image URL generation
-export const getOptimizedImageUrl = (path, size = IMAGE_SIZES.MEDIUM, fallback = null) => {
+// Function to get direct TMDB image URL with CORS handling
+export const getDirectImageUrl = (path, size = IMAGE_SIZES.MEDIUM) => {
+  if (!path) {
+    return '/placeholder-image.jpg';
+  }
+  
+  // Ensure path starts with /
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  return `${TMDB_IMAGE_BASE_URL}/${size}${cleanPath}`;
+};
+
+// Function to get proxied image URL (fallback method)
+export const getProxiedImageUrl = (path, size = IMAGE_SIZES.MEDIUM) => {
+  if (!path) {
+    return '/placeholder-image.jpg';
+  }
+  
+  // Ensure path starts with /
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  // Use backend proxy to avoid CORS issues
+  return `${BACKEND_IMAGE_PROXY_URL}/t/p/${size}${cleanPath}`;
+};
+
+// Optimized image URL generation with CORS-safe approach
+export const getOptimizedImageUrl = (path, size = IMAGE_SIZES.MEDIUM, fallback = null, useProxy = false) => {
   if (!path) {
     return fallback || '/placeholder-image.jpg';
   }
   
-  const cacheKey = `${path}_${size}`;
+  const cacheKey = `${path}_${size}_${useProxy}`;
   const cached = imageCache.get(cacheKey);
   
   if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
     return cached.url;
   }
   
-  const url = `${TMDB_IMAGE_BASE_URL}/${size}${path}`;
+  // Always use direct TMDB URLs - CORS will be handled by the img element
+  const url = getDirectImageUrl(path, size);
+    
   imageCache.set(cacheKey, {
     url,
     timestamp: Date.now()
@@ -46,8 +74,8 @@ export const getOptimizedImageUrl = (path, size = IMAGE_SIZES.MEDIUM, fallback =
   return url;
 };
 
-// Progressive image loading
-export const getProgressiveImageUrls = (path, targetSize = IMAGE_SIZES.LARGE) => {
+// Progressive image loading with CORS-safe approach
+export const getProgressiveImageUrls = (path, targetSize = IMAGE_SIZES.LARGE, useProxy = false) => {
   if (!path) {
     return {
       placeholder: '/placeholder-image.jpg',
@@ -62,18 +90,20 @@ export const getProgressiveImageUrls = (path, targetSize = IMAGE_SIZES.LARGE) =>
     return sizeValue <= targetValue;
   });
   
+  const baseUrl = TMDB_IMAGE_BASE_URL;
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
   const srcSet = sizes
-    .map(size => `${TMDB_IMAGE_BASE_URL}/${size}${path} ${size.replace('w', '')}w`)
+    .map(size => `${baseUrl}/${size}${cleanPath} ${size.replace('w', '')}w`)
     .join(', ');
   
   return {
-    placeholder: getOptimizedImageUrl(path, IMAGE_SIZES.THUMBNAIL),
-    src: getOptimizedImageUrl(path, targetSize),
+    placeholder: getOptimizedImageUrl(path, IMAGE_SIZES.THUMBNAIL, null, useProxy),
+    src: getOptimizedImageUrl(path, targetSize, null, useProxy),
     srcSet
   };
 };
 
-// Lazy loading with intersection observer
+// Lazy loading with intersection observer and CORS handling
 export const createLazyImageLoader = (options = {}) => {
   const {
     rootMargin = '50px',
@@ -89,6 +119,8 @@ export const createLazyImageLoader = (options = {}) => {
         const srcSet = img.dataset.srcset;
         
         if (src) {
+          // Set crossorigin attribute to handle CORS
+          img.crossOrigin = 'anonymous';
           img.src = src;
           img.removeAttribute('data-src');
         }
@@ -114,13 +146,14 @@ export const createLazyImageLoader = (options = {}) => {
   };
 };
 
-// Preload critical images
+// Preload critical images with CORS handling
 export const preloadImages = async (imagePaths, size = IMAGE_SIZES.MEDIUM) => {
   const preloadPromises = imagePaths
     .filter(path => path)
     .map(path => {
       return new Promise((resolve) => {
         const img = new Image();
+        img.crossOrigin = 'anonymous'; // Handle CORS
         img.onload = () => resolve(path);
         img.onerror = () => resolve(null);
         img.src = getOptimizedImageUrl(path, size);
@@ -130,7 +163,7 @@ export const preloadImages = async (imagePaths, size = IMAGE_SIZES.MEDIUM) => {
   return Promise.allSettled(preloadPromises);
 };
 
-// Optimized movie poster component props
+// Optimized movie poster component props with CORS handling
 export const getMoviePosterProps = (movie, size = IMAGE_SIZES.LARGE) => {
   const imageUrls = getProgressiveImageUrls(movie.poster_path, size);
   
@@ -140,13 +173,14 @@ export const getMoviePosterProps = (movie, size = IMAGE_SIZES.LARGE) => {
     alt: movie.title || movie.name || 'Movie poster',
     loading: 'lazy',
     className: 'movie-poster',
+    crossOrigin: 'anonymous', // Handle CORS
     'data-src': imageUrls.src,
     'data-srcset': imageUrls.srcSet,
     'data-placeholder': imageUrls.placeholder
   };
 };
 
-// Optimized backdrop image props
+// Optimized backdrop image props with CORS handling
 export const getBackdropProps = (movie, size = IMAGE_SIZES.EXTRA_LARGE) => {
   const imageUrls = getProgressiveImageUrls(movie.backdrop_path, size);
   
@@ -156,13 +190,14 @@ export const getBackdropProps = (movie, size = IMAGE_SIZES.EXTRA_LARGE) => {
     alt: `${movie.title || movie.name} backdrop`,
     loading: 'lazy',
     className: 'backdrop-image',
+    crossOrigin: 'anonymous', // Handle CORS
     'data-src': imageUrls.src,
     'data-srcset': imageUrls.srcSet,
     'data-placeholder': imageUrls.placeholder
   };
 };
 
-// Optimized profile image props
+// Optimized profile image props with CORS handling
 export const getProfileImageProps = (person, size = IMAGE_SIZES.MEDIUM) => {
   const imageUrls = getProgressiveImageUrls(person.profile_path, size);
   
@@ -172,6 +207,7 @@ export const getProfileImageProps = (person, size = IMAGE_SIZES.MEDIUM) => {
     alt: person.name || 'Profile image',
     loading: 'lazy',
     className: 'profile-image',
+    crossOrigin: 'anonymous', // Handle CORS
     'data-src': imageUrls.src,
     'data-srcset': imageUrls.srcSet,
     'data-placeholder': imageUrls.placeholder

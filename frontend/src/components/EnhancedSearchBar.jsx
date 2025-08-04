@@ -375,9 +375,9 @@ const EnhancedSearchBar = ({
 
   // Variant classes
   const variantClasses = {
-    default: "rounded-xl border",
-    minimal: "rounded-lg border-0 bg-transparent",
-    floating: "rounded-2xl border shadow-lg"
+    default: "rounded-full border",
+    minimal: "rounded-full border-0 bg-transparent",
+    floating: "rounded-full border shadow-lg"
   };
 
   const currentTheme = themeClasses[theme];
@@ -399,7 +399,7 @@ const EnhancedSearchBar = ({
           {/* Search Icon */}
           {showSearchIcon && (
             <motion.div
-              className="absolute left-3 text-gray-400"
+              className="absolute left-4 text-gray-400"
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.3 }}

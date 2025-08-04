@@ -5,6 +5,7 @@ const router = express.Router();
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
+const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org';
 
 // Create a custom HTTPS agent with relaxed SSL settings
 const httpsAgent = new https.Agent({
@@ -13,6 +14,58 @@ const httpsAgent = new https.Agent({
   ciphers: 'HIGH:!aNULL:!MD5', // Use strong ciphers
   minVersion: 'TLSv1.2',
   maxVersion: 'TLSv1.3'
+});
+
+// Image proxy endpoint for TMDB images to handle CORS
+router.get('/image/*', async (req, res) => {
+  try {
+    // Get the image path after /image/
+    const imagePath = req.path.replace('/image/', '');
+    
+    // Construct the full TMDB image URL
+    const imageUrl = `${TMDB_IMAGE_BASE_URL}${imagePath}`;
+    
+    console.log('Proxying image request:', imageUrl);
+
+    // Stream the image response
+    const response = await axios.get(imageUrl, {
+      responseType: 'stream',
+      timeout: 30000,
+      maxRedirects: 5,
+      httpsAgent: httpsAgent,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Streamr/1.0)',
+        'Accept': 'image/*',
+        'Accept-Encoding': 'gzip, deflate, br'
+      }
+    });
+
+    // Set appropriate headers for image response
+    res.set({
+      'Content-Type': response.headers['content-type'] || 'image/jpeg',
+      'Cache-Control': 'public, max-age=86400', // Cache for 24 hours
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET',
+      'Access-Control-Allow-Headers': 'Content-Type',
+      'Content-Length': response.headers['content-length']
+    });
+
+    // Pipe the image stream to the response
+    response.data.pipe(res);
+
+  } catch (error) {
+    console.error('Error proxying image:', {
+      message: error.message,
+      code: error.code,
+      status: error.response?.status
+    });
+    
+    // Return a placeholder image or error response
+    res.status(404).json({
+      error: 'Image not found or failed to load',
+      status: 404
+    });
+  }
 });
 
 // Proxy endpoint for TMDB API

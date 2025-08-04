@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback, memo, useMemo, lazy, Suspense } from 'react';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Navigation, A11y } from 'swiper/modules';
-import { TMDB_BASE_URL, TMDB_IMAGE_BASE_URL, transformMovieData } from '../services/tmdbService';
+import { TMDB_BASE_URL, transformMovieData } from '../services/tmdbService';
+import { getPosterProps, getBackdropProps } from '../utils/imageUtils';
 // Optimized CSS imports - only load what's needed
 import 'swiper/css';
 import 'swiper/css/navigation';
@@ -29,9 +30,7 @@ import {
 } from '../services/tmdbService';
 import { PageLoader, SectionLoader, CardLoader } from './Loader';
 import { useLoading } from '../contexts/LoadingContext';
-import Navbar from './Navbar';
 import { useWatchlist } from '../contexts/WatchlistContext';
-import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState as useToastState } from 'react';
 // Lazy load heavy components
@@ -39,6 +38,7 @@ const ReactPlayer = lazy(() => import('react-player'));
 const MinimalToast = lazy(() => import('./MinimalToast'));
 // Ultra-smooth scrolling imports
 import { useSmoothScroll, useScrollAnimation } from '../hooks/useSmoothScroll';
+import { trackPageLoad, trackApiCall } from '../utils/performanceMonitor';
 
 // Lazy load non-critical components with preloading hints
 const MovieDetailsOverlay = lazy(() => import('./MovieDetailsOverlay'), {
@@ -51,12 +51,35 @@ const NetworkStatus = lazy(() => import('./NetworkStatus'), {
   suspense: true
 });
 
-// Preload critical components after initial render
-const preloadCriticalComponents = () => {
-  // Preload components that are likely to be used
-  import('./MovieDetailsOverlay');
-  import('./EnhancedSearchBar');
-};
+  // Preload critical components and images after initial render
+  const preloadCriticalComponents = () => {
+    // Preload components that are likely to be used
+    import('./MovieDetailsOverlay');
+    import('./EnhancedSearchBar');
+    
+    // Preload critical images for better perceived performance
+    const preloadImage = (src) => {
+      if (!src) return;
+      const img = new Image();
+      img.src = src;
+    };
+    
+    // Preload first few movie posters from trending and popular
+    const preloadImages = () => {
+      const trendingPosters = trendingMovies.slice(0, 3).map(movie => 
+        movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : null
+      ).filter(Boolean);
+      
+      const popularPosters = popularMovies.slice(0, 3).map(movie => 
+        movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : null
+      ).filter(Boolean);
+      
+      [...trendingPosters, ...popularPosters].forEach(preloadImage);
+    };
+    
+    // Delay preloading to not interfere with initial load
+    setTimeout(preloadImages, 1000);
+  };
 
 // Add custom styles for Swiper navigation
 // CSS styles moved to separate file or removed for performance
@@ -140,19 +163,37 @@ const ProgressiveImage = memo(
         fullImage.loading = 'lazy';
       }
       
-      fullImage.src = src;
+      // FIXED: Mobile-specific image loading optimization
+      // Use smaller image sizes for mobile to improve loading performance
+      const isMobile = window.innerWidth < 768;
+      let optimizedSrc = src;
+      
+      if (isMobile && src.includes('/w')) {
+        // For mobile, use smaller image sizes if available
+        if (src.includes('/w500')) {
+          optimizedSrc = src.replace('/w500', '/w300');
+        } else if (src.includes('/w780')) {
+          optimizedSrc = src.replace('/w780', '/w300');
+        } else if (src.includes('/w1280')) {
+          optimizedSrc = src.replace('/w1280', '/w300');
+        }
+      }
+      
+      fullImage.src = optimizedSrc;
       if (srcSet) fullImage.srcset = srcSet;
       
       // Store reference for cleanup
       preloadRef.current = fullImage;
       
       fullImage.onload = () => {
-        setCurrentSrc(src);
+        setCurrentSrc(optimizedSrc);
         setImageLoaded(true);
         if (onLoad) onLoad();
       };
       
       fullImage.onerror = (e) => {
+        // FIXED: Better error handling for mobile
+        console.warn('Image failed to load:', optimizedSrc, 'Error:', e);
         setImageError(true);
         if (onError) onError(e);
       };
@@ -319,16 +360,44 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
   const prefetchTimeoutRef = useRef(null);
   const [isMobile, setIsMobile] = useState(false);
 
+  // Enhanced: Responsive image source, aspect ratio, and card width with fallback, retina, and ultra-wide support
+  // Determine best image source based on device, pixel density, and available fields
+  const getBestImageSource = () => {
+    // Prefer highest quality available, fallback to next best
+    if (isMobile) {
+      // On mobile, prefer portrait poster, fallback to landscape if poster missing
+      return poster || poster_path || image || backdrop || backdrop_path || null;
+    } else {
+      // On desktop, prefer landscape, fallback to poster if no backdrop
+      return backdrop || backdrop_path || image || poster || poster_path || null;
+    }
+  };
+
+  // FIXED: Add debugging for movie card rendering - moved after isMobile definition
+  useEffect(() => {
+    console.log(`MovieCard Debug - ${id}:`, {
+      title,
+      isMobile,
+      imageSource: getBestImageSource(),
+      poster_path,
+      backdrop_path
+    });
+  }, [id, title, isMobile, poster_path, backdrop_path]);
+
   useEffect(() => {
     setIsInWatchlistState(isInWatchlist(id));
   }, [id, isInWatchlist]);
 
-  // Check if we're on mobile for responsive layout - FIXED: Proper cleanup
+  // Check if we're on mobile for responsive layout - FIXED: Proper cleanup and mobile detection
   useEffect(() => {
     const checkScreenSize = () => {
-      const isNowMobile = window.innerWidth < 768;
+      // FIXED: More reliable mobile detection
+      const isNowMobile = window.innerWidth < 768 || 
+                         (window.navigator && window.navigator.userAgent && 
+                          /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(window.navigator.userAgent));
       setIsMobile(prev => {
         if (prev !== isNowMobile) {
+          console.log('Mobile detection changed:', isNowMobile, 'Screen width:', window.innerWidth);
           return isNowMobile;
         }
         return prev;
@@ -380,11 +449,11 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
       const imageUrls = [];
       if (poster_path) {
         // Try to fetch a higher-res poster if not already loaded
-        const posterUrl = `https://image.tmdb.org/t/p/w500${poster_path}`;
+        const posterUrl = getPosterProps({ poster_path }, 'w500').src;
         imageUrls.push(posterUrl);
       }
       if (backdrop_path) {
-        const backdropUrl = `https://image.tmdb.org/t/p/w780${backdrop_path}`;
+        const backdropUrl = getBackdropProps({ backdrop_path }, 'w780').src;
         imageUrls.push(backdropUrl);
       }
       // Preload images in parallel
@@ -392,6 +461,7 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
         url =>
           new Promise(resolve => {
             const img = new window.Image();
+            img.crossOrigin = 'anonymous';
             img.onload = () => resolve(true);
             img.onerror = () => resolve(false);
             img.src = url;
@@ -548,19 +618,6 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
       return `${Math.floor(runtime / 60)}h ${runtime % 60}m`;
     }
     return duration;
-  };
-
-  // Enhanced: Responsive image source, aspect ratio, and card width with fallback, retina, and ultra-wide support
-  // Determine best image source based on device, pixel density, and available fields
-  const getBestImageSource = () => {
-    // Prefer highest quality available, fallback to next best
-    if (isMobile) {
-      // On mobile, prefer portrait poster, fallback to landscape if poster missing
-      return poster || poster_path || image || backdrop || backdrop_path || null;
-    } else {
-      // On desktop, prefer landscape, fallback to poster if no backdrop
-      return backdrop || backdrop_path || image || poster || poster_path || null;
-    }
   };
 
   // Responsive aspect ratio: portrait for mobile, landscape for desktop, ultra-wide for very large screens
@@ -828,6 +885,16 @@ const getFullLanguageName = (code) => {
 
 // Enhanced memoization with custom comparison for better performance
 const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, currentPage, sectionKey, onMovieSelect, onMovieHover, onPrefetch }) => {
+  // FIXED: Add debugging for movie section rendering
+  useEffect(() => {
+    console.log(`MovieSection Debug - ${sectionKey}:`, {
+      title,
+      moviesCount: movies?.length || 0,
+      loading,
+      hasMore,
+      currentPage
+    });
+  }, [sectionKey, title, movies, loading, hasMore, currentPage]);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isViewAllMode, setIsViewAllMode] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -850,12 +917,16 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
   // Step 9: Track prefetching state for user feedback
   const [prefetchingIds, setPrefetchingIds] = useState([]);
 
-  // Check if we're on desktop for navigation buttons - FIXED: Proper cleanup
+  // Check if we're on desktop for navigation buttons - FIXED: Proper cleanup and mobile detection
   useEffect(() => {
     const checkScreenSize = () => {
-      const isNowDesktop = window.innerWidth > 768;
+      // FIXED: More reliable mobile/desktop detection
+      const isNowDesktop = window.innerWidth > 768 && 
+                          !(window.navigator && window.navigator.userAgent && 
+                            /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(window.navigator.userAgent));
       setIsDesktop(prev => {
         if (prev !== isNowDesktop) {
+          console.log('MovieSection Desktop detection changed:', isNowDesktop, 'Screen width:', window.innerWidth);
           return isNowDesktop;
         }
         return prev;
@@ -3216,6 +3287,9 @@ const HomePage = () => {
   const { addToWatchlist, isInWatchlist, removeFromWatchlist } = useWatchlist();
   const [isInWatchlistState, setIsInWatchlistState] = useState(false);
 
+  // Add mobile detection state
+  const [isMobile, setIsMobile] = useState(false);
+
   // Add new state for TV shows and now playing movies
   const [popularTVShows, setPopularTVShows] = useState([]);
   const [topRatedTVShows, setTopRatedTVShows] = useState([]);
@@ -3234,6 +3308,8 @@ const HomePage = () => {
   const cacheRef = useRef(new Map());
   const lruQueue = useRef([]);
   const memoryUsage = useRef(0);
+  
+
 
   // 🚀 ULTRA-OPTIMIZED: Advanced optimization states with virtual scrolling
   const [viewportItems, setViewportItems] = useState(new Set());
@@ -3253,7 +3329,7 @@ const HomePage = () => {
     low: ['horror', 'sciFi', 'documentary', 'family', 'animation', 'awardWinning', 'latest', 'popularTV', 'topRatedTV', 'airingToday', 'nowPlaying']
   });
 
-  // 🚀 NEW: Virtual scrolling optimization
+  // 🚀 NEW: Virtual scrolling optimization with intersection observer
   const [visibleSections, setVisibleSections] = useState(new Set(['trending', 'popular']));
   const [virtualScrollConfig] = useState({
     itemHeight: 300, // Approximate height of movie cards
@@ -3261,6 +3337,63 @@ const HomePage = () => {
     batchSize: 10, // Number of items to render in each batch
     throttleMs: 16 // Throttle intersection observer updates
   });
+  
+  // Intersection observer for lazy loading sections
+  const sectionObserverRef = useRef(null);
+  const [lazyLoadQueue, setLazyLoadQueue] = useState(new Set());
+  
+  // Initialize intersection observer for lazy loading
+  useEffect(() => {
+    if (!('IntersectionObserver' in window)) return;
+    
+    sectionObserverRef.current = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            const sectionKey = entry.target.dataset.section;
+            if (sectionKey && !visibleSections.has(sectionKey)) {
+              setVisibleSections(prev => new Set([...prev, sectionKey]));
+              setLazyLoadQueue(prev => new Set([...prev, sectionKey]));
+            }
+          }
+        });
+      },
+      {
+        rootMargin: '100px 0px', // Start loading 100px before section comes into view
+        threshold: 0.1
+      }
+    );
+    
+    return () => {
+      if (sectionObserverRef.current) {
+        sectionObserverRef.current.disconnect();
+      }
+    };
+  }, [visibleSections]);
+
+  // Mobile detection effect
+  useEffect(() => {
+    const checkScreenSize = () => {
+      const isNowMobile = window.innerWidth < 768 || 
+                         (window.navigator && window.navigator.userAgent && 
+                          /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(window.navigator.userAgent));
+      setIsMobile(prev => {
+        if (prev !== isNowMobile) {
+          console.log('Mobile detection changed:', isNowMobile, 'Screen width:', window.innerWidth);
+          return isNowMobile;
+        }
+        return prev;
+      });
+    };
+    
+    checkScreenSize();
+    const resizeHandler = checkScreenSize;
+    window.addEventListener('resize', resizeHandler);
+    
+    return () => {
+      window.removeEventListener('resize', resizeHandler);
+    };
+  }, []);
 
   // 🎯 NEW: Ultra-optimized prefetching configuration
   const PREFETCH_CONFIG = {
@@ -3272,6 +3405,31 @@ const HomePage = () => {
     smartPrefetching: true,
     requestDeduplication: true, // Prevent duplicate requests
     adaptivePrefetching: true // Adjust based on network conditions
+  };
+
+  // Helper function to get the appropriate fetch function
+  const getFetchFunction = (key) => {
+    const fetchFunctions = {
+      trending: getTrendingMovies,
+      popular: getPopularMovies,
+      topRated: getTopRatedMovies,
+      upcoming: getUpcomingMovies,
+      action: getActionMovies,
+      comedy: getComedyMovies,
+      drama: getDramaMovies,
+      horror: getHorrorMovies,
+      sciFi: getSciFiMovies,
+      documentary: getDocumentaryMovies,
+      family: getFamilyMovies,
+      animation: getAnimationMovies,
+      awardWinning: getAwardWinningMovies,
+      latest: getLatestMovies,
+      popularTV: getPopularTVShows,
+      topRatedTV: getTopRatedTVShows,
+      airingToday: getAiringTodayTVShows,
+      nowPlaying: getNowPlayingMovies
+    };
+    return fetchFunctions[key];
   };
   
   // Request deduplication cache
@@ -3301,6 +3459,7 @@ const HomePage = () => {
   const timeoutRefs = useRef(new Set());
   const intervalRefs = useRef(new Set());
   const isMountedRef = useRef(true);
+  const visibilityObserverRef = useRef(null);
 
   // 🧹 NEW: Comprehensive cleanup function - FIXED: Memory leaks
   const cleanup = useCallback(() => {
@@ -3388,6 +3547,16 @@ const HomePage = () => {
       } catch (error) {
         console.warn('Failed to disconnect window performance observer:', error);
       }
+    }
+
+    // Clear visibility observer
+    if (visibilityObserverRef.current) {
+      try {
+        visibilityObserverRef.current.disconnect();
+      } catch (error) {
+        console.warn('Failed to disconnect visibility observer:', error);
+      }
+      visibilityObserverRef.current = null;
     }
 
     // Reset body overflow
@@ -3507,7 +3676,9 @@ const HomePage = () => {
     }
   }, []);
 
-  // 🎯 NEW: Intelligent prefetching
+
+
+  // 🎯 NEW: Intelligent prefetching (simplified to avoid hoisting issues)
   const intelligentPrefetch = useCallback(async (category, priority = 'normal') => {
     if (prefetchQueue.has(category) || dataCache[category]) return;
     
@@ -3515,7 +3686,22 @@ const HomePage = () => {
     
     try {
       const startTime = performance.now();
-      const result = await fetchMoviesForCategory(category, 1);
+      // Use a simple approach to avoid hoisting issues
+      const cacheKey = `${category}-1`;
+      
+      // Check cache first
+      const cachedData = dataCache[cacheKey];
+      if (cachedData && Date.now() - cachedData.timestamp < CACHE_DURATION) {
+        return;
+      }
+
+      // Get the appropriate fetch function
+      const fetchFunction = getFetchFunction(category);
+      if (!fetchFunction) {
+        throw new Error(`No fetch function found for category: ${category}`);
+      }
+
+      const result = await fetchFunction(1);
       
       if (result && result.movies) {
         setDataCache(prev => ({
@@ -3528,13 +3714,11 @@ const HomePage = () => {
           }
         }));
         
-        // Update performance metrics
+        // Performance logging
         const loadTime = performance.now() - startTime;
-        setPerformanceMetrics(prev => ({
-          ...prev,
-          loadTimes: { ...prev.loadTimes, [category]: loadTime },
-          apiCalls: prev.apiCalls + 1
-        }));
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`Prefetch completed for ${category} in ${loadTime.toFixed(2)}ms`);
+        }
       }
     } catch (error) {
       console.warn(`Prefetch failed for ${category}:`, error);
@@ -3545,7 +3729,7 @@ const HomePage = () => {
         return newQueue;
       });
     }
-  }, [prefetchQueue, dataCache]);
+  }, [prefetchQueue, dataCache, getFetchFunction, CACHE_DURATION]);
 
   // Create sections object from individual state variables
   const sections = useMemo(() => ({
@@ -3582,7 +3766,7 @@ const HomePage = () => {
     
     // Add hero section images if available
     if (featuredContent && featuredContent.backdrop_path) {
-      const heroImage = `https://image.tmdb.org/t/p/w1280${featuredContent.backdrop_path}`;
+      const heroImage = getBackdropProps(featuredContent, 'w1280').src;
       criticalImages.push(heroImage);
     }
     
@@ -3590,7 +3774,7 @@ const HomePage = () => {
     if (sections && sections.trending && sections.trending.movies && sections.trending.movies.length > 0) {
       sections.trending.movies.slice(0, 3).forEach(movie => {
         if (movie.poster_path) {
-          const posterImage = `https://image.tmdb.org/t/p/w500${movie.poster_path}`;
+          const posterImage = getPosterProps(movie, 'w500').src;
           criticalImages.push(posterImage);
         }
       });
@@ -3866,6 +4050,8 @@ const HomePage = () => {
     }
   };
 
+
+
   // Enhanced function to get cached data with validation, performance monitoring, and advanced error handling
   const getCachedData = (cacheKey) => {
     const startTime = performance.now();
@@ -4125,10 +4311,22 @@ const HomePage = () => {
     };
   }, []); // Empty dependency array means this runs once on mount
 
-  // Add loading state for initial data fetch
+  // Add loading state for initial data fetch with timeout protection
   useEffect(() => {
     if (loadingStates.initial) {
       document.body.style.overflow = 'hidden';
+      
+      // Add timeout to prevent infinite loading
+      const loadingTimeout = setTimeout(() => {
+        console.warn('Loading timeout reached, forcing completion');
+        setLoadingState('initial', false);
+        setError('Loading took longer than expected. Some content may not be available.');
+      }, 30000); // 30 second timeout
+      
+      return () => {
+        clearTimeout(loadingTimeout);
+        document.body.style.overflow = 'unset';
+      };
     } else {
       document.body.style.overflow = 'unset';
     }
@@ -4136,7 +4334,7 @@ const HomePage = () => {
     return () => {
       document.body.style.overflow = 'unset';
     };
-  }, [loadingStates.initial]);
+  }, [loadingStates.initial, setLoadingState]);
 
   // Add error handling effect
   useEffect(() => {
@@ -4150,12 +4348,45 @@ const HomePage = () => {
     };
   }, [error]);
 
-  // Add cleanup effect
+  // Add cleanup effect with memory optimization
   useEffect(() => {
+    // Memory optimization interval
+    const memoryInterval = setInterval(() => {
+      if (performance.memory) {
+        const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
+        if (memoryMB > 400) {
+          console.warn(`High memory usage detected: ${memoryMB.toFixed(2)}MB`);
+          // Force cleanup
+          if (window.gc) {
+            window.gc();
+          }
+        }
+      }
+    }, 30000); // Check every 30 seconds
+    
     return () => {
       document.body.style.overflow = 'unset';
+      clearInterval(memoryInterval);
+      
+      // Clear intersection observer
+      if (sectionObserverRef.current) {
+        sectionObserverRef.current.disconnect();
+      }
+      
+      // Clear lazy load queue
+      setLazyLoadQueue(new Set());
     };
   }, []);
+
+  // FIXED: Add debugging for mobile content loading - moved before early returns
+  useEffect(() => {
+    console.log('HomePage Debug - Mobile:', isMobile);
+    console.log('HomePage Debug - Trending movies:', trendingMovies.length);
+    console.log('HomePage Debug - Popular movies:', popularMovies.length);
+    console.log('HomePage Debug - Top rated movies:', topRatedMovies.length);
+    console.log('HomePage Debug - Upcoming movies:', upcomingMovies.length);
+    console.log('HomePage Debug - Active category:', activeCategory);
+  }, [isMobile, trendingMovies.length, popularMovies.length, topRatedMovies.length, upcomingMovies.length, activeCategory]);
 
   // Pagination states for all categories
   const [pageStates, setPageStates] = useState({
@@ -4221,7 +4452,6 @@ const HomePage = () => {
   const isProcessingPrefetchRef = useRef(false);
   const fetchInProgress = useRef(false);
   const [visibleMovies, setVisibleMovies] = useState(new Set());
-  const visibilityObserverRef = useRef(null);
 
   const addUniqueMovies = (currentMovies, newMovies, idSet) => {
     const uniqueNewMovies = newMovies.filter(movie => !idSet.has(movie.id));
@@ -4256,151 +4486,84 @@ const HomePage = () => {
       // Start trending in parallel for faster perceived loading
       const trendingPromise = fetchPrioritySection('trending');
       
-      // Wait for both critical sections with timeout
-      const [featuredResult, trendingResult] = await Promise.allSettled([
-        Promise.race([featuredPromise, new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Featured content timeout')), 5000)
-        )]),
-        Promise.race([trendingPromise, new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Trending timeout')), 10000) // Increased from 3000 to 10000ms
-        )])
-      ]);
+      // Wait for critical content to complete
+      await Promise.all([featuredPromise, trendingPromise]);
       
       metrics.featuredTime = performance.now() - featuredStart;
       
-      // Handle featured content result
-      if (featuredResult.status === 'fulfilled') {
-        // Featured content loaded successfully
-      } else {
-        console.warn('⚠️ Featured content failed, continuing with other sections:', featuredResult.reason);
-        metrics.errors++;
-      }
-      
-      // Handle trending result
-      if (trendingResult.status === 'fulfilled') {
-        // Trending section loaded successfully
-      } else {
-        console.warn('⚠️ Trending section failed:', trendingResult.reason);
-        metrics.errors++;
-      }
-
-      // Phase 2: High priority sections with optimized batching and caching
+      // Phase 2: High priority content (popular, topRated) - load in parallel
       const highPriorityStart = performance.now();
-      const highPrioritySections = SECTION_PRIORITIES.HIGH.filter(key => key !== 'trending');
-      
-      // Process high priority sections in optimized batches
-      const highPriorityBatches = chunkArray(highPrioritySections, 3); // Increased batch size
-      for (const batch of highPriorityBatches) {
-        const batchResults = await Promise.allSettled(
-          batch.map(key => fetchPrioritySection(key))
-        );
-        
-        batchResults.forEach((result, index) => {
-          if (result.status === 'fulfilled') {
-            // console.log(`✅ ${batch[index]} loaded successfully`);
-          } else {
-            console.warn(`⚠️ ${batch[index]} failed:`, result.reason);
-            metrics.errors++;
-          }
-        });
-        
-        // Reduced delay between batches for faster loading
-        if (highPriorityBatches.indexOf(batch) < highPriorityBatches.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 25)); // Reduced from 50ms
-        }
-      }
-      metrics.highPriorityTime = performance.now() - highPriorityStart;
-
-      // Phase 3: Medium priority sections with parallel processing and intelligent caching
-      const mediumPriorityStart = performance.now();
-      const mediumPriorityPromise = Promise.allSettled(
-        SECTION_PRIORITIES.MEDIUM.map(key => fetchPrioritySection(key))
-      );
-
-      // Phase 4: Low priority sections (non-blocking)
-      const lowPriorityStart = performance.now();
-      const lowPriorityPromise = Promise.allSettled(
-        SECTION_PRIORITIES.LOW.map(key => fetchPrioritySection(key))
-      );
-
-      // Wait for medium and low priority sections with timeout protection
-      const [mediumResults, lowResults] = await Promise.all([
-        mediumPriorityPromise,
-        lowPriorityPromise
-      ]);
-      
-      metrics.mediumPriorityTime = performance.now() - mediumPriorityStart;
-      metrics.lowPriorityTime = performance.now() - lowPriorityStart;
-
-      // Log results for medium priority sections
-      mediumResults.forEach((result, index) => {
-        const sectionKey = SECTION_PRIORITIES.MEDIUM[index];
-        if (result.status === 'fulfilled') {
-          // console.log(`✅ ${sectionKey} (medium) loaded successfully`);
-        } else {
-          console.warn(`⚠️ ${sectionKey} (medium) failed:`, result.reason);
-          metrics.errors++;
-        }
-      });
-
-      // Log results for low priority sections
-      lowResults.forEach((result, index) => {
-        const sectionKey = SECTION_PRIORITIES.LOW[index];
-        if (result.status === 'fulfilled') {
-          // console.log(`✅ ${sectionKey} (low) loaded successfully`);
-        } else {
-          console.warn(`⚠️ ${sectionKey} (low) failed:`, result.reason);
-          metrics.errors++;
-        }
-      });
-
-      metrics.totalTime = performance.now() - startTime;
-
-      // Only set error if critical sections failed
-      const criticalFailures = [featuredResult, trendingResult].filter(
-        result => result.status === 'rejected'
-      ).length;
-      
-      if (criticalFailures >= 2) {
-        setError('Failed to load critical content. Please refresh the page.');
-      } else if (metrics.errors > 0) {
-        console.warn(`⚠️ ${metrics.errors} non-critical sections failed to load`);
-      } else {
-        setError(null);
-      }
-
-    } catch (err) {
-      console.error('💥 Critical error in fetchInitialMovies:', err);
-      setError('Failed to fetch movies. Please try again later.');
-      metrics.errors++;
-      
-      // Set fallback content to prevent complete failure
-      const fallbackMovies = [
-        {
-          id: 1,
-          title: 'Welcome to Streamr',
-          overview: 'Your ultimate streaming companion. Discover the latest movies and TV shows.',
-          poster_path: null,
-          backdrop_path: null,
-          vote_average: 0,
-          release_date: new Date().toISOString().split('T')[0],
-          type: 'movie'
-        },
-        {
-          id: 2,
-          title: 'Explore Movies',
-          overview: 'Browse through thousands of movies and TV shows.',
-          poster_path: null,
-          backdrop_path: null,
-          vote_average: 0,
-          release_date: new Date().toISOString().split('T')[0],
-          type: 'movie'
-        }
+      const highPriorityPromises = [
+        fetchPrioritySection('popular'),
+        fetchPrioritySection('topRated')
       ];
       
-      // Set fallback content for trending section
-      setTrendingMovies(fallbackMovies);
+      await Promise.all(highPriorityPromises);
+      metrics.highPriorityTime = performance.now() - highPriorityStart;
       
+      // Phase 3: Medium priority content - load only essential sections for faster initial load
+      const mediumPriorityStart = performance.now();
+      const mediumPriorityCategories = ['upcoming', 'action']; // Reduced from 4 to 2 sections
+      
+      // Load medium priority in parallel for faster loading
+      const mediumPriorityPromises = mediumPriorityCategories.map(category => 
+        fetchPrioritySection(category)
+      );
+      await Promise.all(mediumPriorityPromises);
+      
+      metrics.mediumPriorityTime = performance.now() - mediumPriorityStart;
+      
+        // Phase 4: Low priority content - load asynchronously after initial render with intelligent batching
+  const lowPriorityStart = performance.now();
+  const lowPriorityCategories = [
+    'horror', 'sciFi', 'documentary', 'family', 'animation', 
+    'awardWinning', 'latest', 'popularTV', 'topRatedTV', 
+    'airingToday', 'nowPlaying'
+  ];
+  
+  // Load low priority content in smaller batches to prevent overwhelming the API
+  const batchSize = 3;
+  const loadLowPriorityBatches = async () => {
+    for (let i = 0; i < lowPriorityCategories.length; i += batchSize) {
+      const batch = lowPriorityCategories.slice(i, i + batchSize);
+      const batchPromises = batch.map(category => fetchPrioritySection(category));
+      
+      try {
+        await Promise.allSettled(batchPromises);
+        // Small delay between batches to prevent API rate limiting
+        if (i + batchSize < lowPriorityCategories.length) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+      } catch (error) {
+        console.warn(`Batch ${Math.floor(i / batchSize) + 1} failed:`, error);
+      }
+    }
+  };
+  
+  // Start low priority loading in background
+  loadLowPriorityBatches().then(() => {
+    console.log('✅ All low priority content loaded');
+  }).catch(error => {
+    console.warn('Low priority content loading failed:', error);
+  });
+      
+      metrics.lowPriorityTime = performance.now() - lowPriorityStart;
+      metrics.totalTime = performance.now() - startTime;
+      
+      console.log('🎯 Initial load performance:', {
+        featuredTime: `${metrics.featuredTime.toFixed(0)}ms`,
+        highPriorityTime: `${metrics.highPriorityTime.toFixed(0)}ms`,
+        mediumPriorityTime: `${metrics.mediumPriorityTime.toFixed(0)}ms`,
+        lowPriorityTime: `${metrics.lowPriorityTime.toFixed(0)}ms`,
+        totalTime: `${metrics.totalTime.toFixed(0)}ms`
+      });
+      
+      // Track page load performance
+      trackPageLoad('HomePage');
+      
+    } catch (error) {
+      console.error('Critical error in fetchInitialMovies:', error);
+      setError('Failed to load initial content. Please refresh the page.');
     } finally {
       setLoadingState('initial', false);
     }
@@ -4532,19 +4695,32 @@ const HomePage = () => {
       }
       metrics.cacheCheckTime = performance.now() - cacheCheckStart;
 
-      // Enhanced API fetching with timeout and retry logic
-      const fetchStart = performance.now();
-      setLoadingState(section.key, true);
-      
-      // Add timeout protection for API calls
+        // Enhanced API fetching with optimized timeout and retry logic
+  const fetchStart = performance.now();
+  setLoadingState(section.key, true);
+  
+  // Use request deduplication to prevent duplicate calls
+  const requestKey = `${section.key}-page-1`;
+  let result;
+  
+  try {
+    result = await deduplicateRequest(requestKey, async () => {
+      // Reduced timeout for faster failure detection and better UX
       const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Request timeout')), 30000); // 30 second timeout
+        setTimeout(() => reject(new Error('Request timeout')), 15000); // Reduced from 30 to 15 seconds
       });
       
       const fetchPromise = section.fetch(1);
-      const result = await Promise.race([fetchPromise, timeoutPromise]);
-      
-      metrics.fetchTime = performance.now() - fetchStart;
+      return await Promise.race([fetchPromise, timeoutPromise]);
+    });
+  } catch (error) {
+    throw error;
+  }
+  
+  metrics.fetchTime = performance.now() - fetchStart;
+  
+  // Track API call performance
+  trackApiCall(section.key, metrics.fetchTime, true);
 
       // Enhanced result validation and processing
       const processingStart = performance.now();
@@ -4598,12 +4774,15 @@ const HomePage = () => {
       metrics.totalTime = performance.now() - startTime;
 
     } catch (error) {
+      const totalTime = performance.now() - startTime;
+      trackApiCall(sectionKey, totalTime, false);
+      
       console.error(`Critical error fetching ${sectionKey}:`, {
         error: error.message,
         stack: error.stack,
         sectionKey,
         metrics: {
-          totalTime: performance.now() - startTime,
+          totalTime,
           cacheHit: metrics.cacheHit
         }
       });
@@ -4625,31 +4804,6 @@ const HomePage = () => {
     } finally {
       setLoadingState(section ? section.key : sectionKey, false);
     }
-  };
-
-  // Helper function to get the appropriate fetch function
-  const getFetchFunction = (key) => {
-    const fetchFunctions = {
-      trending: getTrendingMovies,
-      popular: getPopularMovies,
-      topRated: getTopRatedMovies,
-      upcoming: getUpcomingMovies,
-      action: getActionMovies,
-      comedy: getComedyMovies,
-      drama: getDramaMovies,
-      horror: getHorrorMovies,
-      sciFi: getSciFiMovies,
-      documentary: getDocumentaryMovies,
-      family: getFamilyMovies,
-      animation: getAnimationMovies,
-      awardWinning: getAwardWinningMovies,
-      latest: getLatestMovies,
-      popularTV: getPopularTVShows,
-      topRatedTV: getTopRatedTVShows,
-      airingToday: getAiringTodayTVShows,
-      nowPlaying: getNowPlayingMovies
-    };
-    return fetchFunctions[key];
   };
 
   // Helper function to get the appropriate setter function
@@ -4676,6 +4830,8 @@ const HomePage = () => {
     };
     return setterFunctions[key];
   };
+
+
 
   // Enhanced loadMoreMovies with intelligent caching, performance monitoring, error recovery, and advanced state management
   const loadMoreMovies = async (category) => {
@@ -5058,6 +5214,7 @@ const HomePage = () => {
     if (!isPrefetching) {
       setIsPrefetching(true);
       try {
+        // Use the original fetchMoviesForCategory function
         const result = await fetchMoviesForCategory(category, 1);
         if (result && result.movies) {
           setDataCache(prev => ({
@@ -5482,9 +5639,9 @@ const HomePage = () => {
       const trendingStart = performance.now();
       setLoadingState('featured', true);
       
-      // Add timeout protection for API calls
+      // Add timeout protection for API calls - reduced for faster failure detection
       const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Trending content request timeout')), 15000); // 15 second timeout
+        setTimeout(() => reject(new Error('Trending content request timeout')), 10000); // Reduced from 15 to 10 seconds
       });
       
       const trendingPromise = getTrendingMovies(1);
@@ -5779,6 +5936,10 @@ const HomePage = () => {
 
     return () => {
       observer.disconnect();
+      if (visibilityObserverRef.current) {
+        visibilityObserverRef.current.disconnect();
+        visibilityObserverRef.current = null;
+      }
     };
   }, [queuePrefetch, visibleMovies]);
 
@@ -5805,7 +5966,18 @@ const HomePage = () => {
   }, []);
 
   if (loadingStates.initial) {
-    return <PageLoader />;
+    // Calculate loading progress based on loaded sections
+    const totalSections = 6; // Reduced from 18 to 6 (featured, trending, popular, topRated, upcoming, action)
+    const loadedSections = Object.keys(loadingStates).filter(key => 
+      key !== 'initial' && !loadingStates[key]
+    ).length;
+    const progress = Math.min((loadedSections / totalSections) * 100, 95); // Cap at 95% until fully loaded
+    
+    return <PageLoader 
+      text="Loading your cinematic experience..." 
+      showProgress={true}
+      progress={progress}
+    />;
   }
 
   if (error) {
@@ -5853,6 +6025,13 @@ const HomePage = () => {
       <div className="layout-container flex h-full grow flex-col scrollbar-hide momentum-scroll">
         <div className="flex flex-1 justify-center">
           <div className="layout-content-container flex flex-col w-full flex-1 scrollbar-hide custom-scroll-ease">
+            {/* FIXED: Mobile debug info */}
+            {isMobile && (
+              <div className="fixed top-20 left-4 z-50 bg-red-500 text-white p-2 rounded text-xs">
+                Mobile: {window.innerWidth}px | Trending: {trendingMovies.length} | Popular: {popularMovies.length}
+              </div>
+            )}
+            
             {/* Add HeroSection here */}
             <MemoizedHeroSection 
               featuredContent={featuredContent} 

@@ -239,7 +239,9 @@ class EnhancedTmdbService {
 
       const getImageUrl = (path, size = 'w500') => {
         if (!path) return null;
-        return `${TMDB_IMAGE_BASE_URL}/${size}${path}`;
+        // Ensure path starts with /
+        const cleanPath = path.startsWith('/') ? path : `/${path}`;
+        return `${TMDB_IMAGE_BASE_URL}/${size}${cleanPath}`;
       };
 
       const processedDate = processDate(movie.release_date);
@@ -336,7 +338,9 @@ class EnhancedTmdbService {
 
       const getImageUrl = (path, size = 'w500') => {
         if (!path) return null;
-        return `${TMDB_IMAGE_BASE_URL}/${size}${path}`;
+        // Ensure path starts with /
+        const cleanPath = path.startsWith('/') ? path : `/${path}`;
+        return `${TMDB_IMAGE_BASE_URL}/${size}${cleanPath}`;
       };
 
       const processedDate = processDate(tv.first_air_date);
@@ -453,10 +457,10 @@ class EnhancedTmdbService {
       
       // Get the English logo
       const logo = data.images?.logos?.find(logo => logo.iso_639_1 === 'en') || data.images?.logos?.[0];
-      const logoUrl = logo ? `${TMDB_IMAGE_BASE_URL}/w300${logo.file_path}` : null;
+              const logoUrl = logo ? `${TMDB_IMAGE_BASE_URL}/w300${logo.file_path.startsWith('/') ? logo.file_path : `/${logo.file_path}`}` : null;
       
       // Get backdrop with appropriate size
-      const backdrop = data.backdrop_path ? `${TMDB_IMAGE_BASE_URL}/w1280${data.backdrop_path}` : null;
+              const backdrop = data.backdrop_path ? `${TMDB_IMAGE_BASE_URL}/w1280${data.backdrop_path.startsWith('/') ? data.backdrop_path : `/${data.backdrop_path}`}` : null;
       
       const trailer = data.videos?.results?.find(video => 
         video.type === 'Trailer' && video.site === 'YouTube'
@@ -465,7 +469,7 @@ class EnhancedTmdbService {
       const cast = data.credits?.cast?.slice(0, 6).map(person => ({
         name: person.name,
         character: person.character,
-        image: person.profile_path ? `${TMDB_IMAGE_BASE_URL}/w185${person.profile_path}` : null
+                  image: person.profile_path ? `${TMDB_IMAGE_BASE_URL}/w185${person.profile_path.startsWith('/') ? person.profile_path : `/${person.profile_path}`}` : null
       })) || [];
       
       const director = data.credits?.crew?.find(person => person.job === 'Director')?.name;
@@ -494,7 +498,7 @@ class EnhancedTmdbService {
         networks: data.networks?.map(network => ({
           id: network.id,
           name: network.name,
-          logo_path: network.logo_path ? `${TMDB_IMAGE_BASE_URL}/w185${network.logo_path}` : null,
+          logo_path: network.logo_path ? `${TMDB_IMAGE_BASE_URL}/w185${network.logo_path.startsWith('/') ? network.logo_path : `/${network.logo_path}`}` : null,
           origin_country: network.origin_country
         })) || [],
         created_by: data.created_by,

@@ -34,6 +34,19 @@ import { ErrorBoundary } from './utils/errorBoundary'
 // Import test utility (remove in production)
 import { testErrorBoundary } from './utils/testErrorHandling'
 
+// Register service worker for better caching and offline support
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then(registration => {
+        console.log('Service Worker registered successfully:', registration);
+      })
+      .catch(error => {
+        console.log('Service Worker registration failed:', error);
+      });
+  });
+}
+
 const Layout = () => {
   const [selectedMovie, setSelectedMovie] = React.useState(null);
   const [showPerformanceDashboard, setShowPerformanceDashboard] = useState(false);
@@ -132,7 +145,7 @@ const AppRoutes = () => {
     <Suspense>
       <Routes>
         {/* Public Routes */}
-        <Route path="/" element={<HomePage />} />
+        <Route path="/" element={<HomePage key="homepage" />} />
         <Route path="/movies" element={<MoviesPage />} />
         <Route path="/series" element={<SeriesPage />} />
         <Route path="/community" element={<CommunityPage />} />

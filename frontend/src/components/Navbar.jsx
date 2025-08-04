@@ -325,7 +325,7 @@ const MovieImage = React.memo(({
         className={`
           w-full h-full object-cover transition-all duration-500 ease-out
           ${isLoading ? 'opacity-0 scale-95' : 'opacity-100 scale-100'}
-          ${isLoaded ? 'group-hover:scale-105' : ''}
+          ${isLoaded ? 'group-hover/image:scale-105' : ''}
         `}
         onError={handleError}
         onLoad={handleLoad}
@@ -335,9 +335,9 @@ const MovieImage = React.memo(({
       />
       
       {/* Enhanced overlay with better visual feedback */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 ease-out">
+      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent opacity-0 group-hover/image:opacity-100 transition-all duration-300 ease-out">
         <div className="absolute bottom-0 left-0 right-0 p-3 flex items-center justify-center">
-          <div className="bg-white/20 backdrop-blur-sm rounded-full p-2 transform scale-90 group-hover:scale-100 transition-transform duration-200">
+          <div className="bg-white/20 backdrop-blur-sm rounded-full p-2 transform scale-90 group-hover/image:scale-100 transition-transform duration-200">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" viewBox="0 0 24 24" fill="currentColor">
               <path d="M8 5v14l11-7z"/>
             </svg>
@@ -345,12 +345,7 @@ const MovieImage = React.memo(({
         </div>
       </div>
       
-      {/* Performance indicator for debugging */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="absolute top-1 right-1 bg-black/50 text-white text-xs px-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-          {isLoaded ? 'Loaded' : 'Loading...'}
-        </div>
-      )}
+
     </div>
   );
 });
@@ -684,12 +679,20 @@ const Navbar = ({ onMovieSelect }) => {
     if (!isMobileSearchOpen) return;
     
     const handleClick = (e) => {
+      // FIXED: More precise click outside detection - only close if clicking outside the entire search overlay
       if (
         mobileSearchOverlayRef.current &&
-        !mobileSearchOverlayRef.current.contains(e.target) &&
-        (!mobileSearchInputRef.current || !mobileSearchInputRef.current.contains(e.target))
+        !mobileSearchOverlayRef.current.contains(e.target)
       ) {
-        setIsMobileSearchOpen(false);
+        // Additional check: don't close if clicking on search-related elements
+        const isSearchElement = e.target.closest('[data-search-element]') || 
+                               e.target.closest('.search-results') ||
+                               e.target.closest('.search-input') ||
+                               e.target.closest('.search-overlay');
+        
+        if (!isSearchElement) {
+          setIsMobileSearchOpen(false);
+        }
       }
     };
     
@@ -2454,18 +2457,18 @@ const Navbar = ({ onMovieSelect }) => {
       <div className="hidden sm:flex flex-1 justify-end gap-4 sm:gap-6 md:gap-8 mr-2">
         <div 
           ref={searchRef} 
-          className={`relative transition-all duration-200 ease-out ${
+          className={`relative transition-all duration-300 ease-out group ${
             isSearchFocused 
-              ? 'w-[280px] sm:w-[350px] md:w-[400px] lg:w-[500px]' 
-              : 'w-[180px] sm:w-[220px] md:w-[240px] lg:w-[256px]'
+              ? 'w-[300px] sm:w-[380px] md:w-[450px] lg:w-[550px]' 
+              : 'w-[200px] sm:w-[240px] md:w-[260px] lg:w-[280px]'
           }`}
         >
-          {/* Animated Background Glow for Search */}
+          {/* Enhanced Animated Background Glow for Search */}
           <motion.div
-            className="absolute inset-0 rounded-xl bg-gradient-to-r from-white/5 via-white/10 to-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-sm"
+            className="absolute inset-0 rounded-xl bg-gradient-to-r from-white/8 via-white/15 to-white/8 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-md"
             animate={{
               scale: [1, 1.02, 1],
-              opacity: isSearchFocused ? [0.1, 0.2, 0.1] : [0, 0.1, 0],
+              opacity: isSearchFocused ? [0.15, 0.25, 0.15] : [0, 0.12, 0],
             }}
             transition={{
               duration: 3,
@@ -2475,16 +2478,17 @@ const Navbar = ({ onMovieSelect }) => {
             }}
           />
           
-          <label className="flex flex-col !h-10">
-            <div className="flex w-full flex-1 items-stretch rounded-xl h-full relative">
-              <div className="text-[#a1abb5] flex border-none bg-[#2b3036] items-center justify-center pl-4 rounded-l-full border-r-0 relative">
-                {/* Animated Search Icon */}
+          <label className="flex flex-col !h-11">
+            <div className="flex w-full flex-1 items-stretch rounded-xl h-full relative overflow-hidden">
+              <div className="text-[#a1abb5] flex border-none bg-[#2b3036] items-center justify-center pl-4 pr-2 rounded-l-full border-r-0 relative group-hover:bg-[#323840] transition-colors duration-300">
+                {/* Enhanced Animated Search Icon */}
                 <motion.svg 
                   xmlns="http://www.w3.org/2000/svg" 
-                  width="24px" 
-                  height="24px" 
+                  width="20px" 
+                  height="20px" 
                   fill="currentColor" 
                   viewBox="0 0 256 256"
+                  className="group-hover:text-white/90 transition-colors duration-300"
                   animate={{
                     scale: [1, 1.05, 1],
                     rotate: isSearchFocused ? [0, 2, -2, 0] : [0, 0, 0, 0],
@@ -2549,16 +2553,55 @@ const Navbar = ({ onMovieSelect }) => {
                   setIsSearchFocused(true);
                   setShowResults(true);
                 }}
-                placeholder="Search"
-                className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-xl rounded-r-full text-white focus:outline-0 focus:ring-0 border-none bg-[#2b3036] focus:border-none h-full placeholder:text-[#a1abb5] px-4 rounded-l-none border-l-0 pl-2 text-base font-normal leading-normal relative z-10"
+                placeholder="Search movies, TV shows, actors..."
+                className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-xl rounded-r-full text-white focus:outline-0 focus:ring-0 border-none bg-[#2b3036] group-hover:bg-[#323840] focus:bg-[#323840] focus:border-none h-full placeholder:text-[#a1abb5] placeholder:group-hover:text-white/60 placeholder:focus:text-white/60 px-4 rounded-l-none border-l-0 pl-3 pr-10 text-base font-normal leading-normal relative z-10 transition-all duration-300"
               />
               
-              {/* Animated Ring Effect for Search Focus */}
+                             {/* Enhanced Clear Button */}
+               {searchQuery && (
+                 <motion.button
+                   initial={{ opacity: 0, scale: 0.8, x: 10 }}
+                   animate={{ opacity: 1, scale: 1, x: 0 }}
+                   exit={{ opacity: 0, scale: 0.8, x: 10 }}
+                   onClick={() => {
+                     setSearchQuery('');
+                     setSearchResults([]);
+                     setShowResults(false);
+                     inputRef.current?.focus();
+                   }}
+                   className="absolute right-3 top-0 bottom-0 my-auto w-7 h-7 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center transition-all duration-300 z-20 group/clear border border-white/20 hover:border-white/30 shadow-sm hover:shadow-md"
+                   whileHover={{ 
+                     scale: 1.15,
+                     rotate: 90,
+                     transition: { duration: 0.2 }
+                   }}
+                   whileTap={{ 
+                     scale: 0.9,
+                     transition: { duration: 0.1 }
+                   }}
+                   title="Clear search"
+                 >
+                   <svg 
+                     xmlns="http://www.w3.org/2000/svg" 
+                     className="h-3.5 w-3.5 text-white/70 group-hover/clear:text-white/90 transition-all duration-200" 
+                     viewBox="0 0 24 24" 
+                     fill="none" 
+                     stroke="currentColor" 
+                     strokeWidth="2.5"
+                     strokeLinecap="round"
+                     strokeLinejoin="round"
+                   >
+                     <path d="M18 6L6 18M6 6l12 12" />
+                   </svg>
+                 </motion.button>
+               )}
+              
+              {/* Enhanced Animated Ring Effect for Search Focus */}
               <motion.div
-                className="absolute inset-0 rounded-xl border border-white/20 opacity-0"
+                className="absolute inset-0 rounded-full opacity-0"
                 animate={{
                   scale: [1, 1.02, 1],
-                  opacity: isSearchFocused ? [0, 0.3, 0] : [0, 0, 0],
+                  opacity: isSearchFocused ? [0, 0.4, 0] : [0, 0, 0],
                 }}
                 transition={{
                   duration: 2,
@@ -2567,6 +2610,9 @@ const Navbar = ({ onMovieSelect }) => {
                   delay: 0.3
                 }}
               />
+              
+              {/* Subtle Border for Better Definition */}
+              <div className="absolute inset-0 rounded-full border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
             </div>
           </label>
           
@@ -2578,14 +2624,14 @@ const Navbar = ({ onMovieSelect }) => {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -8, scale: 0.98 }}
                 transition={{ type: 'spring', stiffness: 300, damping: 30, duration: 0.25 }}
-                className="absolute top-full left-0 right-0 mt-3 text-white/90 bg-gradient-to-b from-[#181A20]/98 via-[#181A20]/95 to-[#181A20]/98 backdrop-blur-2xl border border-white/15 rounded-2xl z-50 shadow-2xl shadow-black/40 overflow-hidden"
+                className="absolute top-full left-0 right-0 mt-3 text-white/90 bg-[#1a1d21]/95 backdrop-blur-2xl border border-white/20 rounded-2xl z-50 shadow-2xl shadow-black/50 overflow-hidden"
                 style={{ maxHeight: 'calc(100vh - 200px)', minHeight: '200px' }}
               >
                 {/* ARIA live region for accessibility */}
                 <div id="search-live-region" aria-live="polite" className="sr-only" />
 
                 {/* Header */}
-                <div className="sticky top-0 p-4 border-b border-white/10 flex items-center justify-between bg-gradient-to-r from-white/8 via-white/5 to-white/3 backdrop-blur-sm z-10">
+                <div className="sticky top-0 p-4 border-b border-white/15 flex items-center justify-between bg-[#1a1d21]/95 backdrop-blur-sm z-10">
                   <div className="flex items-center gap-2">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white/80" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
@@ -2601,7 +2647,7 @@ const Navbar = ({ onMovieSelect }) => {
 
                 {/* Search History */}
                 {!searchQuery && searchHistory.length > 0 && (
-                  <div className="sticky top-14 p-4 border-b border-white/10 bg-gradient-to-r from-white/5 via-white/3 to-transparent z-10">
+                  <div className="sticky top-14 p-4 border-b border-white/15 bg-[#1a1d21]/90 z-10">
                     <div className="flex items-center justify-between mb-3">
                       <h4 className="text-white/90 font-medium">Recent Searches</h4>
                       <button
@@ -2628,32 +2674,99 @@ const Navbar = ({ onMovieSelect }) => {
                   </div>
                 )}
 
+                {/* Initial State - When search is focused but empty */}
+                {!searchQuery && searchHistory.length === 0 && (
+                  <div className="p-8 text-center flex flex-col items-center justify-center gap-4">
+                    {/* Friendly illustration */}
+                    <motion.svg 
+                      width="64" height="64" fill="none" viewBox="0 0 64 64" className="mx-auto"
+                      initial={{ scale: 0.8, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ duration: 0.3 }}
+                    >
+                      <rect width="64" height="64" rx="16" fill="#1a1a1a"/>
+                      <circle cx="32" cy="32" r="16" fill="none" stroke="#fff" strokeWidth="2"/>
+                      <path d="M24 32l4 4 8-8" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </motion.svg>
+                    <motion.div 
+                      className="text-white/80 mb-2 text-lg font-medium"
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.1 }}
+                    >
+                      Start searching for movies & TV shows
+                    </motion.div>
+                    <motion.div 
+                      className="text-white/50 text-sm"
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.2 }}
+                    >
+                      Type to discover amazing content
+                    </motion.div>
+                  </div>
+                )}
+
                 {/* Results List */}
                 <div 
                   className="overflow-y-auto max-h-[60vh] scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent"
                 >
-                  {/* Loading Skeleton */}
+                  {/* Pixel-Perfect Loading Skeleton */}
                   {isSearching ? (
-                    <div className="p-6 flex flex-col gap-4">
+                    <div className="divide-y divide-white/10" role="listbox">
                       {[...Array(3)].map((_, i) => (
                         <motion.div 
                           key={i} 
-                          className="flex items-start gap-3 p-3 rounded-xl"
-                          initial={{ opacity: 0, x: -20 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: i * 0.1 }}
+                          className="w-full p-4 flex items-start gap-4 transition-all duration-200 rounded-xl relative"
+                          initial={{ opacity: 0, y: 16 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 8 }}
+                          transition={{ delay: i * 0.025, duration: 0.18, type: 'spring', stiffness: 180, damping: 22 }}
                         >
-                          <div className="w-16 h-24 rounded-lg bg-white/10 animate-pulse" />
-                          <div className="flex-1 py-2 flex flex-col gap-2">
-                            <div className="h-4 w-2/3 rounded bg-white/10 animate-pulse" />
-                            <div className="h-3 w-1/3 rounded bg-white/10 animate-pulse" />
-                            <div className="flex gap-2 mt-1">
-                              <div className="h-3 w-10 rounded-full bg-white/10 animate-pulse" />
-                              <div className="h-3 w-12 rounded-full bg-white/10 animate-pulse" />
+                          {/* Movie Image Skeleton */}
+                          <div className="w-20 h-28 flex-shrink-0 relative overflow-hidden rounded-xl bg-white/8 border border-white/15 shadow-lg">
+                            <div className="w-full h-full bg-gradient-to-br from-white/10 via-white/5 to-white/10 animate-pulse" />
                           </div>
-                            <div className="h-3 w-1/2 rounded bg-white/10 animate-pulse mt-2" />
-                            <div className="h-3 w-1/4 rounded bg-white/10 animate-pulse" />
-                        </div>
+                          
+                          {/* Content Skeleton */}
+                          <div className="flex-1 min-w-0 relative z-10">
+                            <div className="flex items-start justify-between gap-4">
+                              <div className='flex flex-col flex-1 items-start gap-2.5'>
+                                {/* Title Skeleton */}
+                                <div className="h-6 w-3/4 rounded bg-white/10 animate-pulse" />
+                                
+                                {/* Meta Info Skeleton */}
+                                <div className="flex items-center gap-2">
+                                  <div className="h-4 w-8 rounded bg-white/10 animate-pulse" />
+                                  <div className="h-4 w-1 rounded-full bg-white/10 animate-pulse" />
+                                  <div className="h-4 w-16 rounded bg-white/10 animate-pulse" />
+                                  <div className="h-4 w-1 rounded-full bg-white/10 animate-pulse" />
+                                  <div className="h-4 w-12 rounded bg-white/10 animate-pulse flex items-center gap-1">
+                                    <div className="w-3 h-3 rounded bg-yellow-400/30 animate-pulse" />
+                                  </div>
+                                </div>
+                                
+                                {/* Genres Skeleton */}
+                                <div className="flex items-center gap-2 mt-3">
+                                  <div className="h-6 w-16 rounded-full bg-white/10 animate-pulse" />
+                                  <div className="h-6 w-20 rounded-full bg-white/10 animate-pulse" />
+                                  <div className="h-6 w-14 rounded-full bg-white/10 animate-pulse" />
+                                </div>
+                                
+                                {/* Overview Skeleton */}
+                                <div className="mt-3 space-y-2">
+                                  <div className="h-4 w-full rounded bg-white/10 animate-pulse" />
+                                  <div className="h-4 w-2/3 rounded bg-white/10 animate-pulse" />
+                                </div>
+                              </div>
+                              
+                              {/* Action Buttons Skeleton */}
+                              <div className="flex items-center gap-1.5">
+                                <div className="w-7 h-7 rounded-lg bg-white/10 animate-pulse" />
+                                <div className="w-7 h-7 rounded-lg bg-white/10 animate-pulse" />
+                              </div>
+                            </div>
+                          </div>
                         </motion.div>
                       ))}
                     </div>
@@ -2669,10 +2782,10 @@ const Navbar = ({ onMovieSelect }) => {
                               animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: 8 }}
                             transition={{ delay: index * 0.025, duration: 0.18, type: 'spring', stiffness: 180, damping: 22 }}
-                            className={`w-full p-4 flex items-start gap-4 transition-all duration-200 rounded-xl group focus:outline-none relative ${
+                            className={`w-full p-4 flex items-start gap-4 transition-all duration-200 rounded-xl group/item focus:outline-none relative ${
                                 index === selectedIndex 
-                                ? 'border-l-4 border-white/30 bg-gradient-to-r from-white/10 to-transparent shadow-lg shadow-black/20'
-                                  : 'hover:bg-white/5'
+                                ? 'border-l-4 border-white/40 bg-gradient-to-r from-white/15 to-white/5 shadow-lg shadow-black/30'
+                                  : 'hover:bg-white/8'
                               }`}
                               tabIndex={0}
                               aria-selected={index === selectedIndex}
@@ -2684,7 +2797,7 @@ const Navbar = ({ onMovieSelect }) => {
                             {/* Selection indicator (for accessibility, visually subtle) */}
                             {index === selectedIndex && (
                               <motion.div
-                                className="absolute left-0 top-0 bottom-0 w-1.5 bg-white/60 rounded-r-lg"
+                                className="absolute left-0 top-0 bottom-0 w-1.5 bg-white/80 rounded-r-lg"
                                 initial={{ scaleY: 0 }}
                                 animate={{ scaleY: 1 }}
                                 exit={{ scaleY: 0 }}
@@ -2692,7 +2805,7 @@ const Navbar = ({ onMovieSelect }) => {
                                 style={{ zIndex: 3 }}
                               />
                             )}
-                            <div className="w-20 h-28 flex-shrink-0 relative group overflow-hidden rounded-xl bg-white/5 border border-white/10 shadow-lg">
+                            <div className="w-20 h-28 flex-shrink-0 relative group/image overflow-hidden rounded-xl bg-white/8 border border-white/15 shadow-lg">
                                 <MovieImage
                                 src={movie.image || movie.poster_path ? `https://image.tmdb.org/t/p/w185${movie.poster_path || movie.image}` : ''}
                                   alt={movie.title}
@@ -2721,7 +2834,7 @@ const Navbar = ({ onMovieSelect }) => {
                                 </div>
                                 </div>
                                 {/* Action buttons */}
-                                <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-x-2 group-hover:translate-x-0">
+                                <div className="flex items-center gap-1.5 opacity-0 group-hover/item:opacity-100 transition-all duration-300 transform translate-x-2 group-hover/item:translate-x-0">
                                   {/* Minimal Add to Watchlist Button */}
                                   <motion.div
                                     onClick={(e) => {
@@ -3050,7 +3163,7 @@ const Navbar = ({ onMovieSelect }) => {
         {/* Search icon (mobile) */}
         <motion.button
           onClick={() => setIsMobileSearchOpen(true)}
-          className="relative w-10 h-10 flex items-center justify-center group bg-white/5 hover:bg-white/10 rounded-lg transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-white/10"
+          className="relative w-11 h-11 flex items-center justify-center group bg-white/8 hover:bg-white/15 rounded-xl transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-white/15 border border-white/10 hover:border-white/20"
           aria-label="Open search"
           whileHover={{ 
             scale: 1.05,
@@ -3245,9 +3358,10 @@ const Navbar = ({ onMovieSelect }) => {
               duration: 0.2,
               ease: "easeInOut"
             }}
-            className="fixed inset-0 z-[90000] sm:hidden"
+            className="fixed inset-0 z-[90000] sm:hidden search-overlay"
+            data-search-element="true"
             onClick={(e) => {
-              // Close search when clicking on the overlay background
+              // FIXED: Only close search when clicking on the overlay background, not on search content
               if (e.target === e.currentTarget) {
                 setIsMobileSearchOpen(false);
               }
@@ -3261,8 +3375,10 @@ const Navbar = ({ onMovieSelect }) => {
                 duration: 0.2, 
                 ease: "easeOut"
               }}
-              className="absolute top-20 left-4 right-4"
+              className="absolute top-20 left-4 right-4 search-results"
+              data-search-element="true"
               onClick={(e) => {
+                e.preventDefault();
                 e.stopPropagation();
               }}
             >
@@ -3277,7 +3393,12 @@ const Navbar = ({ onMovieSelect }) => {
                 className="relative"
               >
                 <motion.div
-                  className="relative bg-[#1a1d24]/95 backdrop-blur-2xl rounded-2xl border border-white/20 p-4 shadow-2xl shadow-black/50"
+                                  className="relative bg-[#1a1d21]/95 backdrop-blur-2xl rounded-2xl border border-white/20 p-4 shadow-2xl shadow-black/50 search-content"
+                data-search-element="true"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
                   whileHover={{ scale: 1.005 }}
                   transition={{ duration: 0.15 }}
                 >
@@ -3323,7 +3444,8 @@ const Navbar = ({ onMovieSelect }) => {
                         setIsSearchFocused(true);
                         setShowResults(true);
                       }}
-                      className="w-full bg-white/10 border border-white/30 rounded-xl px-4 py-3 pr-12 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-white/40 transition-all duration-300"
+                      className="w-full bg-white/10 border border-white/30 rounded-xl px-4 py-3 pr-12 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-white/40 transition-all duration-300 search-input"
+                      data-search-element="true"
                 autoFocus
                     />
               {searchQuery && (
@@ -3355,7 +3477,8 @@ const Navbar = ({ onMovieSelect }) => {
                             e.preventDefault();
                             e.stopPropagation();
                           }}
-                          className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center hover:bg-white/30 transition-colors duration-200 cursor-pointer select-none"
+                          className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center hover:bg-white/30 transition-colors duration-200 cursor-pointer select-none search-clear-button"
+                          data-search-element="true"
                           whileHover={{ scale: 1.02 }}
                           whileTap={{ scale: 0.98 }}
                           transition={{ duration: 0.1 }}
@@ -3379,7 +3502,8 @@ const Navbar = ({ onMovieSelect }) => {
                           duration: 0.2,
                           ease: "easeInOut"
                         }}
-                        className="mt-4"
+                        className="mt-4 search-results-container"
+                        data-search-element="true"
               >
                         {/* Search History */}
                 {!searchQuery && searchHistory.length > 0 && (
@@ -3391,13 +3515,19 @@ const Navbar = ({ onMovieSelect }) => {
                               duration: 0.2, 
                               ease: "easeOut"
                             }}
-                            className="mb-4"
+                            className="mb-4 search-history"
+                            data-search-element="true"
                           >
                     <div className="flex items-center justify-between mb-3">
                               <h4 className="text-white/90 font-medium text-sm">Recent Searches</h4>
                       <button
-                        onClick={clearHistory}
-                                className="text-white/50 hover:text-white/70 text-xs transition-colors"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          clearHistory();
+                        }}
+                                className="text-white/50 hover:text-white/70 text-xs transition-colors search-clear-history"
+                                data-search-element="true"
                       >
                                 Clear
                       </button>
@@ -3406,8 +3536,13 @@ const Navbar = ({ onMovieSelect }) => {
                       {searchHistory.map((query, index) => (
                                 <motion.button
                           key={index}
-                          onClick={() => handleHistoryItemClick(query)}
-                                  className="px-3 py-1.5 bg-white/15 hover:bg-white/25 rounded-full text-white/80 hover:text-white text-xs transition-colors flex items-center gap-2 border border-white/20"
+                                                      onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleHistoryItemClick(query);
+                            }}
+                                  className="px-3 py-1.5 bg-white/15 hover:bg-white/25 rounded-full text-white/80 hover:text-white text-xs transition-colors flex items-center gap-2 border border-white/20 search-history-item"
+                                  data-search-element="true"
                                   initial={{ opacity: 0, scale: 0.95 }}
                                   animate={{ opacity: 1, scale: 1 }}
                                   transition={{ 
@@ -3427,6 +3562,47 @@ const Navbar = ({ onMovieSelect }) => {
                     </div>
                           </motion.div>
                 )}
+
+                        {/* Initial State - When mobile search is focused but empty */}
+                        {!searchQuery && searchHistory.length === 0 && (
+                          <motion.div
+                            initial={{ opacity: 0, y: 3 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 3 }}
+                            transition={{ 
+                              duration: 0.2, 
+                              ease: "easeOut"
+                            }}
+                            className="text-center py-8"
+                          >
+                            <motion.svg 
+                              width="48" height="48" fill="none" viewBox="0 0 48 48" className="mx-auto mb-4"
+                              initial={{ scale: 0.8, opacity: 0 }}
+                              animate={{ scale: 1, opacity: 1 }}
+                              transition={{ duration: 0.3 }}
+                            >
+                              <rect width="48" height="48" rx="12" fill="#1a1a1a"/>
+                              <circle cx="24" cy="24" r="12" fill="none" stroke="#fff" strokeWidth="2"/>
+                              <path d="M18 24l3 3 6-6" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                            </motion.svg>
+                            <motion.div 
+                              className="text-white/80 mb-2 text-base font-medium"
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ delay: 0.1 }}
+                            >
+                              Start searching for movies & TV shows
+                            </motion.div>
+                            <motion.div 
+                              className="text-white/50 text-xs"
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ delay: 0.2 }}
+                            >
+                              Type to discover amazing content
+                            </motion.div>
+                          </motion.div>
+                        )}
 
                         {/* Loading State */}
                         {isSearching && (
@@ -3454,18 +3630,22 @@ const Navbar = ({ onMovieSelect }) => {
                               duration: 0.2,
                               ease: "easeOut"
                             }}
-                            className="max-h-96 overflow-y-auto"
+                            className="max-h-96 overflow-y-auto search-results-list"
+                            data-search-element="true"
                           >
                             {searchResults.length > 0 ? (
                               <div className="space-y-2">
                       {searchResults.map((movie, index) => (
                                   <motion.button
                           key={movie.id}
-                                    onClick={() => {
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
                                       handleMovieSelect(movie);
                                       setIsMobileSearchOpen(false);
                                     }}
-                                    className="w-full p-3 flex items-center gap-3 transition-all duration-200 group hover:bg-white/5 rounded-xl"
+                                    className="w-full p-3 flex items-center gap-3 transition-all duration-200 group hover:bg-white/8 rounded-xl search-result-item"
+                                    data-search-element="true"
                                     initial={{ opacity: 0, y: 5, scale: 0.99 }}
                                     animate={{ opacity: 1, y: 0, scale: 1 }}
                                     exit={{ opacity: 0, y: 5, scale: 0.99 }}
@@ -3477,7 +3657,7 @@ const Navbar = ({ onMovieSelect }) => {
                                     whileHover={{ scale: 1.005, y: -0.5 }}
                                     whileTap={{ scale: 0.995 }}
                         >
-                                    <div className="w-20 h-28 flex-shrink-0 relative overflow-hidden rounded-xl bg-white/5 border border-white/10 shadow-lg">
+                                    <div className="w-20 h-28 flex-shrink-0 relative overflow-hidden rounded-xl bg-white/8 border border-white/15 shadow-lg">
                             <MovieImage
                               src={movie.image || movie.poster_path ? `https://image.tmdb.org/t/p/w185${movie.poster_path || movie.image}` : ''}
                               alt={movie.title}
@@ -4241,7 +4421,7 @@ const Navbar = ({ onMovieSelect }) => {
                 >
                   <div className="text-center">
                     <p className="text-white/40 text-xs">Streamr v1.0.0</p>
-                    <p className="text-white/30 text-xs mt-1">© 2024 Streamr. All rights reserved.</p>
+                    <p className="text-white/30 text-xs mt-1">© 2025 Streamr. All rights reserved.</p>
                   </div>
                 </motion.div>
               </motion.div>

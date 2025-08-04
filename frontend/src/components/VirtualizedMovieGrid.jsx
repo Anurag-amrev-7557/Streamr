@@ -1,8 +1,9 @@
-import React, { useMemo, useCallback, useState, useEffect } from 'react';
+import React, { useMemo, useCallback, useState, useEffect, useRef } from 'react';
 import { FixedSizeGrid as Grid } from 'react-window';
 import { motion, AnimatePresence } from 'framer-motion';
 import OptimizedImage from './OptimizedImage';
 import { formatRating } from '../utils/ratingUtils';
+import { getPosterProps } from '../utils/imageUtils';
 
 const VirtualizedMovieGrid = ({
   movies = [],
@@ -88,7 +89,7 @@ const VirtualizedMovieGrid = ({
           {/* Movie Poster */}
           <div className="relative aspect-[2/3]">
             <OptimizedImage
-              src={movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : null}
+              src={movie.poster_path ? getPosterProps(movie, 'w500').src : null}
               alt={movie.title || movie.name}
               className="w-full h-full"
               priority={index < 8} // Priority for first 8 items
@@ -214,7 +215,7 @@ export const OptimizedMovieCard = React.memo(({ movie, onClick, className = '' }
       {/* Movie Poster */}
       <div className="relative aspect-[2/3]">
         <OptimizedImage
-          src={movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : null}
+          src={movie.poster_path ? getPosterProps(movie, 'w500').src : null}
           alt={movie.title || movie.name}
           className="w-full h-full"
         />

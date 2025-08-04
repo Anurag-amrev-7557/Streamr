@@ -12,172 +12,239 @@
         }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0f0f0f 0%, #121417 100%);
+            color: white;
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
-            color: white;
+            text-align: center;
         }
         
         .offline-container {
-            text-align: center;
             max-width: 500px;
             padding: 2rem;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 20px;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
         }
         
         .offline-icon {
-            font-size: 4rem;
-            margin-bottom: 1rem;
-            opacity: 0.8;
-        }
-        
-        h1 {
-            font-size: 2rem;
-            margin-bottom: 1rem;
-            font-weight: 600;
-        }
-        
-        p {
-            font-size: 1.1rem;
-            margin-bottom: 2rem;
-            opacity: 0.9;
-            line-height: 1.6;
-        }
-        
-        .retry-button {
-            background: rgba(255, 255, 255, 0.2);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            color: white;
-            padding: 12px 24px;
-            border-radius: 25px;
-            font-size: 1rem;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            text-decoration: none;
-            display: inline-block;
-        }
-        
-        .retry-button:hover {
-            background: rgba(255, 255, 255, 0.3);
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-        }
-        
-        .status-indicator {
-            margin-top: 2rem;
-            padding: 1rem;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 10px;
-            font-size: 0.9rem;
-        }
-        
-        .connection-status {
+            width: 120px;
+            height: 120px;
+            margin: 0 auto 2rem;
+            background: linear-gradient(135deg, #818cf8, #6ee7b7);
+            border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 0.5rem;
-            margin-bottom: 1rem;
-        }
-        
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #ff6b6b;
+            font-size: 3rem;
             animation: pulse 2s infinite;
         }
         
         @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.05); opacity: 0.8; }
         }
         
-        .online .status-dot {
-            background: #51cf66;
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, #818cf8, #6ee7b7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        p {
+            font-size: 1.1rem;
+            line-height: 1.6;
+            margin-bottom: 2rem;
+            color: #a0a0a0;
+        }
+        
+        .retry-button {
+            background: linear-gradient(135deg, #818cf8, #6ee7b7);
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: 50px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 0.5rem;
+        }
+        
+        .retry-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(129, 140, 248, 0.3);
+        }
+        
+        .retry-button:active {
+            transform: translateY(0);
+        }
+        
+        .tips {
+            margin-top: 3rem;
+            padding: 1.5rem;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .tips h3 {
+            margin-bottom: 1rem;
+            color: #818cf8;
+        }
+        
+        .tips ul {
+            list-style: none;
+            text-align: left;
+        }
+        
+        .tips li {
+            margin-bottom: 0.5rem;
+            padding-left: 1.5rem;
+            position: relative;
+        }
+        
+        .tips li:before {
+            content: "•";
+            color: #6ee7b7;
+            font-weight: bold;
+            position: absolute;
+            left: 0;
+        }
+        
+        .connection-status {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            padding: 0.5rem 1rem;
+            background: rgba(239, 68, 68, 0.9);
+            border-radius: 25px;
+            font-size: 0.9rem;
+            animation: slideIn 0.5s ease;
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        .cached-content {
+            margin-top: 2rem;
+            padding: 1rem;
+            background: rgba(34, 197, 94, 0.1);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            border-radius: 10px;
+        }
+        
+        .cached-content h4 {
+            color: #22c55e;
+            margin-bottom: 0.5rem;
         }
     </style>
 </head>
 <body>
+    <div class="connection-status" id="connectionStatus">
+        🔴 Offline
+    </div>
+    
     <div class="offline-container">
-        <div class="offline-icon">📡</div>
+        <div class="offline-icon">
+            📡
+        </div>
+        
         <h1>You're Offline</h1>
-        <p>It looks like you've lost your internet connection. Don't worry, we'll automatically reconnect when you're back online.</p>
+        <p>It looks like you've lost your internet connection. Don't worry - some content may still be available from your cache.</p>
         
-        <button class="retry-button" onclick="checkConnection()">Try Again</button>
+        <button class="retry-button" onclick="retryConnection()">
+            🔄 Try Again
+        </button>
+        <button class="retry-button" onclick="window.location.reload()">
+            📱 Reload App
+        </button>
         
-        <div class="status-indicator">
-            <div class="connection-status" id="connectionStatus">
-                <div class="status-dot"></div>
-                <span>Checking connection...</span>
-            </div>
-            <div id="statusDetails">Attempting to reconnect...</div>
+        <div class="cached-content" id="cachedContent" style="display: none;">
+            <h4>📦 Cached Content Available</h4>
+            <p>You can still browse previously loaded movies and shows while offline.</p>
+        </div>
+        
+        <div class="tips">
+            <h3>💡 Quick Tips</h3>
+            <ul>
+                <li>Check your Wi-Fi or mobile data connection</li>
+                <li>Try moving to an area with better signal</li>
+                <li>Restart your router or modem</li>
+                <li>Some content may be available offline</li>
+                <li>Your watchlist and preferences are saved locally</li>
+            </ul>
         </div>
     </div>
-
+    
     <script>
-        let checkInterval;
-        
-        function checkConnection() {
+        // Check connection status
+        function updateConnectionStatus() {
             const statusElement = document.getElementById('connectionStatus');
-            const detailsElement = document.getElementById('statusDetails');
-            const statusDot = statusElement.querySelector('.status-dot');
+            const cachedContent = document.getElementById('cachedContent');
             
             if (navigator.onLine) {
-                statusElement.className = 'connection-status online';
-                statusDot.style.background = '#51cf66';
-                statusElement.querySelector('span').textContent = 'Connected!';
-                detailsElement.textContent = 'Redirecting to Streamr...';
+                statusElement.innerHTML = '🟢 Online';
+                statusElement.style.background = 'rgba(34, 197, 94, 0.9)';
                 
-                // Redirect to main app after a short delay
+                // Auto-reload when connection is restored
                 setTimeout(() => {
-                    window.location.href = '/';
-                }, 1500);
+                    window.location.reload();
+                }, 2000);
             } else {
-                statusElement.className = 'connection-status';
-                statusDot.style.background = '#ff6b6b';
-                statusElement.querySelector('span').textContent = 'Still offline';
-                detailsElement.textContent = 'Please check your internet connection and try again.';
+                statusElement.innerHTML = '🔴 Offline';
+                statusElement.style.background = 'rgba(239, 68, 68, 0.9)';
             }
-        }
-        
-        // Check connection status periodically
-        function startConnectionCheck() {
-            checkConnection();
-            checkInterval = setInterval(checkConnection, 3000);
-        }
-        
-        // Listen for online/offline events
-        window.addEventListener('online', () => {
-            checkConnection();
-        });
-        
-        window.addEventListener('offline', () => {
-            const statusElement = document.getElementById('connectionStatus');
-            const detailsElement = document.getElementById('statusDetails');
-            const statusDot = statusElement.querySelector('.status-dot');
             
-            statusElement.className = 'connection-status';
-            statusDot.style.background = '#ff6b6b';
-            statusElement.querySelector('span').textContent = 'Connection lost';
-            detailsElement.textContent = 'You\'ve gone offline. We\'ll reconnect automatically when you\'re back online.';
-        });
-        
-        // Start checking when page loads
-        document.addEventListener('DOMContentLoaded', startConnectionCheck);
-        
-        // Cleanup interval when page unloads
-        window.addEventListener('beforeunload', () => {
-            if (checkInterval) {
-                clearInterval(checkInterval);
+            // Check if we have cached content
+            if ('caches' in window) {
+                caches.keys().then(cacheNames => {
+                    if (cacheNames.length > 0) {
+                        cachedContent.style.display = 'block';
+                    }
+                });
             }
-        });
+        }
+        
+        // Retry connection
+        function retryConnection() {
+            const button = event.target;
+            button.innerHTML = '🔄 Checking...';
+            button.disabled = true;
+            
+            // Simulate connection check
+            setTimeout(() => {
+                if (navigator.onLine) {
+                    window.location.reload();
+                } else {
+                    button.innerHTML = '🔄 Try Again';
+                    button.disabled = false;
+                    alert('Still offline. Please check your connection.');
+                }
+            }, 2000);
+        }
+        
+        // Listen for connection changes
+        window.addEventListener('online', updateConnectionStatus);
+        window.addEventListener('offline', updateConnectionStatus);
+        
+        // Initial status check
+        updateConnectionStatus();
+        
+        // Check for cached content
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.ready.then(registration => {
+                if (registration.active) {
+                    // Service worker is active, some content might be cached
+                    document.getElementById('cachedContent').style.display = 'block';
+                }
+            });
+        }
     </script>
 </body>
 </html> 

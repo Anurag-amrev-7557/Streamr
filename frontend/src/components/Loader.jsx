@@ -383,7 +383,7 @@ import { useEffect, useRef } from "react";
 
 const PageLoader = ({
   text = "Loading your cinematic experience...",
-  showProgress = false,
+  showProgress = true, // Changed to true by default
   progress = 0,
   tips = [
     "Tip: Add movies to your watchlist for quick access later.",
@@ -394,7 +394,7 @@ const PageLoader = ({
     "Hint: Use keyboard arrows to navigate carousels.",
   ],
   showTips = true,
-  tipInterval = 5000,
+  tipInterval = 3000, // Reduced from 5000 to 3000ms for faster tip rotation
 }) => {
   const [currentTip, setCurrentTip] = React.useState(
     tips && tips.length > 0 ? Math.floor(Math.random() * tips.length) : 0

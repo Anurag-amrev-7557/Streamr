@@ -8,6 +8,9 @@ import { getStreamingUrl, isStreamingAvailable, needsEpisodeSelection } from '..
 import StreamingPlayer from './StreamingPlayer';
 import TVEpisodeSelector from './TVEpisodeSelector';
 import EnhancedSimilarContent from './EnhancedSimilarContent';
+import { getOptimizedImageUrl } from '../services/imageOptimizationService';
+import memoryManager from '../utils/memoryManager';
+import EnhancedLoadMoreButton from './enhanced/EnhancedLoadMoreButton';
 
 // Custom Modern Minimalist Dropdown Component
 const CustomDropdown = React.memo(({ 
@@ -17,11 +20,11 @@ const CustomDropdown = React.memo(({
   placeholder = "Select option",
   className = ""
 }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef(null);
+  const [isOpen, setIsOpen] = React.useState(false);
+  const dropdownRef = React.useRef(null);
 
   // Close dropdown when clicking outside
-  useEffect(() => {
+  React.useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setIsOpen(false);
@@ -96,8 +99,9 @@ const DETAILS_CACHE = new Map();
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 const BACKGROUND_REFRESH_INTERVAL = 2 * 60 * 1000; // 2 minutes
 const REAL_TIME_UPDATE_INTERVAL = 30 * 1000; // 30 seconds
+const MAX_CACHE_SIZE = 50; // Maximum number of cached items
 
-// 🎯 NEW: Cache management utilities
+// 🎯 NEW: Cache management utilities with memory optimization
 const getCachedDetails = (id, type) => {
   const key = `${type}_${id}`;
   const cached = DETAILS_CACHE.get(key);
@@ -114,6 +118,19 @@ const setCachedDetails = (id, type, data) => {
     timestamp: Date.now()
   });
   
+  // Enhanced cleanup: Limit cache size and remove old entries
+  if (DETAILS_CACHE.size > MAX_CACHE_SIZE) {
+    // Remove oldest entries
+    const entries = Array.from(DETAILS_CACHE.entries());
+    entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
+    
+    // Remove oldest 25% of entries
+    const toRemove = Math.floor(MAX_CACHE_SIZE * 0.25);
+    for (let i = 0; i < toRemove && i < entries.length; i++) {
+      DETAILS_CACHE.delete(entries[i][0]);
+    }
+  }
+  
   // Clean up old cache entries
   const now = Date.now();
   for (const [cacheKey, value] of DETAILS_CACHE.entries()) {
@@ -123,7 +140,13 @@ const setCachedDetails = (id, type, data) => {
   }
 };
 
-// 📊 NEW: Performance tracking
+// 🆕 NEW: Cache cleanup utility
+const clearCache = () => {
+  DETAILS_CACHE.clear();
+  console.log('[MovieDetailsOverlay] Cache cleared');
+};
+
+// 📊 NEW: Performance tracking with memory monitoring
 const trackPerformance = (operation, duration, success = true) => {
   if (window.gtag) {
     window.gtag('event', 'movie_details_performance', {
@@ -133,18 +156,44 @@ const trackPerformance = (operation, duration, success = true) => {
       success
     });
   }
+  
+  // Memory monitoring
+  if (performance.memory) {
+    const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
+    if (memoryMB > 800) {
+      console.warn(`[MovieDetailsOverlay] High memory usage during ${operation}: ${memoryMB.toFixed(2)}MB`);
+      // Force cleanup if memory is too high
+      clearCache();
+      if (window.gc) {
+        window.gc();
+      }
+    }
+  }
 };
 
-// 🔄 NEW: Real-time update manager
+// 🔄 NEW: Real-time update manager with enhanced memory management
 class RealTimeUpdateManager {
   constructor() {
     this.subscribers = new Map();
     this.updateInterval = null;
     this.isActive = false;
+    this.abortController = null;
+    this.lastUpdateTime = 0;
+    this.maxSubscribers = 20; // Limit number of subscribers
   }
 
   subscribe(movieId, type, callback) {
+    if (!this.subscribers) return; // Prevent error if already cleaned up
+    
     const key = `${type}_${movieId}`;
+    
+    // Limit number of subscribers to prevent memory leaks
+    if (this.subscribers.size >= this.maxSubscribers) {
+      console.warn('[RealTimeUpdateManager] Too many subscribers, removing oldest');
+      const firstKey = this.subscribers.keys().next().value;
+      this.subscribers.delete(firstKey);
+    }
+    
     this.subscribers.set(key, callback);
     
     if (!this.isActive) {
@@ -153,6 +202,8 @@ class RealTimeUpdateManager {
   }
 
   unsubscribe(movieId, type) {
+    if (!this.subscribers) return; // Prevent error if already cleaned up
+    
     const key = `${type}_${movieId}`;
     this.subscribers.delete(key);
     
@@ -162,10 +213,16 @@ class RealTimeUpdateManager {
   }
 
   startUpdates() {
-    if (this.isActive) return;
+    if (this.isActive || !this.subscribers) return;
     
     this.isActive = true;
+    this.abortController = new AbortController();
+    
     this.updateInterval = setInterval(() => {
+      if (this.abortController?.signal.aborted) {
+        this.stopUpdates();
+        return;
+      }
       this.performUpdates();
     }, REAL_TIME_UPDATE_INTERVAL);
   }
@@ -174,16 +231,40 @@ class RealTimeUpdateManager {
     if (!this.isActive) return;
     
     this.isActive = false;
+    
     if (this.updateInterval) {
       clearInterval(this.updateInterval);
       this.updateInterval = null;
     }
+    
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+    }
   }
 
   async performUpdates() {
+    if (this.abortController?.signal.aborted || !this.subscribers) return;
+    
+    // Rate limiting: don't update too frequently
+    const now = Date.now();
+    if (now - this.lastUpdateTime < 1000) return; // Minimum 1 second between updates
+    this.lastUpdateTime = now;
+    
+    // Memory check before performing updates
+    if (performance.memory) {
+      const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
+      if (memoryMB > 1000) {
+        console.warn(`[RealTimeUpdateManager] High memory usage: ${memoryMB.toFixed(2)}MB, skipping updates`);
+        return;
+      }
+    }
+    
     const updatePromises = [];
     
     for (const [key, callback] of this.subscribers.entries()) {
+      if (this.abortController?.signal.aborted) break;
+      
       const [type, movieId] = key.split('_');
       
       try {
@@ -191,27 +272,45 @@ class RealTimeUpdateManager {
         const freshData = await getMovieDetails(movieId, type);
         const duration = performance.now() - startTime;
         
-        if (freshData) {
+        if (freshData && !this.abortController?.signal.aborted) {
           setCachedDetails(movieId, type, freshData);
           callback(freshData);
           trackPerformance('real_time_update', duration, true);
         }
       } catch (error) {
-        console.warn(`Real-time update failed for ${key}:`, error);
-        trackPerformance('real_time_update', 0, false);
+        if (!this.abortController?.signal.aborted) {
+          console.warn(`Real-time update failed for ${key}:`, error);
+          trackPerformance('real_time_update', 0, false);
+        }
       }
     }
   }
 
-  // Cleanup method to prevent memory leaks
+  // Enhanced cleanup method to prevent memory leaks
   cleanup() {
+    // Prevent multiple cleanup calls
+    if (!this.subscribers) return;
+    
     this.stopUpdates();
     this.subscribers.clear();
+    
+    // Ensure all references are cleared
+    this.subscribers = null;
+    this.updateInterval = null;
+    this.abortController = null;
+    this.lastUpdateTime = 0;
   }
 }
 
-// Global real-time update manager
-const realTimeManager = new RealTimeUpdateManager();
+// Global real-time update manager (singleton)
+let realTimeManager = null;
+
+const getRealTimeManager = () => {
+  if (!realTimeManager) {
+    realTimeManager = new RealTimeUpdateManager();
+  }
+  return realTimeManager;
+};
 
 const NetworkDisplay = ({ networks, network }) => {
   const getNetworkNames = () => {
@@ -238,90 +337,7 @@ const NetworkDisplay = ({ networks, network }) => {
   );
 };
 
-  // Enhanced motion variants with improved performance and visual appeal
-  const containerVariants = {
-    hidden: { 
-      opacity: 0,
-      scale: 0.98,
-    },
-    visible: {
-      opacity: 1,
-      scale: 1,
-      transition: {
-        staggerChildren: 0.02,
-        type: 'spring',
-        stiffness: 400,
-        damping: 30,
-        duration: 0.12,
-        delay: 0.03,
-        ease: [0.25, 0.46, 0.45, 0.94], // Custom easing for smoother animation
-      },
-    },
-    exit: {
-      opacity: 0,
-      scale: 0.98,
-      transition: {
-        duration: 0.15,
-        ease: [0.25, 0.46, 0.45, 0.94],
-      },
-    },
-  };
 
-  const itemVariants = {
-    hidden: { 
-      y: 10, 
-      opacity: 0,
-      scale: 0.98,
-    },
-    visible: {
-      y: 0,
-      opacity: 1,
-      scale: 1,
-      transition: {
-        duration: 0.15,
-        type: 'spring',
-        stiffness: 400,
-        damping: 30,
-        ease: [0.25, 0.46, 0.45, 0.94],
-      },
-    },
-    exit: {
-      y: -8,
-      opacity: 0,
-      scale: 0.98,
-      transition: {
-        duration: 0.12,
-        ease: [0.25, 0.46, 0.45, 0.94],
-      },
-    },
-  };
-
-// Additional variants for different animation types
-const fadeInVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      duration: 0.3,
-      ease: [0.25, 0.46, 0.45, 0.94],
-    },
-  },
-};
-
-const slideUpVariants = {
-  hidden: { 
-    y: 30, 
-    opacity: 0 
-  },
-  visible: {
-    y: 0,
-    opacity: 1,
-    transition: {
-      duration: 0.4,
-      ease: [0.25, 0.46, 0.45, 0.94],
-    },
-  },
-};
 
 // Lazy load YouTube player for trailer modal
 const LazyYouTube = lazy(() => import('react-youtube'));
@@ -373,7 +389,7 @@ const SimilarMovieCard = React.memo(function SimilarMovieCard({ similar, onClick
       <div className="aspect-[2/3] rounded-lg overflow-hidden bg-gray-800 relative shadow-lg">
         {similar.poster_path ? (
           <img 
-            src={`https://image.tmdb.org/t/p/w500${similar.poster_path}`} 
+            src={getOptimizedImageUrl(similar.poster_path, 'w500')} 
             alt={displayTitle} 
             className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 will-change-transform transform-gpu" 
             style={{ backfaceVisibility: 'hidden' }} 
@@ -412,7 +428,7 @@ const SimilarMovieCard = React.memo(function SimilarMovieCard({ similar, onClick
 });
 
 // Enhanced mobile detection hook with breakpoint management and performance optimizations
-function useIsMobile() {
+const useIsMobile = () => {
   const [isMobile, setIsMobile] = React.useState(() => {
     if (typeof window === 'undefined') return false;
     return window.innerWidth <= 640;
@@ -455,9 +471,9 @@ function useIsMobile() {
   }, []);
 
   return { isMobile, isTablet, isDesktop };
-}
+};
 
-const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
+const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) => {
   const { addToWatchlist, removeFromWatchlist, isInWatchlist } = useWatchlist();
   const [movieDetails, setMovieDetails] = useState(null);
   const [credits, setCredits] = useState(null);
@@ -487,6 +503,277 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
   const handleShowMoreSimilar = useCallback(() => setSimilarLimit(lim => lim + 20), []);
   // Add state to control how many rows of cast are shown
   const [castRowsShown, setCastRowsShown] = useState(1);
+
+  // Enhanced motion variants with ultra-smooth spring physics and optimized performance
+  const containerVariants = useMemo(() => ({
+    hidden: { 
+      opacity: 0,
+      scale: 0.95,
+      y: 20,
+    },
+    visible: {
+      opacity: 1,
+      scale: 1,
+      y: 0,
+      transition: {
+        type: 'spring',
+        stiffness: 300,
+        damping: 35,
+        mass: 0.8,
+        duration: 0.4,
+        ease: [0.25, 0.46, 0.45, 0.94], // Custom cubic-bezier for ultra-smooth feel
+      },
+    },
+    exit: {
+      opacity: 0,
+      scale: 0.95,
+      y: 20,
+      transition: {
+        type: 'spring',
+        stiffness: 400,
+        damping: 40,
+        duration: 0.3,
+        ease: [0.25, 0.46, 0.45, 0.94],
+      },
+    },
+  }), []);
+
+  const itemVariants = useMemo(() => ({
+    hidden: { 
+      y: 15, 
+      opacity: 0,
+      scale: 0.98,
+      filter: 'blur(4px)',
+    },
+    visible: {
+      y: 0,
+      opacity: 1,
+      scale: 1,
+      filter: 'blur(0px)',
+      transition: {
+        type: 'spring',
+        stiffness: 350,
+        damping: 30,
+        mass: 0.9,
+        duration: 0.3,
+        ease: [0.25, 0.46, 0.45, 0.94],
+      },
+    },
+    exit: {
+      y: -10,
+      opacity: 0,
+      scale: 0.98,
+      filter: 'blur(4px)',
+      transition: {
+        type: 'spring',
+        stiffness: 400,
+        damping: 35,
+        duration: 0.25,
+        ease: [0.25, 0.46, 0.45, 0.94],
+      },
+    },
+  }), []);
+
+  // Additional variants for different animation types with ultra-smooth physics
+  const fadeInVariants = useMemo(() => ({
+    hidden: { 
+      opacity: 0,
+      filter: 'blur(2px)',
+    },
+    visible: {
+      opacity: 1,
+      filter: 'blur(0px)',
+      transition: {
+        type: 'spring',
+        stiffness: 300,
+        damping: 35,
+        duration: 0.4,
+        ease: [0.25, 0.46, 0.45, 0.94],
+      },
+    },
+  }), []);
+
+  const slideUpVariants = useMemo(() => ({
+    hidden: { 
+      y: 25, 
+      opacity: 0,
+      filter: 'blur(2px)',
+    },
+    visible: {
+      y: 0,
+      opacity: 1,
+      filter: 'blur(0px)',
+      transition: {
+        type: 'spring',
+        stiffness: 350,
+        damping: 30,
+        duration: 0.5,
+        ease: [0.25, 0.46, 0.45, 0.94],
+      },
+    },
+  }), []);
+
+  // Enhanced utility animations with spring physics and scroll-based triggers
+  const fadeInMotionProps = useMemo(() => ({
+    initial: { opacity: 0, y: 20, filter: 'blur(2px)' },
+    animate: { opacity: 1, y: 0, filter: 'blur(0px)' },
+    transition: { 
+      type: 'spring',
+      stiffness: 300,
+      damping: 35,
+      duration: 0.4,
+      ease: [0.25, 0.46, 0.45, 0.94],
+    },
+  }), []);
+
+  const slideUpMotionProps = useMemo(() => ({
+    initial: { y: 30, opacity: 0, filter: 'blur(2px)' },
+    animate: { y: 0, opacity: 1, filter: 'blur(0px)' },
+    transition: {
+      type: 'spring',
+      stiffness: 350,
+      damping: 30,
+      duration: 0.5,
+      ease: [0.25, 0.46, 0.45, 0.94],
+    },
+  }), []);
+
+
+
+  // Ultra-smooth stagger animation for list items
+  const staggerContainerVariants = useMemo(() => ({
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.04,
+        delayChildren: 0.08,
+        type: 'spring',
+        stiffness: 300,
+        damping: 35
+      }
+    }
+  }), []);
+
+  const staggerItemVariants = useMemo(() => ({
+    hidden: { 
+      opacity: 0, 
+      y: 20, 
+      scale: 0.98,
+      filter: 'blur(2px)',
+    },
+    visible: {
+      opacity: 1,
+      y: 0,
+      scale: 1,
+      filter: 'blur(0px)',
+      transition: {
+        type: 'spring',
+        stiffness: 350,
+        damping: 30,
+        duration: 0.4,
+        ease: [0.25, 0.46, 0.45, 0.94]
+      }
+    }
+  }), []);
+
+  // New: Micro-interaction variants for buttons and interactive elements
+  const buttonVariants = useMemo(() => ({
+    initial: { scale: 1, filter: 'brightness(1)' },
+    hover: { 
+      scale: 1.05, 
+      filter: 'brightness(1.1)',
+      transition: {
+        type: 'spring',
+        stiffness: 400,
+        damping: 25,
+        duration: 0.2,
+      }
+    },
+    tap: { 
+      scale: 0.98,
+      transition: {
+        type: 'spring',
+        stiffness: 500,
+        damping: 30,
+        duration: 0.1,
+      }
+    }
+  }), []);
+
+  // New: Card hover variants for enhanced interactivity
+  const cardVariants = useMemo(() => ({
+    initial: { 
+      scale: 1, 
+      y: 0,
+      filter: 'brightness(1)',
+      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+    },
+    hover: { 
+      scale: 1.02, 
+      y: -4,
+      filter: 'brightness(1.05)',
+      boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)',
+      transition: {
+        type: 'spring',
+        stiffness: 300,
+        damping: 25,
+        duration: 0.3,
+      }
+    },
+    tap: { 
+      scale: 0.98,
+      y: -2,
+      transition: {
+        type: 'spring',
+        stiffness: 400,
+        damping: 30,
+        duration: 0.1,
+      }
+    }
+  }), []);
+
+  // New: Image loading variants for smooth image transitions
+  const imageVariants = useMemo(() => ({
+    initial: { 
+      opacity: 0, 
+      scale: 1.1,
+      filter: 'blur(4px)',
+    },
+    loaded: { 
+      opacity: 1, 
+      scale: 1,
+      filter: 'blur(0px)',
+      transition: {
+        type: 'spring',
+        stiffness: 300,
+        damping: 35,
+        duration: 0.5,
+        ease: [0.25, 0.46, 0.45, 0.94],
+      }
+    }
+  }), []);
+
+  // New: Text reveal variants for smooth text animations
+  const textRevealVariants = useMemo(() => ({
+    hidden: { 
+      opacity: 0, 
+      y: 10,
+      filter: 'blur(1px)',
+    },
+    visible: { 
+      opacity: 1, 
+      y: 0,
+      filter: 'blur(0px)',
+      transition: {
+        type: 'spring',
+        stiffness: 300,
+        damping: 35,
+        duration: 0.4,
+        ease: [0.25, 0.46, 0.45, 0.94],
+      }
+    }
+  }), []);
 
   // Hide scrollbars globally for MovieDetailsOverlay
   useEffect(() => {
@@ -519,187 +806,81 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
     };
   }, []);
 
-  // Enhanced motion variants with improved performance and visual appeal
-  const containerVariants = useMemo(() => ({
-    hidden: { 
-      opacity: 0,
-      scale: 0.98,
-    },
-    visible: {
-      opacity: 1,
-      scale: 1,
-      transition: {
-        staggerChildren: 0.02,
-        type: 'spring',
-        stiffness: 400,
-        damping: 30,
-        duration: 0.12,
-        delay: 0.03,
-        ease: [0.25, 0.46, 0.45, 0.94], // Custom easing for smoother animation
-      },
-    },
-    exit: {
-      opacity: 0,
-      scale: 0.98,
-      transition: {
-        duration: 0.15,
-        ease: [0.25, 0.46, 0.45, 0.94],
-      },
-    },
-  }), []);
-
-  const itemVariants = useMemo(() => ({
-    hidden: { 
-      y: 10, 
-      opacity: 0,
-      scale: 0.98,
-    },
-    visible: {
-      y: 0,
-      opacity: 1,
-      scale: 1,
-      transition: {
-        duration: 0.15,
-        type: 'spring',
-        stiffness: 400,
-        damping: 30,
-        ease: [0.25, 0.46, 0.45, 0.94],
-      },
-    },
-    exit: {
-      y: -8,
-      opacity: 0,
-      scale: 0.98,
-      transition: {
-        duration: 0.12,
-        ease: [0.25, 0.46, 0.45, 0.94],
-      },
-    },
-  }), []);
-
-  // Additional variants for different animation types
-  const fadeInVariants = useMemo(() => ({
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: {
-        duration: 0.3,
-        ease: [0.25, 0.46, 0.45, 0.94],
-      },
-    },
-  }), []);
-
-  const slideUpVariants = useMemo(() => ({
-    hidden: { 
-      y: 30, 
-      opacity: 0 
-    },
-    visible: {
-      y: 0,
-      opacity: 1,
-      transition: {
-        duration: 0.4,
-        ease: [0.25, 0.46, 0.45, 0.94],
-      },
-    },
-  }), []);
-
-  // Enhanced utility animations with spring physics and scroll-based triggers
-  const fadeInMotionProps = useMemo(() => ({
-    initial: { opacity: 0, y: 15 },
-    animate: { opacity: 1, y: 0 },
-    transition: { 
-      duration: 0.3, 
-      ease: [0.25, 0.46, 0.45, 0.94],
-      type: 'spring',
-      stiffness: 400,
-      damping: 30
-    },
-  }), []);
-
-  const slideUpMotionProps = useMemo(() => ({
-    initial: { y: 30, opacity: 0 },
-    animate: { y: 0, opacity: 1 },
-    transition: {
-      duration: 0.25,
-      ease: [0.25, 0.46, 0.45, 0.94],
-      type: 'spring',
-      stiffness: 500,
-      damping: 35
-    },
-  }), []);
-
-  // Parallax scroll effect for background elements
-  const parallaxVariants = useMemo(() => ({
-    initial: { y: 0 },
-    animate: (custom) => ({
-      y: custom * scrollY * 0.2,
-      transition: {
-        duration: 0.05,
-        ease: "linear"
-      }
-    })
-  }), [scrollY]);
-
-  // Stagger animation for list items
-  const staggerContainerVariants = useMemo(() => ({
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.03,
-        delayChildren: 0.05,
-        type: 'spring',
-        stiffness: 400,
-        damping: 30
-      }
-    }
-  }), []);
-
-  const staggerItemVariants = useMemo(() => ({
-    hidden: { opacity: 0, y: 15, scale: 0.98 },
-    visible: {
-      opacity: 1,
-      y: 0,
-      scale: 1,
-      transition: {
-        duration: 0.25,
-        ease: [0.25, 0.46, 0.45, 0.94]
-      }
-    }
-  }), []);
-
-  // Memoize writers, directors, and production companies from credits
-  const writers = React.useMemo(() => {
-    if (!credits?.crew) return [];
-    return credits.crew.filter(
-      (person) => person.job === 'Writer' || person.job === 'Screenplay' || person.job === 'Author'
-    );
-  }, [credits]);
-  
-  const directors = React.useMemo(() => {
-    if (!credits?.crew) return [];
-    return credits.crew.filter((person) => person.job === 'Director');
-  }, [credits]);
-  
-  const productionCompanies = React.useMemo(() => {
-    if (!movieDetails?.production_companies) return [];
-    return movieDetails.production_companies;
+  // 🚀 NEW: Memoize expensive computed values
+  const movieStats = React.useMemo(() => {
+    if (!movieDetails) return null;
+    
+    return {
+      formattedRating: movieDetails.vote_average 
+        ? (typeof movieDetails.vote_average === 'number' 
+            ? movieDetails.vote_average.toFixed(1) 
+            : parseFloat(movieDetails.vote_average).toFixed(1))
+        : 'N/A',
+      formattedReleaseDate: movieDetails.release_date 
+        ? (() => {
+            const date = new Date(movieDetails.release_date);
+            return isNaN(date) ? 'N/A' : date.toLocaleDateString();
+          })()
+        : 'N/A',
+      formattedRuntime: movieDetails.runtime 
+        ? (() => {
+            const hours = Math.floor(movieDetails.runtime / 60);
+            const minutes = movieDetails.runtime % 60;
+            return `${hours}h ${minutes}m`;
+          })()
+        : 'N/A',
+      formattedBudget: movieDetails.budget 
+        ? new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: 'USD',
+            notation: 'compact',
+            maximumFractionDigits: 1
+          }).format(movieDetails.budget)
+        : 'N/A',
+      formattedRevenue: movieDetails.revenue 
+        ? new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: 'USD',
+            notation: 'compact',
+            maximumFractionDigits: 1
+          }).format(movieDetails.revenue)
+        : 'N/A'
+    };
   }, [movieDetails]);
 
-  // Memoize spoken languages
-  const spokenLanguages = React.useMemo(() => {
-    if (!movieDetails?.spoken_languages) return [];
-    return movieDetails.spoken_languages;
-  }, [movieDetails]);
+  // Get mobile/desktop state early to avoid initialization errors
+  const { isMobile, isTablet, isDesktop } = useIsMobile();
 
-  // Memoize videos (trailers, teasers, etc.)
-  const videoList = React.useMemo(() => {
-    if (!videos?.results) return [];
-    return videos.results.filter(
-      (v) => v.site === 'YouTube' && (v.type === 'Trailer' || v.type === 'Teaser')
-    );
-  }, [videos]);
+  // Determine how many cast per row based on screen size
+  const castPerRow = React.useMemo(() => {
+    if (typeof window !== 'undefined') {
+      if (window.innerWidth >= 1024) return 5; // lg
+      if (window.innerWidth >= 640) return 4; // sm/md
+      return 2; // xs
+    }
+    return 5;
+  }, [isMobile, isTablet, isDesktop]);
+
+  // 🚀 NEW: Memoize cast and similar movies with virtualization
+  const optimizedCast = React.useMemo(() => {
+    if (!movieDetails?.cast || !Array.isArray(movieDetails.cast)) return [];
+    
+    let filteredCast = movieDetails.cast;
+    if (castSearchTerm && castSearchTerm.trim() !== "") {
+      const term = castSearchTerm.trim().toLowerCase();
+      filteredCast = filteredCast.filter(
+        (person) =>
+          (person?.name && person.name.toLowerCase().includes(term)) ||
+          (person?.character && person.character.toLowerCase().includes(term))
+      );
+    }
+    return filteredCast.slice(0, castRowsShown * castPerRow);
+  }, [movieDetails?.cast, castSearchTerm, castRowsShown, castPerRow]);
+
+  const optimizedSimilarMovies = React.useMemo(() => {
+    if (!similarMovies || !Array.isArray(similarMovies)) return [];
+    return similarMovies.slice(0, similarLimit);
+  }, [similarMovies, similarLimit]);
   
   // Streaming state
   const [showStreamingPlayer, setShowStreamingPlayer] = useState(false);
@@ -712,6 +893,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
   const [currentSeason, setCurrentSeason] = useState(null);
   const [episodes, setEpisodes] = useState([]);
   const [displayedEpisodes, setDisplayedEpisodes] = useState(10); // Show 10 episodes initially
+  const [lastLoadMoreTime, setLastLoadMoreTime] = useState(0);
   const [isSeasonsLoading, setIsSeasonsLoading] = useState(false);
   const [isEpisodesLoading, setIsEpisodesLoading] = useState(false);
   const [episodesViewMode, setEpisodesViewMode] = useState(() => {
@@ -730,28 +912,22 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
     }
   }, []);
 
-  // Load more episodes function
-  const handleLoadMoreEpisodes = useCallback(() => {
+  // Enhanced load more episodes function with better UX and error handling
+  const handleLoadMoreEpisodes = useCallback(async () => {
+    // Prevent rapid clicking
+    const now = Date.now();
+    if (now - (lastLoadMoreTime || 0) < 500) {
+      return;
+    }
+    
+    setLastLoadMoreTime(now);
     setDisplayedEpisodes(prev => prev + 10);
-  }, []);
+  }, [lastLoadMoreTime]);
 
   // Check if there are more episodes to load
   const hasMoreEpisodes = useMemo(() => {
     return displayedEpisodes < episodes.length;
   }, [displayedEpisodes, episodes.length]);
-
-  // Get mobile/desktop state early to avoid initialization errors
-  const { isMobile, isTablet, isDesktop } = useIsMobile();
-
-  // Determine how many cast per row based on screen size
-  const castPerRow = (() => {
-    if (typeof window !== 'undefined') {
-      if (window.innerWidth >= 1024) return 5; // lg
-      if (window.innerWidth >= 640) return 4; // sm/md
-      return 2; // xs
-    }
-    return 5;
-  })();
 
   // Compute how many cast to show
   const castToShow = React.useMemo(() => {
@@ -776,8 +952,9 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
   }, [similarMovies, similarLimit]);
   // Prefetch next page of similar movies in background
   useEffect(() => {
-    if (hasMoreSimilar && !isSimilarLoadingMore && similarMovies.length >= similarLimit) {
-      getSimilarMovies(movie.id, movie.type, similarMoviesPage + 1).then(data => {
+    if (hasMoreSimilar && !isSimilarLoadingMore && similarMovies.length >= similarLimit && movie) {
+      const movieType = movie.media_type || movie.type || 'movie';
+      getSimilarMovies(movie.id, movieType, similarMoviesPage + 1).then(data => {
         if (data?.results?.length > 0) {
           setSimilarMovies(prev => {
             const existingIds = new Set(prev.map(m => m.id));
@@ -788,12 +965,12 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
       });
     }
     // eslint-disable-next-line
-  }, [similarLimit]);
+  }, [similarLimit, movie, hasMoreSimilar, isSimilarLoadingMore, similarMovies.length, similarMoviesPage]);
 
   // Memoized callback for toggling showAllCast
   const handleToggleShowAllCast = useCallback(() => setShowAllCast(v => !v), []);
 
-  // Memoize event handlers to avoid unnecessary re-renders
+  // Simple scroll handler
   const handleScroll = useCallback(() => {
     if (scrollContainerRef.current) {
       const scrollTop = scrollContainerRef.current.scrollTop;
@@ -803,14 +980,8 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
       // Calculate scroll percentage for enhanced UX
       const scrollPercentage = Math.min(100, Math.max(0, (scrollTop / (scrollHeight - clientHeight)) * 100));
       
-      // Update scroll position with improved throttling for better performance
-      setScrollY(prevScrollY => {
-        // Only update if change is significant (prevents excessive re-renders)
-        if (Math.abs(prevScrollY - scrollTop) > 1) {
-          return scrollTop;
-        }
-        return prevScrollY;
-      });
+      // Update scroll position
+      setScrollY(scrollTop);
       
       // Store scroll percentage for potential use in animations or UI feedback
       if (scrollContainerRef.current.dataset) {
@@ -819,46 +990,41 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
     }
   }, []);
 
-  // Enhanced scroll event listener with performance optimizations and cleanup
+  // Simple scroll event listener
   useEffect(() => {
     const currentRef = scrollContainerRef.current;
     
     if (!currentRef) return;
     
-    // Improved throttled scroll handler for better performance
+    // Simple scroll handler
     let ticking = false;
-    let lastScrollTime = 0;
-    const scrollThrottle = 16; // ~60fps for scroll updates
     let animationFrameId = null;
     
-    const throttledHandleScroll = () => {
-      const now = Date.now();
-      
-      if (!ticking && (now - lastScrollTime) >= scrollThrottle) {
+    const simpleScrollHandler = () => {
+      if (!ticking) {
         animationFrameId = requestAnimationFrame(() => {
           handleScroll();
           ticking = false;
-          lastScrollTime = now;
           animationFrameId = null;
         });
         ticking = true;
       }
     };
     
-    // Add event listener with passive option for better scroll performance
-    currentRef.addEventListener('scroll', throttledHandleScroll, { 
+    // Add event listener with passive option for performance
+    currentRef.addEventListener('scroll', simpleScrollHandler, { 
       passive: true, 
       capture: false 
     });
     
-    // Enhanced cleanup with proper reference checking and animation frame cancellation
+    // Cleanup
     return () => {
       if (animationFrameId) {
         cancelAnimationFrame(animationFrameId);
         animationFrameId = null;
       }
       if (currentRef && currentRef.removeEventListener) {
-        currentRef.removeEventListener('scroll', throttledHandleScroll, { 
+        currentRef.removeEventListener('scroll', simpleScrollHandler, { 
           capture: false 
         });
       }
@@ -872,6 +1038,9 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
       return;
     }
     
+    // Use the same fallback pattern as other components
+    const movieType = movie.media_type || movie.type || 'movie';
+    
     // Set loading state immediately with performance tracking
     const loadStartTime = performance.now();
     setIsSimilarLoadingMore(true);
@@ -881,16 +1050,29 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
     const maxRetries = 3;
     const baseDelay = 1000; // Base delay for exponential backoff
     
+    // Create abort controller for this request
+    const abortController = new AbortController();
+    
     // Enhanced attempt function with intelligent retry logic and data validation
     const attemptLoad = async () => {
       try {
+        // Check if request was aborted
+        if (abortController.signal.aborted) {
+          throw new Error('Request aborted');
+        }
+        
         // Add request timeout for better UX
         const timeoutPromise = new Promise((_, reject) => 
           setTimeout(() => reject(new Error('Request timeout')), 10000)
         );
         
-        const dataPromise = getSimilarMovies(movie.id, movie.type, nextPage);
+        const dataPromise = getSimilarMovies(movie.id, movieType, nextPage);
         const data = await Promise.race([dataPromise, timeoutPromise]);
+        
+        // Check if request was aborted after data fetch
+        if (abortController.signal.aborted) {
+          throw new Error('Request aborted after data fetch');
+        }
         
         // Comprehensive response validation with detailed error messages
         if (!data) {
@@ -927,16 +1109,29 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
           // Intelligent prefetching with adaptive timing
           if (hasMore && data.page < data.total_pages - 1) {
             const prefetchDelay = Math.min(2000, 1000 + (data.results.length * 100)); // Adaptive delay
-            setTimeout(() => {
-              getSimilarMovies(movie.id, movie.type, nextPage + 1)
-                .then(() => {})
-                .catch(() => {});
+            const prefetchTimeout = setTimeout(() => {
+              if (!abortController.signal.aborted) {
+                getSimilarMovies(movie.id, movieType, nextPage + 1)
+                  .then(() => {})
+                  .catch(() => {});
+              }
             }, prefetchDelay);
+            
+            // Store timeout for cleanup
+            if (window.addCleanupTimer) {
+              window.addCleanupTimer(prefetchTimeout);
+            }
           }
         } else {
           setHasMoreSimilar(false);
         }
       } catch (error) {
+        // Don't retry if request was aborted
+        if (abortController.signal.aborted) {
+          console.log('Similar movies request aborted');
+          return;
+        }
+        
         // Enhanced exponential backoff with jitter for better retry distribution
         if (retryCount < maxRetries) {
           retryCount++;
@@ -951,11 +1146,16 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
           setHasMoreSimilar(false);
         }
       } finally {
-        setIsSimilarLoadingMore(false);
+        if (!abortController.signal.aborted) {
+          setIsSimilarLoadingMore(false);
+        }
       }
     };
     
     await attemptLoad();
+    
+    // Return abort controller for cleanup
+    return abortController;
   }, [isSimilarLoadingMore, hasMoreSimilar, similarMoviesPage, movie?.id, movie?.type]);
 
   // Memoize observer effect
@@ -1018,10 +1218,13 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
 
   // Enhanced fetchMovieData with comprehensive error handling, retry logic, and performance optimizations
   const fetchMovieData = useCallback(async (attempt = 0) => {
-    if (!movie?.id || !movie?.type) {
+    if (!movie?.id) {
       console.warn('Invalid movie data provided to fetchMovieData');
       return;
     }
+    
+    // Use the same fallback pattern as other components
+    const movieType = movie.media_type || movie.type || 'movie';
 
     // Prevent multiple simultaneous requests
     if (loading && attempt === 0) {
@@ -1048,23 +1251,23 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
       const abortController = new AbortController();
       const timeoutId = setTimeout(() => abortController.abort(), 30000); // 30s timeout
 
-      console.log(`Fetching movie data for ${movie.type} ID: ${movie.id} (attempt ${attempt + 1})`);
+      console.log(`Fetching movie data for ${movieType} ID: ${movie.id} (attempt ${attempt + 1})`);
 
       // Parallel API calls with error handling for each
       const [movieDetails, movieCredits, movieVideos, similar] = await Promise.allSettled([
-        getMovieDetails(movie.id, movie.type).catch(err => {
+        getMovieDetails(movie.id, movieType).catch(err => {
           console.error('Movie details fetch failed:', err);
           return null;
         }),
-        getMovieCredits(movie.id, movie.type).catch(err => {
+        getMovieCredits(movie.id, movieType).catch(err => {
           console.error('Movie credits fetch failed:', err);
           return null;
         }),
-        getMovieVideos(movie.id, movie.type).catch(err => {
+        getMovieVideos(movie.id, movieType).catch(err => {
           console.error('Movie videos fetch failed:', err);
           return null;
         }),
-        getSimilarMovies(movie.id, movie.type, 1).catch(err => {
+        getSimilarMovies(movie.id, movieType, 1).catch(err => {
           console.error('Similar movies fetch failed:', err);
           return null;
         })
@@ -1084,7 +1287,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
       }
 
       // 🎯 NEW: Cache the fetched details
-      setCachedDetails(movie.id, movie.type, details);
+      setCachedDetails(movie.id, movieType, details);
       
       // Set data with fallbacks for failed requests
       setMovieDetails(details);
@@ -1149,16 +1352,24 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
 
   // 🚀 Enhanced data fetching with intelligent caching, performance tracking, and advanced error recovery
   useEffect(() => {
+    // Register cache cleanup with memory manager
+    const unregisterCleanup = memoryManager.registerCleanupCallback(() => {
+      clearCache();
+    });
+
     // Prevent unnecessary fetches with comprehensive validation
-    if (!movie?.id || !movie?.type || loading) {
-      console.debug('Fetch blocked:', { movieId: movie?.id, movieType: movie?.type, loading });
+    if (!movie?.id || loading) {
+      console.debug('Fetch blocked:', { movieId: movie?.id, loading });
       return;
     }
+    
+    // Use the same fallback pattern as other components
+    const movieType = movie.media_type || movie.type || 'movie';
 
     // 🎯 NEW: Check cache first for instant loading
-    const cachedDetails = getCachedDetails(movie.id, movie.type);
+    const cachedDetails = getCachedDetails(movie.id, movieType);
     if (cachedDetails) {
-      console.log(`📦 Using cached data for ${movie.type} ID: ${movie.id}`);
+      console.log(`📦 Using cached data for ${movieType} ID: ${movie.id}`);
       setMovieDetails(cachedDetails);
       setLoading(false);
       
@@ -1168,8 +1379,9 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
       }, 100);
       
       // Subscribe to real-time updates
-      realTimeManager.subscribe(movie.id, movie.type, (freshData) => {
-        console.log(`🔄 Real-time update received for ${movie.type} ID: ${movie.id}`);
+      const manager = getRealTimeManager();
+      manager.subscribe(movie.id, movieType, (freshData) => {
+        console.log(`🔄 Real-time update received for ${movieType} ID: ${movie.id}`);
         setMovieDetails(freshData);
       });
       
@@ -1178,7 +1390,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
 
     // Track fetch performance for optimization insights
     const fetchStartTime = performance.now();
-    console.log(`🔄 Starting fetch for ${movie.type} ID: ${movie.id}`);
+    console.log(`🔄 Starting fetch for ${movieType} ID: ${movie.id}`);
 
     // Execute fetch with performance monitoring
     fetchMovieData(0).finally(() => {
@@ -1191,29 +1403,36 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
       }
       
       // Subscribe to real-time updates after successful fetch
-      realTimeManager.subscribe(movie.id, movie.type, (freshData) => {
-        console.log(`🔄 Real-time update received for ${movie.type} ID: ${movie.id}`);
+      const manager = getRealTimeManager();
+      manager.subscribe(movie.id, movieType, (freshData) => {
+        console.log(`🔄 Real-time update received for ${movieType} ID: ${movie.id}`);
         setMovieDetails(freshData);
       });
     });
 
-    // Cleanup: unsubscribe from real-time updates
+    // Cleanup: unsubscribe from real-time updates and memory manager
     return () => {
-      if (movie?.id && movie?.type) {
-        realTimeManager.unsubscribe(movie.id, movie.type);
+      if (movie?.id) {
+        const manager = getRealTimeManager();
+        const movieType = movie.media_type || movie.type || 'movie';
+        manager.unsubscribe(movie.id, movieType);
       }
+      unregisterCleanup();
     };
-  }, [movie?.id, movie?.type]);
+  }, [movie?.id, movie?.media_type, movie?.type]);
 
   // 🎯 Enhanced retry handler with intelligent state management and user feedback
   const handleRetry = useCallback(() => {
     // Validate current state before retry
-    if (!movie?.id || !movie?.type) {
+    if (!movie?.id) {
       console.warn('Retry blocked: Invalid movie data');
       return;
     }
+    
+    // Use the same fallback pattern as other components
+    const movieType = movie.media_type || movie.type || 'movie';
 
-    console.log(`🔄 Manual retry initiated for ${movie.type} ID: ${movie.id}`);
+    console.log(`🔄 Manual retry initiated for ${movieType} ID: ${movie.id}`);
     
     // Reset all relevant states for clean retry
     setRetryCount(0);
@@ -1232,12 +1451,16 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
       const retryDuration = performance.now() - retryStartTime;
       console.log(`🔄 Retry completed in ${retryDuration.toFixed(2)}ms`);
     });
-  }, [movie?.id, movie?.type, fetchMovieData]);
+  }, [movie?.id, movie?.media_type, movie?.type, fetchMovieData]);
 
-  // 🧹 Ultra-Comprehensive cleanup with memory leak prevention, state restoration, and advanced diagnostics
+  // 🧹 Ultra-Comprehensive cleanup with enhanced memory leak prevention
   useEffect(() => {
     // Track unmount for diagnostics
     let isUnmounted = false;
+    let cleanupTimers = [];
+    let cleanupAnimationFrames = [];
+    let cleanupAbortControllers = [];
+    let cleanupEventListeners = [];
 
     // Helper: Log state reset for debugging
     const logReset = (name) => {
@@ -1249,6 +1472,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
 
     // Helper: Safely reset a state setter
     const safeSet = (setter, value, name) => {
+      if (isUnmounted) return;
       try {
         setter(value);
         logReset(name);
@@ -1256,6 +1480,26 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
         // eslint-disable-next-line no-console
         console.warn(`[MovieDetailsOverlay] Failed to reset ${name}:`, e);
       }
+    };
+
+    // Helper: Add cleanup timer
+    const addCleanupTimer = (timerId) => {
+      cleanupTimers.push(timerId);
+    };
+
+    // Helper: Add cleanup animation frame
+    const addCleanupAnimationFrame = (frameId) => {
+      cleanupAnimationFrames.push(frameId);
+    };
+
+    // Helper: Add cleanup abort controller
+    const addCleanupAbortController = (controller) => {
+      cleanupAbortControllers.push(controller);
+    };
+
+    // Helper: Add cleanup event listener
+    const addCleanupEventListener = (target, type, handler) => {
+      cleanupEventListeners.push({ target, type, handler });
     };
 
     // Store cleanup function for proper execution
@@ -1278,35 +1522,54 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
       safeSet(setSimilarLimit, 20, "similarLimit");
       safeSet(setScrollY, 0, "scrollY");
 
+      // Clear all cleanup timers
+      cleanupTimers.forEach(timerId => {
+        try {
+          clearTimeout(timerId);
+          clearInterval(timerId);
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.warn("[MovieDetailsOverlay] Failed to clear timer:", timerId, e);
+        }
+      });
+      cleanupTimers = [];
+      logReset("cleanupTimers");
 
-      // Clear any pending timeouts or intervals (robust)
-      if (window.movieDetailsCleanupTimers && Array.isArray(window.movieDetailsCleanupTimers)) {
-        window.movieDetailsCleanupTimers.forEach(timerId => {
-          try {
-            clearTimeout(timerId);
-            clearInterval(timerId);
-          } catch (e) {
-            // eslint-disable-next-line no-console
-            console.warn("[MovieDetailsOverlay] Failed to clear timer:", timerId, e);
-          }
-        });
-        window.movieDetailsCleanupTimers = [];
-        logReset("movieDetailsCleanupTimers");
-      }
+      // Cancel all cleanup animation frames
+      cleanupAnimationFrames.forEach(frameId => {
+        try {
+          cancelAnimationFrame(frameId);
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.warn("[MovieDetailsOverlay] Failed to cancel animation frame:", frameId, e);
+        }
+      });
+      cleanupAnimationFrames = [];
+      logReset("cleanupAnimationFrames");
 
-      // Cancel any pending animation frames
-      if (window.movieDetailsCleanupAnimationFrames && Array.isArray(window.movieDetailsCleanupAnimationFrames)) {
-        window.movieDetailsCleanupAnimationFrames.forEach(frameId => {
-          try {
-            cancelAnimationFrame(frameId);
-          } catch (e) {
-            // eslint-disable-next-line no-console
-            console.warn("[MovieDetailsOverlay] Failed to cancel animation frame:", frameId, e);
-          }
-        });
-        window.movieDetailsCleanupAnimationFrames = [];
-        logReset("movieDetailsCleanupAnimationFrames");
-      }
+      // Abort all cleanup controllers
+      cleanupAbortControllers.forEach(controller => {
+        try {
+          controller.abort();
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.warn("[MovieDetailsOverlay] Failed to abort controller:", e);
+        }
+      });
+      cleanupAbortControllers = [];
+      logReset("cleanupAbortControllers");
+
+      // Remove all cleanup event listeners
+      cleanupEventListeners.forEach(({ target, type, handler }) => {
+        try {
+          (target || window).removeEventListener(type, handler);
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.warn("[MovieDetailsOverlay] Failed to remove event listener:", type, e);
+        }
+      });
+      cleanupEventListeners = [];
+      logReset("cleanupEventListeners");
 
       // Reset scroll container if it exists
       if (scrollContainerRef.current) {
@@ -1319,50 +1582,53 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
         }
       }
 
-      // Optionally: Remove any event listeners attached to window/document
-      if (window._movieDetailsOverlayListeners) {
-        window._movieDetailsOverlayListeners.forEach(({ target, type, handler }) => {
-          try {
-            (target || window).removeEventListener(type, handler);
-          } catch (e) {
-            // eslint-disable-next-line no-console
-            console.warn("[MovieDetailsOverlay] Failed to remove event listener:", type, e);
-          }
-        });
-        window._movieDetailsOverlayListeners = [];
-        logReset("_movieDetailsOverlayListeners");
+      // 🎯 NEW: Unsubscribe from real-time updates
+      if (movie?.id) {
+        try {
+          const manager = getRealTimeManager();
+          const movieType = movie.media_type || movie.type || 'movie';
+          manager.unsubscribe(movie.id, movieType);
+          logReset("realTimeManager.unsubscribe");
+        } catch (e) {
+          console.warn("[MovieDetailsOverlay] Failed to unsubscribe from real-time updates:", e);
+        }
       }
-      
-          // 🎯 NEW: Unsubscribe from real-time updates
-    if (movie?.id && movie?.type) {
+
+      // Cleanup real-time manager to prevent memory leaks
       try {
-        realTimeManager.unsubscribe(movie.id, movie.type);
-        logReset("realTimeManager.unsubscribe");
+        const manager = getRealTimeManager();
+        manager.cleanup();
+        realTimeManager = null; // Reset the singleton
+        logReset("realTimeManager.cleanup");
       } catch (e) {
-        console.warn("[MovieDetailsOverlay] Failed to unsubscribe from real-time updates:", e);
+        console.warn("[MovieDetailsOverlay] Failed to cleanup real-time manager:", e);
       }
-    }
 
-    // Cleanup real-time manager to prevent memory leaks
-    try {
-      realTimeManager.cleanup();
-      logReset("realTimeManager.cleanup");
-    } catch (e) {
-      console.warn("[MovieDetailsOverlay] Failed to cleanup real-time manager:", e);
-    }
-
-      // Optionally: Cancel any fetches or abort controllers
-      if (window._movieDetailsOverlayAbortControllers) {
-        window._movieDetailsOverlayAbortControllers.forEach(controller => {
-          try {
-            controller.abort();
-          } catch (e) {
-            // eslint-disable-next-line no-console
-            console.warn("[MovieDetailsOverlay] Failed to abort controller:", e);
+      // 🆕 NEW: Enhanced memory cleanup
+      try {
+        // Clear cache if memory usage is high
+        if (performance.memory) {
+          const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
+          if (memoryMB > 600) {
+            console.warn(`[MovieDetailsOverlay] High memory usage during cleanup: ${memoryMB.toFixed(2)}MB`);
+            clearCache();
           }
-        });
-        window._movieDetailsOverlayAbortControllers = [];
-        logReset("_movieDetailsOverlayAbortControllers");
+        }
+        
+        // Force garbage collection if available
+        if (window.gc) {
+          window.gc();
+        }
+        
+        // Clear any remaining references
+        if (typeof window !== 'undefined') {
+          // Clear any global references that might be holding onto data
+          if (window.movieDetailsCache) {
+            delete window.movieDetailsCache;
+          }
+        }
+      } catch (e) {
+        console.warn("[MovieDetailsOverlay] Failed to perform memory cleanup:", e);
       }
 
       // Diagnostics: Log cleanup completion
@@ -1374,7 +1640,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
 
     // Return cleanup function for React to execute on unmount
     return cleanup;
-  }, []); // Empty dependency array ensures cleanup runs only on unmount
+  }, [movie?.id, movie?.media_type, movie?.type]); // Include movie dependencies to ensure proper cleanup on movie change
 
   // 🚀 Ultra-enhanced scroll lock with advanced state management, performance optimizations, and accessibility features
   useEffect(() => {
@@ -1865,7 +2131,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
 
   // 🚀 Enhanced: Robust fetch with diagnostics, analytics, and advanced error handling
   const fetchBasicInfo = useCallback(async () => {
-    if (!movie || !movie.id || !movie.type) {
+    if (!movie || !movie.id) {
       setError('Invalid movie data.');
       setMovieDetails(null);
       setBasicLoading(false);
@@ -1875,6 +2141,9 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
       }
       return;
     }
+    
+    // Use the same fallback pattern as other components
+    const movieType = movie.media_type || movie.type || 'movie';
     let fetchStart;
     try {
       setBasicLoading(true);
@@ -1892,7 +2161,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
         });
       }
 
-      const details = await getMovieDetails(movie.id, movie.type);
+      const details = await getMovieDetails(movie.id, movieType);
 
       // Performance tracking
       const fetchDuration = performance.now() - fetchStart;
@@ -1955,6 +2224,10 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
 
   const fetchExtraInfo = useCallback(async () => {
     if (!movie) return;
+    
+    // Use the same fallback pattern as other components
+    const movieType = movie.media_type || movie.type || 'movie';
+    
     setIsCastLoading(true);
     setIsSimilarLoading(true);
     setShowAllCast(false);
@@ -1969,13 +2242,13 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
     
     try {
       const promises = [
-        getMovieCredits(movie.id, movie.type),
-        getMovieVideos(movie.id, movie.type),
-        getSimilarMovies(movie.id, movie.type, 1)
+        getMovieCredits(movie.id, movieType),
+        getMovieVideos(movie.id, movieType),
+        getSimilarMovies(movie.id, movieType, 1)
       ];
       
       // Add seasons fetching for TV shows
-      if (movie.type === 'tv') {
+      if (movieType === 'tv') {
         promises.push(getTVSeasons(movie.id));
       }
       
@@ -1988,7 +2261,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
       setHasMoreSimilar(similar?.page < similar?.total_pages);
       
       // Handle seasons for TV shows
-      if (movie.type === 'tv' && rest[0]) {
+      if (movieType === 'tv' && rest[0]) {
         const seasonsData = rest[0];
         setSeasons(seasonsData);
         
@@ -2010,7 +2283,10 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
   }, [movie]);
 
   const fetchSeasonEpisodes = useCallback(async (seasonNumber) => {
-    if (!movie || movie.type !== 'tv' || !seasonNumber) return;
+    if (!movie || !seasonNumber) return;
+    
+    const movieType = movie.media_type || movie.type || 'movie';
+    if (movieType !== 'tv') return;
     
     setIsEpisodesLoading(true);
     try {
@@ -2133,14 +2409,15 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
       abortController.abort();
     };
     // eslint-disable-next-line
-  }, [movie?.id, movie?.type]);
+  }, [movie?.id, movie?.media_type, movie?.type]);
   
   // 🔄 NEW: Background refresh for stale data
   useEffect(() => {
-    if (!movie?.id || !movie?.type || !movieDetails) return;
+    if (!movie?.id || !movieDetails) return;
     
+    const movieType = movie.media_type || movie.type || 'movie';
     const backgroundRefreshTimer = setTimeout(() => {
-      console.log(`🔄 Background refresh for ${movie.type} ID: ${movie.id}`);
+      console.log(`🔄 Background refresh for ${movieType} ID: ${movie.id}`);
       fetchMovieData(0);
     }, BACKGROUND_REFRESH_INTERVAL);
     
@@ -2149,7 +2426,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
         clearTimeout(backgroundRefreshTimer);
       }
     };
-  }, [movie?.id, movie?.type, movieDetails, fetchMovieData]);
+  }, [movie?.id, movie?.media_type, movie?.type, movieDetails, fetchMovieData]);
   
   // Mobile drag functionality removed
   
@@ -2285,34 +2562,35 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
 
   const overlayContent = (
     <AnimatePresence>
-      {/* Overlay background with ultra-smooth fade */}
+      {/* Overlay background - parallax removed */}
       <motion.div
-        className="fixed inset-0 bg-black/80 flex items-center justify-center z-[999999999] p-4 contain-paint transition-none sm:mt-0"
+        className="fixed inset-0 bg-black/85 flex items-center justify-center z-[999999999] p-2 sm:p-4 contain-paint transition-none sm:mt-0"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        transition={{ duration: 0.28, ease: 'easeInOut' }}
+        transition={{ 
+          duration: 0.3, 
+          ease: [0.25, 0.46, 0.45, 0.94]
+        }}
         onClick={handleClickOutside}
         tabIndex={-1}
         style={{ zIndex: 999999999 }}
       >
-        {/* Main content: ultra-smooth entry/exit with spring */}
+        {/* Main content - parallax removed */}
         <motion.div
           ref={contentRef}
-          layout
-          className="relative w-full max-w-6xl h-auto max-h-[calc(100vh-2rem)] z-[1000000000] sm:max-h-[95vh] bg-gradient-to-br from-[#1a1d24] to-[#121417] rounded-2xl shadow-2xl overflow-hidden flex flex-col transform-gpu will-change-transform contain-paint pointer-events-auto overflow-y-auto mt-4 sm:mt-6"
-          initial={{ scale: 0.98, opacity: 0, y: 60 }}
-          animate={{ scale: 1, opacity: 1, y: 0 }}
-          exit={{ scale: 0.98, opacity: 0, y: 60 }}
-          transition={{
-            duration: 0.25, type: 'spring', stiffness: 400, damping: 30, delay: 0
+          className="relative w-full max-w-6xl h-auto max-h-[calc(100vh-1rem)] z-[1000000000] sm:max-h-[95vh] bg-gradient-to-br from-[#1a1d24] to-[#121417] rounded-2xl shadow-2xl overflow-hidden flex flex-col pointer-events-auto overflow-y-auto mt-2 sm:mt-6"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 20 }}
+          transition={{ 
+            duration: 0.3, 
+            ease: [0.25, 0.46, 0.45, 0.94]
           }}
           onClick={(e) => e.stopPropagation()}
           tabIndex={-1}
           style={{ 
-            zIndex: 1000000000,
-            willChange: 'transform, opacity',
-            backfaceVisibility: 'hidden'
+            zIndex: 1000000000
           }}
         >
                       {/* Mobile drag functionality removed */}
@@ -2340,110 +2618,144 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                 {movieDetails.backdrop && (
                   <div className="absolute inset-0 overflow-hidden">
                     <motion.div 
-                      className="absolute -inset-y-[15%] inset-x-0"
-                      variants={parallaxVariants}
-                      initial="initial"
-                      animate="animate"
-                      custom={0.3}
-                      style={{ y: scrollY * 0.3 }}
+                      className="absolute inset-0"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ 
+                        duration: 0.4, 
+                        ease: [0.25, 0.46, 0.45, 0.94] 
+                      }}
                     >
-                      <div className="absolute inset-0 bg-[#1a1a1a] animate-pulse"></div>
-                      <img
+                      {/* Loading placeholder with smooth transition */}
+                      <motion.div 
+                        className="absolute inset-0 bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a]"
+                        initial={{ opacity: 1 }}
+                        animate={{ opacity: 0 }}
+                        transition={{ duration: 0.3, delay: 0.2 }}
+                      />
+                      
+                      {/* Backdrop image - parallax removed */}
+                      <motion.img
                         src={movieDetails.backdrop}
                         alt={movieDetails.title}
-                        className="w-full h-full object-cover hover:scale-105 opacity-0 animate-fadeIn will-change-transform transform-gpu"
-                        style={{ backfaceVisibility: 'hidden' }}
+                        className="w-full h-full object-cover"
                         loading="eager"
                         decoding="async"
                         fetchPriority="high"
-                        onLoad={(e) => {
-                          if (e.target) {
-                            e.target.classList.remove('opacity-0');
-                            if (e.target.previousSibling) {
-                              e.target.previousSibling.classList.remove('animate-pulse');
-                            }
-                          }
-                        }}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.4 }}
                         onError={(e) => {
                           console.warn('Failed to load backdrop image:', e.target.src);
                         }}
                       />
                     </motion.div>
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#0f0f0f] via-[#0f0f0f]/80 to-transparent pointer-events-none will-change-opacity"></div>
+                    
+                    {/* Gradient overlay - parallax removed */}
+                    <motion.div 
+                      className="absolute inset-0 bg-gradient-to-t from-[#0f0f0f] via-[#0f0f0f]/80 to-transparent pointer-events-none"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ duration: 0.3, delay: 0.1 }}
+                    />
                   </div>
                 )}
                 <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-8">
                   <motion.div 
                     className="flex flex-col sm:flex-row items-start sm:items-end gap-4 sm:gap-8 relative"
-                    initial={{ opacity: 0, y: 20 }}
+                    initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.6, delay: 0.2 }}
+                    transition={{ duration: 0.3, delay: 0.1 }}
                   >
-                    {movieDetails.image && (
-                      <div className="w-32 h-48 sm:w-56 sm:h-84 flex-shrink-0 rounded-lg overflow-hidden transform transition-transform duration-300 hover:scale-105 shadow-2xl group mx-auto sm:mx-0">
-                        <div className="absolute inset-0 bg-[#1a1a1a] animate-pulse"></div>
-                        <img
-                          src={movieDetails.image}
-                          alt={movieDetails.title}
-                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110 opacity-0 will-change-transform transform-gpu"
-                          style={{ backfaceVisibility: 'hidden' }}
-                          loading="eager"
-                          decoding="async"
-                          fetchPriority="high"
-                          onLoad={(e) => {
-                            if (e.target) {
-                              e.target.classList.remove('opacity-0');
-                              if (e.target.previousSibling) {
-                                e.target.previousSibling.classList.remove('animate-pulse');
-                              }
-                            }
-                          }}
-                          onError={(e) => {
-                            console.warn('Failed to load movie poster:', e.target.src);
-                          }}
-                        />
-                        <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                      </div>
-                    )}
+                                          {movieDetails.image && (
+                        <motion.div 
+                          className="w-32 h-48 sm:w-56 sm:h-84 flex-shrink-0 rounded-lg overflow-hidden shadow-2xl group mx-auto sm:mx-0"
+                          initial={{ opacity: 0, scale: 0.95 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={{ duration: 0.3, delay: 0.2 }}
+                        >
+                          {/* Loading placeholder with smooth transition */}
+                          <motion.div 
+                            className="absolute inset-0 bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a]"
+                            initial={{ opacity: 1 }}
+                            animate={{ opacity: 0 }}
+                            transition={{ duration: 0.3, delay: 0.2 }}
+                          />
+                          
+                          {/* Movie poster - parallax removed */}
+                          <motion.img
+                            src={movieDetails.image}
+                            alt={movieDetails.title}
+                            className="w-full h-full object-cover"
+                            loading="eager"
+                            decoding="async"
+                            fetchPriority="high"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ duration: 0.3 }}
+                            onError={(e) => {
+                              console.warn('Failed to load movie poster:', e.target.src);
+                            }}
+                          />
+                          
+                          {/* Hover overlay - simplified */}
+                          <div 
+                            className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                          />
+                        </motion.div>
+                      )}
                     <div className="flex-1 w-full sm:w-auto text-center sm:text-left">
-                      <div className="flex flex-col sm:flex-row items-center sm:items-center gap-2 sm:gap-3 mb-4 sm:mb-7">
-                        {movieDetails.logo ? (
-                          <div className="relative">
-                            <div className="absolute inset-0 animate-pulse rounded"></div>
-                            <img
-                              src={movieDetails.logo}
-                              alt={movieDetails.title}
-                              className="w-[200px] sm:w-[250px] max-w-full h-auto object-contain transform transition-all duration-300 hover:scale-105 opacity-0 animate-fadeIn will-change-transform transform-gpu"
-                              style={{ backfaceVisibility: 'hidden' }}
-                              loading="eager"
-                              decoding="async"
-                              onError={(e) => {
-                                if (e.target) {
-                                  e.target.style.display = 'none';
-                                  if (e.target.nextSibling) {
-                                    e.target.nextSibling.style.display = 'block';
+                                              <motion.div 
+                          className="flex flex-col sm:flex-row items-center sm:items-center gap-2 sm:gap-3 mb-4 sm:mb-7"
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.3, delay: 0.3 }}
+                        >
+                                                  {movieDetails.logo ? (
+                            <motion.div 
+                              className="relative"
+                              initial={{ opacity: 0, scale: 0.95 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              transition={{ duration: 0.3, delay: 0.4 }}
+                            >
+                              {/* Movie logo - parallax removed */}
+                              <motion.img
+                                src={movieDetails.logo}
+                                alt={movieDetails.title}
+                                className="w-[200px] sm:w-[250px] max-w-full h-auto object-contain"
+                                loading="eager"
+                                decoding="async"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                transition={{ duration: 0.3 }}
+                                onError={(e) => {
+                                  if (e.target) {
+                                    e.target.style.display = 'none';
+                                    if (e.target.nextSibling) {
+                                      e.target.nextSibling.style.display = 'block';
+                                    }
                                   }
-                                }
-                              }}
-                              onLoad={(e) => {
-                                if (e.target) {
-                                  e.target.classList.remove('opacity-0');
-                                  if (e.target.previousSibling) {
-                                    e.target.previousSibling.classList.remove('animate-pulse');
-                                  }
-                                }
-                              }}
-                            />
-                            <h2 className="text-2xl sm:text-4xl font-bold text-white transform transition-all duration-300 hover:translate-x-1 hidden">
+                                }}
+                              />
+                              
+                              {/* Fallback title (hidden when logo loads successfully) */}
+                              <h2 
+                                className="text-2xl sm:text-4xl font-bold text-white hidden"
+                              >
+                                {movieDetails.title}
+                              </h2>
+                            </motion.div>
+                          ) : (
+                            <motion.h2 
+                              className="text-2xl sm:text-4xl font-bold text-white"
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ duration: 0.3, delay: 0.4 }}
+                            >
                               {movieDetails.title}
-                            </h2>
-                          </div>
-                        ) : (
-                          <h2 className="text-2xl sm:text-4xl font-bold text-white transform transition-all duration-300 hover:translate-x-1">
-                            {movieDetails.title}
-                          </h2>
-                        )}
-                      </div>
+                            </motion.h2>
+                          )}
+                      </motion.div>
                       
 
                       <div className="flex flex-row items-center justify-center sm:justify-start gap-6 sm:gap-3 text-white/60 text-sm mb-4 sm:mb-6">
@@ -2481,7 +2793,17 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                         )}
                         {movieDetails.type === 'tv' && (
                           <>
-                            <span className="hidden sm:inline">•</span>
+                            {movieDetails.first_air_date && (
+                              <>
+                                <div className="flex items-center gap-1">
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                  </svg>
+                                  <span>{new Date(movieDetails.first_air_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                                </div>
+                                <span className="hidden sm:inline">•</span>
+                              </>
+                            )}
                             <div className="flex items-center gap-1">
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -2495,17 +2817,6 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                               </svg>
                               <span className="capitalize">{movieDetails.status}</span>
                             </div>
-                            {movieDetails.first_air_date && (
-                              <>
-                                <span className="hidden sm:inline">•</span>
-                                <div className="flex items-center gap-1">
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                  </svg>
-                                  <span>{new Date(movieDetails.first_air_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
-                                </div>
-                              </>
-                            )}
                           </>
                         )}
                         <span className="hidden sm:inline">•</span>
@@ -2531,7 +2842,8 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                             return (
                               <span 
                                 key={key}
-                                className="px-2.5 sm:px-3 py-0.5 sm:py-1 text-white/50 overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 rounded-full text-white/60 text-xs sm:text-sm transform transition-all duration-300 hover:bg-white/10 will-change-transform"
+                                onClick={() => onGenreClick && onGenreClick(genre)}
+                                className="px-2.5 sm:px-3 py-0.5 sm:py-1 text-white/50 overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 rounded-full text-white/60 text-xs sm:text-sm transform transition-all duration-300 hover:bg-white/10 hover:cursor-pointer will-change-transform"
                               >
                                 {genre.name}
                               </span>
@@ -2543,10 +2855,9 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                       {/* Action Buttons and Info Section */}
                       <motion.div 
                         className="flex flex-col sm:flex-row items-center sm:items-end justify-between gap-4 my-4 sm:my-6"
-                        variants={staggerContainerVariants}
-                        initial="hidden"
-                        whileInView="visible"
-                        viewport={{ once: true, amount: 0.5 }}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.3, delay: 0.5 }}
                       >
                       {/* Action Buttons */}
                         <motion.div 
@@ -2554,61 +2865,115 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                           variants={staggerItemVariants}
                         >
                         {/* Watch Now Button - Only show if streaming is available and it's a movie */}
-                        {isStreamingAvailable(movie) && movie.type === 'movie' && (
-                          <button
+                        {isStreamingAvailable(movie) && (movie.media_type || movie.type || 'movie') === 'movie' && (
+                          <motion.button
                             onClick={handleStreamingClick}
-                            className="group relative px-4 sm:px-6 py-2 sm:py-3 rounded-full transition-all duration-300 flex items-center gap-2 font-medium hover:scale-105 hover:shadow-lg text-black bg-white flex-1 sm:flex-none w-full sm:w-auto justify-center min-w-0 transform-gpu will-change-transform"
+                            className="group relative px-4 sm:px-6 py-2 sm:py-3 rounded-full flex items-center gap-2 font-medium text-black bg-white flex-1 sm:flex-none w-full sm:w-auto justify-center min-w-0 transform-gpu will-change-transform"
+                            variants={buttonVariants}
+                            initial="initial"
+                            whileHover="hover"
+                            whileTap="tap"
                           >
+                            {/* Animated background effect */}
+                            <motion.div 
+                              className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full"
+                              initial={{ x: '-100%' }}
+                              whileHover={{ x: '100%' }}
+                              transition={{ duration: 0.6, ease: "easeInOut" }}
+                            />
+                            
                             {/* Button content */}
                             <div className="relative flex items-center gap-2 min-w-0">
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transition-all duration-300 group-hover:scale-110 flex-shrink-0 text-black" viewBox="0 0 24 24" fill="currentColor">
+                              <motion.svg 
+                                xmlns="http://www.w3.org/2000/svg" 
+                                className="h-5 w-5 flex-shrink-0 text-black" 
+                                viewBox="0 0 24 24" 
+                                fill="currentColor"
+                                whileHover={{ scale: 1.1 }}
+                                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                              >
                                 <path d="M8 5v14l11-7z"/>
-                              </svg>
+                              </motion.svg>
                               <span className="truncate whitespace-nowrap">Watch Now</span>
                             </div>
-                          </button>
+                          </motion.button>
                         )}
 
-                        <button 
+                        <motion.button 
                           data-trailer-button
                           onClick={handleTrailerClick}
-                          className="group relative px-4 sm:px-6 py-2 sm:py-3 rounded-full transition-all duration-300 flex items-center gap-2 font-medium hover:scale-105 hover:shadow-lg text-white/80 overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 hover:bg-white/10 flex-1 sm:flex-none w-full sm:w-auto justify-center min-w-0 transform-gpu will-change-transform"
+                          className="group relative px-4 sm:px-6 py-2 sm:py-3 rounded-full flex items-center gap-2 font-medium text-white/80 overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 hover:bg-white/10 flex-1 sm:flex-none w-full sm:w-auto justify-center min-w-0 transform-gpu will-change-transform"
+                          variants={buttonVariants}
+                          initial="initial"
+                          whileHover="hover"
+                          whileTap="tap"
                         >
                           {/* Animated background effect */}
-                          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+                          <motion.div 
+                            className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full"
+                            initial={{ x: '-100%' }}
+                            whileHover={{ x: '100%' }}
+                            transition={{ duration: 0.6, ease: "easeInOut" }}
+                          />
                           
                           {/* Button content */}
                           <div className="relative flex items-center gap-2 min-w-0">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transition-all duration-300 group-hover:scale-110 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                            <motion.svg 
+                              xmlns="http://www.w3.org/2000/svg" 
+                              className="h-5 w-5 flex-shrink-0" 
+                              viewBox="0 0 24 24" 
+                              fill="currentColor"
+                              whileHover={{ scale: 1.1 }}
+                              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                            >
                               <path d="M8 5v14l11-7z"/>
-                            </svg>
+                            </motion.svg>
                             <span className="truncate whitespace-nowrap">Watch Trailer</span>
                           </div>
-                        </button>
+                        </motion.button>
 
-                        <button 
+                        <motion.button 
                           onClick={handleWatchlistClick}
-                          className={`group relative px-4 sm:px-6 py-3 rounded-full transition-all duration-300 flex items-center gap-2 font-medium hover:scale-105 hover:shadow-lg overflow-hidden w-full sm:w-auto justify-center min-w-0 hidden sm:flex transform-gpu will-change-transform ${
+                          className={`group relative px-4 sm:px-6 py-3 rounded-full flex items-center gap-2 font-medium overflow-hidden w-full sm:w-auto justify-center min-w-0 hidden sm:flex transform-gpu will-change-transform ${
                             isOptimisticallyInWatchlist
                               ? 'text-white/80 overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 hover:bg-white/10' 
                               : 'text-white/80 overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 hover:bg-white/10'
                           }`}
+                          variants={buttonVariants}
+                          initial="initial"
+                          whileHover="hover"
+                          whileTap="tap"
                         >
                           {/* Animated background effect */}
-                          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+                          <motion.div 
+                            className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full"
+                            initial={{ x: '-100%' }}
+                            whileHover={{ x: '100%' }}
+                            transition={{ duration: 0.6, ease: "easeInOut" }}
+                          />
                           
                           {/* Button content */}
                           <div className="relative flex items-center gap-2 min-w-0">
-                            <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 transition-all duration-300 group-hover:scale-110 flex-shrink-0 ${isOptimisticallyInWatchlist ? 'group-hover:rotate-12' : 'group-hover:rotate-90'}`} viewBox="0 0 24 24" fill="currentColor">
+                            <motion.svg 
+                              xmlns="http://www.w3.org/2000/svg" 
+                              className="h-5 w-5 flex-shrink-0" 
+                              viewBox="0 0 24 24" 
+                              fill="currentColor"
+                              whileHover={{ 
+                                scale: 1.1,
+                                rotate: isOptimisticallyInWatchlist ? 12 : 90,
+                                transition: { type: 'spring', stiffness: 400, damping: 25 }
+                              }}
+                            >
                               {isOptimisticallyInWatchlist ? (
                                 <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
                               ) : (
                                 <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
                               )}
-                            </svg>
+                            </motion.svg>
                             <span className="truncate whitespace-nowrap">{isOptimisticallyInWatchlist ? 'Remove from List' : 'Add to List'}</span>
                           </div>
-                        </button>
+                        </motion.button>
                         </motion.div>
 
                         {/* Desktop Info Section - Rightmost */}
@@ -2638,7 +3003,11 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                               <span>
                                 <span className="font-medium">Genres: </span>
                                 {movieDetails.genres.slice(0, 3).map((genre, idx) => (
-                                  <span key={genre.id || idx}>
+                                  <span 
+                                    key={genre.id || idx}
+                                    onClick={() => onGenreClick && onGenreClick(genre)}
+                                    className="hover:text-white hover:cursor-pointer transition-colors duration-200"
+                                  >
                                     {genre.name}
                                     {idx < Math.min(2, movieDetails.genres.length - 1) ? ', ' : ''}
                                   </span>
@@ -2966,7 +3335,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                                 </button>
                                 <button
                                   onClick={() => setEpisodesViewModeWithStorage('list')}
-                                  className={`px-4 py-2 text-sm font-medium transition-all duration-200 transform-gpu will-change-transform ${
+                                  className={`px-4 py-2 text-sm font-medium transition-all duration-200 ${
                                     episodesViewMode === 'list'
                                       ? 'text-white border-b-2 border-white/30'
                                       : 'text-white/50 hover:text-white/70 border-b-2 border-transparent hover:border-white/15'
@@ -3021,19 +3390,58 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                                     index < 5 ? 'border-b border-white/[0.08]' : ''
                                   }`}
                                 >
-                                  <div className="flex items-center gap-3 sm:gap-6 p-3 sm:p-6">
-                                    <div className="hidden md:block w-10 h-10 bg-white/10 animate-pulse rounded flex-shrink-0"></div>
-                                    <div className="w-32 h-20 sm:w-32 sm:h-20 md:w-40 md:h-24 bg-white/10 animate-pulse rounded-lg flex-shrink-0"></div>
-                                    <div className="flex-1 space-y-3">
-                                      <div className="h-5 bg-white/10 rounded animate-pulse w-3/4"></div>
-                                      <div className="h-4 bg-white/10 rounded animate-pulse w-full"></div>
-                                      <div className="h-4 bg-white/10 rounded animate-pulse w-2/3"></div>
-                                      <div className="flex items-center gap-4">
-                                        <div className="h-4 bg-white/10 rounded animate-pulse w-20"></div>
-                                        <div className="h-4 bg-white/10 rounded animate-pulse w-16"></div>
-                                      </div>
-                                    </div>
-                                  </div>
+                                                                     <div className="flex items-center gap-3 sm:gap-6 p-3 sm:p-6">
+                                     {/* Episode Number Skeleton - Left of Thumbnail (Desktop Only) */}
+                                     <div className="hidden md:flex flex-shrink-0 items-center justify-center w-10 h-10">
+                                       <div className="w-6 h-6 bg-white/10 rounded animate-pulse"></div>
+                                     </div>
+                                     
+                                     {/* Episode Thumbnail Skeleton */}
+                                     <div className="relative w-32 h-20 sm:w-32 sm:h-20 md:w-40 md:h-24 overflow-hidden rounded-lg flex-shrink-0 bg-white/10 animate-pulse"></div>
+                                     
+                                     {/* Episode Info Skeleton */}
+                                     <div className="flex-1 min-w-0 flex flex-col justify-between">
+                                       <div className="space-y-3 sm:space-y-3">
+                                         <div className="space-y-1 sm:space-y-2">
+                                           {/* Episode Title Skeleton */}
+                                           <div className="h-4 sm:h-5 bg-white/10 rounded animate-pulse" style={{ width: `${Math.random() * 40 + 60}%` }}></div>
+                                           
+                                           {/* Episode Overview Skeleton - Hidden on mobile */}
+                                           <div className="hidden sm:block space-y-1.5">
+                                             <div className="h-3 bg-white/8 rounded animate-pulse" style={{ width: '100%' }}></div>
+                                             <div className="h-3 bg-white/8 rounded animate-pulse" style={{ width: `${Math.random() * 20 + 80}%` }}></div>
+                                           </div>
+                                         </div>
+                                         
+                                         {/* Episode Details Skeleton */}
+                                         <div className="flex items-center gap-2 sm:gap-4 text-xs sm:text-sm text-white/45">
+                                           {/* Desktop: Separate date and runtime skeletons */}
+                                           <div className="hidden sm:flex items-center gap-4">
+                                             {/* Date skeleton */}
+                                             <div className="flex items-center gap-1">
+                                               <div className="w-4 h-4 bg-white/10 rounded animate-pulse"></div>
+                                               <div className="w-16 h-3 bg-white/10 rounded animate-pulse"></div>
+                                             </div>
+                                             <div className="w-3 h-3 bg-white/30 rounded-full"></div>
+                                             {/* Runtime skeleton */}
+                                             <div className="flex items-center gap-1">
+                                               <div className="w-4 h-4 bg-white/10 rounded animate-pulse"></div>
+                                               <div className="w-12 h-3 bg-white/10 rounded animate-pulse"></div>
+                                             </div>
+                                           </div>
+                                           
+                                           {/* Mobile: Combined skeleton */}
+                                           <div className="sm:hidden flex items-center gap-1 text-xs">
+                                             <div className="w-8 h-3 bg-white/10 rounded animate-pulse"></div>
+                                             <div className="w-2 h-2 bg-white/30 rounded-full"></div>
+                                             <div className="w-12 h-3 bg-white/10 rounded animate-pulse"></div>
+                                             <div className="w-2 h-2 bg-white/30 rounded-full"></div>
+                                             <div className="w-10 h-3 bg-white/10 rounded animate-pulse"></div>
+                                           </div>
+                                         </div>
+                                       </div>
+                                     </div>
+                                   </div>
                                 </motion.div>
                               ))}
                             </div>
@@ -3077,9 +3485,9 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                                   <div className="relative aspect-video overflow-hidden">
                                     {episode.still_path ? (
                                                                               <img
-                                          src={`https://image.tmdb.org/t/p/w500${episode.still_path}`}
+                                          src={getOptimizedImageUrl(episode.still_path, 'w500')}
                                           alt={episode.name}
-                                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out transform-gpu will-change-transform"
+                                          className="w-full h-full object-cover transition-opacity duration-300"
                                           loading="lazy"
                                           onError={(e) => {
                                             console.warn('Failed to load episode still:', e.target.src);
@@ -3148,27 +3556,20 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                                 </motion.div>
                               ))}
                               
-                              {/* Load More Button for Card View */}
+                              {/* Enhanced Load More Button for Card View */}
                               {hasMoreEpisodes && (
                                 <div className="col-span-full flex justify-center mt-6">
-                                  <motion.button
+                                  <EnhancedLoadMoreButton
                                     onClick={handleLoadMoreEpisodes}
-                                    className="flex items-center gap-2 px-6 py-3 bg-white/10 hover:bg-white/20 rounded-lg text-white/80 transition-colors duration-200"
-                                    whileHover={{ scale: 1.05 }}
-                                    whileTap={{ scale: 0.95 }}
-                                  >
-                                    <span className="text-sm font-medium">Load More Episodes</span>
-                                    <motion.svg 
-                                      className="w-4 h-4" 
-                                      fill="none" 
-                                      stroke="currentColor" 
-                                      viewBox="0 0 24 24"
-                                      animate={{ y: [0, 2, 0] }}
-                                      transition={{ duration: 1.5, repeat: Infinity }}
-                                    >
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7-7-7" />
-                                    </motion.svg>
-                                  </motion.button>
+                                    hasMore={hasMoreEpisodes}
+                                    isLoading={false}
+                                    totalItems={episodes.length}
+                                    displayedItems={displayedEpisodes}
+                                    loadingText="Loading more episodes..."
+                                    buttonText="Load More Episodes"
+                                    itemName="episodes"
+                                    variant="primary"
+                                  />
                                 </div>
                               )}
                             </div>
@@ -3201,7 +3602,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                                     <div className="relative w-32 h-20 sm:w-32 sm:h-20 md:w-40 md:h-24 overflow-hidden rounded-lg flex-shrink-0">
                                       {episode.still_path ? (
                                         <img
-                                          src={`https://image.tmdb.org/t/p/w500${episode.still_path}`}
+                                          src={getOptimizedImageUrl(episode.still_path, 'w500')}
                                           alt={episode.name}
                                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 transform-gpu will-change-transform"
                                           loading="lazy"
@@ -3248,71 +3649,86 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                                         
                                         {/* Episode Details */}
                                         <div className="flex items-center gap-2 sm:gap-4 text-xs sm:text-sm text-white/45">
-                                          {/* Air Date */}
-                                          {episode.air_date ? (
-                                            <>
-                                              <span className="flex items-center gap-1">
-                                                <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                                </svg>
-                                                <span className="hidden sm:inline">
-                                                  {(() => {
-                                                    const date = new Date(episode.air_date);
-                                                    if (isNaN(date)) return "Unknown date";
-                                                    return date.toLocaleDateString('en-US', { 
-                                                      month: 'short', 
-                                                      day: 'numeric',
-                                                      year: 'numeric'
-                                                    });
-                                                  })()}
-                                                </span>
-                                                <span className="sm:hidden flex items-center gap-1">
-                                                  <span>E{episode.episode_number}</span>
-                                                  <span className="inline-block w-3 text-center text-white/30 select-none">•</span>
+                                          {/* Desktop: Separate date and runtime */}
+                                          <div className="hidden sm:flex items-center gap-4">
+                                            {/* Air Date */}
+                                            {episode.air_date ? (
+                                              <>
+                                                <span className="flex items-center gap-1">
+                                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                  </svg>
                                                   <span>
                                                     {(() => {
                                                       const date = new Date(episode.air_date);
-                                                      if (isNaN(date)) return "Unknown";
+                                                      if (isNaN(date)) return "Unknown date";
                                                       return date.toLocaleDateString('en-US', { 
                                                         month: 'short', 
-                                                        day: 'numeric'
+                                                        day: 'numeric',
+                                                        year: 'numeric'
                                                       });
                                                     })()}
                                                   </span>
                                                 </span>
-                                              </span>
-                                              {/* Dot separator after date */}
-                                              <span className="inline-block w-3 text-center text-white/30 select-none">•</span>
-                                            </>
-                                          ) : (
-                                            <>
-                                              <span className="flex items-center gap-1">
-                                                <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                                </svg>
-                                                <span>No air date</span>
-                                              </span>
-                                              {/* Dot separator after date */}
-                                              <span className="inline-block w-3 text-center text-white/30 select-none">•</span>
-                                            </>
-                                          )}
+                                                {/* Dot separator after date */}
+                                                <span className="inline-block w-3 text-center text-white/30 select-none">•</span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <span className="flex items-center gap-1">
+                                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                  </svg>
+                                                  <span>No air date</span>
+                                                </span>
+                                                {/* Dot separator after date */}
+                                                <span className="inline-block w-3 text-center text-white/30 select-none">•</span>
+                                              </>
+                                            )}
 
-                                          {/* Runtime */}
-                                          {typeof episode.runtime === "number" && episode.runtime > 0 ? (
-                                            <span className="flex items-center gap-1">
-                                              <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                              </svg>
-                                              {formatRuntime(episode.runtime)}
-                                            </span>
-                                          ) : (
-                                            <span className="flex items-center gap-1">
-                                              <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                              </svg>
-                                              <span>Unknown runtime</span>
-                                            </span>
-                                          )}
+                                            {/* Runtime */}
+                                            {typeof episode.runtime === "number" && episode.runtime > 0 ? (
+                                              <span className="flex items-center gap-1">
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                </svg>
+                                                {formatRuntime(episode.runtime)}
+                                              </span>
+                                            ) : (
+                                              <span className="flex items-center gap-1">
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                </svg>
+                                                <span>Unknown runtime</span>
+                                              </span>
+                                            )}
+                                          </div>
+
+                                          {/* Mobile: Combined date and runtime on one line */}
+                                          <div className="sm:hidden flex items-center gap-1 text-xs">
+                                            <span>E{episode.episode_number}</span>
+                                            <span className="inline-block w-2 text-center text-white/30 select-none">•</span>
+                                            {episode.air_date ? (
+                                              <span>
+                                                {(() => {
+                                                  const date = new Date(episode.air_date);
+                                                  if (isNaN(date)) return "Unknown";
+                                                  return date.toLocaleDateString('en-US', { 
+                                                    month: 'short', 
+                                                    day: 'numeric'
+                                                  });
+                                                })()}
+                                              </span>
+                                            ) : (
+                                              <span>No date</span>
+                                            )}
+                                            {typeof episode.runtime === "number" && episode.runtime > 0 && (
+                                              <>
+                                                <span className="inline-block w-2 text-center text-white/30 select-none">•</span>
+                                                <span>{formatRuntime(episode.runtime)}</span>
+                                              </>
+                                            )}
+                                          </div>
                                         </div>
                                       </div>
                                     </div>
@@ -3323,27 +3739,20 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                               {/* Debug log for Load More button visibility */}
                               {(() => { console.log('DEBUG: episodes.length =', episodes.length, 'displayedEpisodes =', displayedEpisodes, 'hasMoreEpisodes =', hasMoreEpisodes); return null; })()}
 
-                              {/* Load More Button for List View */}
+                              {/* Enhanced Load More Button for List View */}
                               {hasMoreEpisodes && (
                                 <div className="flex justify-center mt-6 pt-4 border-t border-white/10">
-                                  <motion.button
+                                  <EnhancedLoadMoreButton
                                     onClick={handleLoadMoreEpisodes}
-                                    className="flex items-center gap-2 px-6 py-3 bg-white/10 hover:bg-white/20 rounded-lg text-white/80 transition-colors duration-200"
-                                    whileHover={{ scale: 1.05 }}
-                                    whileTap={{ scale: 0.95 }}
-                                  >
-                                    <span className="text-sm font-medium">Load More Episodes</span>
-                                    <motion.svg 
-                                      className="w-4 h-4" 
-                                      fill="none" 
-                                      stroke="currentColor" 
-                                      viewBox="0 0 24 24"
-                                      animate={{ y: [0, 2, 0] }}
-                                      transition={{ duration: 1.5, repeat: Infinity }}
-                                    >
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7-7-7" />
-                                    </motion.svg>
-                                  </motion.button>
+                                    hasMore={hasMoreEpisodes}
+                                    isLoading={false}
+                                    totalItems={episodes.length}
+                                    displayedItems={displayedEpisodes}
+                                    loadingText="Loading more episodes..."
+                                    buttonText="Load More Episodes"
+                                    itemName="episodes"
+                                    variant="minimal"
+                                  />
                                 </div>
                               )}
                             </div>
@@ -3405,21 +3814,40 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
 
 
 
-          <button
+          <motion.button
             onClick={onClose}
-            className="absolute top-4 right-4 z-10 p-2 rounded-full text-white transition-all duration-200 transform hover:scale-110 group overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-l-[1px] border-r-[1px] border-white/30 hover:bg-white/10 transform-gpu will-change-transform"
+            className="absolute top-4 right-4 z-10 p-2 rounded-full text-white group overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-l-[1px] border-r-[1px] border-white/30 hover:bg-white/10 transform-gpu will-change-transform"
+            variants={buttonVariants}
+            initial="initial"
+            whileHover="hover"
+            whileTap="tap"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
+            <motion.svg 
+              xmlns="http://www.w3.org/2000/svg" 
+              className="h-6 w-6" 
+              viewBox="0 0 24 24" 
+              fill="currentColor"
+              whileHover={{ 
+                rotate: 90,
+                scale: 1.1,
+                transition: { type: 'spring', stiffness: 400, damping: 25 }
+              }}
+            >
               <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-            </svg>
-            <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-[#1a1a1a] rounded text-sm opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+            </motion.svg>
+            <motion.span 
+              className="absolute right-full mr-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-[#1a1a1a] rounded text-sm whitespace-nowrap"
+              initial={{ opacity: 0, x: 10 }}
+              whileHover={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.2 }}
+            >
               Close
-            </span>
-          </button>
+            </motion.span>
+          </motion.button>
         </motion.div>
 
         {/* Trailer Modal */}
-        <AnimatePresence mode="wait">
+        <AnimatePresence>
           {showTrailer && (
             <Suspense fallback={<div className="absolute inset-0 flex items-center justify-center bg-black/50"><Loader size="large" color="white" variant="circular" /></div>}>
               <motion.div 
@@ -3427,22 +3855,28 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.3 }}
-                className="fixed inset-0 z-[1000000001] flex items-center justify-center bg-black/90"
+                transition={{ 
+                  duration: 0.3, 
+                  ease: [0.25, 0.46, 0.45, 0.94]
+                }}
+                className="fixed inset-0 z-[1000000001] flex items-center justify-center bg-black/95"
                 onClick={handleCloseTrailer}
                 onMouseDown={(e) => e.stopPropagation()}
               >
                 <motion.div 
-                  initial={{ scale: 0.9, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0.9, opacity: 0 }}
-                  transition={{ duration: 0.3, ease: "easeOut" }}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 20 }}
+                  transition={{ 
+                    duration: 0.3, 
+                    ease: [0.25, 0.46, 0.45, 0.94]
+                  }}
                   className="relative w-[90vw] max-w-4xl aspect-video"
                   onClick={(e) => e.stopPropagation()}
                   style={{ pointerEvents: 'auto' }}
                 >
                   {/* Close Button */}
-                  <button
+                  <motion.button
                     id="trailer-close-btn"
                     onClick={(e) => {
                       e.stopPropagation();
@@ -3450,18 +3884,28 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
                       console.log('Trailer close button clicked'); // Debug log
                       handleCloseTrailer();
                     }}
-                    className="absolute top-4 right-4 p-3 rounded-full bg-black/80 text-white hover:bg-black transition-all duration-200 transform hover:scale-110 group z-[1000000002] transform-gpu will-change-transform cursor-pointer border border-white/20"
+                    className="absolute top-4 right-4 p-3 rounded-full bg-black/80 text-white group z-[1000000002] cursor-pointer border border-white/20 hover:bg-black/90 transition-colors"
                     aria-label="Close trailer"
                     type="button"
                     style={{ pointerEvents: 'auto' }}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.2 }}
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-                    </svg>
-                    <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-black rounded text-sm opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                                          <svg 
+                        xmlns="http://www.w3.org/2000/svg" 
+                        className="h-6 w-6" 
+                        viewBox="0 0 24 24" 
+                        fill="currentColor"
+                      >
+                        <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                      </svg>
+                    <span 
+                      className="absolute right-full mr-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-black rounded text-sm whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                    >
                       Close Trailer
                     </span>
-                  </button>
+                  </motion.button>
                   
                   {/* Video Container */}
                   <div 
@@ -3570,8 +4014,6 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect }) => {
           currentService={currentService}
           onServiceChange={handleServiceChange}
         />
-
-
       </motion.div>
     </AnimatePresence>
   );

@@ -621,17 +621,18 @@ class EnhancedSimilarContentService {
       // Execute all fetch promises in parallel for faster loading
       const results = await Promise.all(fetchPromises);
       
-      // Combine all results and remove duplicates
-      const existingIds = new Set();
+      // Combine all results and remove duplicates using enhanced strategy
       results.forEach(resultArray => {
         if (Array.isArray(resultArray)) {
-          resultArray.forEach(item => {
-            if (item && item.id && !existingIds.has(item.id)) {
-              existingIds.add(item.id);
-              allResults.push(item);
-            }
-          });
+          allResults.push(...resultArray.filter(item => item && item.id));
         }
+      });
+
+      // Enhanced duplicate removal with smart strategy
+      allResults = this.removeDuplicates(allResults, {
+        strategy: 'smart',
+        keepBestScore: true,
+        preserveOrder: false
       });
 
       // If no results from any source, return empty array
@@ -699,34 +700,20 @@ class EnhancedSimilarContentService {
         });
       }
 
-      // Debug log to verify different content for different movies
-      if (import.meta.env.DEV) {
+      // FIXED: Reduced debug logging to prevent memory issues
+      if (import.meta.env.DEV && Math.random() < 0.1) { // Only log 10% of the time
         console.log(`[EnhancedSimilarContentService] Returning ${filteredResults.length} similar items for ${contentType} ${contentId} (page ${page}):`, 
-          filteredResults.slice(0, 3).map(item => ({ 
+          filteredResults.slice(0, 2).map(item => ({ 
             id: item.id, 
             title: item.title || item.name, 
-            score: item.similarityScore,
-            genres: item.genres?.slice(0, 2).map(g => g.name || g) || [],
-            language: item.original_language,
-            region: item.production_countries?.slice(0, 1).map(c => typeof c === 'object' ? c.iso_3166_1 : c) || []
+            score: item.similarityScore
           }))
         );
         
         if (originalContentDetails) {
           console.log(`[EnhancedSimilarContentService] Original content:`, {
             id: originalContentDetails.id,
-            title: originalContentDetails.title,
-            genres: originalContentDetails.genres?.slice(0, 3).map(g => g.name || g) || [],
-            language: originalContentDetails.original_language,
-            region: originalContentDetails.production_countries?.slice(0, 1).map(c => typeof c === 'object' ? c.iso_3166_1 : c) || []
-          });
-        }
-        
-        if (userContext) {
-          console.log(`[EnhancedSimilarContentService] User cultural context:`, {
-            preferredLanguage: userContext.preferredLanguage,
-            region: userContext.region,
-            hasPreferences: !!userContext.preferences
+            title: originalContentDetails.title
           });
         }
       }
@@ -2147,15 +2134,228 @@ class EnhancedSimilarContentService {
   }
 
   // Remove duplicates from recommendation arrays
-  removeDuplicates(contentList) {
-    const seen = new Set();
+  // Enhanced duplicate removal with multiple strategies
+  removeDuplicates(contentList, options = {}) {
+    const {
+      strategy = 'id', // 'id', 'title', 'strict', 'smart'
+      preserveOrder = true,
+      keepBestScore = true
+    } = options;
+
+    if (!Array.isArray(contentList) || contentList.length === 0) {
+      return [];
+    }
+
+    switch (strategy) {
+      case 'strict':
+        return this.removeDuplicatesStrict(contentList, { preserveOrder, keepBestScore });
+      case 'title':
+        return this.removeDuplicatesByTitle(contentList, { preserveOrder, keepBestScore });
+      case 'smart':
+        return this.removeDuplicatesSmart(contentList, { preserveOrder, keepBestScore });
+      case 'id':
+      default:
+        return this.removeDuplicatesById(contentList, { preserveOrder, keepBestScore });
+    }
+  }
+
+  // Remove duplicates by ID only (fastest)
+  removeDuplicatesById(contentList, options = {}) {
+    const { preserveOrder = true, keepBestScore = true } = options;
+    const seen = new Map(); // Use Map to store item with best score
+
     return contentList.filter(item => {
+      if (!item || !item.id) return false;
+
       if (seen.has(item.id)) {
-        return false;
+        if (keepBestScore) {
+          const existing = seen.get(item.id);
+          const currentScore = item.similarityScore || 0;
+          const existingScore = existing.similarityScore || 0;
+          
+          if (currentScore > existingScore) {
+            seen.set(item.id, item);
+            return true; // Keep this one, filter out the previous
+          }
+          return false; // Keep the existing one with better score
+        }
+        return false; // Filter out duplicate
       }
-      seen.add(item.id);
+      
+      seen.set(item.id, item);
       return true;
     });
+  }
+
+  // Remove duplicates by title (handles different IDs for same content)
+  removeDuplicatesByTitle(contentList, options = {}) {
+    const { preserveOrder = true, keepBestScore = true } = options;
+    const seen = new Map();
+
+    return contentList.filter(item => {
+      if (!item || !item.title && !item.name) return false;
+
+      const title = (item.title || item.name || '').toLowerCase().trim();
+      if (!title) return false;
+
+      if (seen.has(title)) {
+        if (keepBestScore) {
+          const existing = seen.get(title);
+          const currentScore = item.similarityScore || 0;
+          const existingScore = existing.similarityScore || 0;
+          
+          if (currentScore > existingScore) {
+            seen.set(title, item);
+            return true;
+          }
+          return false;
+        }
+        return false;
+      }
+      
+      seen.set(title, item);
+      return true;
+    });
+  }
+
+  // Strict duplicate removal (both ID and title)
+  removeDuplicatesStrict(contentList, options = {}) {
+    const { preserveOrder = true, keepBestScore = true } = options;
+    const seenIds = new Map();
+    const seenTitles = new Map();
+
+    return contentList.filter(item => {
+      if (!item) return false;
+
+      const id = item.id;
+      const title = (item.title || item.name || '').toLowerCase().trim();
+      
+      // Check if we've seen this ID or title before
+      const hasIdDuplicate = id && seenIds.has(id);
+      const hasTitleDuplicate = title && seenTitles.has(title);
+
+      if (hasIdDuplicate || hasTitleDuplicate) {
+        if (keepBestScore) {
+          const currentScore = item.similarityScore || 0;
+          
+          if (hasIdDuplicate) {
+            const existing = seenIds.get(id);
+            const existingScore = existing.similarityScore || 0;
+            if (currentScore > existingScore) {
+              seenIds.set(id, item);
+              if (title) seenTitles.set(title, item);
+              return true;
+            }
+          }
+          
+          if (hasTitleDuplicate && !hasIdDuplicate) {
+            const existing = seenTitles.get(title);
+            const existingScore = existing.similarityScore || 0;
+            if (currentScore > existingScore) {
+              seenTitles.set(title, item);
+              if (id) seenIds.set(id, item);
+              return true;
+            }
+          }
+        }
+        return false;
+      }
+      
+      // First time seeing this item
+      if (id) seenIds.set(id, item);
+      if (title) seenTitles.set(title, item);
+      return true;
+    });
+  }
+
+  // Smart duplicate removal with fuzzy matching
+  removeDuplicatesSmart(contentList, options = {}) {
+    const { preserveOrder = true, keepBestScore = true, similarityThreshold = 0.9 } = options;
+    const uniqueItems = [];
+
+    for (const item of contentList) {
+      if (!item) continue;
+
+      const isDuplicate = uniqueItems.some(existingItem => {
+        // Check exact ID match
+        if (item.id && existingItem.id && item.id === existingItem.id) {
+          return true;
+        }
+
+        // Check exact title match
+        const itemTitle = (item.title || item.name || '').toLowerCase().trim();
+        const existingTitle = (existingItem.title || existingItem.name || '').toLowerCase().trim();
+        
+        if (itemTitle && existingTitle && itemTitle === existingTitle) {
+          return true;
+        }
+
+        // Check fuzzy title similarity
+        if (itemTitle && existingTitle && this.calculateTitleSimilarity(itemTitle, existingTitle) > similarityThreshold) {
+          return true;
+        }
+
+        return false;
+      });
+
+      if (!isDuplicate) {
+        uniqueItems.push(item);
+      } else if (keepBestScore) {
+        // Replace with better scoring item
+        const existingIndex = uniqueItems.findIndex(existingItem => {
+          if (item.id && existingItem.id && item.id === existingItem.id) return true;
+          const itemTitle = (item.title || item.name || '').toLowerCase().trim();
+          const existingTitle = (existingItem.title || existingItem.name || '').toLowerCase().trim();
+          return itemTitle && existingTitle && itemTitle === existingTitle;
+        });
+
+        if (existingIndex !== -1) {
+          const existing = uniqueItems[existingIndex];
+          const currentScore = item.similarityScore || 0;
+          const existingScore = existing.similarityScore || 0;
+          
+          if (currentScore > existingScore) {
+            uniqueItems[existingIndex] = item;
+          }
+        }
+      }
+    }
+
+    return uniqueItems;
+  }
+
+  // Calculate title similarity using Levenshtein distance
+  calculateTitleSimilarity(title1, title2) {
+    if (!title1 || !title2) return 0;
+    
+    const longer = title1.length > title2.length ? title1 : title2;
+    const shorter = title1.length > title2.length ? title2 : title1;
+    
+    if (longer.length === 0) return 1.0;
+    
+    const distance = this.levenshteinDistance(longer, shorter);
+    return (longer.length - distance) / longer.length;
+  }
+
+  // Levenshtein distance calculation
+  levenshteinDistance(str1, str2) {
+    const matrix = Array(str2.length + 1).fill(null).map(() => Array(str1.length + 1).fill(null));
+    
+    for (let i = 0; i <= str1.length; i++) matrix[0][i] = i;
+    for (let j = 0; j <= str2.length; j++) matrix[j][0] = j;
+    
+    for (let j = 1; j <= str2.length; j++) {
+      for (let i = 1; i <= str1.length; i++) {
+        const indicator = str1[i - 1] === str2[j - 1] ? 0 : 1;
+        matrix[j][i] = Math.min(
+          matrix[j][i - 1] + 1, // deletion
+          matrix[j - 1][i] + 1, // insertion
+          matrix[j - 1][i - 1] + indicator // substitution
+        );
+      }
+    }
+    
+    return matrix[str2.length][str1.length];
   }
 
   // Get trending similar content
@@ -3517,5 +3717,21 @@ export const similarContentUtils = {
     enhancedSimilarContentService.clearAllSimilarContentCache(),
 
   // Get cache stats
-  getCacheStats: () => enhancedSimilarContentService.getCacheStats()
+  getCacheStats: () => enhancedSimilarContentService.getCacheStats(),
+
+  // Enhanced duplicate removal utilities
+  removeDuplicates: (contentList, options) => 
+    enhancedSimilarContentService.removeDuplicates(contentList, options),
+  
+  removeDuplicatesById: (contentList, options) => 
+    enhancedSimilarContentService.removeDuplicatesById(contentList, options),
+  
+  removeDuplicatesByTitle: (contentList, options) => 
+    enhancedSimilarContentService.removeDuplicatesByTitle(contentList, options),
+  
+  removeDuplicatesStrict: (contentList, options) => 
+    enhancedSimilarContentService.removeDuplicatesStrict(contentList, options),
+  
+  removeDuplicatesSmart: (contentList, options) => 
+    enhancedSimilarContentService.removeDuplicatesSmart(contentList, options)
 }; 

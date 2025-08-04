@@ -410,12 +410,12 @@ const WatchlistPage = () => {
           {/* Controls row: Tabs left, Sort by right (mobile), all in one row (desktop) */}
           <div className="flex flex-row items-center gap-2 sm:justify-end sm:text-right w-full py-1 overflow-x-auto no-scrollbar">
             {/* Tabs (left on mobile, right on desktop) */}
-            <div className="relative inline-flex items-center bg-[#1a1d21] rounded-lg p-1 flex-grow-0 min-w-fit mr-1">
+            <div className="relative inline-flex items-center bg-[#1a1d21] rounded-full p-1 flex-grow-0 min-w-fit mr-1">
               {tabs.map(tab => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`relative px-4 sm:px-4 py-2.5 sm:py-2 rounded-lg text-sm sm:text-sm font-medium transition-colors focus:outline-none whitespace-nowrap ${
+                  className={`relative px-4 sm:px-4 py-2.5 sm:py-2 rounded-full text-sm sm:text-sm font-medium transition-colors focus:outline-none whitespace-nowrap ${
                     activeTab === tab.id ? 'text-black' : 'text-gray-400 hover:text-white'
                   }`}
                   style={{ minWidth: 80 }}
@@ -424,7 +424,7 @@ const WatchlistPage = () => {
                   {activeTab === tab.id && (
                     <motion.div
                       layoutId="activeWatchlistTab"
-                      className="absolute inset-0 bg-white rounded-lg"
+                      className="absolute inset-0 bg-white rounded-full"
                       transition={{ type: 'spring', stiffness: 300, damping: 30 }}
                     />
                   )}
@@ -435,7 +435,7 @@ const WatchlistPage = () => {
             <div className="relative flex-shrink-0 min-w-fit sm:ml-0 ml-auto" ref={sortDropdownRef}>
               <motion.button
                 onClick={() => setShowSortDropdown(!showSortDropdown)}
-                className={`relative flex items-center gap-2 px-4 sm:px-4 py-2.5 sm:py-2 rounded-lg text-sm sm:text-sm font-medium transition-colors focus:outline-none whitespace-nowrap bg-[#1a1d21] leading-[1.6rem] sm:leading-[1.5rem] ${
+                className={`relative flex items-center gap-2 px-4 sm:px-4 py-2.5 sm:py-2 rounded-full text-sm sm:text-sm font-medium transition-colors focus:outline-none whitespace-nowrap bg-[#1a1d21] leading-[1.6rem] sm:leading-[1.5rem] ${
                   showSortDropdown ? 'text-black' : 'text-gray-400 hover:text-white'
                 }`}
                 style={{ minWidth: 120, height: '44px', minHeight: '44px' }}
@@ -448,7 +448,7 @@ const WatchlistPage = () => {
                     <motion.div
                       key="sortby-bg-open"
                       layoutId="activeWatchlistTabSort"
-                      className="absolute inset-0 bg-white rounded-lg z-0"
+                      className="absolute inset-0 bg-white rounded-full z-0"
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}

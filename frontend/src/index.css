@@ -43,6 +43,25 @@
   }
 }
 
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: -200px 0;
+  }
+  100% {
+    background-position: calc(200px + 100%) 0;
+  }
+}
+
+.animate-skeleton-shimmer {
+  background: linear-gradient(90deg, 
+    rgba(255, 255, 255, 0.06) 25%, 
+    rgba(255, 255, 255, 0.12) 50%, 
+    rgba(255, 255, 255, 0.06) 75%
+  );
+  background-size: 200px 100%;
+  animation: skeleton-shimmer 1.5s infinite;
+}
+
 /* Custom scrollbar styles */
 @layer base {
   /* For Webkit browsers (Chrome, Safari, newer Edge) */
@@ -79,6 +98,38 @@
 }
 
 /* Mobile scrollbar hiding */
+
+/* FIXED: Mobile-specific content visibility fixes */
+@media (max-width: 768px) {
+  /* Ensure movie cards are visible on mobile */
+  .swiper-slide {
+    min-width: 160px !important;
+    max-width: 200px !important;
+  }
+  
+  /* Ensure movie sections are visible */
+  .movie-section {
+    min-height: 200px;
+    display: block !important;
+  }
+  
+  /* Fix for hidden content on mobile */
+  .hidden-mobile {
+    display: none !important;
+  }
+  
+  /* Ensure images load properly on mobile */
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+  
+  /* Fix for progressive image loading on mobile */
+  .progressive-image {
+    background-size: cover !important;
+    background-position: center !important;
+  }
+}
 @media (max-width: 768px) {
   /* Hide all scrollbars on mobile */
   * {

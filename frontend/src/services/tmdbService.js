@@ -15,14 +15,14 @@ const NETWORK_ERROR_TYPES = {
   UNKNOWN: 'UNKNOWN'
 };
 
-// Enhanced retry configuration
+// Enhanced retry configuration - optimized for faster loading
 const RETRY_CONFIG = {
-  MAX_RETRIES: 2, // Further reduced to 2 for faster failure and less API load
-  BASE_DELAY: 1000, // Increased to 1000ms to give more time between retries
-  MAX_DELAY: 5000, // Reduced max delay to 5 seconds
-  JITTER_FACTOR: 0.1, // Reduced jitter for more predictable timing
-  BACKOFF_MULTIPLIER: 2, // Increased backoff for better spacing
-  TIMEOUT: 10000 // Reduced timeout to 10 seconds for faster failure detection
+  MAX_RETRIES: 1, // Reduced to 1 for faster failure detection
+  BASE_DELAY: 500, // Reduced to 500ms for faster retries
+  MAX_DELAY: 2000, // Reduced max delay to 2 seconds
+  JITTER_FACTOR: 0.05, // Reduced jitter for more predictable timing
+  BACKOFF_MULTIPLIER: 1.5, // Reduced backoff for faster retries
+  TIMEOUT: 8000 // Reduced timeout to 8 seconds for faster failure detection
 };
 
 // Shared fetchWithRetry function to avoid hoisting issues
@@ -88,12 +88,12 @@ if (!TMDB_API_KEY || TMDB_API_KEY === 'undefined' || TMDB_API_KEY === '') {
   console.debug('✅ TMDB API Key is configured');
 }
 
-// Enhanced cache with different durations for different types of data
+// Enhanced cache with optimized durations for faster loading
 const cache = new Map();
 const CACHE_DURATIONS = {
-  LIST: 15 * 60 * 1000,    // Reduced from 30 to 15 minutes for fresher data
-  DETAILS: 30 * 60 * 1000, // Reduced from 60 to 30 minutes
-  IMAGES: 12 * 60 * 60 * 1000 // Reduced from 24 to 12 hours
+  LIST: 30 * 60 * 1000,    // Increased to 30 minutes to reduce API calls
+  DETAILS: 60 * 60 * 1000, // Increased to 60 minutes for better caching
+  IMAGES: 24 * 60 * 60 * 1000 // Increased to 24 hours for better performance
 };
 
 // Optimized request queue with better concurrency
@@ -733,7 +733,9 @@ export const transformMovieData = (movie) => {
   // Enhanced image URL processing with size optimization
   const getImageUrl = (path, size = 'w500') => {
     if (!path) return null;
-    return `${TMDB_IMAGE_BASE_URL}/${size}${path}`;
+    // Ensure path starts with /
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    return `${TMDB_IMAGE_BASE_URL}/${size}${cleanPath}`;
   };
 
   // Enhanced title processing with fallback chain
@@ -886,7 +888,9 @@ export const transformTVData = (tv) => {
     // Enhanced image URL generation with fallback sizes
     const getImageUrl = (path, size = 'w500') => {
       if (!path) return null;
-      return `${TMDB_IMAGE_BASE_URL}/${size}${path}`;
+      // Ensure path starts with /
+      const cleanPath = path.startsWith('/') ? path : `/${path}`;
+      return `${TMDB_IMAGE_BASE_URL}/${size}${cleanPath}`;
     };
 
     // Enhanced title extraction with fallback handling
@@ -1093,10 +1097,10 @@ export const getMovieDetails = async (id, type = 'movie') => {
 
     // Get the English logo
     const logo = data.images?.logos?.find(logo => logo.iso_639_1 === 'en') || data.images?.logos?.[0];
-    const logoUrl = logo ? `${TMDB_IMAGE_BASE_URL}/w300${logo.file_path}` : null;
+            const logoUrl = logo ? `${TMDB_IMAGE_BASE_URL}/w300${logo.file_path.startsWith('/') ? logo.file_path : `/${logo.file_path}`}` : null;
 
     // Get backdrop with appropriate size
-    const backdrop = data.backdrop_path ? `${TMDB_IMAGE_BASE_URL}/w1280${data.backdrop_path}` : null;
+            const backdrop = data.backdrop_path ? `${TMDB_IMAGE_BASE_URL}/w1280${data.backdrop_path.startsWith('/') ? data.backdrop_path : `/${data.backdrop_path}`}` : null;
 
     const trailer = data.videos?.results?.find(video => 
       video.type === 'Trailer' && video.site === 'YouTube'
@@ -1105,7 +1109,7 @@ export const getMovieDetails = async (id, type = 'movie') => {
     const cast = data.credits?.cast?.slice(0, 6).map(person => ({
       name: person.name,
       character: person.character,
-      image: person.profile_path ? `${TMDB_IMAGE_BASE_URL}/w185${person.profile_path}` : null
+                image: person.profile_path ? `${TMDB_IMAGE_BASE_URL}/w185${person.profile_path.startsWith('/') ? person.profile_path : `/${person.profile_path}`}` : null
     })) || [];
 
     const director = data.credits?.crew?.find(person => person.job === 'Director')?.name;
@@ -1118,7 +1122,7 @@ export const getMovieDetails = async (id, type = 'movie') => {
     const productionCompanies = data.production_companies?.map(company => ({
       id: company.id,
       name: company.name,
-      logo_path: company.logo_path ? `${TMDB_IMAGE_BASE_URL}/w185${company.logo_path}` : null,
+                logo_path: company.logo_path ? `${TMDB_IMAGE_BASE_URL}/w185${company.logo_path.startsWith('/') ? company.logo_path : `/${company.logo_path}`}` : null,
       origin_country: company.origin_country
     })) || [];
 
@@ -1158,7 +1162,7 @@ export const getMovieDetails = async (id, type = 'movie') => {
       networks: data.networks?.map(network => ({
         id: network.id,
         name: network.name,
-        logo_path: network.logo_path ? `${TMDB_IMAGE_BASE_URL}/w185${network.logo_path}` : null,
+                  logo_path: network.logo_path ? `${TMDB_IMAGE_BASE_URL}/w185${network.logo_path.startsWith('/') ? network.logo_path : `/${network.logo_path}`}` : null,
         origin_country: network.origin_country
       })) || [],
       created_by: data.created_by,
@@ -3139,6 +3143,9 @@ export const discoverMovies = async ({
 
 // Enhanced search movies with advanced retry logic, caching, comprehensive error handling, and performance optimizations
 export const searchMovies = async (query, page = 1, options = {}) => {
+  // Validate and sanitize page parameter
+  const validatedPage = Math.max(1, Math.min(500, parseInt(page) || 1));
+  
   const {
     includeAdult = true,
     language = 'en-US',
@@ -3160,7 +3167,7 @@ export const searchMovies = async (query, page = 1, options = {}) => {
   } = options;
 
   const RESULTS_PER_PAGE = 20;
-  const CACHE_KEY = `search_${btoa(query)}_${page}_${btoa(JSON.stringify(options))}`;
+  const CACHE_KEY = `search_${btoa(query)}_${validatedPage}_${btoa(JSON.stringify(options))}`;
   const metrics = {
     startTime: Date.now(),
     cacheHits: 0,
@@ -3312,8 +3319,8 @@ export const searchMovies = async (query, page = 1, options = {}) => {
       return {
         ...transformed,
         type: item.media_type,
-        image: item.poster_path ? `${TMDB_IMAGE_BASE_URL}/w500${item.poster_path}` : null,
-        backdrop: item.backdrop_path ? `${TMDB_IMAGE_BASE_URL}/original${item.backdrop_path}` : null,
+        image: item.poster_path ? `${TMDB_IMAGE_BASE_URL}/w500${item.poster_path.startsWith('/') ? item.poster_path : `/${item.poster_path}`}` : null,
+        backdrop: item.backdrop_path ? `${TMDB_IMAGE_BASE_URL}/original${item.backdrop_path.startsWith('/') ? item.backdrop_path : `/${item.backdrop_path}`}` : null,
         year,
         rating: item.vote_average || 0,
         title: item.title || item.name || 'Unknown Title',
@@ -3401,22 +3408,22 @@ export const searchMovies = async (query, page = 1, options = {}) => {
   // Enhanced search strategies
   const searchStrategies = {
     multi: async () => {
-      const url = `${TMDB_BASE_URL}/search/multi?api_key=${TMDB_API_KEY}&language=${language}&query=${encodeURIComponent(query)}&page=${page}&include_adult=${includeAdult}&region=${region}`;
+      const url = `${TMDB_BASE_URL}/search/multi?api_key=${TMDB_API_KEY}&language=${language}&query=${encodeURIComponent(query)}&page=${validatedPage}&include_adult=${includeAdult}&region=${region}`;
       return await fetchWithRetry(url);
     },
     
     movie: async () => {
-      const url = `${TMDB_BASE_URL}/search/movie?api_key=${TMDB_API_KEY}&language=${language}&query=${encodeURIComponent(query)}&page=${page}&include_adult=${includeAdult}&region=${region}`;
+      const url = `${TMDB_BASE_URL}/search/movie?api_key=${TMDB_API_KEY}&language=${language}&query=${encodeURIComponent(query)}&page=${validatedPage}&include_adult=${includeAdult}&region=${region}`;
       return await fetchWithRetry(url);
     },
     
     tv: async () => {
-      const url = `${TMDB_BASE_URL}/search/tv?api_key=${TMDB_API_KEY}&language=${language}&query=${encodeURIComponent(query)}&page=${page}&include_adult=${includeAdult}&region=${region}`;
+      const url = `${TMDB_BASE_URL}/search/tv?api_key=${TMDB_API_KEY}&language=${language}&query=${encodeURIComponent(query)}&page=${validatedPage}&include_adult=${includeAdult}&region=${region}`;
       return await fetchWithRetry(url);
     },
     
     person: async () => {
-      const url = `${TMDB_BASE_URL}/search/person?api_key=${TMDB_API_KEY}&language=${language}&query=${encodeURIComponent(query)}&page=${page}&include_adult=${includeAdult}&region=${region}`;
+      const url = `${TMDB_BASE_URL}/search/person?api_key=${TMDB_API_KEY}&language=${language}&query=${encodeURIComponent(query)}&page=${validatedPage}&include_adult=${includeAdult}&region=${region}`;
       return await fetchWithRetry(url);
     }
   };
@@ -3528,10 +3535,10 @@ export const searchMovies = async (query, page = 1, options = {}) => {
 
       const result = {
         results: transformedResults,
-        page: page,
+        page: validatedPage,
         total_pages: searchResponse.total_pages || 1,
         total_results: searchResponse.total_results || transformedResults.length,
-        has_more: page < (searchResponse.total_pages || 1),
+        has_more: validatedPage < (searchResponse.total_pages || 1),
         query: sanitizedQuery,
         timestamp: new Date().toISOString(),
         metadata: {
@@ -3562,7 +3569,7 @@ export const searchMovies = async (query, page = 1, options = {}) => {
     // No results found
     return {
       results: [],
-      page: page,
+      page: validatedPage,
       total_pages: 0,
       total_results: 0,
       has_more: false,
@@ -3589,7 +3596,7 @@ export const searchMovies = async (query, page = 1, options = {}) => {
     console.error('Error searching movies:', error);
     return {
       results: [],
-      page: page,
+      page: validatedPage,
       total_pages: 0,
       total_results: 0,
       has_more: false,
@@ -5177,12 +5184,12 @@ export const getTVSeason = async (tvId, seasonNumber) => {
       overview: data.overview || '',
       season_number: data.season_number,
       air_date: data.air_date,
-      poster_path: data.poster_path ? `${TMDB_IMAGE_BASE_URL}/w500${data.poster_path}` : null,
+              poster_path: data.poster_path ? `${TMDB_IMAGE_BASE_URL}/w500${data.poster_path.startsWith('/') ? data.poster_path : `/${data.poster_path}`}` : null,
       episodes: data.episodes ? data.episodes.map(episode => ({
         id: episode.id,
         name: episode.name,
         overview: episode.overview || '',
-        still_path: episode.still_path ? `${TMDB_IMAGE_BASE_URL}/w300${episode.still_path}` : null,
+                  still_path: episode.still_path ? `${TMDB_IMAGE_BASE_URL}/w300${episode.still_path.startsWith('/') ? episode.still_path : `/${episode.still_path}`}` : null,
         air_date: episode.air_date,
         episode_number: episode.episode_number,
         season_number: episode.season_number,
@@ -5235,7 +5242,7 @@ export const getTVSeasons = async (tvId) => {
       overview: season.overview || '',
       season_number: season.season_number,
       air_date: season.air_date,
-      poster_path: season.poster_path ? `${TMDB_IMAGE_BASE_URL}/w500${season.poster_path}` : null,
+              poster_path: season.poster_path ? `${TMDB_IMAGE_BASE_URL}/w500${season.poster_path.startsWith('/') ? season.poster_path : `/${season.poster_path}`}` : null,
       episode_count: season.episode_count || 0
     }));
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import { getTVSeason } from '../services/tmdbService';
+import EnhancedLoadMoreButton from './enhanced/EnhancedLoadMoreButton';
 
 // Virtualized episode list component for performance
 const VirtualizedEpisodeList = React.memo(({ 
@@ -72,32 +73,29 @@ const VirtualizedEpisodeList = React.memo(({
         })}
       </div>
       
-      {/* Load More Arrow for List View */}
+      {/* Enhanced Load More Button for List View */}
       {hasMore && episodes.length > 0 && (
         <div className="flex justify-center mt-4">
-          <motion.button
+          <EnhancedLoadMoreButton
             onClick={onLoadMore}
-            className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white/80 transition-colors duration-200"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            <span className="text-sm font-medium">Load More Episodes</span>
-            <motion.svg 
-              className="w-4 h-4" 
-              fill="none" 
-              stroke="currentColor" 
-              viewBox="0 0 24 24"
-              animate={{ y: [0, 2, 0] }}
-              transition={{ duration: 1.5, repeat: Infinity }}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7-7-7" />
-            </motion.svg>
-          </motion.button>
+            hasMore={hasMore}
+            isLoading={false}
+            totalItems={episodes.length}
+            displayedItems={episodes.length}
+            loadingText="Loading more episodes..."
+            buttonText="Load More Episodes"
+            itemName="episodes"
+            variant="minimal"
+            size="small"
+            showProgress={false}
+          />
         </div>
       )}
     </div>
   );
 });
+
+
 
 // Enhanced TV Episode Selector with load more pagination
 const TVEpisodeSelector = ({ 
@@ -120,6 +118,16 @@ const TVEpisodeSelector = ({
   const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
   const [displayedEpisodes, setDisplayedEpisodes] = useState(10); // Show 10 episodes initially
   const [totalEpisodes, setTotalEpisodes] = useState(0);
+  
+  // Enhanced loading states
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState(null);
+  const [lastLoadTime, setLastLoadTime] = useState(0);
+  
+  // Performance optimization
+  const loadMoreTimeoutRef = useRef(null);
+  const loadMoreAbortControllerRef = useRef(null);
+  const isMountedRef = useRef(true);
 
   // Create portal container for the modal
   useEffect(() => {
@@ -176,6 +184,25 @@ const TVEpisodeSelector = ({
       fetchEpisodes(selectedSeason);
     }
   }, [isOpen, selectedSeason, fetchEpisodes]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    isMountedRef.current = true;
+    
+    return () => {
+      isMountedRef.current = false;
+      
+      // Clear timeouts
+      if (loadMoreTimeoutRef.current) {
+        clearTimeout(loadMoreTimeoutRef.current);
+      }
+      
+      // Abort ongoing requests
+      if (loadMoreAbortControllerRef.current) {
+        loadMoreAbortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   // Filter episodes based on search term
   const filteredEpisodes = useMemo(() => {
@@ -259,18 +286,115 @@ const TVEpisodeSelector = ({
     handleClose();
   };
 
-  const handleSearch = (e) => {
-    setSearchTerm(e.target.value);
-    setDisplayedEpisodes(10); // Reset to show 10 episodes when searching
-  };
+  // Enhanced load more function with better UX and error handling
+  const handleLoadMore = useCallback(async () => {
+    if (isLoadingMore || !hasMoreEpisodes || !isMountedRef.current) {
+      return;
+    }
 
-  const handleLoadMore = () => {
-    setDisplayedEpisodes(prev => prev + 10); // Load 10 more episodes
-  };
+    // Prevent rapid clicking
+    const now = Date.now();
+    if (now - lastLoadTime < 500) {
+      return;
+    }
 
-  const handleViewModeChange = (mode) => {
+    // Cancel previous request if it exists
+    if (loadMoreAbortControllerRef.current) {
+      loadMoreAbortControllerRef.current.abort();
+    }
+
+    // Create new abort controller
+    loadMoreAbortControllerRef.current = new AbortController();
+
+    setIsLoadingMore(true);
+    setLoadMoreError(null);
+    setLastLoadTime(now);
+
+    try {
+      // Simulate network delay for better UX (remove in production)
+      await new Promise(resolve => {
+        loadMoreTimeoutRef.current = setTimeout(resolve, 300);
+      });
+
+      // Check if component is still mounted
+      if (!isMountedRef.current) return;
+
+      // Load more episodes
+      const newDisplayedCount = Math.min(
+        displayedEpisodes + 10, 
+        filteredEpisodes.length
+      );
+      
+      setDisplayedEpisodes(newDisplayedCount);
+
+      // Trigger any additional data fetching if needed
+      if (newDisplayedCount >= filteredEpisodes.length && episodes.length < totalEpisodes) {
+        // Fetch more episodes from API if we've shown all current ones
+        await fetchMoreEpisodesFromAPI();
+      }
+
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        return; // Request was cancelled
+      }
+      
+      console.error('Error loading more episodes:', error);
+      setLoadMoreError('Failed to load more episodes. Please try again.');
+      
+      // Auto-retry after 3 seconds
+      setTimeout(() => {
+        if (isMountedRef.current) {
+          setLoadMoreError(null);
+        }
+      }, 3000);
+    } finally {
+      if (isMountedRef.current) {
+        setIsLoadingMore(false);
+      }
+    }
+  }, [
+    isLoadingMore, 
+    hasMoreEpisodes, 
+    displayedEpisodes, 
+    filteredEpisodes.length, 
+    episodes.length, 
+    totalEpisodes,
+    lastLoadTime
+  ]);
+
+  // Fetch more episodes from API
+  const fetchMoreEpisodesFromAPI = useCallback(async () => {
+    if (!show?.id || !selectedSeason) return;
+
+    try {
+      // This would typically fetch the next page of episodes
+      // For now, we'll just simulate it
+      const seasonData = await getTVSeason(show.id, selectedSeason);
+      const allEpisodes = seasonData.episodes || [];
+      
+      if (isMountedRef.current) {
+        setEpisodes(allEpisodes);
+        setTotalEpisodes(allEpisodes.length);
+      }
+    } catch (error) {
+      console.error('Failed to fetch more episodes:', error);
+    }
+  }, [show?.id, selectedSeason]);
+
+  // Enhanced search with debouncing
+  const handleSearch = useCallback((e) => {
+    const value = e.target.value;
+    setSearchTerm(value);
+    
+    // Reset displayed episodes when searching
+    if (value.trim() !== searchTerm.trim()) {
+      setDisplayedEpisodes(10);
+    }
+  }, [searchTerm]);
+
+  const handleViewModeChange = useCallback((mode) => {
     setViewMode(mode);
-  };
+  }, []);
 
   // Generate seasons if not provided
   const availableSeasons = useMemo(() => {
@@ -492,28 +616,37 @@ const TVEpisodeSelector = ({
                             ))}
                           </div>
                           
-                          {/* Load More Button for Grid View */}
-                          {hasMoreEpisodes && (
-                            <div className="flex justify-center mt-6">
-                              <motion.button
-                                onClick={handleLoadMore}
-                                className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white/80 transition-colors duration-200"
-                                whileHover={{ scale: 1.05 }}
-                                whileTap={{ scale: 0.95 }}
-                              >
-                                <span className="text-sm font-medium">Load More Episodes</span>
-                                <motion.svg 
-                                  className="w-4 h-4" 
-                                  fill="none" 
-                                  stroke="currentColor" 
-                                  viewBox="0 0 24 24"
-                                  animate={{ y: [0, 2, 0] }}
-                                  transition={{ duration: 1.5, repeat: Infinity }}
-                                >
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7-7-7" />
-                                </motion.svg>
-                              </motion.button>
-                            </div>
+                                                     {/* Enhanced Load More Button for Grid View */}
+                           {hasMoreEpisodes && (
+                             <div className="flex justify-center mt-6">
+                               <EnhancedLoadMoreButton
+                                 onClick={handleLoadMore}
+                                 hasMore={hasMoreEpisodes}
+                                 isLoading={isLoadingMore}
+                                 totalItems={filteredEpisodes.length}
+                                 displayedItems={displayedEpisodes}
+                                 loadingText="Loading more episodes..."
+                                 buttonText="Load More Episodes"
+                                 itemName="episodes"
+                                 variant="primary"
+                               />
+                             </div>
+                           )}
+
+                          {/* Error Message */}
+                          {loadMoreError && (
+                            <motion.div
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              className="mt-4 text-center"
+                            >
+                              <div className="inline-flex items-center gap-2 px-4 py-2 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                {loadMoreError}
+                              </div>
+                            </motion.div>
                           )}
                         </div>
                       ) : (

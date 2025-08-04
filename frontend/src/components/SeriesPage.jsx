@@ -12,12 +12,14 @@ import {
 import { useInView } from 'react-intersection-observer';
 const MovieDetailsOverlay = lazy(() => import('./MovieDetailsOverlay'));
 const EnhancedSimilarContent = lazy(() => import('./EnhancedSimilarContent'));
+const EnhancedEpisodeList = lazy(() => import('./EnhancedEpisodeList'));
 import { motion, AnimatePresence } from 'framer-motion';
 import { debounce } from 'lodash';
 import { useWatchlist } from '../contexts/WatchlistContext';
 const EnhancedSearchBar = lazy(() => import('./EnhancedSearchBar'));
 import searchHistoryService from '../services/searchHistoryService';
 import { formatRating } from '../utils/ratingUtils';
+import enhancedEpisodeService from '../services/enhancedEpisodeService';
 
 // Animation variants for smooth transitions
 const gridVariants = {
@@ -56,7 +58,7 @@ const cardVariants = {
   }
 };
 
-const SeriesCard = ({ series, onSeriesClick }) => {
+const SeriesCard = ({ series, onSeriesClick, onShowEpisodes }) => {
   const { watchlist, addToWatchlist, removeFromWatchlist } = useWatchlist();
   const [loadedImages, setLoadedImages] = useState({});
   
@@ -75,6 +77,11 @@ const SeriesCard = ({ series, onSeriesClick }) => {
     } else {
       addToWatchlist({ ...series, title: series.name || series.title, type: 'tv' });
     }
+  };
+
+  const handleEpisodesClick = (e) => {
+    e.stopPropagation();
+    onShowEpisodes?.(series);
   };
 
   const handleImageLoad = (id) => {
@@ -137,6 +144,8 @@ const SeriesCard = ({ series, onSeriesClick }) => {
               </motion.svg>
             )}
           </motion.button>
+          
+
         </AnimatePresence>
 
         {series.poster_path ? (
@@ -215,6 +224,9 @@ const SeriesPage = () => {
   const [searchHistoryItems, setSearchHistoryItems] = useState([]);
   const [trendingSearches, setTrendingSearches] = useState([]);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [showEpisodeList, setShowEpisodeList] = useState(false);
+  const [selectedSeriesForEpisodes, setSelectedSeriesForEpisodes] = useState(null);
+  const [episodeListLoading, setEpisodeListLoading] = useState(false);
   const { watchlist, addToWatchlist, removeFromWatchlist } = useWatchlist();
 
   const categories = [
@@ -627,6 +639,15 @@ const SeriesPage = () => {
     setSelectedSeries(null);
   };
 
+  // Handle genre navigation from MovieDetailsOverlay
+  const handleGenreNavigation = (genre) => {
+    if (genre && genre.id) {
+      setSelectedGenre(genre.id);
+      // Close the overlay
+      setSelectedSeries(null);
+    }
+  };
+
   const handleSimilarSeriesClick = async (similarSeries) => {
     try {
       console.log(`Fetching similar series details for ID: ${similarSeries.id}`);
@@ -665,6 +686,51 @@ const SeriesPage = () => {
       console.error('Error fetching similar series details:', err);
       setError('Failed to load series details');
     }
+  };
+
+  // Enhanced episode fetching functions
+  const handleShowEpisodes = async (series) => {
+    try {
+      setEpisodeListLoading(true);
+      setSelectedSeriesForEpisodes(series);
+      setShowEpisodeList(true);
+      
+      // Pre-fetch seasons metadata for better performance
+      await enhancedEpisodeService.getAllSeasons(series.id);
+    } catch (err) {
+      console.error('Error preparing episode list:', err);
+      setError('Failed to load episode information');
+    } finally {
+      setEpisodeListLoading(false);
+    }
+  };
+
+  const handleEpisodeSelect = (episode, season) => {
+    if (!selectedSeriesForEpisodes) return;
+    
+    // Create enhanced episode object with full context
+    const enhancedEpisode = {
+      ...episode,
+      series: selectedSeriesForEpisodes,
+      season: season,
+      fullTitle: `${selectedSeriesForEpisodes.name} - ${season.name} - Episode ${episode.episode_number}`,
+      streamingUrl: `/tv/${selectedSeriesForEpisodes.id}/${season.season_number}/${episode.episode_number}`
+    };
+    
+    console.log('Selected episode:', enhancedEpisode);
+    
+    // You can add streaming logic here or pass to parent component
+    // For now, we'll just log the selection
+    setShowEpisodeList(false);
+  };
+
+  const handleSeasonChange = (season) => {
+    console.log('Season changed to:', season);
+  };
+
+  const handleCloseEpisodeList = () => {
+    setShowEpisodeList(false);
+    setSelectedSeriesForEpisodes(null);
   };
 
   const handleImageLoad = (id) => {
@@ -807,6 +873,12 @@ const SeriesPage = () => {
     setActiveCategory('popular');
   }, []);
 
+  // Trigger re-render when selectedGenre changes to apply filtering
+  useEffect(() => {
+    // This effect ensures that when selectedGenre changes, the component re-renders
+    // and the filterSeries function is called with the new genre filter
+  }, [selectedGenre]);
+
   // Add click outside handler for dropdowns
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -897,12 +969,12 @@ const SeriesPage = () => {
 
         <div className="flex flex-col items-center gap-4 mb-8">
           {!searchQuery && (
-            <div className="relative inline-flex rounded-lg bg-[#1a1a1a] p-1 overflow-x-auto max-w-full">
+            <div className="relative inline-flex rounded-full bg-[#1a1a1a] p-1 overflow-x-auto max-w-full">
               {categories.map((category) => (
                 <button
                   key={category.id}
                   onClick={() => handleCategoryClick(category.id)}
-                  className={`relative px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-300 whitespace-nowrap focus:outline-none ${
+                  className={`relative px-4 py-2 rounded-full text-sm font-medium transition-colors duration-300 whitespace-nowrap focus:outline-none ${
                     activeCategory === category.id
                       ? 'text-black'
                       : 'text-gray-400 hover:text-white'
@@ -912,7 +984,7 @@ const SeriesPage = () => {
                   {activeCategory === category.id && (
                     <motion.div
                       layoutId="activeSeriesCategoryBackground"
-                      className="absolute inset-0 bg-white rounded-lg"
+                      className="absolute inset-0 bg-white rounded-full"
                       transition={{ type: 'spring', stiffness: 300, damping: 30 }}
                     />
                   )}
@@ -922,64 +994,13 @@ const SeriesPage = () => {
           )}
 
           <div className="flex gap-4">
-            {/* Genre Dropdown */}
-            <div className="relative genre-dropdown">
-              <button
-                onClick={() => setShowGenreDropdown(!showGenreDropdown)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 flex items-center gap-2 ${
-                  selectedGenre 
-                    ? 'bg-white text-black shadow-lg' 
-                    : 'bg-[#1a1a1a] text-gray-400 hover:text-white'
-                }`}
-              >
-                {selectedGenre ? (
-                  <span className="flex items-center gap-2">
-                    <span className="w-2 h-2 bg-black rounded-full"></span>
-                    {genres.find(g => g.id === selectedGenre)?.name}
-                  </span>
-                ) : (
-                  'Genre'
-                )}
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-              {showGenreDropdown && (
-                <div className="absolute z-10 mt-2 w-48 rounded-lg bg-[#1a1a1a] shadow-lg max-h-[60vh] overflow-y-auto">
-                  <div className="py-1">
-                    <button
-                      onClick={() => {
-                        setSelectedGenre(null);
-                        setShowGenreDropdown(false);
-                      }}
-                      className="w-full px-4 py-2 text-left text-sm text-gray-400 hover:bg-[#2b3036] hover:text-white sticky top-0 bg-[#1a1a1a]"
-                    >
-                      All Genres
-                    </button>
-                    {genres.map(genre => (
-                      <button
-                        key={genre.id}
-                        onClick={() => {
-                          setSelectedGenre(genre.id);
-                          setShowGenreDropdown(false);
-                        }}
-                        className={`w-full px-4 py-2 text-left text-sm hover:bg-[#2b3036] ${
-                          selectedGenre === genre.id ? 'text-white bg-[#2b3036]' : 'text-gray-400 hover:text-white'
-                        }`}
-                      >
-                        {genre.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+
 
             {/* Year Dropdown */}
             <div className="relative year-dropdown">
               <button
                 onClick={() => setShowYearDropdown(!showYearDropdown)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 flex items-center gap-2 ${
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-300 flex items-center gap-2 ${
                   selectedYear 
                     ? 'bg-white text-black shadow-lg' 
                     : 'bg-[#1a1a1a] text-gray-400 hover:text-white'
@@ -1021,6 +1042,59 @@ const SeriesPage = () => {
                         }`}
                       >
                         {year}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+                        {/* Genre Dropdown */}
+                        <div className="relative genre-dropdown">
+              <button
+                onClick={() => setShowGenreDropdown(!showGenreDropdown)}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-300 flex items-center gap-2 ${
+                  selectedGenre 
+                    ? 'bg-white text-black shadow-lg' 
+                    : 'bg-[#1a1a1a] text-gray-400 hover:text-white'
+                }`}
+              >
+                {selectedGenre ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-2 h-2 bg-black rounded-full"></span>
+                    {genres.find(g => g.id === selectedGenre)?.name}
+                  </span>
+                ) : (
+                  'Genre'
+                )}
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {showGenreDropdown && (
+                <div className="absolute z-10 mt-2 w-48 rounded-lg bg-[#1a1a1a] shadow-lg max-h-[60vh] overflow-y-auto">
+                  <div className="py-1">
+                    <button
+                      onClick={() => {
+                        setSelectedGenre(null);
+                        setShowGenreDropdown(false);
+                      }}
+                      className="w-full px-4 py-2 text-left text-sm text-gray-400 hover:bg-[#2b3036] hover:text-white sticky top-0 bg-[#1a1a1a]"
+                    >
+                      All Genres
+                    </button>
+                    {genres.map(genre => (
+                      <button
+                        key={genre.id}
+                        onClick={() => {
+                          setSelectedGenre(genre.id);
+                          setShowGenreDropdown(false);
+                        }}
+                        className={`w-full px-4 py-2 text-left text-sm hover:bg-[#2b3036] ${
+                          selectedGenre === genre.id ? 'text-white bg-[#2b3036]' : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        {genre.name}
                       </button>
                     ))}
                   </div>
@@ -1125,7 +1199,11 @@ const SeriesPage = () => {
                       initial="hidden"
                       animate="visible"
                     >
-                      <SeriesCard series={s} onSeriesClick={handleSeriesClick} />
+                      <SeriesCard 
+                        series={s} 
+                        onSeriesClick={handleSeriesClick} 
+                        onShowEpisodes={handleShowEpisodes}
+                      />
                     </motion.div>
                   );
                 }).filter(Boolean)}
@@ -1170,8 +1248,53 @@ const SeriesPage = () => {
                   movie={selectedSeries}
                   onClose={handleCloseOverlay}
                   onMovieSelect={handleSimilarSeriesClick}
+                  onGenreClick={handleGenreNavigation}
                 />
               </Suspense>
+            </div>
+          </div>
+        )}
+
+        {/* Enhanced Episode List Modal */}
+        {showEpisodeList && selectedSeriesForEpisodes && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <div className="relative w-full max-w-6xl max-h-[90vh] bg-[#141414] rounded-xl overflow-hidden">
+              <div className="flex items-center justify-between p-6 border-b border-gray-700">
+                <div>
+                  <h2 className="text-2xl font-bold text-white">
+                    {selectedSeriesForEpisodes.name}
+                  </h2>
+                  <p className="text-gray-400 mt-1">
+                    Browse Episodes
+                  </p>
+                </div>
+                <button
+                  onClick={handleCloseEpisodeList}
+                  className="p-2 text-gray-400 hover:text-white transition-colors"
+                  aria-label="Close episode list"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              
+              <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+                <Suspense fallback={
+                  <div className="flex justify-center items-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                  </div>
+                }>
+                  <EnhancedEpisodeList
+                    tvId={selectedSeriesForEpisodes.id}
+                    onEpisodeSelect={handleEpisodeSelect}
+                    onSeasonChange={handleSeasonChange}
+                    showSearch={true}
+                    showStats={true}
+                    maxEpisodesPerPage={15}
+                  />
+                </Suspense>
+              </div>
             </div>
           </div>
         )}

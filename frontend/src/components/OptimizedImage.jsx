@@ -132,6 +132,7 @@ const OptimizedImage = memo(({
         sizes={sizes}
         loading={priority ? 'eager' : 'lazy'}
         decoding="async"
+        crossOrigin="anonymous"
         {...rest}
       />
 
