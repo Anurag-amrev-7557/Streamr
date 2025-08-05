@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useState, useEffect } from 'react'
+import React, { Suspense, lazy, useState, useEffect, useRef } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 // Lazy load all route-level pages/components
 const HomePage = lazy(() => import('./components/HomePage'));
@@ -21,6 +21,7 @@ const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'));
 const OAuthSuccessPage = lazy(() => import('./pages/OAuthSuccessPage'));
 const VerifyEmailPage = lazy(() => import('./pages/VerifyEmailPage'));
 const NetworkTestPage = lazy(() => import('./components/NetworkTestPage'));
+const TestAuthPage = lazy(() => import('./pages/TestAuthPage'));
 import { SocketProvider } from './contexts/SocketContext'
 // Lazy load components that are not immediately needed
 const MovieDetailsOverlay = lazy(() => import('./components/MovieDetailsOverlay'));
@@ -33,13 +34,17 @@ import './services/performanceOptimizationService'
 import { ErrorBoundary } from './utils/errorBoundary'
 // Import test utility (remove in production)
 import { testErrorBoundary } from './utils/testErrorHandling'
+// FIXED: Import memory cleanup utility
+import memoryCleanupUtility from './utils/memoryCleanupUtility'
 
 // Register service worker for better caching and offline support
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js')
       .then(registration => {
-        console.log('Service Worker registered successfully:', registration);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('Service Worker registered successfully:', registration);
+        }
       })
       .catch(error => {
         console.log('Service Worker registration failed:', error);
@@ -50,6 +55,15 @@ if ('serviceWorker' in navigator) {
 const Layout = () => {
   const [selectedMovie, setSelectedMovie] = React.useState(null);
   const [showPerformanceDashboard, setShowPerformanceDashboard] = useState(false);
+  const isMountedRef = useRef(true); // FIXED: Add mounted ref for cleanup
+  
+  // FIXED: Enhanced cleanup on unmount
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
   
   // Initialize ultra-smooth scrolling
   const { scrollState } = useSmoothScroll({
@@ -60,30 +74,55 @@ const Layout = () => {
   });
   
   const handleMovieSelect = React.useCallback((movie) => {
-    setSelectedMovie(movie);
+    if (isMountedRef.current) {
+      setSelectedMovie(movie);
+    }
   }, []);
   
   const handleCloseOverlay = React.useCallback(() => {
-    setSelectedMovie(null);
+    if (isMountedRef.current) {
+      setSelectedMovie(null);
+    }
   }, []);
   
   // Performance dashboard toggle
   const togglePerformanceDashboard = React.useCallback(() => {
-    setShowPerformanceDashboard(prev => !prev);
+    if (isMountedRef.current) {
+      setShowPerformanceDashboard(prev => !prev);
+    }
   }, []);
   
-  // Keyboard shortcut for performance dashboard (Ctrl+Shift+P)
+  // FIXED: Enhanced keyboard shortcut with proper cleanup
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.ctrlKey && e.shiftKey && e.key === 'P') {
+      if (isMountedRef.current && e.ctrlKey && e.shiftKey && e.key === 'P') {
         e.preventDefault();
         togglePerformanceDashboard();
       }
     };
     
     document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    return () => {
+      if (isMountedRef.current) {
+        document.removeEventListener('keydown', handleKeyDown);
+      }
+    };
   }, [togglePerformanceDashboard]);
+
+  // FIXED: Register memory cleanup callback
+  useEffect(() => {
+    const unregisterCleanup = memoryCleanupUtility.registerCleanupCallback(() => {
+      if (isMountedRef.current) {
+        // Clear any pending state updates
+        setSelectedMovie(null);
+        setShowPerformanceDashboard(false);
+      }
+    });
+    
+    return () => {
+      unregisterCleanup();
+    };
+  }, []);
 
   // Test error boundary in development
   useEffect(() => {
@@ -151,6 +190,7 @@ const AppRoutes = () => {
         <Route path="/community" element={<CommunityPage />} />
         <Route path="/community/discussion/:id" element={<SingleDiscussion />} />
         <Route path="/network-test" element={<NetworkTestPage />} />
+        <Route path="/test-auth" element={<TestAuthPage />} />
         <Route path="/login" element={!user ? <LoginPage /> : <Navigate to="/" />} />
         <Route path="/signup" element={!user ? <SignupPage /> : <Navigate to="/" />} />
         <Route path="/forgot-password" element={!user ? <ForgotPasswordPage /> : <Navigate to="/" />} />

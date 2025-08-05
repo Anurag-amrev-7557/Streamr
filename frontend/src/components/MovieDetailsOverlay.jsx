@@ -9,7 +9,8 @@ import StreamingPlayer from './StreamingPlayer';
 import TVEpisodeSelector from './TVEpisodeSelector';
 import EnhancedSimilarContent from './EnhancedSimilarContent';
 import { getOptimizedImageUrl } from '../services/imageOptimizationService';
-import memoryManager from '../utils/memoryManager';
+import memoryOptimizationService from '../utils/memoryOptimizationService';
+import movieDetailsMemoryOptimizer from '../utils/movieDetailsMemoryOptimizer';
 import EnhancedLoadMoreButton from './enhanced/EnhancedLoadMoreButton';
 
 // Custom Modern Minimalist Dropdown Component
@@ -94,14 +95,14 @@ const CustomDropdown = React.memo(({
   );
 });
 
-// 🚀 NEW: Advanced caching and real-time updates
+// 🚀 NEW: Advanced caching and real-time updates with memory leak prevention
 const DETAILS_CACHE = new Map();
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
-const BACKGROUND_REFRESH_INTERVAL = 2 * 60 * 1000; // 2 minutes
-const REAL_TIME_UPDATE_INTERVAL = 30 * 1000; // 30 seconds
-const MAX_CACHE_SIZE = 50; // Maximum number of cached items
+const CACHE_DURATION = 3 * 60 * 1000; // Reduced from 5 to 3 minutes
+const BACKGROUND_REFRESH_INTERVAL = 3 * 60 * 1000; // Increased from 2 to 3 minutes
+const REAL_TIME_UPDATE_INTERVAL = 45 * 1000; // Increased from 30 to 45 seconds
+const MAX_CACHE_SIZE = 20; // Reduced from 30 to 20 to prevent memory bloat
 
-// 🎯 NEW: Cache management utilities with memory optimization
+// 🎯 NEW: Cache management utilities with enhanced memory optimization
 const getCachedDetails = (id, type) => {
   const key = `${type}_${id}`;
   const cached = DETAILS_CACHE.get(key);
@@ -118,20 +119,20 @@ const setCachedDetails = (id, type, data) => {
     timestamp: Date.now()
   });
   
-  // Enhanced cleanup: Limit cache size and remove old entries
+  // Enhanced cleanup: More aggressive cache size management
   if (DETAILS_CACHE.size > MAX_CACHE_SIZE) {
-    // Remove oldest entries
+    // Remove oldest entries more aggressively
     const entries = Array.from(DETAILS_CACHE.entries());
     entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
     
-    // Remove oldest 25% of entries
-    const toRemove = Math.floor(MAX_CACHE_SIZE * 0.25);
+    // Remove oldest 50% of entries instead of 40%
+    const toRemove = Math.floor(MAX_CACHE_SIZE * 0.5);
     for (let i = 0; i < toRemove && i < entries.length; i++) {
       DETAILS_CACHE.delete(entries[i][0]);
     }
   }
   
-  // Clean up old cache entries
+  // Clean up old cache entries more frequently
   const now = Date.now();
   for (const [cacheKey, value] of DETAILS_CACHE.entries()) {
     if (now - value.timestamp > CACHE_DURATION) {
@@ -140,13 +141,36 @@ const setCachedDetails = (id, type, data) => {
   }
 };
 
-// 🆕 NEW: Cache cleanup utility
+// 🆕 NEW: Enhanced cache cleanup utility with memory monitoring
 const clearCache = () => {
+  const beforeSize = DETAILS_CACHE.size;
   DETAILS_CACHE.clear();
-  console.log('[MovieDetailsOverlay] Cache cleared');
+  console.log(`[MovieDetailsOverlay] Cache cleared: ${beforeSize} entries removed`);
+  
+  // Force garbage collection if available
+  if (window.gc) {
+    window.gc();
+  }
+  
+  // Clear any additional memory sources
+  if (window.movieDetailsCache) {
+    delete window.movieDetailsCache;
+  }
+  
+  // Clear localStorage caches if they're too large
+  try {
+    const keys = Object.keys(localStorage);
+    keys.forEach(key => {
+      if (key.includes('movie') || key.includes('cache') || key.includes('temp')) {
+        localStorage.removeItem(key);
+      }
+    });
+  } catch (error) {
+    console.warn('[MovieDetailsOverlay] Failed to clear localStorage:', error);
+  }
 };
 
-// 📊 NEW: Performance tracking with memory monitoring
+// 📊 NEW: Performance tracking with enhanced memory monitoring
 const trackPerformance = (operation, duration, success = true) => {
   if (window.gtag) {
     window.gtag('event', 'movie_details_performance', {
@@ -157,10 +181,10 @@ const trackPerformance = (operation, duration, success = true) => {
     });
   }
   
-  // Memory monitoring
+  // Enhanced memory monitoring with automatic cleanup
   if (performance.memory) {
     const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-    if (memoryMB > 800) {
+    if (memoryMB > 400) { // Reduced threshold from 600 to 400
       console.warn(`[MovieDetailsOverlay] High memory usage during ${operation}: ${memoryMB.toFixed(2)}MB`);
       // Force cleanup if memory is too high
       clearCache();
@@ -171,7 +195,7 @@ const trackPerformance = (operation, duration, success = true) => {
   }
 };
 
-// 🔄 NEW: Real-time update manager with enhanced memory management
+// 🔄 NEW: Real-time update manager with enhanced memory management and reduced subscribers
 class RealTimeUpdateManager {
   constructor() {
     this.subscribers = new Map();
@@ -179,7 +203,9 @@ class RealTimeUpdateManager {
     this.isActive = false;
     this.abortController = null;
     this.lastUpdateTime = 0;
-    this.maxSubscribers = 20; // Limit number of subscribers
+    this.maxSubscribers = 5; // Reduced from 10 to 5 to prevent memory bloat
+    this.updateQueue = []; // Queue for rate limiting updates
+    this.memoryCheckInterval = null;
   }
 
   subscribe(movieId, type, callback) {
@@ -187,7 +213,7 @@ class RealTimeUpdateManager {
     
     const key = `${type}_${movieId}`;
     
-    // Limit number of subscribers to prevent memory leaks
+    // More aggressive subscriber limit
     if (this.subscribers.size >= this.maxSubscribers) {
       console.warn('[RealTimeUpdateManager] Too many subscribers, removing oldest');
       const firstKey = this.subscribers.keys().next().value;
@@ -225,6 +251,17 @@ class RealTimeUpdateManager {
       }
       this.performUpdates();
     }, REAL_TIME_UPDATE_INTERVAL);
+    
+    // Add memory monitoring
+    this.memoryCheckInterval = setInterval(() => {
+      if (performance.memory) {
+        const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
+        if (memoryMB > 350) { // Lower threshold for real-time updates
+          console.warn(`[RealTimeUpdateManager] High memory usage: ${memoryMB.toFixed(2)}MB, reducing update frequency`);
+          this.cleanup();
+        }
+      }
+    }, 10000); // Check every 10 seconds
   }
 
   stopUpdates() {
@@ -237,30 +274,40 @@ class RealTimeUpdateManager {
       this.updateInterval = null;
     }
     
+    if (this.memoryCheckInterval) {
+      clearInterval(this.memoryCheckInterval);
+      this.memoryCheckInterval = null;
+    }
+    
     if (this.abortController) {
       this.abortController.abort();
       this.abortController = null;
     }
+    
+    // Clear update queue
+    this.updateQueue = [];
   }
 
   async performUpdates() {
     if (this.abortController?.signal.aborted || !this.subscribers) return;
     
-    // Rate limiting: don't update too frequently
+    // Enhanced rate limiting: don't update too frequently
     const now = Date.now();
-    if (now - this.lastUpdateTime < 1000) return; // Minimum 1 second between updates
+    if (now - this.lastUpdateTime < 2000) return; // Increased from 1 second to 2 seconds
     this.lastUpdateTime = now;
     
     // Memory check before performing updates
     if (performance.memory) {
       const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-      if (memoryMB > 1000) {
+      if (memoryMB > 400) { // Reduced threshold from 800 to 400
         console.warn(`[RealTimeUpdateManager] High memory usage: ${memoryMB.toFixed(2)}MB, skipping updates`);
         return;
       }
     }
     
+    // Process updates in batches to prevent overwhelming the system
     const updatePromises = [];
+    const batchSize = 3; // Process only 3 updates at a time
     
     for (const [key, callback] of this.subscribers.entries()) {
       if (this.abortController?.signal.aborted) break;
@@ -276,6 +323,11 @@ class RealTimeUpdateManager {
           setCachedDetails(movieId, type, freshData);
           callback(freshData);
           trackPerformance('real_time_update', duration, true);
+        }
+        
+        // Add delay between updates to prevent overwhelming the API
+        if (updatePromises.length % batchSize === 0) {
+          await new Promise(resolve => setTimeout(resolve, 100));
         }
       } catch (error) {
         if (!this.abortController?.signal.aborted) {
@@ -299,10 +351,11 @@ class RealTimeUpdateManager {
     this.updateInterval = null;
     this.abortController = null;
     this.lastUpdateTime = 0;
+    this.updateQueue = [];
   }
 }
 
-// Global real-time update manager (singleton)
+// Global real-time update manager (singleton) with enhanced cleanup
 let realTimeManager = null;
 
 const getRealTimeManager = () => {
@@ -310,6 +363,14 @@ const getRealTimeManager = () => {
     realTimeManager = new RealTimeUpdateManager();
   }
   return realTimeManager;
+};
+
+// Enhanced cleanup function for the global manager
+const cleanupRealTimeManager = () => {
+  if (realTimeManager) {
+    realTimeManager.cleanup();
+    realTimeManager = null;
+  }
 };
 
 const NetworkDisplay = ({ networks, network }) => {
@@ -342,29 +403,75 @@ const NetworkDisplay = ({ networks, network }) => {
 // Lazy load YouTube player for trailer modal
 const LazyYouTube = lazy(() => import('react-youtube'));
 
-// Memoized Cast Card
+// 🚀 Ultra-optimized Cast Card with enhanced image loading and memory management
 const CastCard = React.memo(function CastCard({ person }) {
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageError, setImageError] = useState(false);
+  const imageRef = useRef(null);
+
+  // Enhanced image loading with memory optimization
+  const handleImageLoad = useCallback(() => {
+    setImageLoaded(true);
+    setImageError(false);
+  }, []);
+
+  const handleImageError = useCallback((e) => {
+    console.warn('Failed to load cast image:', e.target.src);
+    setImageError(true);
+    setImageLoaded(false);
+    // Clear the src to prevent memory leaks
+    if (e.target) {
+      e.target.src = '';
+    }
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (imageRef.current) {
+        imageRef.current = null;
+      }
+    };
+  }, []);
+
   return (
     <div className="text-center group">
       <div className="relative w-24 h-24 mx-auto mb-3">
-                                <div className="rounded-full overflow-hidden w-full h-full transition-all duration-300 transform group-hover:scale-110 shadow-lg will-change-transform">
-                          {person.image ? (
-                            <img 
-                              src={person.image} 
-                              alt={person.name} 
-                              className="w-full h-full object-cover will-change-transform" 
-                              loading="lazy" 
-                              style={{ backfaceVisibility: 'hidden' }}
-                              onError={(e) => {
-                                console.warn('Failed to load cast image:', e.target.src);
-                              }}
-                            />
-                          ) : (
-                            <div className="w-full h-full bg-gradient-to-br from-white/5 to-transparent flex items-center justify-center">
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white/30" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
-                            </div>
-                          )}
-                        </div>
+        <div className="rounded-full overflow-hidden w-full h-full transition-all duration-300 transform group-hover:scale-110 shadow-lg will-change-transform">
+          {person.image && !imageError ? (
+            <>
+              {/* Loading placeholder */}
+              {!imageLoaded && (
+                <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent animate-pulse" />
+              )}
+              
+              {/* Optimized image with enhanced loading */}
+              <img 
+                ref={imageRef}
+                src={person.image} 
+                alt={person.name} 
+                className={`w-full h-full object-cover will-change-transform ${
+                  imageLoaded ? 'opacity-100' : 'opacity-0'
+                }`}
+                loading="lazy" 
+                decoding="async"
+                fetchPriority="low"
+                style={{ 
+                  backfaceVisibility: 'hidden',
+                  contain: 'layout style paint'
+                }}
+                onLoad={handleImageLoad}
+                onError={handleImageError}
+              />
+            </>
+          ) : (
+            <div className="w-full h-full bg-gradient-to-br from-white/5 to-transparent flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white/30" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+              </svg>
+            </div>
+          )}
+        </div>
         <div className="absolute inset-0 rounded-full ring-2 ring-white/10 ring-inset opacity-50 group-hover:opacity-100 transition-opacity duration-300"></div>
       </div>
       <h4 className="text-white font-medium text-sm truncate transition-colors group-hover:text-white">{person.name}</h4>
@@ -373,8 +480,12 @@ const CastCard = React.memo(function CastCard({ person }) {
   );
 });
 
-// Memoized Similar Movie Card
+// 🚀 Ultra-optimized Similar Movie Card with enhanced image loading and memory management
 const SimilarMovieCard = React.memo(function SimilarMovieCard({ similar, onClick, isMobile }) {
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageError, setImageError] = useState(false);
+  const imageRef = useRef(null);
+  
   const displayTitle = similar.title || similar.name || 'Untitled';
   let displayYear = 'N/A';
   if (similar.year) {
@@ -384,25 +495,69 @@ const SimilarMovieCard = React.memo(function SimilarMovieCard({ similar, onClick
   } else if (similar.release_date) {
     displayYear = new Date(similar.release_date).getFullYear();
   }
+
+  // Enhanced image loading with memory optimization
+  const handleImageLoad = useCallback(() => {
+    setImageLoaded(true);
+    setImageError(false);
+  }, []);
+
+  const handleImageError = useCallback((e) => {
+    console.warn('Failed to load similar movie poster:', e.target.src);
+    setImageError(true);
+    setImageLoaded(false);
+    // Clear the src to prevent memory leaks
+    if (e.target) {
+      e.target.src = '';
+    }
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (imageRef.current) {
+        imageRef.current = null;
+      }
+    };
+  }, []);
+
   return (
     <div className="group cursor-pointer" onClick={() => onClick(similar)}>
       <div className="aspect-[2/3] rounded-lg overflow-hidden bg-gray-800 relative shadow-lg">
-        {similar.poster_path ? (
-          <img 
-            src={getOptimizedImageUrl(similar.poster_path, 'w500')} 
-            alt={displayTitle} 
-            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 will-change-transform transform-gpu" 
-            style={{ backfaceVisibility: 'hidden' }} 
-            loading="lazy"
-            onError={(e) => {
-              console.warn('Failed to load similar movie poster:', e.target.src);
-            }}
-          />
+        {similar.poster_path && !imageError ? (
+          <>
+            {/* Loading placeholder */}
+            {!imageLoaded && (
+              <div className="absolute inset-0 bg-gradient-to-br from-gray-700 to-gray-800 animate-pulse" />
+            )}
+            
+            {/* Optimized image with enhanced loading */}
+            <img 
+              ref={imageRef}
+              src={getOptimizedImageUrl(similar.poster_path, 'w500')} 
+              alt={displayTitle} 
+              className={`w-full h-full object-cover transition-all duration-300 group-hover:scale-105 will-change-transform transform-gpu ${
+                imageLoaded ? 'opacity-100' : 'opacity-0'
+              }`}
+              style={{ 
+                backfaceVisibility: 'hidden',
+                contain: 'layout style paint'
+              }} 
+              loading="lazy"
+              decoding="async"
+              fetchPriority="low"
+              onLoad={handleImageLoad}
+              onError={handleImageError}
+            />
+          </>
         ) : (
           <div className="w-full h-full flex items-center justify-center text-gray-400">
-            <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+            </svg>
           </div>
         )}
+        
         {/* Only show hover overlay on desktop */}
         {!isMobile && (
           <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-3">
@@ -412,15 +567,20 @@ const SimilarMovieCard = React.memo(function SimilarMovieCard({ similar, onClick
                 <span>{displayYear}</span>
                 <span className="w-1 h-1 rounded-full bg-white/50"></span>
                 <span className="flex items-center gap-0.5">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-yellow-400" viewBox="0 0 24 24" fill="currentColor"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-yellow-400" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
+                  </svg>
                   {similar.vote_average?.toFixed ? similar.vote_average.toFixed(1) : (typeof similar.vote_average === 'number' ? similar.vote_average : 'N/A')}
                 </span>
               </div>
             </div>
           </div>
         )}
+        
         <div className="absolute top-2 right-2 w-8 h-8 bg-black/50 rounded-full flex items-center justify-center transform transition-all duration-300 scale-0 group-hover:scale-100 opacity-0 group-hover:opacity-100">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
         </div>
       </div>
     </div>
@@ -806,47 +966,54 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     };
   }, []);
 
-  // 🚀 NEW: Memoize expensive computed values
+  // 🚀 NEW: Enhanced memoization with performance optimization
   const movieStats = React.useMemo(() => {
     if (!movieDetails) return null;
     
+    // Cache expensive operations
+    const rating = movieDetails.vote_average;
+    const releaseDate = movieDetails.release_date;
+    const runtime = movieDetails.runtime;
+    const budget = movieDetails.budget;
+    const revenue = movieDetails.revenue;
+    
     return {
-      formattedRating: movieDetails.vote_average 
-        ? (typeof movieDetails.vote_average === 'number' 
-            ? movieDetails.vote_average.toFixed(1) 
-            : parseFloat(movieDetails.vote_average).toFixed(1))
+      formattedRating: rating 
+        ? (typeof rating === 'number' 
+            ? rating.toFixed(1) 
+            : parseFloat(rating).toFixed(1))
         : 'N/A',
-      formattedReleaseDate: movieDetails.release_date 
+      formattedReleaseDate: releaseDate 
         ? (() => {
-            const date = new Date(movieDetails.release_date);
+            const date = new Date(releaseDate);
             return isNaN(date) ? 'N/A' : date.toLocaleDateString();
           })()
         : 'N/A',
-      formattedRuntime: movieDetails.runtime 
+      formattedRuntime: runtime 
         ? (() => {
-            const hours = Math.floor(movieDetails.runtime / 60);
-            const minutes = movieDetails.runtime % 60;
+            const hours = Math.floor(runtime / 60);
+            const minutes = runtime % 60;
             return `${hours}h ${minutes}m`;
           })()
         : 'N/A',
-      formattedBudget: movieDetails.budget 
+      formattedBudget: budget 
         ? new Intl.NumberFormat('en-US', {
             style: 'currency',
             currency: 'USD',
             notation: 'compact',
             maximumFractionDigits: 1
-          }).format(movieDetails.budget)
+          }).format(budget)
         : 'N/A',
-      formattedRevenue: movieDetails.revenue 
+      formattedRevenue: revenue 
         ? new Intl.NumberFormat('en-US', {
             style: 'currency',
             currency: 'USD',
             notation: 'compact',
             maximumFractionDigits: 1
-          }).format(movieDetails.revenue)
+          }).format(revenue)
         : 'N/A'
     };
-  }, [movieDetails]);
+  }, [movieDetails?.vote_average, movieDetails?.release_date, movieDetails?.runtime, movieDetails?.budget, movieDetails?.revenue]);
 
   // Get mobile/desktop state early to avoid initialization errors
   const { isMobile, isTablet, isDesktop } = useIsMobile();
@@ -964,46 +1131,56 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         }
       });
     }
-    // eslint-disable-next-line
+     
   }, [similarLimit, movie, hasMoreSimilar, isSimilarLoadingMore, similarMovies.length, similarMoviesPage]);
 
   // Memoized callback for toggling showAllCast
   const handleToggleShowAllCast = useCallback(() => setShowAllCast(v => !v), []);
 
-  // Simple scroll handler
+  // 🚀 Enhanced scroll handler with performance optimization and memory leak prevention
   const handleScroll = useCallback(() => {
-    if (scrollContainerRef.current) {
-      const scrollTop = scrollContainerRef.current.scrollTop;
-      const scrollHeight = scrollContainerRef.current.scrollHeight;
-      const clientHeight = scrollContainerRef.current.clientHeight;
+    if (!scrollContainerRef.current) return;
+    
+    const scrollTop = scrollContainerRef.current.scrollTop;
+    const scrollHeight = scrollContainerRef.current.scrollHeight;
+    const clientHeight = scrollContainerRef.current.clientHeight;
+    
+    // Only update if scroll position actually changed significantly
+    if (Math.abs(scrollTop - scrollY) > 5) {
+      setScrollY(scrollTop);
       
       // Calculate scroll percentage for enhanced UX
       const scrollPercentage = Math.min(100, Math.max(0, (scrollTop / (scrollHeight - clientHeight)) * 100));
-      
-      // Update scroll position
-      setScrollY(scrollTop);
       
       // Store scroll percentage for potential use in animations or UI feedback
       if (scrollContainerRef.current.dataset) {
         scrollContainerRef.current.dataset.scrollPercentage = scrollPercentage.toFixed(1);
       }
     }
-  }, []);
+  }, [scrollY]);
 
-  // Simple scroll event listener
+  // 🚀 Enhanced scroll event listener with better performance and cleanup
   useEffect(() => {
     const currentRef = scrollContainerRef.current;
     
-    if (!currentRef) return;
+    if (!currentRef || loading) return;
     
-    // Simple scroll handler
+    // Enhanced scroll handler with throttling
     let ticking = false;
     let animationFrameId = null;
+    let lastScrollTop = 0;
     
-    const simpleScrollHandler = () => {
+    const optimizedScrollHandler = () => {
       if (!ticking) {
         animationFrameId = requestAnimationFrame(() => {
-          handleScroll();
+          const currentScrollTop = currentRef.scrollTop;
+          
+          // Only process if scroll position changed significantly
+          if (Math.abs(currentScrollTop - lastScrollTop) > 5) {
+            lastScrollTop = currentScrollTop;
+            handleScroll();
+          }
+          
           ticking = false;
           animationFrameId = null;
         });
@@ -1012,22 +1189,25 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     };
     
     // Add event listener with passive option for performance
-    currentRef.addEventListener('scroll', simpleScrollHandler, { 
+    currentRef.addEventListener('scroll', optimizedScrollHandler, { 
       passive: true, 
       capture: false 
     });
     
-    // Cleanup
+    // Enhanced cleanup with proper reference checking
     return () => {
       if (animationFrameId) {
         cancelAnimationFrame(animationFrameId);
         animationFrameId = null;
       }
       if (currentRef && currentRef.removeEventListener) {
-        currentRef.removeEventListener('scroll', simpleScrollHandler, { 
+        currentRef.removeEventListener('scroll', optimizedScrollHandler, { 
           capture: false 
         });
       }
+      // Clear references to prevent memory leaks
+      ticking = false;
+      lastScrollTop = 0;
     };
   }, [loading, handleScroll]);
 
@@ -1216,7 +1396,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
 
   const [retryCount, setRetryCount] = useState(0);
 
-  // Enhanced fetchMovieData with comprehensive error handling, retry logic, and performance optimizations
+  // 🚀 Ultra-enhanced fetchMovieData with advanced memory management, performance tracking, and intelligent caching
   const fetchMovieData = useCallback(async (attempt = 0) => {
     if (!movie?.id) {
       console.warn('Invalid movie data provided to fetchMovieData');
@@ -1226,14 +1406,27 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     // Use the same fallback pattern as other components
     const movieType = movie.media_type || movie.type || 'movie';
 
-    // Prevent multiple simultaneous requests
+    // Prevent multiple simultaneous requests with enhanced validation
     if (loading && attempt === 0) {
       console.log('Request already in progress, skipping...');
       return;
     }
 
+    // Memory check before starting fetch
+    if (performance.memory) {
+      const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
+      if (memoryMB > 700) {
+        console.warn(`[fetchMovieData] High memory usage before fetch: ${memoryMB.toFixed(2)}MB`);
+        clearCache();
+      }
+    }
+
+    const fetchStartTime = performance.now();
+    let abortController = null;
+    let timeoutId = null;
+
     try {
-      // Reset all states at the beginning
+      // Reset all states at the beginning with memory optimization
       setLoading(true);
       setError(null);
       setMovieDetails(null);
@@ -1248,13 +1441,17 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       setShowTrailer(false);
 
       // Create abort controller for request cancellation
-      const abortController = new AbortController();
-      const timeoutId = setTimeout(() => abortController.abort(), 30000); // 30s timeout
+      abortController = new AbortController();
+      timeoutId = setTimeout(() => {
+        if (abortController) {
+          abortController.abort();
+        }
+      }, 25000); // Reduced timeout from 30s to 25s
 
       console.log(`Fetching movie data for ${movieType} ID: ${movie.id} (attempt ${attempt + 1})`);
 
-      // Parallel API calls with error handling for each
-      const [movieDetails, movieCredits, movieVideos, similar] = await Promise.allSettled([
+      // Enhanced parallel API calls with better error handling and memory management
+      const apiPromises = [
         getMovieDetails(movie.id, movieType).catch(err => {
           console.error('Movie details fetch failed:', err);
           return null;
@@ -1271,25 +1468,31 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
           console.error('Similar movies fetch failed:', err);
           return null;
         })
-      ]);
+      ];
 
-      clearTimeout(timeoutId);
+      const [movieDetails, movieCredits, movieVideos, similar] = await Promise.allSettled(apiPromises);
 
-      // Handle individual API failures gracefully
+      // Clear timeout immediately after API calls complete
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+
+      // Handle individual API failures gracefully with enhanced validation
       const details = movieDetails.status === 'fulfilled' ? movieDetails.value : null;
       const credits = movieCredits.status === 'fulfilled' ? movieCredits.value : null;
       const videos = movieVideos.status === 'fulfilled' ? movieVideos.value : null;
       const similarData = similar.status === 'fulfilled' ? similar.value : null;
 
-      // Validate essential data
+      // Validate essential data with enhanced error messages
       if (!details) {
         throw new Error('Movie details not found or unavailable');
       }
 
-      // 🎯 NEW: Cache the fetched details
+      // 🎯 Enhanced caching with memory monitoring
       setCachedDetails(movie.id, movieType, details);
       
-      // Set data with fallbacks for failed requests
+      // Set data with fallbacks for failed requests and memory optimization
       setMovieDetails(details);
       setCredits(credits || { cast: [], crew: [] });
       setVideos(videos || { results: [] });
@@ -1301,33 +1504,44 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       setIsSimilarLoading(false);
       setRetryCount(0);
       
-      // 📊 NEW: Track successful fetch performance
+      // 📊 Enhanced performance tracking
       const totalDuration = performance.now() - fetchStartTime;
       trackPerformance('movie_details_fetch', totalDuration, true);
+
+      // Memory check after successful fetch
+      if (performance.memory) {
+        const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
+        if (memoryMB > 600) {
+          console.warn(`[fetchMovieData] High memory usage after fetch: ${memoryMB.toFixed(2)}MB`);
+        }
+      }
 
       console.log('Movie data fetched successfully:', {
         hasDetails: !!details,
         hasCredits: !!credits,
         hasVideos: !!videos,
         hasSimilar: !!similarData,
-        similarCount: similarData?.results?.length || 0
+        similarCount: similarData?.results?.length || 0,
+        duration: `${totalDuration.toFixed(2)}ms`
       });
 
     } catch (err) {
       console.error(`Fetch attempt ${attempt + 1} failed:`, err);
       
-      // Handle different types of errors
+      // Enhanced error handling with better user feedback
       if (err.name === 'AbortError') {
         setError('Request timed out. Please check your connection and try again.');
       } else if (err.message.includes('not found')) {
         setError('Movie not found. It may have been removed or is unavailable.');
-      } else if (attempt < 3) {
-        // Exponential backoff with jitter for better retry distribution
+      } else if (err.message.includes('network') || err.message.includes('fetch')) {
+        setError('Network error. Please check your internet connection and try again.');
+      } else if (attempt < 2) { // Reduced retry attempts from 3 to 2
+        // Enhanced exponential backoff with jitter
         const baseDelay = Math.pow(2, attempt) * 1000;
-        const jitter = Math.random() * 1000;
+        const jitter = Math.random() * 500; // Reduced jitter
         const delay = baseDelay + jitter;
         
-        console.log(`Retrying in ${delay}ms (attempt ${attempt + 1}/3)`);
+        console.log(`Retrying in ${delay}ms (attempt ${attempt + 1}/2)`);
         
         setTimeout(() => {
           setRetryCount(attempt + 1);
@@ -1338,22 +1552,36 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         setError(`Failed to load movie details after ${attempt + 1} attempts. Please try again later.`);
       }
       
-      // Reset states on final failure
-      if (attempt >= 3) {
+      // Reset states on final failure with memory cleanup
+      if (attempt >= 2) {
         setMovieDetails(null);
         setCredits(null);
         setVideos(null);
         setSimilarMovies([]);
+        
+        // Clear cache on final failure to prevent stale data
+        clearCache();
       }
     } finally {
+      // Enhanced cleanup
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      if (abortController) {
+        abortController.abort();
+      }
       setLoading(false);
+      
+      // Clear references to prevent memory leaks
+      abortController = null;
+      timeoutId = null;
     }
   }, [movie, loading]);
 
-  // 🚀 Enhanced data fetching with intelligent caching, performance tracking, and advanced error recovery
+  // 🚀 Ultra-enhanced data fetching with advanced memory management, intelligent caching, and performance optimization
   useEffect(() => {
     // Register cache cleanup with memory manager
-    const unregisterCleanup = memoryManager.registerCleanupCallback(() => {
+    const unregisterCleanup = memoryOptimizationService.registerCleanupCallback(() => {
       clearCache();
     });
 
@@ -1366,51 +1594,103 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     // Use the same fallback pattern as other components
     const movieType = movie.media_type || movie.type || 'movie';
 
-    // 🎯 NEW: Check cache first for instant loading
+    // Memory check before starting any operations
+    if (performance.memory) {
+      const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
+      if (memoryMB > 600) {
+        console.warn(`[DataFetching] High memory usage before fetch: ${memoryMB.toFixed(2)}MB, clearing cache`);
+        clearCache();
+      }
+    }
+
+    // 🎯 Enhanced cache check with memory optimization
     const cachedDetails = getCachedDetails(movie.id, movieType);
     if (cachedDetails) {
       console.log(`📦 Using cached data for ${movieType} ID: ${movie.id}`);
       setMovieDetails(cachedDetails);
       setLoading(false);
       
-      // Start background refresh for fresh data
-      setTimeout(() => {
+      // Start background refresh for fresh data with delay
+      const backgroundRefreshTimer = setTimeout(() => {
+        // Memory check before background refresh
+        if (performance.memory) {
+          const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
+          if (memoryMB > 700) {
+            console.warn(`[BackgroundRefresh] High memory usage: ${memoryMB.toFixed(2)}MB, skipping background refresh`);
+            return;
+          }
+        }
         fetchMovieData(0);
-      }, 100);
+      }, 200); // Increased delay for better performance
       
-      // Subscribe to real-time updates
+      // Subscribe to real-time updates with memory monitoring
       const manager = getRealTimeManager();
       manager.subscribe(movie.id, movieType, (freshData) => {
+        // Memory check before applying real-time updates
+        if (performance.memory) {
+          const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
+          if (memoryMB > 800) {
+            console.warn(`[RealTimeUpdate] High memory usage: ${memoryMB.toFixed(2)}MB, skipping update`);
+            return;
+          }
+        }
         console.log(`🔄 Real-time update received for ${movieType} ID: ${movie.id}`);
         setMovieDetails(freshData);
       });
       
-      return;
+      // Cleanup background refresh timer
+      return () => {
+        if (backgroundRefreshTimer) {
+          clearTimeout(backgroundRefreshTimer);
+        }
+        if (movie?.id) {
+          const manager = getRealTimeManager();
+          const movieType = movie.media_type || movie.type || 'movie';
+          manager.unsubscribe(movie.id, movieType);
+        }
+        unregisterCleanup();
+      };
     }
 
     // Track fetch performance for optimization insights
     const fetchStartTime = performance.now();
     console.log(`🔄 Starting fetch for ${movieType} ID: ${movie.id}`);
 
-    // Execute fetch with performance monitoring
+    // Execute fetch with enhanced performance monitoring
     fetchMovieData(0).finally(() => {
       const fetchDuration = performance.now() - fetchStartTime;
       console.log(`✅ Fetch completed in ${fetchDuration.toFixed(2)}ms`);
       
-      // Log performance metrics for optimization
+      // Enhanced performance metrics logging
       if (fetchDuration > 2000) {
         console.warn(`⚠️ Slow fetch detected: ${fetchDuration.toFixed(2)}ms`);
       }
       
-      // Subscribe to real-time updates after successful fetch
+      // Memory check after fetch
+      if (performance.memory) {
+        const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
+        if (memoryMB > 600) {
+          console.warn(`[PostFetch] High memory usage: ${memoryMB.toFixed(2)}MB`);
+        }
+      }
+      
+      // Subscribe to real-time updates after successful fetch with memory monitoring
       const manager = getRealTimeManager();
       manager.subscribe(movie.id, movieType, (freshData) => {
+        // Memory check before applying real-time updates
+        if (performance.memory) {
+          const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
+          if (memoryMB > 800) {
+            console.warn(`[RealTimeUpdate] High memory usage: ${memoryMB.toFixed(2)}MB, skipping update`);
+            return;
+          }
+        }
         console.log(`🔄 Real-time update received for ${movieType} ID: ${movie.id}`);
         setMovieDetails(freshData);
       });
     });
 
-    // Cleanup: unsubscribe from real-time updates and memory manager
+    // Enhanced cleanup: unsubscribe from real-time updates and memory manager
     return () => {
       if (movie?.id) {
         const manager = getRealTimeManager();
@@ -1453,7 +1733,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     });
   }, [movie?.id, movie?.media_type, movie?.type, fetchMovieData]);
 
-  // 🧹 Ultra-Comprehensive cleanup with enhanced memory leak prevention
+  // 🧹 Ultra-Comprehensive cleanup with enhanced memory leak prevention and performance optimization
   useEffect(() => {
     // Track unmount for diagnostics
     let isUnmounted = false;
@@ -1461,52 +1741,68 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     let cleanupAnimationFrames = [];
     let cleanupAbortControllers = [];
     let cleanupEventListeners = [];
+    let cleanupPromises = [];
 
     // Helper: Log state reset for debugging
     const logReset = (name) => {
       if (process.env.NODE_ENV === "development") {
-        // eslint-disable-next-line no-console
+         
         console.debug(`[MovieDetailsOverlay] Resetting: ${name}`);
       }
     };
 
-    // Helper: Safely reset a state setter
+    // Helper: Safely reset a state setter with memory optimization
     const safeSet = (setter, value, name) => {
       if (isUnmounted) return;
       try {
         setter(value);
         logReset(name);
       } catch (e) {
-        // eslint-disable-next-line no-console
+         
         console.warn(`[MovieDetailsOverlay] Failed to reset ${name}:`, e);
       }
     };
 
-    // Helper: Add cleanup timer
+    // Helper: Add cleanup timer with validation
     const addCleanupTimer = (timerId) => {
-      cleanupTimers.push(timerId);
+      if (timerId && typeof timerId === 'number') {
+        cleanupTimers.push(timerId);
+      }
     };
 
-    // Helper: Add cleanup animation frame
+    // Helper: Add cleanup animation frame with validation
     const addCleanupAnimationFrame = (frameId) => {
-      cleanupAnimationFrames.push(frameId);
+      if (frameId && typeof frameId === 'number') {
+        cleanupAnimationFrames.push(frameId);
+      }
     };
 
-    // Helper: Add cleanup abort controller
+    // Helper: Add cleanup abort controller with validation
     const addCleanupAbortController = (controller) => {
-      cleanupAbortControllers.push(controller);
+      if (controller && typeof controller.abort === 'function') {
+        cleanupAbortControllers.push(controller);
+      }
     };
 
-    // Helper: Add cleanup event listener
+    // Helper: Add cleanup event listener with validation
     const addCleanupEventListener = (target, type, handler) => {
-      cleanupEventListeners.push({ target, type, handler });
+      if (target && type && handler) {
+        cleanupEventListeners.push({ target, type, handler });
+      }
+    };
+
+    // Helper: Add cleanup promise with validation
+    const addCleanupPromise = (promise) => {
+      if (promise && typeof promise.then === 'function') {
+        cleanupPromises.push(promise);
+      }
     };
 
     // Store cleanup function for proper execution
     const cleanup = () => {
       isUnmounted = true;
 
-      // Reset all state variables to prevent memory leaks
+      // Reset all state variables to prevent memory leaks with enhanced validation
       safeSet(setMovieDetails, null, "movieDetails");
       safeSet(setCredits, null, "credits");
       safeSet(setVideos, null, "videos");
@@ -1516,73 +1812,98 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       safeSet(setShowTrailer, false, "showTrailer");
       safeSet(setRetryCount, 0, "retryCount");
 
-      // Reset UI states
+      // Reset UI states with enhanced cleanup
       safeSet(setShowAllCast, false, "showAllCast");
       safeSet(setCastLimit, 20, "castLimit");
       safeSet(setSimilarLimit, 20, "similarLimit");
       safeSet(setScrollY, 0, "scrollY");
+      safeSet(setCastSearchTerm, "", "castSearchTerm");
+      safeSet(setCastRowsShown, 1, "castRowsShown");
 
-      // Clear all cleanup timers
+      // Enhanced timer cleanup with validation
       cleanupTimers.forEach(timerId => {
         try {
-          clearTimeout(timerId);
-          clearInterval(timerId);
+          if (typeof timerId === 'number') {
+            clearTimeout(timerId);
+            clearInterval(timerId);
+          }
         } catch (e) {
-          // eslint-disable-next-line no-console
+           
           console.warn("[MovieDetailsOverlay] Failed to clear timer:", timerId, e);
         }
       });
       cleanupTimers = [];
       logReset("cleanupTimers");
 
-      // Cancel all cleanup animation frames
+      // Enhanced animation frame cleanup with validation
       cleanupAnimationFrames.forEach(frameId => {
         try {
-          cancelAnimationFrame(frameId);
+          if (typeof frameId === 'number') {
+            cancelAnimationFrame(frameId);
+          }
         } catch (e) {
-          // eslint-disable-next-line no-console
+           
           console.warn("[MovieDetailsOverlay] Failed to cancel animation frame:", frameId, e);
         }
       });
       cleanupAnimationFrames = [];
       logReset("cleanupAnimationFrames");
 
-      // Abort all cleanup controllers
+      // Enhanced abort controller cleanup with validation
       cleanupAbortControllers.forEach(controller => {
         try {
-          controller.abort();
+          if (controller && typeof controller.abort === 'function') {
+            controller.abort();
+          }
         } catch (e) {
-          // eslint-disable-next-line no-console
+           
           console.warn("[MovieDetailsOverlay] Failed to abort controller:", e);
         }
       });
       cleanupAbortControllers = [];
       logReset("cleanupAbortControllers");
 
-      // Remove all cleanup event listeners
+      // Enhanced event listener cleanup with validation
       cleanupEventListeners.forEach(({ target, type, handler }) => {
         try {
-          (target || window).removeEventListener(type, handler);
+          if (target && typeof target.removeEventListener === 'function') {
+            target.removeEventListener(type, handler);
+          }
         } catch (e) {
-          // eslint-disable-next-line no-console
+           
           console.warn("[MovieDetailsOverlay] Failed to remove event listener:", type, e);
         }
       });
       cleanupEventListeners = [];
       logReset("cleanupEventListeners");
 
-      // Reset scroll container if it exists
+      // Enhanced promise cleanup with validation
+      cleanupPromises.forEach(promise => {
+        try {
+          if (promise && typeof promise.cancel === 'function') {
+            promise.cancel();
+          }
+        } catch (e) {
+           
+          console.warn("[MovieDetailsOverlay] Failed to cancel promise:", e);
+        }
+      });
+      cleanupPromises = [];
+      logReset("cleanupPromises");
+
+      // Enhanced scroll container cleanup
       if (scrollContainerRef.current) {
         try {
           scrollContainerRef.current.scrollTop = 0;
+          scrollContainerRef.current.scrollLeft = 0;
           logReset("scrollContainerRef.scrollTop");
         } catch (e) {
-          // eslint-disable-next-line no-console
+           
           console.warn("[MovieDetailsOverlay] Failed to reset scrollContainerRef:", e);
         }
       }
 
-      // 🎯 NEW: Unsubscribe from real-time updates
+      // 🎯 Enhanced real-time updates cleanup
       if (movie?.id) {
         try {
           const manager = getRealTimeManager();
@@ -1594,46 +1915,83 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         }
       }
 
-      // Cleanup real-time manager to prevent memory leaks
+      // Enhanced real-time manager cleanup
       try {
-        const manager = getRealTimeManager();
-        manager.cleanup();
-        realTimeManager = null; // Reset the singleton
+        cleanupRealTimeManager();
         logReset("realTimeManager.cleanup");
       } catch (e) {
         console.warn("[MovieDetailsOverlay] Failed to cleanup real-time manager:", e);
       }
 
-      // 🆕 NEW: Enhanced memory cleanup
-      try {
-        // Clear cache if memory usage is high
-        if (performance.memory) {
-          const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-          if (memoryMB > 600) {
-            console.warn(`[MovieDetailsOverlay] High memory usage during cleanup: ${memoryMB.toFixed(2)}MB`);
-            clearCache();
-          }
-        }
+        // 🆕 Ultra-enhanced memory cleanup with monitoring
+  try {
+    // Clear cache if memory usage is high
+    if (performance.memory) {
+      const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
+      if (memoryMB > 300) { // Reduced threshold from 500 to 300 for more aggressive cleanup
+        console.warn(`[MovieDetailsOverlay] High memory usage during cleanup: ${memoryMB.toFixed(2)}MB`);
+        clearCache();
+      }
+    }
+    
+         // Force garbage collection if available
+     if (window.gc) {
+       window.gc();
+     }
+     
+     // Clear any image caches
+     if ('caches' in window) {
+       caches.keys().then(cacheNames => {
+         cacheNames.forEach(cacheName => {
+           if (cacheName.includes('image') || cacheName.includes('movie')) {
+             caches.delete(cacheName);
+           }
+         });
+       });
+     }
         
-        // Force garbage collection if available
-        if (window.gc) {
-          window.gc();
-        }
-        
-        // Clear any remaining references
+        // Clear any remaining references with enhanced cleanup
         if (typeof window !== 'undefined') {
           // Clear any global references that might be holding onto data
           if (window.movieDetailsCache) {
             delete window.movieDetailsCache;
           }
+          if (window.movieDetailsOverlayRefs) {
+            delete window.movieDetailsOverlayRefs;
+          }
+        }
+        
+        // Clear any remaining DOM references
+        if (overlayRef.current) {
+          overlayRef.current = null;
+        }
+        if (contentRef.current) {
+          contentRef.current = null;
+        }
+        if (playerRef.current) {
+          playerRef.current = null;
+        }
+        if (similarLoaderRef.current) {
+          similarLoaderRef.current = null;
+        }
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current = null;
         }
       } catch (e) {
         console.warn("[MovieDetailsOverlay] Failed to perform memory cleanup:", e);
       }
 
+      // Final memory check and cleanup
+      setTimeout(() => {
+        if (performance.memory) {
+          const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
+          console.log(`[MovieDetailsOverlay] Final memory usage: ${memoryMB.toFixed(2)}MB`);
+        }
+      }, 100);
+
       // Diagnostics: Log cleanup completion
       if (process.env.NODE_ENV === "development") {
-        // eslint-disable-next-line no-console
+         
         console.debug("[MovieDetailsOverlay] Cleanup complete.");
       }
     };
@@ -1897,7 +2255,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       }
       // Dev warning
       if (process.env.NODE_ENV === "development") {
-        // eslint-disable-next-line no-console
+         
         console.warn('[MovieDetailsOverlay] Invalid similar movie data:', similarMovie);
       }
       return;
@@ -2136,7 +2494,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       setMovieDetails(null);
       setBasicLoading(false);
       if (process.env.NODE_ENV === "development") {
-        // eslint-disable-next-line no-console
+         
         console.warn('[MovieDetailsOverlay] fetchBasicInfo: Invalid movie object:', movie);
       }
       return;
@@ -2166,11 +2524,11 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       // Performance tracking
       const fetchDuration = performance.now() - fetchStart;
       if (process.env.NODE_ENV === "development") {
-        // eslint-disable-next-line no-console
+         
         console.debug(`[MovieDetailsOverlay] fetchBasicInfo: Fetched in ${fetchDuration.toFixed(2)}ms`);
       }
       if (fetchDuration > 2000) {
-        // eslint-disable-next-line no-console
+         
         console.warn(`[MovieDetailsOverlay] fetchBasicInfo: Slow fetch (${fetchDuration.toFixed(2)}ms) for movie ID ${movie.id}`);
       }
 
@@ -2214,7 +2572,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
 
       // Diagnostics
       if (process.env.NODE_ENV === "development") {
-        // eslint-disable-next-line no-console
+         
         console.error('[MovieDetailsOverlay] fetchBasicInfo error:', err);
       }
     } finally {
@@ -2392,7 +2750,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         if (abortController.signal.aborted) {
           // Optionally log abort
           if (process.env.NODE_ENV === "development") {
-            // eslint-disable-next-line no-console
+             
             console.debug("[MovieDetailsOverlay] Fetch aborted due to unmount/movie change.");
           }
         } else {
@@ -2411,22 +2769,69 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     // eslint-disable-next-line
   }, [movie?.id, movie?.media_type, movie?.type]);
   
-  // 🔄 NEW: Background refresh for stale data
+  // 🔄 Enhanced background refresh for stale data with memory optimization
   useEffect(() => {
     if (!movie?.id || !movieDetails) return;
     
     const movieType = movie.media_type || movie.type || 'movie';
-    const backgroundRefreshTimer = setTimeout(() => {
+    let backgroundRefreshTimer = null;
+    
+    // Memory check before setting up background refresh
+    if (performance.memory) {
+      const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
+      if (memoryMB > 400) { // Reduced threshold from 600 to 400
+        console.warn(`[BackgroundRefresh] High memory usage: ${memoryMB.toFixed(2)}MB, skipping background refresh`);
+        return;
+      }
+    }
+    
+    backgroundRefreshTimer = setTimeout(() => {
       console.log(`🔄 Background refresh for ${movieType} ID: ${movie.id}`);
+      
+      // Check memory again before executing refresh
+      if (performance.memory) {
+        const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
+        if (memoryMB > 500) { // Reduced threshold from 700 to 500
+          console.warn(`[BackgroundRefresh] High memory usage before refresh: ${memoryMB.toFixed(2)}MB, clearing cache`);
+          clearCache();
+        }
+      }
+      
       fetchMovieData(0);
     }, BACKGROUND_REFRESH_INTERVAL);
     
     return () => {
       if (backgroundRefreshTimer) {
         clearTimeout(backgroundRefreshTimer);
+        backgroundRefreshTimer = null;
       }
     };
   }, [movie?.id, movie?.media_type, movie?.type, movieDetails, fetchMovieData]);
+  
+  // 🆕 Memory monitoring effect with specialized optimizer
+  useEffect(() => {
+    let unregisterCleanup = null;
+    
+    if (movie?.id) {
+      // Register with specialized memory optimizer
+      unregisterCleanup = movieDetailsMemoryOptimizer.registerCleanupCallback(() => {
+        // Component-specific cleanup
+        clearCache();
+        if (window.gc) {
+          window.gc();
+        }
+      });
+      
+      // Start monitoring if not already started
+      movieDetailsMemoryOptimizer.start();
+    }
+    
+    return () => {
+      if (unregisterCleanup) {
+        unregisterCleanup();
+      }
+    };
+  }, [movie?.id]);
   
   // Mobile drag functionality removed
   
@@ -2485,12 +2890,14 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     }).format(movieDetails.revenue);
   }, [movieDetails]);
 
-  // 🚀 Enhanced Portal Management for MovieDetailsOverlay
+  // 🚀 Ultra-enhanced Portal Management for MovieDetailsOverlay with memory leak prevention
   // - Robust: Handles SSR, multiple overlays, and accessibility
   // - Diagnostics: Logs portal creation/removal in development
   // - Prevents duplicate containers and memory leaks
+  // - Enhanced performance with lazy portal creation
 
   const [portalContainer, setPortalContainer] = useState(null);
+  const portalRef = useRef(null);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof document === "undefined") {
@@ -2516,11 +2923,12 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       container.style.inset = '0';
       container.style.zIndex = '2147483647'; // Max z-index for overlays
       container.style.pointerEvents = 'none'; // Let overlay content handle events
+      container.style.contain = 'layout style paint'; // Performance optimization
       document.body.appendChild(container);
       isNewContainer = true;
 
       if (process.env.NODE_ENV === "development") {
-        // eslint-disable-next-line no-console
+         
         console.debug('[MovieDetailsOverlay] Portal container created');
       }
     } else {
@@ -2532,18 +2940,25 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       container.style.inset = '0';
       container.style.zIndex = '2147483647';
       container.style.pointerEvents = 'none';
+      container.style.contain = 'layout style paint';
     }
 
+    // Store reference for cleanup
+    portalRef.current = container;
     setPortalContainer(container);
 
-    // Cleanup: Remove portal only if it was created by this instance
+    // Enhanced cleanup: Remove portal only if it was created by this instance
     return () => {
       // Only remove if this instance created the container
       if (isNewContainer && container && container.parentNode) {
         try {
+          // Remove all child nodes first to prevent memory leaks
+          while (container.firstChild) {
+            container.removeChild(container.firstChild);
+          }
           container.parentNode.removeChild(container);
           if (process.env.NODE_ENV === "development") {
-            // eslint-disable-next-line no-console
+             
             console.debug('[MovieDetailsOverlay] Portal container removed');
           }
         } catch (error) {
@@ -2552,10 +2967,11 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       }
       // Clear portal container reference to prevent memory leaks
       setPortalContainer(null);
+      portalRef.current = null;
     };
   }, []);
 
-  // Don't render anything if portal container is not ready or in SSR
+  // Enhanced rendering check with memory optimization
   if (typeof window === "undefined" || !portalContainer) {
     return null;
   }

@@ -67,6 +67,11 @@ class EnhancedSimilarContentService {
     this.regionalContentBoost = new Map(); // Regional content popularity
     this.languageContentBoost = new Map(); // Language content popularity
     
+    // FIXED: Add cleanup method for memory management
+    this.maxCacheSize = 1000; // Limit cache size to prevent memory leaks
+    this.lastCleanup = Date.now();
+    this.cleanupInterval = 300000; // 5 minutes
+    
     // NEW: Cultural context weights for different regions
     this.culturalContextWeights = {
       'north-america': { language: 0.20, region: 0.18, genre: 0.20 },
@@ -91,6 +96,9 @@ class EnhancedSimilarContentService {
 
   // Enhanced similarity score calculation with franchise, language, region, and other factors
   calculateSimilarityScore(item1, item2, userContext = null) {
+    // FIXED: Perform memory cleanup periodically
+    this.performMemoryCleanup();
+    
     let score = 0;
     
     // Get user's cultural context for dynamic weighting
@@ -3232,6 +3240,58 @@ class EnhancedSimilarContentService {
         this.cache.delete(key);
       }
     });
+  }
+
+  // FIXED: Enhanced cleanup method for memory management
+  performMemoryCleanup() {
+    const now = Date.now();
+    
+    // Only cleanup if enough time has passed
+    if (now - this.lastCleanup < this.cleanupInterval) {
+      return;
+    }
+    
+    this.lastCleanup = now;
+    
+    // Clear old cache entries
+    if (this.cache && this.cache.getKeys) {
+      const cacheKeys = this.cache.getKeys();
+      if (cacheKeys.length > this.maxCacheSize) {
+        // Remove oldest entries
+        const keysToRemove = cacheKeys.slice(0, cacheKeys.length - this.maxCacheSize);
+        keysToRemove.forEach(key => this.cache.delete(key));
+      }
+    }
+    
+    // Clear large Maps if they're getting too big
+    if (this.userProfiles.size > 500) {
+      this.userProfiles.clear();
+    }
+    
+    if (this.contentProfiles.size > 1000) {
+      this.contentProfiles.clear();
+    }
+    
+    if (this.interactionMatrix.size > 500) {
+      this.interactionMatrix.clear();
+    }
+    
+    if (this.userCulturalPreferences.size > 200) {
+      this.userCulturalPreferences.clear();
+    }
+    
+    if (this.regionalContentBoost.size > 100) {
+      this.regionalContentBoost.clear();
+    }
+    
+    if (this.languageContentBoost.size > 100) {
+      this.languageContentBoost.clear();
+    }
+    
+    // Force garbage collection hint
+    if (window.gc) {
+      window.gc();
+    }
   }
 
   // Get cache statistics

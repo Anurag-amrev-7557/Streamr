@@ -7,7 +7,23 @@ const LOADING_STATES = {
   trending: false,
   popular: false,
   topRated: false,
-  upcoming: false
+  upcoming: false,
+  // Category-specific loading states
+  action: false,
+  comedy: false,
+  drama: false,
+  horror: false,
+  sciFi: false,
+  documentary: false,
+  family: false,
+  animation: false,
+  awardWinning: false,
+  latest: false,
+  // TV show loading states
+  popularTV: false,
+  topRatedTV: false,
+  airingToday: false,
+  nowPlaying: false
 };
 
 const LoadingContext = createContext();

@@ -357,48 +357,47 @@ const WatchlistPage = () => {
         )}
         
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8 gap-3 sm:gap-0">
-          {/* Heading row for mobile: My List + Clear All */}
-          <div className="flex flex-row items-center justify-between sm:block w-full">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8 gap-4 sm:gap-0">
+          {/* Title and Count - Mobile optimized with Clear button on right */}
+          <div className="flex flex-row justify-between sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0 w-full sm:w-auto">
             <h1
-              className="flex items-center gap-2 text-base sm:text-xl font-bold text-left sm:mb-0 mb-2 sm:mr-6 flex-shrink-0 tracking-tight"
+              className="flex items-center gap-2 text-xl sm:text-xl font-bold text-left tracking-tight"
               aria-label="Your Watchlist"
             >
               <span className="inline-flex items-center">
                 <svg
-                  className="w-5 h-5 sm:w-6 sm:h-6 text-primary-500 mr-1"
+                  className="w-6 h-6 text-primary-500 mr-2"
                   fill="none"
                   stroke="currentColor"
                   strokeWidth={2}
                   viewBox="0 0 24 24"
                   aria-hidden="true"
                 >
-                  {/* Bookmark icon */}
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-4-7 4V5z"
                   />
                 </svg>
-                <span className="sm:inline-block inline">My&nbsp;List</span>
+                <span>My List</span>
               </span>
-              <span className="ml-2 text-sm font-semibold text-gray-400/80 align-middle">
+              <span className="text-sm font-semibold text-gray-400/80">
                 ({filteredWatchlist.length})
               </span>
             </h1>
-            {/* Mobile only: Clear All on right of heading */}
+            
+            {/* Mobile only: Clear All button on right of heading */}
             <div className="flex sm:hidden">
               {filteredWatchlist.length > 0 && (
                 <motion.button
                   onClick={() => setShowClearDialog(true)}
-                  className="relative px-4 py-2.5 rounded-lg font-medium text-sm transition-colors duration-200 shadow-sm overflow-hidden focus:outline-none bg-[#1a1d21] text-gray-400 hover:text-black hover:bg-white flex-shrink-0 ml-2"
-                  style={{ minWidth: 90 }}
+                  className="relative px-3 py-2 rounded-full font-medium text-sm transition-colors duration-200 shadow-sm overflow-hidden focus:outline-none bg-[#1a1d21] text-gray-400 hover:text-black hover:bg-white flex-shrink-0"
+                  style={{ minWidth: 80 }}
                 >
                   <span className="relative z-10">{getClearLabel()}</span>
-                  {/* Animated background on hover/active */}
                   <motion.div
                     layoutId="activeWatchlistTabClear"
-                    className="absolute inset-0 rounded-lg z-0"
+                    className="absolute inset-0 rounded-full z-0"
                     initial={{ backgroundColor: 'rgba(255,255,255,0)' }}
                     whileHover={{ backgroundColor: 'rgba(255,255,255,0.85)' }}
                     transition={{ type: 'spring', stiffness: 300, damping: 30 }}
@@ -407,144 +406,150 @@ const WatchlistPage = () => {
               )}
             </div>
           </div>
-          {/* Controls row: Tabs left, Sort by right (mobile), all in one row (desktop) */}
-          <div className="flex flex-row items-center gap-2 sm:justify-end sm:text-right w-full py-1 overflow-x-auto no-scrollbar">
-            {/* Tabs (left on mobile, right on desktop) */}
-            <div className="relative inline-flex items-center bg-[#1a1d21] rounded-full p-1 flex-grow-0 min-w-fit mr-1">
-              {tabs.map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`relative px-4 sm:px-4 py-2.5 sm:py-2 rounded-full text-sm sm:text-sm font-medium transition-colors focus:outline-none whitespace-nowrap ${
-                    activeTab === tab.id ? 'text-black' : 'text-gray-400 hover:text-white'
+
+          {/* Controls - Mobile optimized layout */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-2 w-full sm:w-auto">
+            {/* Tabs and Sort Row */}
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              {/* Tabs */}
+              <div className="relative inline-flex items-center bg-[#1a1d21] rounded-full p-1 flex-1 sm:flex-none">
+                {tabs.map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`relative px-3 sm:px-4 py-2 sm:py-2 rounded-full text-sm font-medium transition-colors focus:outline-none whitespace-nowrap flex-1 sm:flex-none ${
+                      activeTab === tab.id ? 'text-black' : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    <span className="relative z-10">{tab.label}</span>
+                    {activeTab === tab.id && (
+                      <motion.div
+                        layoutId="activeWatchlistTab"
+                        className="absolute inset-0 bg-white rounded-full"
+                        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                      />
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              {/* Sort Dropdown */}
+              <div className="relative flex-shrink-0" ref={sortDropdownRef}>
+                <motion.button
+                  onClick={() => setShowSortDropdown(!showSortDropdown)}
+                  className={`relative flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2 rounded-full text-sm font-medium transition-colors focus:outline-none whitespace-nowrap bg-[#1a1d21] ${
+                    showSortDropdown ? 'text-black' : 'text-gray-400 hover:text-white'
                   }`}
-                  style={{ minWidth: 80 }}
+                  style={{ minWidth: '100px', height: '40px' }}
+                  aria-haspopup="listbox"
+                  aria-expanded={showSortDropdown}
                 >
-                  <span className="relative z-10">{tab.label}</span>
-                  {activeTab === tab.id && (
-                    <motion.div
-                      layoutId="activeWatchlistTab"
-                      className="absolute inset-0 bg-white rounded-full"
-                      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                    />
-                  )}
-                </button>
-              ))}
-            </div>
-            {/* Sort Dropdown (right) */}
-            <div className="relative flex-shrink-0 min-w-fit sm:ml-0 ml-auto" ref={sortDropdownRef}>
-              <motion.button
-                onClick={() => setShowSortDropdown(!showSortDropdown)}
-                className={`relative flex items-center gap-2 px-4 sm:px-4 py-2.5 sm:py-2 rounded-full text-sm sm:text-sm font-medium transition-colors focus:outline-none whitespace-nowrap bg-[#1a1d21] leading-[1.6rem] sm:leading-[1.5rem] ${
-                  showSortDropdown ? 'text-black' : 'text-gray-400 hover:text-white'
-                }`}
-                style={{ minWidth: 120, height: '44px', minHeight: '44px' }}
-                aria-haspopup="listbox"
-                aria-expanded={showSortDropdown}
-              >
-                {/* Animated background: white when open, subtle on hover otherwise */}
+                  <AnimatePresence>
+                    {showSortDropdown ? (
+                      <motion.div
+                        key="sortby-bg-open"
+                        layoutId="activeWatchlistTabSort"
+                        className="absolute inset-0 bg-white rounded-full z-0"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                      />
+                    ) : (
+                      <motion.div
+                        key="sortby-bg-hover"
+                        className="absolute inset-0 rounded-full z-0"
+                        initial={{ backgroundColor: 'rgba(255,255,255,0)' }}
+                        whileHover={{ backgroundColor: 'rgba(255,255,255,0.13)' }}
+                        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                      />
+                    )}
+                  </AnimatePresence>
+                  <span className="relative z-10 text-xs sm:text-sm">Sort: {sortBy.charAt(0).toUpperCase() + sortBy.slice(1)}</span>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className={`h-3 w-3 sm:h-4 sm:w-4 transition-transform relative z-10 ${showSortDropdown ? 'rotate-180' : ''}`}
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                  >
+                    <path d="M7 10l5 5 5-5z" />
+                  </svg>
+                </motion.button>
+                {/* Dropdown rendered as sibling, not child, to avoid clipping */}
                 <AnimatePresence>
-                  {showSortDropdown ? (
+                  {showSortDropdown && (
                     <motion.div
-                      key="sortby-bg-open"
-                      layoutId="activeWatchlistTabSort"
-                      className="absolute inset-0 bg-white rounded-full z-0"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                    />
-                  ) : (
-                    <motion.div
-                      key="sortby-bg-hover"
-                      className="absolute inset-0 rounded-lg z-0"
-                      initial={{ backgroundColor: 'rgba(255,255,255,0)' }}
-                      whileHover={{ backgroundColor: 'rgba(255,255,255,0.13)' }}
-                      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                    />
+                      key="sort-dropdown"
+                      initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.98 }}
+                      transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+                      className="absolute z-50"
+                      style={{
+                        top: '100%',
+                        left: '0',
+                        right: '0',
+                        marginTop: '4px',
+                        background: '#1a1d21',
+                        borderRadius: '0.75rem',
+                        boxShadow: '0 10px 32px 0 rgba(0,0,0,0.25)',
+                        padding: '0.25rem 0',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        minWidth: '160px',
+                        maxWidth: '100%'
+                      }}
+                      tabIndex={-1}
+                    >
+                      <button
+                        onClick={() => {
+                          setSortBy('added');
+                          setShowSortDropdown(false);
+                        }}
+                        className={`w-full px-4 py-2 text-left text-sm rounded-lg transition-colors duration-150 hover:bg-white/10 focus:bg-white/10 outline-none ${
+                          sortBy === 'added' ? 'text-white font-semibold' : 'text-white/60'
+                        }`}
+                      >
+                        Recently Added
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSortBy('title');
+                          setShowSortDropdown(false);
+                        }}
+                        className={`w-full px-4 py-2 text-left text-sm rounded-lg transition-colors duration-150 hover:bg-white/10 focus:bg-white/10 outline-none ${
+                          sortBy === 'title' ? 'text-white font-semibold' : 'text-white/60'
+                        }`}
+                      >
+                        Title
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSortBy('rating');
+                          setShowSortDropdown(false);
+                        }}
+                        className={`w-full px-4 py-2 text-left text-sm rounded-lg transition-colors duration-150 hover:bg-white/10 focus:bg-white/10 outline-none ${
+                          sortBy === 'rating' ? 'text-white font-semibold' : 'text-white/60'
+                        }`}
+                      >
+                        Rating
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSortBy('year');
+                          setShowSortDropdown(false);
+                        }}
+                        className={`w-full px-4 py-2 text-left text-sm rounded-lg transition-colors duration-150 hover:bg-white/10 focus:bg-white/10 outline-none ${
+                          sortBy === 'year' ? 'text-white font-semibold' : 'text-white/60'
+                        }`}
+                      >
+                        Year
+                      </button>
+                    </motion.div>
                   )}
                 </AnimatePresence>
-                <span className="relative z-10">Sort by: {sortBy.charAt(0).toUpperCase() + sortBy.slice(1)}</span>
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className={`h-4 w-4 transition-transform relative z-10 ${showSortDropdown ? 'rotate-180' : ''}`}
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                >
-                  <path d="M7 10l5 5 5-5z" />
-                </svg>
-              </motion.button>
-              {/* Dropdown rendered as sibling, not child, to avoid clipping */}
-              <AnimatePresence>
-                {showSortDropdown && (
-                  <motion.div
-                    key="sort-dropdown"
-                    initial={{ opacity: 0, y: 10, scale: 0.98 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 10, scale: 0.98 }}
-                    transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
-                    className="fixed left-0 z-50"
-                    style={{
-                      top: sortDropdownRef.current ? (sortDropdownRef.current.getBoundingClientRect().bottom + window.scrollY) : 0,
-                      left: sortDropdownRef.current ? (sortDropdownRef.current.getBoundingClientRect().left + window.scrollX) : 0,
-                      width: '160px',
-                      maxWidth: '192px',
-                      background: '#1a1d21',
-                      borderRadius: '0.75rem',
-                      boxShadow: '0 10px 32px 0 rgba(0,0,0,0.25)',
-                      padding: '0.25rem 0',
-                      border: '1px solid rgba(255,255,255,0.1)'
-                    }}
-                    tabIndex={-1}
-                  >
-                    <button
-                      onClick={() => {
-                        setSortBy('added');
-                        setShowSortDropdown(false);
-                      }}
-                      className={`w-full px-4 py-2 text-left text-sm rounded-lg transition-colors duration-150 hover:bg-white/10 focus:bg-white/10 outline-none ${
-                        sortBy === 'added' ? 'text-white font-semibold' : 'text-white/60'
-                      }`}
-                    >
-                      Recently Added
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSortBy('title');
-                        setShowSortDropdown(false);
-                      }}
-                      className={`w-full px-4 py-2 text-left text-sm rounded-lg transition-colors duration-150 hover:bg-white/10 focus:bg-white/10 outline-none ${
-                        sortBy === 'title' ? 'text-white font-semibold' : 'text-white/60'
-                      }`}
-                    >
-                      Title
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSortBy('rating');
-                        setShowSortDropdown(false);
-                      }}
-                      className={`w-full px-4 py-2 text-left text-sm rounded-lg transition-colors duration-150 hover:bg-white/10 focus:bg-white/10 outline-none ${
-                        sortBy === 'rating' ? 'text-white font-semibold' : 'text-white/60'
-                      }`}
-                    >
-                      Rating
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSortBy('year');
-                        setShowSortDropdown(false);
-                      }}
-                      className={`w-full px-4 py-2 text-left text-sm rounded-lg transition-colors duration-150 hover:bg-white/10 focus:bg-white/10 outline-none ${
-                        sortBy === 'year' ? 'text-white font-semibold' : 'text-white/60'
-                      }`}
-                    >
-                      Year
-                    </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+              </div>
             </div>
+
             {/* Desktop only: Clear All at end of controls */}
             <div className="hidden sm:flex">
               {filteredWatchlist.length > 0 && (
@@ -554,7 +559,6 @@ const WatchlistPage = () => {
                   style={{ minWidth: 90 }}
                 >
                   <span className="relative z-10">{getClearLabel()}</span>
-                  {/* Animated background on hover/active */}
                   <motion.div
                     layoutId="activeWatchlistTabClear"
                     className="absolute inset-0 rounded-lg z-0"

@@ -17,7 +17,7 @@ class MemoryManager {
     this.isMonitoring = true;
     this.intervalId = setInterval(() => {
       this.checkMemory();
-    }, 15000); // Check every 15 seconds
+    }, 30000); // Check every 30 seconds - reduced frequency to prevent performance impact
     
     console.log('[MemoryManager] Started monitoring memory usage');
   }

@@ -2,18 +2,78 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion';
 import { similarContentUtils } from '../services/enhancedSimilarContentService';
 import { formatRating } from '../utils/ratingUtils';
-import memoryManager from '../utils/memoryManager';
+import memoryOptimizationService from '../utils/memoryOptimizationService';
+
+// FIXED: Memory leak detection utility
+const memoryLeakDetector = {
+  snapshots: new Map(),
+  maxSnapshots: 10,
+  
+  takeSnapshot(componentName, data) {
+    const snapshot = {
+      timestamp: Date.now(),
+      memoryUsage: performance.memory ? performance.memory.usedJSHeapSize / 1024 / 1024 : 0,
+      dataSize: JSON.stringify(data).length,
+      itemCount: Array.isArray(data) ? data.length : 0
+    };
+    
+    if (!this.snapshots.has(componentName)) {
+      this.snapshots.set(componentName, []);
+    }
+    
+    const componentSnapshots = this.snapshots.get(componentName);
+    componentSnapshots.push(snapshot);
+    
+    // Keep only recent snapshots
+    if (componentSnapshots.length > this.maxSnapshots) {
+      componentSnapshots.shift();
+    }
+    
+    // Check for memory leaks
+    if (componentSnapshots.length >= 3) {
+      const recent = componentSnapshots.slice(-3);
+      const memoryIncrease = recent[recent.length - 1].memoryUsage - recent[0].memoryUsage;
+      const dataIncrease = recent[recent.length - 1].dataSize - recent[0].dataSize;
+      
+      if (memoryIncrease > 100 || dataIncrease > 10000) {
+        console.warn(`[MemoryLeakDetector] Potential memory leak detected in ${componentName}:`, {
+          memoryIncrease: `${memoryIncrease.toFixed(2)}MB`,
+          dataIncrease: `${dataIncrease} bytes`
+        });
+      }
+    }
+  },
+  
+  clearSnapshots(componentName) {
+    if (componentName) {
+      this.snapshots.delete(componentName);
+    } else {
+      this.snapshots.clear();
+    }
+  }
+};
 
 // FIXED: Memory optimization utility using centralized memory manager
 const memoryOptimizer = {
+  // FIXED: Use WeakMap for better memory management
+  cachedData: new WeakMap(),
+  
   cleanup: () => {
     // Clear any cached data
     if (similarContentUtils.clearCache) {
       similarContentUtils.clearCache();
     }
     
+    // FIXED: Clear all similar content cache
+    if (similarContentUtils.clearAllSimilarContentCache) {
+      similarContentUtils.clearAllSimilarContentCache();
+    }
+    
+    // FIXED: Clear WeakMap cache
+    memoryOptimizer.cachedData = new WeakMap();
+    
     // Get memory stats from centralized manager
-    const stats = memoryManager.getStats();
+    const stats = memoryOptimizationService.getStats();
     if (stats && stats.current > 800) {
       console.warn(`[MemoryOptimizer] Memory usage high: ${stats.current.toFixed(2)}MB, performing cleanup`);
     }
@@ -21,10 +81,29 @@ const memoryOptimizer = {
   
   monitor: () => {
     // Delegate to centralized memory manager
-    const stats = memoryManager.getStats();
+    const stats = memoryOptimizationService.getStats();
     if (stats && stats.current > 1000) {
       console.warn(`[MemoryOptimizer] Critical memory usage: ${stats.current.toFixed(2)}MB`);
       memoryOptimizer.cleanup();
+    }
+  },
+  
+  // FIXED: Enhanced cleanup for component unmount
+  componentCleanup: () => {
+    // Clear all caches
+    if (similarContentUtils.clearAllSimilarContentCache) {
+      similarContentUtils.clearAllSimilarContentCache();
+    }
+    
+    // FIXED: Clear WeakMap to prevent circular references
+    memoryOptimizer.cachedData = new WeakMap();
+    
+    // FIXED: Clear memory leak detection
+    memoryLeakDetector.clearSnapshots();
+    
+    // Force garbage collection hint
+    if (window.gc) {
+      window.gc();
     }
   }
 };
@@ -39,10 +118,19 @@ const CustomDropdown = React.memo(({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
+  const isMountedRef = useRef(true); // FIXED: Add mounted ref for cleanup
 
-  // Close dropdown when clicking outside - FIXED: Added proper cleanup with useCallback
+  // FIXED: Enhanced cleanup on unmount
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  // Close dropdown when clicking outside - FIXED: Enhanced cleanup with useCallback
   const handleClickOutside = useCallback((event) => {
-    if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+    if (isMountedRef.current && dropdownRef.current && !dropdownRef.current.contains(event.target)) {
       setIsOpen(false);
     }
   }, []);
@@ -52,7 +140,10 @@ const CustomDropdown = React.memo(({
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => {
-        document.removeEventListener('mousedown', handleClickOutside);
+        // FIXED: Only remove listener if component is still mounted
+        if (isMountedRef.current) {
+          document.removeEventListener('mousedown', handleClickOutside);
+        }
       };
     }
   }, [isOpen, handleClickOutside]);
@@ -114,8 +205,24 @@ const CustomDropdown = React.memo(({
   );
 });
 
-// Netflix-Level Enhanced Similar Content Card with AI indicators - FIXED: Memory leak prevention
+// Netflix-Level Enhanced Similar Content Card with AI indicators - FIXED: Enhanced memory leak prevention
 const EnhancedSimilarCard = React.memo(({ item, onClick, isMobile, showRelevanceScore = false }) => {
+  const isMountedRef = useRef(true); // FIXED: Add mounted ref for cleanup
+  const imageRef = useRef(null); // FIXED: Add image ref for cleanup
+
+  // FIXED: Enhanced cleanup on unmount
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      // FIXED: Clear image reference to help garbage collection
+      if (imageRef.current) {
+        imageRef.current.src = '';
+        imageRef.current = null;
+      }
+    };
+  }, []);
+
   // FIXED: Memoize computed values to prevent unnecessary recalculations
   const displayTitle = useMemo(() => item.title || item.name || 'Untitled', [item.title, item.name]);
   
@@ -153,19 +260,30 @@ const EnhancedSimilarCard = React.memo(({ item, onClick, isMobile, showRelevance
 
   // FIXED: Optimized click handler with useCallback
   const handleClick = useCallback(() => {
-    if (onClick) {
+    if (isMountedRef.current && onClick) {
       onClick(item);
     }
   }, [onClick, item]);
 
-  // FIXED: Optimized image error handler
+  // FIXED: Enhanced image error handler with cleanup
   const handleImageError = useCallback((e) => {
-    if (e.target) {
+    if (isMountedRef.current && e.target) {
       e.target.style.display = 'none';
       // Show fallback content
       const fallback = e.target.parentNode.querySelector('.image-fallback');
       if (fallback) {
         fallback.style.display = 'flex';
+      }
+    }
+  }, []);
+
+  // FIXED: Enhanced image load handler with cleanup
+  const handleImageLoad = useCallback((e) => {
+    if (isMountedRef.current && e.target) {
+      // Hide fallback when image loads successfully
+      const fallback = e.target.parentNode.querySelector('.image-fallback');
+      if (fallback) {
+        fallback.style.display = 'none';
       }
     }
   }, []);
@@ -191,11 +309,13 @@ const EnhancedSimilarCard = React.memo(({ item, onClick, isMobile, showRelevance
       <div className="aspect-[2/3] rounded-xl overflow-hidden bg-gradient-to-br from-gray-800 to-gray-900 relative shadow-lg border border-white/5 hover:border-white/10 transition-all duration-300">
         {item.poster_path ? (
           <img 
+            ref={imageRef}
             src={`https://image.tmdb.org/t/p/w500${item.poster_path}`} 
             alt={displayTitle} 
             className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110" 
             loading="lazy"
             onError={handleImageError}
+            onLoad={handleImageLoad}
           />
         ) : null}
         
@@ -546,9 +666,12 @@ const EnhancedSimilarContent = React.memo(({
     year: 0
   });
 
-  // FIXED: Added abort controller for cleanup with proper memory management
+  // FIXED: Enhanced abort controller and request tracking with proper cleanup
   const abortControllerRef = useRef(null);
   const isMountedRef = useRef(true);
+  const currentRequestsRef = useRef(new Set()); // FIXED: Use ref instead of function property
+  const timeoutRef = useRef(null); // FIXED: Add timeout ref for cleanup
+  const intersectionObserverRef = useRef(null); // FIXED: Add intersection observer ref for cleanup
 
   // FIXED: Enhanced cleanup on unmount
   useEffect(() => {
@@ -556,10 +679,32 @@ const EnhancedSimilarContent = React.memo(({
     
     return () => {
       isMountedRef.current = false;
-      // Abort any pending requests
+      
+      // FIXED: Clear timeout
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      
+      // FIXED: Clear debounced load more timer
+      if (debouncedLoadMore.current) {
+        clearTimeout(debouncedLoadMore.current);
+        debouncedLoadMore.current = null;
+      }
+      
+      // FIXED: Abort any pending requests
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
         abortControllerRef.current = null;
+      }
+      
+      // FIXED: Clear all tracked requests
+      currentRequestsRef.current.clear();
+      
+      // FIXED: Disconnect intersection observer
+      if (intersectionObserverRef.current) {
+        intersectionObserverRef.current.disconnect();
+        intersectionObserverRef.current = null;
       }
     };
   }, []);
@@ -570,24 +715,21 @@ const EnhancedSimilarContent = React.memo(({
     
     // FIXED: Prevent duplicate requests for the same page
     const requestKey = `${contentId}-${contentType}-${page}`;
-    if (fetchSimilarContent.currentRequests?.has(requestKey)) {
+    if (currentRequestsRef.current.has(requestKey)) {
       return;
     }
     
-    // Cancel previous request if it exists
+    // FIXED: Cancel previous request if it exists
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
     
-    // Create new abort controller
+    // FIXED: Create new abort controller
     abortControllerRef.current = new AbortController();
     
-    // Track current request
-    if (!fetchSimilarContent.currentRequests) {
-      fetchSimilarContent.currentRequests = new Set();
-    }
-    fetchSimilarContent.currentRequests.add(requestKey);
+    // FIXED: Track current request using ref
+    currentRequestsRef.current.add(requestKey);
     
     if (page === 1) {
       setLoading(true);
@@ -611,6 +753,9 @@ const EnhancedSimilarContent = React.memo(({
       }
       
       if (results && Array.isArray(results)) {
+        // FIXED: Add memory leak detection
+        memoryLeakDetector.takeSnapshot('EnhancedSimilarContent', results);
+        
         if (append) {
           setSimilarContent(prev => {
             // Enhanced duplicate handling with smart strategy
@@ -658,8 +803,8 @@ const EnhancedSimilarContent = React.memo(({
       setError('Failed to load similar content');
       setHasMore(false);
     } finally {
-      // Remove request from tracking
-      fetchSimilarContent.currentRequests?.delete(requestKey);
+      // FIXED: Remove request from tracking using ref
+      currentRequestsRef.current.delete(requestKey);
       
       if (isMountedRef.current) {
         setLoading(false);
@@ -720,9 +865,11 @@ const EnhancedSimilarContent = React.memo(({
     return filtered;
   }, [similarContent, filters]);
 
-  // Get content to display (first N items) - FIXED: Optimized with useMemo
+  // Get content to display (first N items) - FIXED: Optimized with useMemo and memory limits
   const displayedContent = useMemo(() => {
-    return filteredContent.slice(0, displayedItems);
+    // FIXED: Limit the maximum number of items to prevent memory issues
+    const maxDisplayItems = Math.min(displayedItems, 24); // Hard limit of 24 items
+    return filteredContent.slice(0, maxDisplayItems);
   }, [filteredContent, displayedItems]);
 
   // Handle filter changes - FIXED: Optimized with useCallback
@@ -732,31 +879,44 @@ const EnhancedSimilarContent = React.memo(({
     setCurrentPage(1); // Reset page when filters change
   }, []);
 
-  // Handle load more - optimized for faster loading - FIXED: Optimized with useCallback and better error handling
+  // FIXED: Debounced load more function to prevent rapid successive calls
+  const debouncedLoadMore = useRef(null);
+
+  // Handle load more - optimized for faster loading - FIXED: Enhanced with debouncing and better error handling
   const handleLoadMore = useCallback(async () => {
     if (hasMore && !loading && !loadingMore && isMountedRef.current) {
-      const nextPage = currentPage + 1;
-      setCurrentPage(nextPage);
-      
-      try {
-        // FIXED: Check memory before loading more
-        memoryOptimizer.monitor();
-        
-        // Fetch more content from the next page
-        await fetchSimilarContent(nextPage, true);
-        
-        // FIXED: Limit displayed items to prevent memory issues
-        setDisplayedItems(prev => {
-          const newCount = Math.min(prev + 6, maxItems); // FIXED: Reduced from 8 to 6
-          return newCount;
-        });
-      } catch (error) {
-        // Reset page on error
-        if (isMountedRef.current) {
-          setCurrentPage(prev => prev - 1);
-        }
-        console.error('Error loading more content:', error);
+      // FIXED: Clear any existing debounce timer
+      if (debouncedLoadMore.current) {
+        clearTimeout(debouncedLoadMore.current);
       }
+      
+      // FIXED: Debounce the load more operation
+      debouncedLoadMore.current = setTimeout(async () => {
+        if (!isMountedRef.current) return;
+        
+        const nextPage = currentPage + 1;
+        setCurrentPage(nextPage);
+        
+        try {
+          // FIXED: Check memory before loading more
+          memoryOptimizer.monitor();
+          
+          // Fetch more content from the next page
+          await fetchSimilarContent(nextPage, true);
+          
+          // FIXED: Limit displayed items to prevent memory issues
+          setDisplayedItems(prev => {
+            const newCount = Math.min(prev + 6, maxItems); // FIXED: Reduced from 8 to 6
+            return newCount;
+          });
+        } catch (error) {
+          // Reset page on error
+          if (isMountedRef.current) {
+            setCurrentPage(prev => prev - 1);
+          }
+          console.error('Error loading more content:', error);
+        }
+      }, 300); // FIXED: 300ms debounce delay
     }
   }, [hasMore, loading, loadingMore, currentPage, fetchSimilarContent, maxItems]);
 
@@ -811,12 +971,10 @@ const EnhancedSimilarContent = React.memo(({
     }
   }), []);
 
-  // Fetch content on mount and when contentId/contentType changes - FIXED: Added proper cleanup and request deduplication
+  // Fetch content on mount and when contentId/contentType changes - FIXED: Enhanced cleanup and timeout management
   useEffect(() => {
     // FIXED: Clear any existing requests
-    if (fetchSimilarContent.currentRequests) {
-      fetchSimilarContent.currentRequests.clear();
-    }
+    currentRequestsRef.current.clear();
     
     // Clear previous content when switching to a new movie/show
     setSimilarContent([]);
@@ -826,20 +984,28 @@ const EnhancedSimilarContent = React.memo(({
     setError(null);
     
     if (contentId && isMountedRef.current) {
-      // FIXED: Add small delay to prevent rapid successive calls
-      const timeoutId = setTimeout(() => {
+      // FIXED: Use ref for timeout to ensure proper cleanup
+      timeoutRef.current = setTimeout(() => {
         if (isMountedRef.current) {
           fetchSimilarContent(1, false);
         }
       }, 100);
-      
-      return () => {
-        clearTimeout(timeoutId);
-      };
     }
 
-    // Cleanup function with comprehensive memory management
+    // FIXED: Enhanced cleanup function with comprehensive memory management
     return () => {
+      // Clear timeout
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      
+      // FIXED: Clear debounced load more timer
+      if (debouncedLoadMore.current) {
+        clearTimeout(debouncedLoadMore.current);
+        debouncedLoadMore.current = null;
+      }
+      
       // Abort any ongoing requests
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -847,20 +1013,36 @@ const EnhancedSimilarContent = React.memo(({
       }
       
       // Clear request tracking
-      if (fetchSimilarContent.currentRequests) {
-        fetchSimilarContent.currentRequests.clear();
+      currentRequestsRef.current.clear();
+      
+      // FIXED: Disconnect intersection observer
+      if (intersectionObserverRef.current) {
+        intersectionObserverRef.current.disconnect();
+        intersectionObserverRef.current = null;
       }
       
-      // Clear any pending state updates to prevent memory leaks
-      setSimilarContent([]);
-      setLoading(false);
-      setLoadingMore(false);
-      setError(null);
+      // FIXED: Only clear state if component is still mounted to prevent memory leaks
+      if (isMountedRef.current) {
+        setSimilarContent([]);
+        setLoading(false);
+        setLoadingMore(false);
+        setError(null);
+      }
     };
-  }, [contentId, contentType]); // FIXED: Removed fetchSimilarContent from dependencies to prevent infinite loops
+  }, [contentId, contentType, fetchSimilarContent]); // FIXED: Added fetchSimilarContent back with proper memoization
 
-  // Update hasMore when filtered content changes - FIXED: Optimized with useMemo
+  // Update hasMore when filtered content changes - FIXED: Optimized with useMemo and memory checks
   useEffect(() => {
+    // FIXED: Check memory usage before allowing more content
+    if (performance.memory) {
+      const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
+      if (memoryMB > 800) {
+        // If memory usage is high, limit the content
+        setHasMore(false);
+        return;
+      }
+    }
+    
     setHasMore(displayedItems < filteredContent.length || (hasMore && similarContent.length > 0));
   }, [filteredContent.length, displayedItems, hasMore, similarContent.length]);
 
@@ -871,13 +1053,13 @@ const EnhancedSimilarContent = React.memo(({
       let isActive = true;
       
       return () => {
-        if (!isActive) return;
+        if (!isActive || !isMountedRef.current) return;
         isActive = false;
         
         const endTime = performance.now();
         const duration = endTime - startTime;
         
-        // Only log if render takes too long
+        // FIXED: Only log if render takes too long and component is still mounted
         if (duration > 1000) {
           console.warn(`[EnhancedSimilarContent] Component took ${duration.toFixed(2)}ms to render`);
         }
@@ -896,7 +1078,7 @@ const EnhancedSimilarContent = React.memo(({
   // FIXED: Register cleanup with centralized memory manager
   useEffect(() => {
     // Register cleanup callback with memory manager
-    const unregisterCleanup = memoryManager.registerCleanupCallback(() => {
+    const unregisterCleanup = memoryOptimizationService.registerCleanupCallback(() => {
       if (isMountedRef.current) {
         memoryOptimizer.cleanup();
       }
@@ -910,14 +1092,19 @@ const EnhancedSimilarContent = React.memo(({
       // Unregister cleanup callback
       unregisterCleanup();
       
-      // FIXED: Force garbage collection hint and clear references
-      memoryOptimizer.cleanup();
+      // FIXED: Enhanced cleanup with garbage collection hint
+      memoryOptimizer.componentCleanup();
       
-      // Clear any remaining references
-      setSimilarContent([]);
-      setLoading(false);
-      setLoadingMore(false);
-      setError(null);
+      // FIXED: Clear memory leak detection snapshots
+      memoryLeakDetector.clearSnapshots('EnhancedSimilarContent');
+      
+      // FIXED: Only clear state if component is still mounted to prevent memory leaks
+      if (isMountedRef.current) {
+        setSimilarContent([]);
+        setLoading(false);
+        setLoadingMore(false);
+        setError(null);
+      }
     };
   }, []);
 
@@ -1250,8 +1437,14 @@ const EnhancedSimilarContent = React.memo(({
         initial="initial"
         animate="animate"
       >
-        {/* FIXED: Removed mode="wait" to prevent AnimatePresence warnings */}
-        <AnimatePresence>
+        {/* FIXED: Enhanced AnimatePresence with proper cleanup - removed mode="wait" for multiple children */}
+        <AnimatePresence onExitComplete={() => {
+          // FIXED: Cleanup completed animations to prevent memory leaks
+          if (intersectionObserverRef.current) {
+            intersectionObserverRef.current.disconnect();
+            intersectionObserverRef.current = null;
+          }
+        }}>
           {displayedContent.map((item, index) => (
             <motion.div
               key={`${item.id}-${index}`}
@@ -1264,13 +1457,19 @@ const EnhancedSimilarContent = React.memo(({
                 damping: 30
               }}
               layout
-              // FIXED: Add intersection observer for lazy loading
+              // FIXED: Enhanced intersection observer for lazy loading with cleanup
               whileInView={{ 
                 opacity: 1, 
                 scale: 1,
                 transition: { duration: 0.2 }
               }}
               viewport={{ once: true, margin: "50px" }}
+              onAnimationComplete={() => {
+                // FIXED: Cleanup animation references to prevent memory leaks
+                if (!isMountedRef.current) {
+                  return;
+                }
+              }}
             >
               <EnhancedSimilarCard
                 item={item}

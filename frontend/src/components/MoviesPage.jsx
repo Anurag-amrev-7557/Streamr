@@ -266,6 +266,11 @@ const MovieCard = ({ movie, index, onClick, onPrefetch }) => {
       if (imgRef.current) {
         imgRef.current = null;
       }
+      
+      // Clear any pending image loads
+      if (imgRef.current && imgRef.current.src) {
+        imgRef.current.src = '';
+      }
     };
   }, []);
 
@@ -472,6 +477,7 @@ const MoviesPage = () => {
   });
   const prefetchQueueRef = useRef([]);
   const isProcessingPrefetchRef = useRef(false);
+  const prefetchTimeoutRef = useRef(null);
 
   // Predictive prefetching based on viewport visibility
   const [visibleMovies, setVisibleMovies] = useState(new Set());
@@ -591,6 +597,18 @@ const MoviesPage = () => {
       fetchInProgress.current = false;
     }
   }, [selectedYear, selectedGenre, activeCategory]);
+  
+  // Memory optimization: Clear fetchMovies callback on unmount
+  useEffect(() => {
+    return () => {
+      // Reset fetch states on cleanup
+      if (fetchInProgress.current) {
+        fetchInProgress.current = false;
+      }
+      setLoading(false);
+      setIsLoadingNextPage(false);
+    };
+  }, []);
 
   const handleCategoryChange = useCallback((category) => {
     // Prevent multiple rapid clicks
@@ -617,6 +635,14 @@ const MoviesPage = () => {
       setIsTransitioning(false);
     }, 400);
   }, [activeCategory, isTransitioning, fetchMovies]);
+  
+  // Memory optimization: Clear handleCategoryChange callback on unmount
+  useEffect(() => {
+    return () => {
+      // Reset transition state on cleanup
+      setIsTransitioning(false);
+    };
+  }, []);
 
   const handleGenreSelect = useCallback(async (genre) => {
     setSelectedGenre(genre);
@@ -631,6 +657,15 @@ const MoviesPage = () => {
     }
     navigate(`?${searchParams.toString()}`, { replace: true });
   }, [navigate]);
+  
+  // Memory optimization: Clear handleGenreSelect callback on unmount
+  useEffect(() => {
+    return () => {
+      // Reset genre state on cleanup
+      setSelectedGenre(null);
+      setGenreDropdownOpen(false);
+    };
+  }, []);
 
   // Add URL parameter handling
   useEffect(() => {
@@ -685,6 +720,7 @@ const MoviesPage = () => {
     
     return () => {
       // Cleanup function for URL parameter handling
+      // No specific cleanup needed as this effect only reads URL parameters
     };
   }, [window.location.search, genres]);
 
@@ -715,12 +751,65 @@ const MoviesPage = () => {
       isProcessingPrefetchRef.current = false;
       fetchInProgress.current = false;
       
+      // Clear prefetch timeout
+      if (prefetchTimeoutRef.current) {
+        clearTimeout(prefetchTimeoutRef.current);
+        prefetchTimeoutRef.current = null;
+      }
+      
       // Clear large state objects
       setMovies([]);
       setSearchResults([]);
       setPrefetchedMovies(new Set());
       setPrefetchCache(new Map());
       setVisibleMovies(new Set());
+      
+      // Clear any remaining timeouts
+      // Note: hoverTimeoutRef is handled by MovieCard components, prefetchTimeoutRef is handled here
+      
+      // Clear all state to prevent memory leaks
+      setSearchQuery('');
+      setSelectedGenre(null);
+      setSelectedYear(null);
+      setSortBy('popularity');
+      setTempMovies([]);
+      setSelectedMovie(null);
+      setPage(1);
+      setTotalPages(1);
+      setIsLoadingMore(false);
+      setShowGenreDropdown(false);
+      setShowSortDropdown(false);
+      setShowYearDropdown(false);
+      setLoadedImages({});
+      setLoading(true);
+      setLoadedSections({
+        header: false,
+        filters: false,
+        movies: false
+      });
+      setSearchResults([]);
+      setIsSearching(false);
+      setSearchError(null);
+      setSearchPage(1);
+      setHasMoreSearchResults(false);
+      setActiveCategory('popular');
+      setHasMore(true);
+      setError(null);
+      setYearDropdownOpen(false);
+      setGenreDropdownOpen(false);
+      setSearchHistoryItems([]);
+      setTrendingSearches([]);
+      setPrefetchStats({
+        totalPrefetched: 0,
+        successfulPrefetches: 0,
+        failedPrefetches: 0,
+        cacheHits: 0
+      });
+      setIsTransitioning(false);
+      setIsUpdating(false);
+      setCurrentPage(1);
+      setIsLoadingNextPage(false);
+      setNextPageMovies([]);
     };
   }, []);
 
@@ -792,13 +881,37 @@ const MoviesPage = () => {
       setSelectedMovie(movie);
     }
   }, [prefetchCache]);
+  
+  // Memory optimization: Clear handleMovieClick callback on unmount
+  useEffect(() => {
+    return () => {
+      // Reset selected movie on cleanup
+      setSelectedMovie(null);
+    };
+  }, []);
 
   const handleCloseOverlay = useCallback(() => {
     setSelectedMovie(null);
   }, []);
+  
+  // Memory optimization: Clear handleCloseOverlay callback on unmount
+  useEffect(() => {
+    return () => {
+      // Reset overlay state on cleanup
+      setSelectedMovie(null);
+    };
+  }, []);
 
   const handleSimilarMovieClick = useCallback((similarMovie) => {
     setSelectedMovie(similarMovie);
+  }, []);
+  
+  // Memory optimization: Clear handleSimilarMovieClick callback on unmount
+  useEffect(() => {
+    return () => {
+      // Reset similar movie state on cleanup
+      setSelectedMovie(null);
+    };
   }, []);
 
   // Fetch genres on component mount
@@ -820,6 +933,9 @@ const MoviesPage = () => {
     
     return () => {
       isMounted = false;
+      
+      // Clear genres on cleanup to prevent memory leaks
+      setGenres([]);
     };
   }, []);
 
@@ -836,6 +952,10 @@ const MoviesPage = () => {
       if (fetchInProgress.current) {
         fetchInProgress.current = false;
       }
+      
+      // Clear any pending search operations
+      setIsSearching(false);
+      setSearchError(null);
     };
   }, []);
 
@@ -917,6 +1037,17 @@ const MoviesPage = () => {
       setIsSearching(false);
     }
   };
+  
+  // Memory optimization: Clear performSearch function on unmount
+  useEffect(() => {
+    return () => {
+      // Reset search states on cleanup
+      setIsSearching(false);
+      setSearchError(null);
+      setSearchResults([]);
+      setHasMoreSearchResults(false);
+    };
+  }, []);
 
   // Debounced search function - removed duplicate implementation
   // The EnhancedSearchBar now handles the search logic
@@ -954,6 +1085,15 @@ const MoviesPage = () => {
       setIsSearching(false);
     }
   }, [searchQuery, hasMoreSearchResults, isSearching, searchPage]);
+  
+  // Memory optimization: Clear loadMoreSearchResults callback on unmount
+  useEffect(() => {
+    return () => {
+      // Reset search pagination states on cleanup
+      setSearchPage(1);
+      setHasMoreSearchResults(false);
+    };
+  }, []);
 
   // Update the intersection observer effect for search results
   useEffect(() => {
@@ -963,6 +1103,7 @@ const MoviesPage = () => {
     
     return () => {
       // Cleanup for search results intersection observer
+      // No specific cleanup needed as the observer is managed by useInView
     };
   }, [inView, hasMoreSearchResults, isSearching, searchQuery, loadMoreSearchResults]);
 
@@ -1008,6 +1149,13 @@ const MoviesPage = () => {
       clearTimeout(timer);
       clearTimeout(filtersTimer);
       clearTimeout(moviesTimer);
+      
+      // Reset loaded sections on cleanup
+      setLoadedSections({
+        header: false,
+        filters: false,
+        movies: false
+      });
     };
   }, []);
 
@@ -1032,6 +1180,10 @@ const MoviesPage = () => {
       if (unsubscribe && typeof unsubscribe === 'function') {
         unsubscribe();
       }
+      
+      // Clear search data on cleanup
+      setSearchHistoryItems([]);
+      setTrendingSearches([]);
     };
   }, []);
 
@@ -1048,6 +1200,11 @@ const MoviesPage = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      
+      // Close all dropdowns on cleanup
+      setShowGenreDropdown(false);
+      setShowYearDropdown(false);
+      setShowSortDropdown(false);
     };
   }, []);
 
@@ -1064,6 +1221,11 @@ const MoviesPage = () => {
     document.addEventListener('keydown', handleEscape);
     return () => {
       document.removeEventListener('keydown', handleEscape);
+      
+      // Close all dropdowns on cleanup
+      setShowGenreDropdown(false);
+      setShowYearDropdown(false);
+      setShowSortDropdown(false);
     };
   }, []);
 
@@ -1098,6 +1260,15 @@ const MoviesPage = () => {
       return moviesToFilter || [];
     }
   }, [selectedGenre, selectedYear]);
+  
+  // Memory optimization: Clear filterMovies callback on unmount
+  useEffect(() => {
+    return () => {
+      // Reset filter states on cleanup
+      setSelectedGenre(null);
+      setSelectedYear(null);
+    };
+  }, []);
 
   // Get the current list of movies to display
   const getDisplayMovies = useCallback(() => {
@@ -1114,6 +1285,16 @@ const MoviesPage = () => {
       return [];
     }
   }, [searchQuery, searchResults, movies, filterMovies]);
+  
+  // Memory optimization: Clear getDisplayMovies callback on unmount
+  useEffect(() => {
+    return () => {
+      // Reset display states on cleanup
+      setSearchQuery('');
+      setSearchResults([]);
+      setMovies([]);
+    };
+  }, []);
 
   const handleYearSelect = useCallback(async (year) => {
     console.log('🎬 Year selected:', year);
@@ -1129,6 +1310,15 @@ const MoviesPage = () => {
     }
     navigate(`?${searchParams.toString()}`, { replace: true });
   }, [navigate]);
+  
+  // Memory optimization: Clear handleYearSelect callback on unmount
+  useEffect(() => {
+    return () => {
+      // Reset year state on cleanup
+      setSelectedYear(null);
+      setYearDropdownOpen(false);
+    };
+  }, []);
 
   // Update the useEffect that tracks movies state changes
   useEffect(() => {
@@ -1139,6 +1329,7 @@ const MoviesPage = () => {
     return () => {
       // Cleanup movies reference on unmount
       moviesRef.current = [];
+      previousMovies.current = [];
     };
   }, [movies]);
 
@@ -1156,6 +1347,12 @@ const MoviesPage = () => {
       
       fetchMovies(activeCategory, 1);
     }
+    
+    return () => {
+      // Cleanup on filter change
+      setNextPageMovies([]);
+      setIsLoadingNextPage(false);
+    };
   }, [selectedYear, selectedGenre, activeCategory, searchQuery, fetchMovies]);
 
   // Initial load effect
@@ -1163,6 +1360,13 @@ const MoviesPage = () => {
     if (!searchQuery.trim() && movies.length === 0) {
       fetchMovies(activeCategory, 1);
     }
+    
+    return () => {
+      // Cleanup on initial load effect unmount
+      if (fetchInProgress.current) {
+        fetchInProgress.current = false;
+      }
+    };
   }, [fetchMovies, activeCategory, searchQuery, movies.length]);
 
   // Update the loadMoreMovies function with memory optimization
@@ -1258,31 +1462,48 @@ const MoviesPage = () => {
       fetchInProgress.current = false;
     }
   }, [loading, hasMore, currentPage, selectedYear, selectedGenre, activeCategory]);
+  
+  // Memory optimization: Clear loadMoreMovies callback on unmount
+  useEffect(() => {
+    return () => {
+      // Reset loading states on cleanup
+      setIsLoadingMore(false);
+      if (fetchInProgress.current) {
+        fetchInProgress.current = false;
+      }
+    };
+  }, []);
 
   // Update the intersection observer effect with debouncing
   useEffect(() => {
-    console.log('🎬 Intersection observer effect triggered:', {
-      inView,
-      hasMore,
-      loading,
-      isLoadingMore,
-      fetchInProgress: fetchInProgress.current
-    });
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🎬 Intersection observer effect triggered:', {
+        inView,
+        hasMore,
+        loading,
+        isLoadingMore,
+        fetchInProgress: fetchInProgress.current
+      });
+    }
+    
+    let timeoutId = null;
     
     if (inView && hasMore && !loading && !isLoadingMore && !fetchInProgress.current) {
       console.log('🎬 Triggering loadMoreMovies');
       // Add a small delay to prevent rapid successive calls
-      const timeoutId = setTimeout(() => {
+      timeoutId = setTimeout(() => {
         if (inView && hasMore && !loading && !isLoadingMore && !fetchInProgress.current) {
           loadMoreMovies();
         }
       }, 100);
-      
-      return () => clearTimeout(timeoutId);
     }
     
     return () => {
       // Cleanup for load more movies intersection observer
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
     };
   }, [inView, hasMore, loading, isLoadingMore, loadMoreMovies]);
 
@@ -1290,6 +1511,14 @@ const MoviesPage = () => {
   const displayMovies = useMemo(() => {
     return getDisplayMovies();
   }, [getDisplayMovies]);
+  
+  // Memory optimization: Clear displayMovies when component unmounts
+  useEffect(() => {
+    return () => {
+      // This will be handled by the main cleanup effect
+      // No specific cleanup needed as displayMovies is a computed value
+    };
+  }, []);
 
 
 
@@ -1301,6 +1530,20 @@ const MoviesPage = () => {
       totalPrefetched: prev.totalPrefetched + 1,
       successfulPrefetches: prev.successfulPrefetches + 1
     }));
+  }, []);
+  
+  // Memory optimization: Clear handlePrefetch callback on unmount
+  useEffect(() => {
+    return () => {
+      // Reset prefetch states on cleanup
+      setPrefetchedMovies(new Set());
+      setPrefetchStats({
+        totalPrefetched: 0,
+        successfulPrefetches: 0,
+        failedPrefetches: 0,
+        cacheHits: 0
+      });
+    };
   }, []);
 
   // Intelligent prefetch queue processing with memory optimization
@@ -1379,10 +1622,26 @@ const MoviesPage = () => {
       
       // Process next batch if queue is not empty
       if (prefetchQueueRef.current.length > 0) {
-        setTimeout(processPrefetchQueue, 100);
+        const timeoutId = setTimeout(processPrefetchQueue, 100);
+        
+        // Store timeout ID for cleanup
+        prefetchTimeoutRef.current = timeoutId;
       }
     }
   }, [prefetchCache, handlePrefetch]);
+  
+  // Memory optimization: Clear processPrefetchQueue callback on unmount
+  useEffect(() => {
+    return () => {
+      // Reset prefetch processing states on cleanup
+      isProcessingPrefetchRef.current = false;
+      prefetchQueueRef.current = [];
+      if (prefetchTimeoutRef.current) {
+        clearTimeout(prefetchTimeoutRef.current);
+        prefetchTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   // Enhanced prefetch queue with priority based on visibility and memory optimization
   const queuePrefetchWithPriority = useCallback((movieId, priority = 'normal') => {
@@ -1420,6 +1679,29 @@ const MoviesPage = () => {
       processPrefetchQueue();
     }
   }, [prefetchedMovies, prefetchCache, processPrefetchQueue]);
+  
+  // Memory optimization: Clear queuePrefetchWithPriority callback on unmount
+  useEffect(() => {
+    return () => {
+      // Reset queue states on cleanup
+      prefetchQueueRef.current = [];
+      isProcessingPrefetchRef.current = false;
+    };
+  }, []);
+  
+  // Memory optimization: Clear prefetch queue on component unmount
+  useEffect(() => {
+    return () => {
+      prefetchQueueRef.current = [];
+      isProcessingPrefetchRef.current = false;
+      
+      // Clear prefetch timeout
+      if (prefetchTimeoutRef.current) {
+        clearTimeout(prefetchTimeoutRef.current);
+        prefetchTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   // Add movie to prefetch queue (updated to use priority)
   const queuePrefetch = useCallback((movieId) => {
@@ -1427,6 +1709,27 @@ const MoviesPage = () => {
     const priority = visibleMovies.has(movieId) ? 'high' : 'normal';
     queuePrefetchWithPriority(movieId, priority);
   }, [visibleMovies, queuePrefetchWithPriority]);
+  
+  // Memory optimization: Clear queuePrefetch callback on unmount
+  useEffect(() => {
+    return () => {
+      // Reset queue states on cleanup
+      setVisibleMovies(new Set());
+    };
+  }, []);
+
+  // Store the latest queuePrefetch function in a ref to avoid stale closures
+  const queuePrefetchRef = useRef(queuePrefetch);
+  
+  // Update the ref whenever queuePrefetch changes
+  useEffect(() => {
+    queuePrefetchRef.current = queuePrefetch;
+    
+    return () => {
+      // Clear the ref on cleanup
+      queuePrefetchRef.current = null;
+    };
+  }, [queuePrefetch]);
 
   // Enhanced visibility tracking for predictive prefetching with memory optimization
   useEffect(() => {
@@ -1441,7 +1744,7 @@ const MoviesPage = () => {
               newVisibleMovies.add(parseInt(movieId));
               // Prefetch movies that are about to come into view
               if (entry.intersectionRatio > 0.1) {
-                queuePrefetch(parseInt(movieId));
+                queuePrefetchRef.current(parseInt(movieId));
               }
             } else {
               newVisibleMovies.delete(parseInt(movieId));
@@ -1475,8 +1778,11 @@ const MoviesPage = () => {
         visibilityObserverRef.current.disconnect();
         visibilityObserverRef.current = null;
       }
+      
+      // Clear visible movies on cleanup to prevent memory leaks
+      setVisibleMovies(new Set());
     };
-  }, [movies, searchResults, queuePrefetch, visibleMovies]);
+  }, [movies, searchResults]);
 
   // Clean up old cache entries (older than 10 minutes)
   useEffect(() => {
@@ -1492,6 +1798,15 @@ const MoviesPage = () => {
           }
         }
         return newCache;
+      });
+      
+      // Also clean up prefetched movies set to prevent memory leaks
+      setPrefetchedMovies(prev => {
+        const newSet = new Set();
+        // Keep only recent entries (last 100)
+        const recentEntries = Array.from(prev).slice(-100);
+        recentEntries.forEach(id => newSet.add(id));
+        return newSet;
       });
     }, 5 * 60 * 1000); // Clean up every 5 minutes
 

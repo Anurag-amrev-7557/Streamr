@@ -69,7 +69,8 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['Set-Cookie']
 }));
 
 // Session middleware
@@ -121,7 +122,7 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 app.use(express.json());
-app.use(cookieParser());
+app.use(cookieParser(process.env.COOKIE_SECRET || 'your-cookie-secret'));
 app.use(express.urlencoded({ extended: true }));
 
 // Sanitize data against NoSQL injection

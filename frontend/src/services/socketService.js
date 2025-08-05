@@ -86,6 +86,8 @@ class SocketService {
 
   disconnect() {
     if (this.socket) {
+      // FIXED: Enhanced cleanup to prevent memory leaks
+      this.socket.removeAllListeners();
       this.socket.disconnect();
       this.socket = null;
       this.isConnecting = false;
@@ -93,6 +95,7 @@ class SocketService {
       this.retryCount = 0;
       if (this.connectionTimeout) {
         clearTimeout(this.connectionTimeout);
+        this.connectionTimeout = null;
       }
     }
   }

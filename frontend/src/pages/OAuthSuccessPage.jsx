@@ -18,10 +18,10 @@ const OAuthSuccessPage = () => {
       return;
     }
 
-    if (token && refreshToken && userStr) {
+    if (token && userStr) {
       try {
         const user = JSON.parse(userStr);
-        // Store tokens
+        // Store access token in localStorage (refresh token is handled by HTTP-only cookie)
         localStorage.setItem('accessToken', token);
         // Update auth context with user data
         login({ user, accessToken: token });

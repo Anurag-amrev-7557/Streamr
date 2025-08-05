@@ -1,15 +1,16 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { getApiUrl, switchBackendMode, getCurrentBackendMode } from '../config/api';
 
 // Authentication API functions
 const authAPI = {
   refreshToken: async () => {
     try {
-      const response = await fetch('/api/auth/refresh', {
+      const response = await fetch(`${getApiUrl()}/auth/refresh-token`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include',
+        credentials: 'include', // This is crucial for sending cookies
       });
       
       if (!response.ok) {
@@ -25,13 +26,13 @@ const authAPI = {
   
   login: async (credentials) => {
     try {
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch(`${getApiUrl()}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(credentials),
-        credentials: 'include',
+        credentials: 'include', // This is crucial for receiving cookies
       });
       
       if (!response.ok) {
@@ -47,12 +48,12 @@ const authAPI = {
   
   logout: async () => {
     try {
-      const response = await fetch('/api/auth/logout', {
+      const response = await fetch(`${getApiUrl()}/auth/logout`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include',
+        credentials: 'include', // This is crucial for clearing cookies
       });
       
       return await response.json();
@@ -64,7 +65,7 @@ const authAPI = {
   
   forgotPassword: async (email) => {
     try {
-      const response = await fetch('/api/auth/forgot-password', {
+      const response = await fetch(`${getApiUrl()}/auth/forgot-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -85,7 +86,7 @@ const authAPI = {
   
   resetPassword: async (token, newPassword) => {
     try {
-      const response = await fetch('/api/auth/reset-password', {
+      const response = await fetch(`${getApiUrl()}/auth/reset-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -106,7 +107,7 @@ const authAPI = {
   
   verifyEmail: async (token) => {
     try {
-      const response = await fetch('/api/auth/verify-email', {
+      const response = await fetch(`${getApiUrl()}/auth/verify-email`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -134,7 +135,7 @@ const userAPI = {
         throw new Error('No access token');
       }
       
-      const response = await fetch('/api/user/profile', {
+      const response = await fetch(`${getApiUrl()}/user/profile`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -161,7 +162,7 @@ const userAPI = {
         throw new Error('No access token');
       }
       
-      const response = await fetch('/api/user/profile', {
+      const response = await fetch(`${getApiUrl()}/user/profile`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -184,7 +185,7 @@ const userAPI = {
   
   signup: async (userData) => {
     try {
-      const response = await fetch('/api/auth/signup', {
+      const response = await fetch(`${getApiUrl()}/auth/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -207,8 +208,8 @@ const userAPI = {
 
 const AuthContext = createContext(null);
 
-// Token refresh interval (4 minutes)
-const TOKEN_REFRESH_INTERVAL = 4 * 60 * 1000;
+// Token refresh interval (14 minutes - refresh before 15-minute expiration)
+const TOKEN_REFRESH_INTERVAL = 14 * 60 * 1000;
 // Session timeout (2 days)
 const SESSION_TIMEOUT = 2 * 24 * 60 * 60 * 1000;
 
@@ -288,26 +289,31 @@ export const AuthProvider = ({ children }) => {
   // Function to refresh token and update user data
   const refreshTokenAndUserData = useCallback(async () => {
     try {
-      const token = localStorage.getItem('accessToken');
-      if (!token) {
-        console.log('No access token found');
-        return false;
-      }
-
+      console.log('🔄 Attempting to refresh token...');
+      console.log('🌐 Using API URL:', getApiUrl());
       const response = await authAPI.refreshToken();
+      
+      console.log('🔄 Refresh response:', response);
+      
+      if (!response.success) {
+        throw new Error('Token refresh failed');
+      }
+      
       const { accessToken } = response.data || response;
       
       if (!accessToken) {
-        console.error('No access token received from refresh');
+        console.error('❌ No access token received from refresh');
         return false;
       }
 
       localStorage.setItem('accessToken', accessToken);
+      console.log('✅ New access token stored');
       
       // Get fresh user data
+      console.log('🔄 Getting user profile after refresh...');
       const profileResponse = await userAPI.getProfile();
       if (!profileResponse.data) {
-        console.error('No user data received after refresh');
+        console.error('❌ No user data received after refresh');
         return false;
       }
 
@@ -315,10 +321,11 @@ export const AuthProvider = ({ children }) => {
         setUser(profileResponse.data);
         setLastActivity(Date.now());
         setSessionWarning(false);
+        console.log('✅ Token refresh successful');
       }
       return true;
     } catch (err) {
-      console.error('Token refresh failed:', err);
+      console.error('❌ Token refresh failed:', err);
       localStorage.removeItem('accessToken');
       if (isMountedRef.current) {
         setUser(null);
@@ -344,11 +351,13 @@ export const AuthProvider = ({ children }) => {
       refreshTimeout = setTimeout(async () => {
         if (!isMountedRef.current) return;
         
+        console.log('Scheduled token refresh...');
         const success = await refreshTokenAndUserData();
         if (success && isMountedRef.current) {
           scheduleRefresh(); // Schedule next refresh only if successful
         } else if (isMountedRef.current) {
           // If refresh failed, try again in 30 seconds
+          console.log('Token refresh failed, retrying in 30 seconds...');
           refreshTimeout = setTimeout(scheduleRefresh, 30000);
         }
       }, TOKEN_REFRESH_INTERVAL - 60000); // Refresh 1 minute before expiration
@@ -372,31 +381,34 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const checkAuth = async () => {
       try {
+        console.log('🔍 Checking authentication on mount...');
         const token = localStorage.getItem('accessToken');
         if (!token) {
-          if (isMountedRef.current) {
+          // No token in localStorage, but check if we have a refresh token cookie
+          console.log('No access token in localStorage, attempting token refresh...');
+          const refreshSuccess = await refreshTokenAndUserData();
+          if (!refreshSuccess && isMountedRef.current) {
             setLoading(false);
             setUser(null);
           }
           return;
         }
 
-        // Add a loading check here to prevent race conditions during OAuth login
-        // if (loading) return;
-
         try {
           // Get user profile first
+          console.log('🔍 Attempting to get user profile...');
           const profileResponse = await userAPI.getProfile();
           if (!isMountedRef.current) return;
 
           if (profileResponse.data) {
             setUser(profileResponse.data);
+            console.log('✅ User authenticated from existing token');
           } else {
             // If profile is empty, logout
             throw new Error('No user data found');
           }
         } catch (profileError) {
-          console.error('Profile fetch failed, attempting to refresh token:', profileError);
+          console.error('❌ Profile fetch failed, attempting to refresh token:', profileError);
           if (!isMountedRef.current) return;
           
           // If profile fetch fails, try to refresh token once
@@ -459,7 +471,7 @@ export const AuthProvider = ({ children }) => {
       }
       
       // Regular email/password login
-      const response = await authAPI.login(emailOrUser, password);
+      const response = await authAPI.login({ email: emailOrUser, password: password });
       
       if (!response.success) {
         throw new Error(response.message || 'Login failed');
@@ -476,6 +488,7 @@ export const AuthProvider = ({ children }) => {
       setLastActivity(Date.now());
       setSessionWarning(false);
       setLoading(false);
+      console.log('Login successful');
       return { success: true };
     } catch (err) {
       console.error('Login error:', err);
@@ -492,7 +505,7 @@ export const AuthProvider = ({ children }) => {
       const response = await authAPI.signup(userData);
       
       // Set user data and token
-      const { accessToken, user } = response.data.data;
+      const { accessToken, user } = response.data;
       if (!accessToken) {
         throw new Error('No access token received from signup');
       }
@@ -500,6 +513,7 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem('accessToken', accessToken);
       setUser(user);
       setLastActivity(Date.now());
+      console.log('Signup successful');
       return { success: true };
     } catch (err) {
       const errorMessage = err.response?.data?.message || 'Failed to create account';
@@ -528,6 +542,7 @@ export const AuthProvider = ({ children }) => {
       setUser(null);
       setRememberMe(false);
       localStorage.removeItem('accessToken');
+      console.log('Logout successful');
     }
   }, []);
 
@@ -602,7 +617,9 @@ export const AuthProvider = ({ children }) => {
     resetPassword,
     verifyEmail,
     updateActivity,
-    reloadUser
+    reloadUser,
+    switchBackendMode,
+    getCurrentBackendMode
   };
 
   return (

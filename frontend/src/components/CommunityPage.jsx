@@ -6,6 +6,8 @@ import DiscussionCard from './community/DiscussionCard';
 import CreateDiscussion from './community/CreateDiscussion';
 import DiscussionFilters from './community/DiscussionFilters';
 import CommunityStats from './community/CommunityStats';
+import CommunityPageSkeleton from './community/CommunityPageSkeleton';
+import DiscussionCardSkeleton from './community/DiscussionCardSkeleton';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { socketService } from '../services/socketService';
@@ -393,93 +395,7 @@ const CommunityPage = () => {
   };
 
   if (loading && !discussions.length) {
-    return (
-      <div className="min-h-screen bg-[#0f1114] text-white">
-        <div className="max-w-7xl mx-auto px-2 py-4 sm:px-4 sm:py-8">
-          {/* Header Skeleton */}
-          <div className="flex flex-col space-y-4 mb-8">
-            <div className="flex justify-between items-center">
-              <div className="h-8 w-32 bg-white/10 rounded animate-pulse"></div>
-              <div className="h-10 w-40 bg-white/10 rounded-full animate-pulse"></div>
-            </div>
-            
-            <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4">
-              {/* Search Bar Skeleton */}
-              <div className="w-full lg:w-1/2">
-                <div className="h-10 bg-white/10 rounded-full animate-pulse"></div>
-              </div>
-
-              {/* Filter Options Skeleton */}
-              <div className="w-full lg:w-auto">
-                <div className="h-10 w-48 bg-white/10 rounded-lg animate-pulse"></div>
-              </div>
-
-              {/* Tabs Skeleton */}
-              <div className="flex space-x-2 w-full lg:w-auto">
-                <div className="h-10 w-32 bg-white/10 rounded-full animate-pulse"></div>
-                <div className="h-10 w-32 bg-white/10 rounded-full animate-pulse"></div>
-              </div>
-            </div>
-          </div>
-
-          {/* Main Content Skeleton */}
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 sm:gap-8">
-            {/* Left Column - Discussions List Skeleton */}
-            <div className="lg:col-span-3 space-y-4 order-2 lg:order-1">
-              {[...Array(3)].map((_, index) => (
-                <div key={index} className="bg-white/5 border border-white/10 rounded-lg p-3 sm:p-6 animate-pulse">
-                  <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 bg-white/10 rounded-full"></div>
-                    <div className="flex-1 space-y-3">
-                      <div className="h-6 w-3/4 bg-white/10 rounded"></div>
-                      <div className="h-4 w-full bg-white/10 rounded"></div>
-                      <div className="h-4 w-2/3 bg-white/10 rounded"></div>
-                      <div className="flex items-center gap-4 mt-4">
-                        <div className="h-8 w-20 bg-white/10 rounded"></div>
-                        <div className="h-8 w-20 bg-white/10 rounded"></div>
-                        <div className="h-8 w-20 bg-white/10 rounded"></div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Right Column - Stats and Trending Skeleton */}
-            <div className="lg:col-span-2 space-y-4 order-1 lg:order-2">
-              {/* Stats Skeleton */}
-              <div className="bg-white/5 border border-white/10 rounded-lg p-2 sm:p-4">
-                <div className="flex justify-between items-center mb-4">
-                  <div className="h-6 w-40 bg-white/10 rounded"></div>
-                  <div className="h-6 w-6 bg-white/10 rounded"></div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  {[...Array(4)].map((_, index) => (
-                    <div key={index} className="bg-white/5 rounded-lg p-4">
-                      <div className="h-4 w-24 bg-white/10 rounded mb-2"></div>
-                      <div className="h-8 w-16 bg-white/10 rounded"></div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Trending Topics Skeleton */}
-              <div className="bg-white/5 border border-white/10 rounded-lg p-2 sm:p-4">
-                <div className="h-6 w-40 bg-white/10 rounded mb-4"></div>
-                <div className="space-y-3">
-                  {[...Array(5)].map((_, index) => (
-                    <div key={index} className="flex items-center justify-between p-2">
-                      <div className="h-4 w-24 bg-white/10 rounded"></div>
-                      <div className="h-4 w-16 bg-white/10 rounded"></div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+    return <CommunityPageSkeleton />;
   }
 
   if (error) {
@@ -635,9 +551,7 @@ const CommunityPage = () => {
           {/* Left Column - Discussions List */}
           <div className="lg:col-span-3 space-y-4 order-2 lg:order-1">
             {loading ? (
-              <div className="flex justify-center items-center h-64">
-                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white"></div>
-              </div>
+              <DiscussionCardSkeleton count={3} />
             ) : error ? (
               <div className="text-red-500 text-center p-4 bg-white/5 rounded-lg">Error: {error}</div>
             ) : discussions.length === 0 ? (
@@ -662,13 +576,16 @@ const CommunityPage = () => {
                   />
                 ))}
                 {hasMore && !isSearching && (
-                  <button
-                    onClick={loadMore}
-                    disabled={loading}
-                    className="w-full py-2 bg-white/5 hover:bg-white/10 rounded-lg text-white/80 hover:text-white transition-colors"
-                  >
-                    {loading ? 'Loading...' : 'Load More'}
-                  </button>
+                  <>
+                    <button
+                      onClick={loadMore}
+                      disabled={loading}
+                      className="w-full py-2 bg-white/5 hover:bg-white/10 rounded-lg text-white/80 hover:text-white transition-colors"
+                    >
+                      {loading ? 'Loading...' : 'Load More'}
+                    </button>
+                    {loading && <DiscussionCardSkeleton count={2} />}
+                  </>
                 )}
               </div>
             )}

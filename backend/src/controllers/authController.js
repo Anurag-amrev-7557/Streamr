@@ -18,8 +18,9 @@ const generateTokens = (user, res) => {
   res.cookie('refreshToken', refreshToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    path: '/'
   });
 
   return { accessToken, refreshToken };
@@ -145,7 +146,8 @@ exports.logout = async (req, res) => {
   res.clearCookie('refreshToken', {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict'
+    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+    path: '/'
   });
   
   res.json({ 
@@ -176,7 +178,7 @@ exports.refreshToken = async (req, res) => {
     }
 
     const payload = verifyRefreshToken(refreshToken);
-    const user = await User.findById(payload.userId);
+    const user = await User.findById(payload.id || payload.userId);
 
     if (!user) {
       return res.status(401).json({ 
@@ -188,8 +190,10 @@ exports.refreshToken = async (req, res) => {
     const { accessToken, refreshToken: newRefreshToken } = generateTokens(user, res);
     res.json({
       success: true,
-      accessToken,
-      refreshToken: newRefreshToken
+      data: {
+        accessToken,
+        refreshToken: newRefreshToken
+      }
     });
   } catch (error) {
     handleError(res, error, 401);
@@ -426,10 +430,9 @@ exports.oauthCallback = async (req, res) => {
 
     const { accessToken, refreshToken } = generateTokens(user, res);
 
-    // Redirect to frontend with access token
+    // Redirect to frontend with access token (refresh token is in HTTP-only cookie)
     const redirectUrl = new URL('/oauth-success', process.env.CLIENT_URL);
     redirectUrl.searchParams.append('token', accessToken);
-    redirectUrl.searchParams.append('refreshToken', refreshToken);
     redirectUrl.searchParams.append('user', JSON.stringify({
       id: user._id,
       username: user.username,

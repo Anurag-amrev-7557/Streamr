@@ -2,7 +2,7 @@
 // Change this to switch between local and deployed backend
 const API_CONFIG = {
   // Set to 'local' for local development, 'deployed' for production backend
-  mode: 'deployed', // Use deployed backend by default for production
+  mode: 'local', // Use local backend for development
   
   // API URLs
   local: 'http://localhost:3001/api',

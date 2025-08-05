@@ -14,20 +14,29 @@ export const useSocket = () => {
 export const SocketProvider = ({ children }) => {
   const isInitialized = useRef(false);
   const cleanupTimeout = useRef(null);
+  const isMountedRef = useRef(true); // FIXED: Add mounted ref for cleanup
+
+  // FIXED: Enhanced cleanup on unmount
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     // Only initialize the socket connection once
-    if (!isInitialized.current) {
+    if (!isInitialized.current && isMountedRef.current) {
       console.log('Initializing socket connection...');
       socketService.connect();
       isInitialized.current = true;
     }
 
-    // Cleanup on unmount
+    // FIXED: Enhanced cleanup on unmount
     return () => {
       // Use a timeout to prevent cleanup during React's strict mode double-mounting
       cleanupTimeout.current = setTimeout(() => {
-        if (isInitialized.current) {
+        if (isInitialized.current && isMountedRef.current) {
           console.log('Cleaning up socket connection...');
           socketService.disconnect();
           isInitialized.current = false;
@@ -36,11 +45,12 @@ export const SocketProvider = ({ children }) => {
     };
   }, []);
 
-  // Clear timeout on unmount
+  // FIXED: Enhanced timeout cleanup on unmount
   useEffect(() => {
     return () => {
       if (cleanupTimeout.current) {
         clearTimeout(cleanupTimeout.current);
+        cleanupTimeout.current = null;
       }
     };
   }, []);

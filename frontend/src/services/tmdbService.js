@@ -1216,11 +1216,35 @@ export const getSimilarMovies = async (id, type = 'movie', page = 1, options = {
     
     // First, try to get recommendations (most reliable for actual similar content)
     const recommendationsUrl = `${TMDB_BASE_URL}/${type}/${id}/recommendations?page=${page}`;
-    const recommendationsData = await fetchWithCache(recommendationsUrl, {}, 'LIST');
+    let recommendationsData = null;
+    
+    try {
+      recommendationsData = await fetchWithCache(recommendationsUrl, {}, 'LIST');
+    } catch (error) {
+      // If we get a 404 error, cache this movie as non-existent
+      if (error.status === 404 || error.message.includes('404')) {
+        nonExistentMovieCache.add(`${type}_${id}`);
+        console.debug(`🔍 Caching non-existent ${type} ${id} (recommendations 404)`);
+        return null;
+      }
+      console.warn(`Failed to fetch recommendations for ${type} ${id}:`, error.message);
+    }
     
     // Then, try to get similar content
     const similarUrl = `${TMDB_BASE_URL}/${type}/${id}/similar?page=${page}`;
-    const similarData = await fetchWithCache(similarUrl, {}, 'LIST');
+    let similarData = null;
+    
+    try {
+      similarData = await fetchWithCache(similarUrl, {}, 'LIST');
+    } catch (error) {
+      // If we get a 404 error and recommendations also failed, cache as non-existent
+      if ((error.status === 404 || error.message.includes('404')) && !recommendationsData) {
+        nonExistentMovieCache.add(`${type}_${id}`);
+        console.debug(`🔍 Caching non-existent ${type} ${id} (similar 404)`);
+        return null;
+      }
+      console.warn(`Failed to fetch similar content for ${type} ${id}:`, error.message);
+    }
     
     // If both requests return null, cache this movie as non-existent
     if (!recommendationsData && !similarData) {
@@ -1280,16 +1304,33 @@ export const getSimilarMovies = async (id, type = 'movie', page = 1, options = {
   } catch (error) {
     console.error('Error fetching similar movies:', error);
     
-    // Fallback to original implementation
-    const url = `${TMDB_BASE_URL}/${type}/${id}/recommendations?page=${page}`;
-    const data = await fetchWithCache(url, {}, 'LIST');
-    if (!data) {
-      // Cache this movie ID as non-existent to prevent future requests
+    // Check if it's a 404 error and cache accordingly
+    if (error.status === 404 || error.message.includes('404')) {
       nonExistentMovieCache.add(`${type}_${id}`);
-      console.debug(`🔍 Caching non-existent ${type} ${id} (fallback)`);
-      return null; // Not found
+      console.debug(`🔍 Caching non-existent ${type} ${id} (error handler 404)`);
+      return null;
     }
-    return data;
+    
+    // Fallback to original implementation
+    try {
+      const url = `${TMDB_BASE_URL}/${type}/${id}/recommendations?page=${page}`;
+      const data = await fetchWithCache(url, {}, 'LIST');
+      if (!data) {
+        // Cache this movie ID as non-existent to prevent future requests
+        nonExistentMovieCache.add(`${type}_${id}`);
+        console.debug(`🔍 Caching non-existent ${type} ${id} (fallback)`);
+        return null; // Not found
+      }
+      return data;
+    } catch (fallbackError) {
+      // If fallback also fails with 404, cache as non-existent
+      if (fallbackError.status === 404 || fallbackError.message.includes('404')) {
+        nonExistentMovieCache.add(`${type}_${id}`);
+        console.debug(`🔍 Caching non-existent ${type} ${id} (fallback 404)`);
+        return null;
+      }
+      throw fallbackError;
+    }
   }
 };
 
@@ -2269,7 +2310,7 @@ export const getDramaMovies = async (page = 1) => {
   try {
     // Enhanced drama movies fetching with better filtering and sorting
     const data = await fetchWithRetry(
-      `${TMDB_BASE_URL}/discover/movie?api_key=${TMDB_API_KEY}&with_genres=18&page=${page}&language=en-US&sort_by=popularity.desc&include_adult=false&vote_count.gte=50&vote_average.gte=5.0`
+      `${TMDB_BASE_URL}/discover/movie?api_key=${TMDB_API_KEY}&with_genres=18&page=${page}&language=en-US&sort_by=popularity.desc&include_adult=false&vote_count.gte=10&vote_average.gte=5.0`
     );
     
     if (!data || !data.results) {
@@ -2283,7 +2324,7 @@ export const getDramaMovies = async (page = 1) => {
         
         const hasDramaGenre = movie.genre_ids && movie.genre_ids.includes(18);
         const hasReasonableRating = movie.vote_average >= 5.0;
-        const hasEnoughVotes = movie.vote_count >= 50;
+        const hasEnoughVotes = movie.vote_count >= 10;
         
         return hasDramaGenre && hasReasonableRating && hasEnoughVotes;
       })
@@ -2319,7 +2360,7 @@ export const getDramaMovies = async (page = 1) => {
         processedAt: new Date().toISOString(),
         filterCriteria: {
           minRating: 5.0,
-          minVoteCount: 50,
+          minVoteCount: 10,
           sortBy: 'popularity.desc'
         }
       }
@@ -2345,7 +2386,7 @@ export const getDramaMovies = async (page = 1) => {
         isError: true,
         filterCriteria: {
           minRating: 5.0,
-          minVoteCount: 50,
+          minVoteCount: 10,
           sortBy: 'popularity.desc'
         }
       }
@@ -5260,7 +5301,8 @@ const NON_EXISTENT_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 // Add specific known non-existent movie IDs to prevent 404 errors
 const KNOWN_NON_EXISTENT_MOVIES = [
   'movie_109974', // This specific movie ID that's causing 404 errors
-  'movie_206992'  // Another known non-existent movie ID
+  'movie_206992', // Another known non-existent movie ID
+  'movie_503838'  // Movie ID causing 404 errors in recommendations
 ];
 
 // Initialize cache with known non-existent movies
