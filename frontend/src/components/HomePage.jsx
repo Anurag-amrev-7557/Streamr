@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, memo, useMemo, lazy, S
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Navigation, A11y } from 'swiper/modules';
 import { TMDB_BASE_URL, transformMovieData } from '../services/tmdbService';
+import { getApiUrl } from '../config/api';
 import { getPosterProps, getBackdropProps } from '../utils/imageUtils';
 // Optimized CSS imports - only load what's needed
 import 'swiper/css';
@@ -4932,7 +4933,7 @@ const HomePage = () => {
             break;
           case 'topRated':
             result = await Promise.race([
-              getTopRatedMovies(page),
+              fetch(`${getApiUrl()}/tmdb/proxy/movie/top_rated?page=${page}`).then(res => res.json()),
               new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), timeout))
             ]);
             break;
@@ -4956,25 +4957,25 @@ const HomePage = () => {
             break;
           case 'drama':
             result = await Promise.race([
-              getDramaMovies(page),
+              fetch(`${getApiUrl()}/tmdb/proxy/discover/movie?with_genres=18&page=${page}`).then(res => res.json()),
               new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), timeout))
             ]);
             break;
           case 'horror':
             result = await Promise.race([
-              getHorrorMovies(page),
+              fetch(`${getApiUrl()}/tmdb/proxy/discover/movie?with_genres=27&page=${page}`).then(res => res.json()),
               new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), timeout))
             ]);
             break;
           case 'sciFi':
             result = await Promise.race([
-              getSciFiMovies(page),
+              fetch(`${getApiUrl()}/tmdb/proxy/discover/movie?with_genres=878&page=${page}`).then(res => res.json()),
               new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), timeout))
             ]);
             break;
           case 'documentary':
             result = await Promise.race([
-              getDocumentaryMovies(page),
+              fetch(`${getApiUrl()}/tmdb/proxy/discover/movie?with_genres=99&page=${page}`).then(res => res.json()),
               new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), timeout))
             ]);
             break;
@@ -5736,12 +5737,7 @@ const HomePage = () => {
       <div className="layout-container flex h-full grow flex-col scrollbar-hide momentum-scroll">
         <div className="flex flex-1 justify-center">
           <div className="layout-content-container flex flex-col w-full flex-1 scrollbar-hide custom-scroll-ease">
-            {/* FIXED: Mobile debug info */}
-            {isMobile && (
-              <div className="fixed top-20 left-4 z-50 bg-red-500 text-white p-2 rounded text-xs">
-                Mobile: {window.innerWidth}px | Trending: {trendingMovies.length} | Popular: {popularMovies.length}
-              </div>
-            )}
+
             
             {/* Add HeroSection here */}
             <MemoizedHeroSection 
