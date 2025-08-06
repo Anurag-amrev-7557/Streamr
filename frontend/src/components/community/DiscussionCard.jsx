@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { communityService } from '../../services/communityService';
+import communityService from '../../services/communityService';
 import { socketService } from '../../services/socketService';
 import { formatDistanceToNow } from 'date-fns';
 import ReplySection from './ReplySection';

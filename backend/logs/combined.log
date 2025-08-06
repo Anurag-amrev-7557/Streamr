@@ -1,0 +1,2 @@
+{"level":"info","message":"::1 - - [06/Aug/2025:13:37:17 +0000] \"GET /api/health HTTP/1.1\" 200 15 \"-\" \"curl/8.7.1\"","timestamp":"2025-08-06T13:37:17.286Z"}
+{"level":"info","message":"::1 - - [06/Aug/2025:17:21:06 +0000] \"POST /api/auth/refresh-token HTTP/1.1\" 401 55 \"-\" \"curl/8.7.1\"","timestamp":"2025-08-06T17:21:06.155Z"}

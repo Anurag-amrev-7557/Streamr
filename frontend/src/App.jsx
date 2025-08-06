@@ -1,5 +1,5 @@
-import React, { Suspense, lazy, useState, useEffect, useRef } from 'react'
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
+import React, { Suspense, lazy, useState, useEffect, useRef, useCallback } from 'react'
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 // Lazy load all route-level pages/components
 const HomePage = lazy(() => import('./components/HomePage'));
 const Navbar = lazy(() => import('./components/Navbar'));
@@ -22,11 +22,15 @@ const OAuthSuccessPage = lazy(() => import('./pages/OAuthSuccessPage'));
 const VerifyEmailPage = lazy(() => import('./pages/VerifyEmailPage'));
 const NetworkTestPage = lazy(() => import('./components/NetworkTestPage'));
 const TestAuthPage = lazy(() => import('./pages/TestAuthPage'));
+const AuthDebugger = lazy(() => import('./components/AuthDebugger'));
 import { SocketProvider } from './contexts/SocketContext'
 // Lazy load components that are not immediately needed
 const MovieDetailsOverlay = lazy(() => import('./components/MovieDetailsOverlay'));
 // const NetworkStatus = lazy(() => import('./components/NetworkStatus'));
 const PerformanceDashboard = lazy(() => import('./components/PerformanceDashboard'));
+// Import memory cleanup utility
+import memoryCleanupUtility from './utils/memoryCleanupUtility';
+const RateLimitStatus = lazy(() => import('./components/RateLimitStatus'));
 import { useSmoothScroll } from './hooks/useSmoothScroll'
 // Import performance service to initialize it
 import './services/performanceOptimizationService'
@@ -34,8 +38,6 @@ import './services/performanceOptimizationService'
 import { ErrorBoundary } from './utils/errorBoundary'
 // Import test utility (remove in production)
 import { testErrorBoundary } from './utils/testErrorHandling'
-// FIXED: Import memory cleanup utility
-import memoryCleanupUtility from './utils/memoryCleanupUtility'
 
 // Register service worker for better caching and offline support
 if ('serviceWorker' in navigator) {
@@ -56,6 +58,7 @@ const Layout = () => {
   const [selectedMovie, setSelectedMovie] = React.useState(null);
   const [showPerformanceDashboard, setShowPerformanceDashboard] = useState(false);
   const isMountedRef = useRef(true); // FIXED: Add mounted ref for cleanup
+  const navigate = useNavigate();
   
   // FIXED: Enhanced cleanup on unmount
   useEffect(() => {
@@ -84,6 +87,51 @@ const Layout = () => {
       setSelectedMovie(null);
     }
   }, []);
+
+  // Global genre click handler that works on all pages
+  const handleGenreClick = React.useCallback((genre) => {
+    if (!genre || !genre.id) {
+      console.warn('Invalid genre provided to handleGenreClick:', genre);
+      return;
+    }
+
+    console.log('Global genre click handler called with:', genre);
+    
+    // Close the movie details overlay first
+    if (isMountedRef.current) {
+      setSelectedMovie(null);
+    }
+    
+    // Determine the best page to navigate to based on current context
+    const currentPath = window.location.pathname;
+    let targetPath = '/movies'; // Default to movies page
+    
+    // If we're currently on the series page and the genre is more TV-related, 
+    // keep the user on series page, otherwise go to movies
+    if (currentPath.includes('/series')) {
+      // For now, always go to movies page for genre filtering since SeriesPage
+      // doesn't have URL-based genre filtering implemented
+      targetPath = '/movies';
+    }
+    
+    // Use URL search params to maintain state across navigation
+    const searchParams = new URLSearchParams();
+    searchParams.set('genre', genre.name.toLowerCase());
+    
+    // Navigate to the target page with the genre filter
+    navigate(`${targetPath}?${searchParams.toString()}`);
+    
+    // Track analytics for genre navigation
+    if (window.gtag) {
+      window.gtag('event', 'genre_navigation', {
+        event_category: 'Navigation',
+        event_label: genre.name,
+        value: genre.id,
+        source_page: currentPath,
+        target_page: targetPath,
+      });
+    }
+  }, [navigate]);
   
   // Performance dashboard toggle
   const togglePerformanceDashboard = React.useCallback(() => {
@@ -149,6 +197,7 @@ const Layout = () => {
             movie={selectedMovie}
             onClose={handleCloseOverlay}
             onMovieSelect={handleMovieSelect}
+            onGenreClick={handleGenreClick}
           />
         </Suspense>
       )}
@@ -159,6 +208,11 @@ const Layout = () => {
           isVisible={showPerformanceDashboard}
           onClose={() => setShowPerformanceDashboard(false)}
         />
+      </Suspense>
+      
+      {/* Rate Limit Status */}
+      <Suspense fallback={null}>
+        <RateLimitStatus />
       </Suspense>
       
       {/* Performance Dashboard Toggle Button (Development Only) */}
@@ -191,6 +245,7 @@ const AppRoutes = () => {
         <Route path="/community/discussion/:id" element={<SingleDiscussion />} />
         <Route path="/network-test" element={<NetworkTestPage />} />
         <Route path="/test-auth" element={<TestAuthPage />} />
+        <Route path="/auth-debug" element={<AuthDebugger />} />
         <Route path="/login" element={!user ? <LoginPage /> : <Navigate to="/" />} />
         <Route path="/signup" element={!user ? <SignupPage /> : <Navigate to="/" />} />
         <Route path="/forgot-password" element={!user ? <ForgotPasswordPage /> : <Navigate to="/" />} />

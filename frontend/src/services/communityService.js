@@ -1,14 +1,13 @@
 import axios from 'axios';
-import { getNetworkAwareConfig, fetchWithRetry } from './api.js';
-import { getApiUrl } from '../config/api.js';
+import { getNetworkAwareConfig } from './api.js';
+import rateLimitService from './rateLimitService.js';
 
-// Lazy initialization to avoid hoisting issues
-let API_URL = null;
+// Cache for community data
+const communityCache = new Map();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
 const getApiUrlLazy = () => {
-  if (!API_URL) {
-    API_URL = getApiUrl();
-  }
-  return API_URL;
+  return import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 };
 
 const getAuthHeader = () => {
@@ -16,12 +15,14 @@ const getAuthHeader = () => {
   return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
-// Create axios instance with default config
 const createApiInstance = () => {
+  const baseURL = getApiUrlLazy();
   return axios.create({
-    baseURL: getApiUrlLazy(),
+    baseURL,
+    timeout: getNetworkAwareConfig().timeout,
     headers: {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      ...getAuthHeader()
     }
   });
 };
@@ -64,29 +65,58 @@ api.interceptors.response.use(
   }
 );
 
-export const communityService = {
+// Cache management functions
+const getCachedData = (key) => {
+  const cached = communityCache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    return cached.data;
+  }
+  return null;
+};
+
+const setCachedData = (key, data) => {
+  communityCache.set(key, {
+    data,
+    timestamp: Date.now()
+  });
+};
+
+const clearCache = () => {
+  communityCache.clear();
+};
+
+const communityService = {
   // Discussions
-  getDiscussions: async (page = 1, limit = 10, sortBy = 'newest', category = '', tag = '') => {
-    const { timeout } = getNetworkAwareConfig();
+  getDiscussions: async (page = 1, limit = 10, sortBy = 'newest', category = null, tag = null) => {
     const params = new URLSearchParams({
-      page,
-      limit,
-      sortBy,
-      ...(category && { category }),
-      ...(tag && { tag })
+      page: page.toString(),
+      limit: limit.toString(),
+      sortBy
     });
     
-    console.log('🔍 Community Service - Fetching discussions:', {
-      url: `/community/discussions?${params}`,
-      timeout,
-      apiUrl: getApiUrlLazy()
-    });
+    if (category) params.append('category', category);
+    if (tag) params.append('tag', tag);
+    
+    const cacheKey = `discussions_${params.toString()}`;
+    
+    // Check cache first
+    const cached = getCachedData(cacheKey);
+    if (cached) {
+      console.log('✅ Community Service - Using cached discussions');
+      return cached;
+    }
+    
+    const { timeout } = getNetworkAwareConfig();
     
     try {
-      const result = await fetchWithRetry(() =>
-        api.get(`/community/discussions?${params}`, { timeout })
-          .then(response => response.data)
-      );
+      // Use rate limiting service
+      const result = await rateLimitService.queueRequest(async () => {
+        const response = await api.get(`/community/discussions?${params}`, { timeout });
+        return response.data;
+      }, 'normal');
+      
+      // Cache the result
+      setCachedData(cacheKey, result);
       
       console.log('✅ Community Service - Discussions fetched successfully:', result);
       return result;
@@ -98,34 +128,34 @@ export const communityService = {
 
   getDiscussion: async (id) => {
     const { timeout } = getNetworkAwareConfig();
-    return fetchWithRetry(() =>
-      api.get(`/community/discussions/${id}`, { timeout })
-        .then(response => response.data)
-    );
+    return rateLimitService.queueRequest(async () => {
+      const response = await api.get(`/community/discussions/${id}`, { timeout });
+      return response.data;
+    });
   },
 
   createDiscussion: async (discussionData) => {
     const { timeout } = getNetworkAwareConfig();
-    return fetchWithRetry(() =>
-      api.post('/community/discussions', discussionData, { timeout })
-        .then(response => response.data)
-    );
+    return rateLimitService.queueRequest(async () => {
+      const response = await api.post('/community/discussions', discussionData, { timeout });
+      return response.data;
+    }, 'high'); // High priority for user actions
   },
 
   updateDiscussion: async (id, discussionData) => {
     const { timeout } = getNetworkAwareConfig();
-    return fetchWithRetry(() =>
-      api.put(`/community/discussions/${id}`, discussionData, { timeout })
-        .then(response => response.data)
-    );
+    return rateLimitService.queueRequest(async () => {
+      const response = await api.put(`/community/discussions/${id}`, discussionData, { timeout });
+      return response.data;
+    }, 'high');
   },
 
   deleteDiscussion: async (id) => {
     const { timeout } = getNetworkAwareConfig();
-    return fetchWithRetry(() =>
-      api.delete(`/community/discussions/${id}`, { timeout })
-        .then(response => response.data)
-    );
+    return rateLimitService.queueRequest(async () => {
+      const response = await api.delete(`/community/discussions/${id}`, { timeout });
+      return response.data;
+    }, 'high');
   },
 
   // Replies
@@ -133,36 +163,39 @@ export const communityService = {
     const { timeout } = getNetworkAwareConfig();
     const token = localStorage.getItem('accessToken');
     if (!token) throw new Error('Authentication required');
-    return fetchWithRetry(() =>
-      api.post(`/community/discussions/${discussionId}/replies`, {
+    return rateLimitService.queueRequest(async () => {
+      const response = await api.post(`/community/discussions/${discussionId}/replies`, {
         content: replyData.content,
         parentReplyId: replyData.parentReplyId
       }, {
         headers: { Authorization: `Bearer ${token}` },
         timeout
-      }).then(response => response.data)
-    );
+      });
+      return response.data;
+    }, 'high');
   },
 
   updateReply: async (discussionId, replyId, replyData) => {
     const { timeout } = getNetworkAwareConfig();
-    return fetchWithRetry(() =>
-      api.put(
+    return rateLimitService.queueRequest(async () => {
+      const response = await api.put(
         `/community/discussions/${discussionId}/replies/${replyId}`,
         replyData,
         { timeout }
-      ).then(response => response.data)
-    );
+      );
+      return response.data;
+    }, 'high');
   },
 
   deleteReply: async (discussionId, replyId) => {
     const { timeout } = getNetworkAwareConfig();
-    return fetchWithRetry(() =>
-      api.delete(
+    return rateLimitService.queueRequest(async () => {
+      const response = await api.delete(
         `/community/discussions/${discussionId}/replies/${replyId}`,
         { timeout }
-      ).then(response => response.data)
-    );
+      );
+      return response.data;
+    }, 'high');
   },
 
   // Likes
@@ -170,69 +203,109 @@ export const communityService = {
     const { timeout } = getNetworkAwareConfig();
     const token = localStorage.getItem('accessToken');
     if (!token) throw new Error('Authentication required');
-    return fetchWithRetry(() =>
-      api.post(`/community/discussions/${discussionId}/like`, {}, {
+    return rateLimitService.queueRequest(async () => {
+      const response = await api.post(`/community/discussions/${discussionId}/like`, {}, {
         headers: { Authorization: `Bearer ${token}` },
         timeout
-      }).then(response => response.data)
-    );
+      });
+      return response.data;
+    }, 'high');
+  },
+
+  unlikeDiscussion: async (discussionId) => {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    if (!token) throw new Error('Authentication required');
+    return rateLimitService.queueRequest(async () => {
+      const response = await api.delete(`/community/discussions/${discussionId}/like`, {
+        headers: { Authorization: `Bearer ${token}` },
+        timeout
+      });
+      return response.data;
+    }, 'high');
   },
 
   likeReply: async (discussionId, replyId) => {
     const { timeout } = getNetworkAwareConfig();
     const token = localStorage.getItem('accessToken');
     if (!token) throw new Error('Authentication required');
-    return fetchWithRetry(() =>
-      api.post(
+    return rateLimitService.queueRequest(async () => {
+      const response = await api.post(
         `/community/discussions/${discussionId}/replies/${replyId}/like`,
         {},
         {
           headers: { Authorization: `Bearer ${token}` },
           timeout
         }
-      ).then(response => response.data)
-    );
+      );
+      return response.data;
+    }, 'high');
   },
 
-  // Search and Filters
+  unlikeReply: async (discussionId, replyId) => {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    if (!token) throw new Error('Authentication required');
+    return rateLimitService.queueRequest(async () => {
+      const response = await api.delete(
+        `/community/discussions/${discussionId}/replies/${replyId}/like`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          timeout
+        }
+      );
+      return response.data;
+    }, 'high');
+  },
+
+  // Search and Discovery
   searchDiscussions: async (query) => {
     const { timeout } = getNetworkAwareConfig();
-    return fetchWithRetry(() =>
-      api.get(`/community/search?q=${encodeURIComponent(query)}`, { timeout })
-        .then(response => response.data)
-    );
+    return rateLimitService.queueRequest(async () => {
+      const response = await api.get(`/community/search?q=${encodeURIComponent(query)}`, { timeout });
+      return response.data;
+    });
   },
 
   getCategories: async () => {
     const { timeout } = getNetworkAwareConfig();
-    return fetchWithRetry(() =>
-      api.get('/community/categories', { timeout })
-        .then(response => response.data)
-    );
+    return rateLimitService.queueRequest(async () => {
+      const response = await api.get('/community/categories', { timeout });
+      return response.data;
+    });
   },
 
   getTopTags: async () => {
     const { timeout } = getNetworkAwareConfig();
-    return fetchWithRetry(() =>
-      api.get('/community/tags', { timeout })
-        .then(response => response.data)
-    );
+    return rateLimitService.queueRequest(async () => {
+      const response = await api.get('/community/tags', { timeout });
+      return response.data;
+    });
   },
 
   // Community Stats
   getTrendingTopics: async () => {
     const { timeout } = getNetworkAwareConfig();
-    return fetchWithRetry(() =>
-      api.get('/community/trending', { timeout })
-        .then(response => response.data)
-    );
+    return rateLimitService.queueRequest(async () => {
+      const response = await api.get('/community/trending', { timeout });
+      return response.data;
+    });
   },
 
   getCommunityStats: async () => {
     const { timeout } = getNetworkAwareConfig();
-    return fetchWithRetry(() =>
-      api.get('/community/stats', { timeout })
-        .then(response => response.data)
-    );
-  }
-}; 
+    return rateLimitService.queueRequest(async () => {
+      const response = await api.get('/community/stats', { timeout });
+      return response.data;
+    });
+  },
+
+  // Cache management
+  clearCache,
+  getCacheStats: () => ({
+    size: communityCache.size,
+    entries: Array.from(communityCache.keys())
+  })
+};
+
+export default communityService; 

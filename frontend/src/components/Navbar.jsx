@@ -177,188 +177,12 @@ function debounce(func, wait = 300, options = {}) {
   return debounced;
 }
 
-// Custom hook for click outside
-function useClickOutside(ref, handler) {
-  useEffect(() => {
-    const listener = (event) => {
-      if (!ref.current || ref.current.contains(event.target)) {
-        return;
-      }
-      handler(event);
-    };
-    
-    // Use passive listeners for better performance
-    document.addEventListener('mousedown', listener, { passive: true });
-    document.addEventListener('touchstart', listener, { passive: true });
-    
-    return () => {
-      document.removeEventListener('mousedown', listener);
-      document.removeEventListener('touchstart', listener);
-    };
-  }, [ref, handler]);
-}
-
-// Enhanced Memoized MovieImage with advanced features
-const MovieImage = React.memo(({ 
-  src, 
-  alt, 
-  className, 
-  priority = false, 
-  lazy = true,
-  aspectRatio = '16/9',
-  fallbackIcon = 'movie',
-  onImageLoad,
-  onImageError 
-}) => {
-  const [error, setError] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [retryCount, setRetryCount] = useState(0);
-  const maxRetries = 2;
-
-  // Enhanced error handling with retry mechanism
-  const handleError = useCallback(() => {
-    if (retryCount < maxRetries) {
-      setRetryCount(prev => prev + 1);
-      setIsLoading(true);
-      // Retry loading after a short delay
-      setTimeout(() => {
-        const img = new Image();
-        img.onload = () => {
-          setIsLoading(false);
-          setIsLoaded(true);
-          setError(false);
-        };
-        img.onerror = handleError;
-        img.src = src;
-      }, 1000 * (retryCount + 1)); // Exponential backoff
-    } else {
-      setError(true);
-      setIsLoading(false);
-      onImageError?.(src, alt);
-    }
-  }, [src, alt, retryCount, maxRetries, onImageError]);
-
-  // Enhanced load handling with performance optimization
-  const handleLoad = useCallback(() => {
-    setIsLoading(false);
-    setIsLoaded(true);
-    setError(false);
-    onImageLoad?.(src, alt);
-  }, [src, alt, onImageLoad]);
-
-  // Preload image for better performance
-  useEffect(() => {
-    if (src && priority) {
-      const img = new Image();
-      img.onload = handleLoad;
-      img.onerror = handleError;
-      img.src = src;
-      
-      // Cleanup function to prevent memory leaks
-      return () => {
-        img.onload = null;
-        img.onerror = null;
-      };
-    }
-  }, [src, priority, handleLoad, handleError]);
-
-  // Enhanced fallback component with better UX
-  const renderFallback = () => {
-    const iconMap = {
-      movie: (
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white/40 mx-auto mb-2" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M18 4l2 8H4l2-8h12zM4 13v7h16v-7H4z"/>
-        </svg>
-      ),
-      person: (
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white/40 mx-auto mb-2" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
-        </svg>
-      ),
-      default: (
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white/40 mx-auto mb-2" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/>
-        </svg>
-      )
-    };
-
-    return (
-      <div className={`${className} bg-gradient-to-br from-[#2b3036] to-[#1a1d21] flex items-center justify-center relative overflow-hidden`}>
-        <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent"></div>
-        <div className="text-center p-4 relative z-10">
-          {iconMap[fallbackIcon] || iconMap.default}
-          <span className="text-white/60 text-sm font-medium block truncate max-w-full px-2">{alt}</span>
-          {retryCount > 0 && (
-            <span className="text-white/40 text-xs block mt-1">Retrying... ({retryCount}/{maxRetries})</span>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  if (error || !src) {
-    return renderFallback();
-  }
-
-  return (
-    <div 
-      className={`${className} relative overflow-hidden group`}
-      style={{ aspectRatio }}
-    >
-      {/* Enhanced loading state with skeleton animation */}
-      {isLoading && (
-        <div className="absolute inset-0 bg-gradient-to-r from-[#2b3036] via-[#3a4046] to-[#2b3036] animate-pulse">
-          <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent"></div>
-          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
-            <div className="animate-spin rounded-full h-8 w-8 border-2 border-white/20 border-t-white/60"></div>
-          </div>
-        </div>
-      )}
-      
-      {/* Enhanced image with better performance and accessibility */}
-      <img
-        src={src}
-        alt={alt}
-        loading={lazy ? 'lazy' : 'eager'}
-        decoding="async"
-        className={`
-          w-full h-full object-cover transition-all duration-500 ease-out
-          ${isLoading ? 'opacity-0 scale-95' : 'opacity-100 scale-100'}
-          ${isLoaded ? 'group-hover/image:scale-105' : ''}
-        `}
-        onError={handleError}
-        onLoad={handleLoad}
-        style={{
-          transform: isLoaded ? 'translateZ(0)' : 'none' // Force hardware acceleration
-        }}
-      />
-      
-      {/* Enhanced overlay with better visual feedback */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent opacity-0 group-hover/image:opacity-100 transition-all duration-300 ease-out">
-        <div className="absolute bottom-0 left-0 right-0 p-3 flex items-center justify-center">
-          <div className="bg-white/20 backdrop-blur-sm rounded-full p-2 transform scale-90 group-hover/image:scale-100 transition-transform duration-200">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M8 5v14l11-7z"/>
-            </svg>
-          </div>
-        </div>
-      </div>
-      
-
-    </div>
-  );
-});
-
-// Add display name for better debugging
-MovieImage.displayName = 'MovieImage';
-
 // Add a utility function to highlight query words in a string
 function highlightQuery(text, query) {
   return text;
 }
 
-// Performance-optimized mobile menu state management
+// Custom hook for mobile menu state management
 const useMobileMenuState = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -585,7 +409,44 @@ const useOptimizedAccessibility = () => {
   return { announceToScreenReader };
 };
 
+// Custom hook for click outside with proper cleanup
+const useClickOutside = (ref, handler) => {
+  // Store handler in ref to avoid stale closures - moved to top level
+  const handlerRef = useRef(handler);
+  
+  useEffect(() => {
+    handlerRef.current = handler;
+    
+    const listener = (event) => {
+      if (!ref.current || ref.current.contains(event.target)) {
+        return;
+      }
+      handlerRef.current(event);
+    };
+    
+    // Use passive listeners for better performance
+    document.addEventListener('mousedown', listener, { passive: true });
+    document.addEventListener('touchstart', listener, { passive: true });
+    
+    return () => {
+      document.removeEventListener('mousedown', listener);
+      document.removeEventListener('touchstart', listener);
+    };
+  }, [ref, handler]); // Add handler back to dependencies since we're updating it
+};
+
 const Navbar = ({ onMovieSelect }) => {
+  // Custom hook for mobile menu state management
+  const { isOpen: isMobileMenuOpen, isPending, openMenu, closeMenu, toggleMenu } = useMobileMenuState();
+  // Performance-optimized animation variants with reduced motion support
+  const animations = useOptimizedAnimations();
+  // Performance-optimized event handlers with debouncing and throttling
+  const { handleClickOutside, handleEscapeKey, handleTouchStart } = useOptimizedEventHandlers(closeMenu);
+  // Performance-optimized haptic feedback with battery consideration
+  const { triggerHaptic } = useOptimizedHapticFeedback();
+  // Performance-optimized accessibility announcements
+  const { announceToScreenReader } = useOptimizedAccessibility();
+
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
@@ -609,23 +470,179 @@ const Navbar = ({ onMovieSelect }) => {
   const mobileSearchOverlayRef = useRef(null);
   const mobileSearchInputRef = inputRef; // already defined
 
-  // Performance-optimized mobile menu state management
-  const { isOpen: isMobileMenuOpen, isPending, openMenu, closeMenu, toggleMenu } = useMobileMenuState();
-  // Performance-optimized animation variants with reduced motion support
-  const animations = useOptimizedAnimations();
-  // Performance-optimized event handlers with debouncing and throttling
-  const { handleClickOutside, handleEscapeKey, handleTouchStart } = useOptimizedEventHandlers(closeMenu);
-  // Performance-optimized haptic feedback with battery consideration
-  const { triggerHaptic } = useOptimizedHapticFeedback();
-  // Performance-optimized accessibility announcements
-  const { announceToScreenReader } = useOptimizedAccessibility();
+  // Enhanced Memoized MovieImage with advanced features
+  const MovieImage = React.memo(({ 
+    src, 
+    alt, 
+    className, 
+    priority = false, 
+    lazy = true,
+    aspectRatio = '16/9',
+    fallbackIcon = 'movie',
+    onImageLoad,
+    onImageError 
+  }) => {
+    const [error, setError] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
+    const [isLoaded, setIsLoaded] = useState(false);
+    const [retryCount, setRetryCount] = useState(0);
+    const maxRetries = 2;
+
+    // Enhanced error handling with retry mechanism
+    const handleError = useCallback(() => {
+      if (retryCount < maxRetries) {
+        setRetryCount(prev => prev + 1);
+        setIsLoading(true);
+        // Retry loading after a short delay
+        setTimeout(() => {
+          const img = new Image();
+          img.onload = () => {
+            setIsLoading(false);
+            setIsLoaded(true);
+            setError(false);
+          };
+          img.onerror = handleError;
+          img.src = src;
+        }, 1000 * (retryCount + 1)); // Exponential backoff
+      } else {
+        setError(true);
+        setIsLoading(false);
+        onImageError?.(src, alt);
+      }
+    }, [src, alt, retryCount, maxRetries, onImageError]);
+
+    // Enhanced load handling with performance optimization
+    const handleLoad = useCallback(() => {
+      setIsLoading(false);
+      setIsLoaded(true);
+      setError(false);
+      onImageLoad?.(src, alt);
+    }, [src, alt, onImageLoad]);
+
+    // Preload image for better performance with proper cleanup
+    useEffect(() => {
+      if (src && priority) {
+        const img = new Image();
+        let isActive = true;
+        
+        img.onload = () => {
+          if (isActive) {
+            handleLoad();
+          }
+        };
+        img.onerror = () => {
+          if (isActive) {
+            handleError();
+          }
+        };
+        img.src = src;
+        
+        // Cleanup function to prevent memory leaks
+        return () => {
+          isActive = false;
+          img.onload = null;
+          img.onerror = null;
+          img.src = ''; // Cancel loading
+        };
+      }
+    }, [src, priority, handleLoad, handleError]);
+
+    // Enhanced fallback component with better UX
+    const renderFallback = () => {
+      const iconMap = {
+        movie: (
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white/40 mx-auto mb-2" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M18 4l2 8H4l2-8h12zM4 13v7h16v-7H4z"/>
+          </svg>
+        ),
+        person: (
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white/40 mx-auto mb-2" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+          </svg>
+        ),
+        default: (
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white/40 mx-auto mb-2" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/>
+          </svg>
+        )
+      };
+
+      return (
+        <div className={`${className} bg-gradient-to-br from-[#2b3036] to-[#1a1d21] flex items-center justify-center relative overflow-hidden`}>
+          <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent"></div>
+          <div className="text-center p-4 relative z-10">
+            {iconMap[fallbackIcon] || iconMap.default}
+            <span className="text-white/60 text-sm font-medium block truncate max-w-full px-2">{alt}</span>
+            {retryCount > 0 && (
+              <span className="text-white/40 text-xs block mt-1">Retrying... ({retryCount}/{maxRetries})</span>
+            )}
+          </div>
+        </div>
+      );
+    };
+
+    if (error || !src) {
+      return renderFallback();
+    }
+
+    return (
+      <div 
+        className={`${className} relative overflow-hidden group`}
+        style={{ aspectRatio }}
+      >
+        {/* Enhanced loading state with skeleton animation */}
+        {isLoading && (
+          <div className="absolute inset-0 bg-gradient-to-r from-[#2b3036] via-[#3a4046] to-[#2b3036] animate-pulse">
+            <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent"></div>
+            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+              <div className="animate-spin rounded-full h-8 w-8 border-2 border-white/20 border-t-white/60"></div>
+            </div>
+          </div>
+        )}
+        
+        {/* Enhanced image with better performance and accessibility */}
+        <img
+          src={src}
+          alt={alt}
+          loading={lazy ? 'lazy' : 'eager'}
+          decoding="async"
+          className={`
+            w-full h-full object-cover transition-all duration-500 ease-out
+            ${isLoading ? 'opacity-0 scale-95' : 'opacity-100 scale-100'}
+            ${isLoaded ? 'group-hover/image:scale-105' : ''}
+          `}
+          onError={handleError}
+          onLoad={handleLoad}
+          style={{
+            transform: isLoaded ? 'translateZ(0)' : 'none' // Force hardware acceleration
+          }}
+        />
+        
+        {/* Enhanced overlay with better visual feedback */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent opacity-0 group-hover/image:opacity-100 transition-all duration-300 ease-out">
+          <div className="absolute bottom-0 left-0 right-0 p-3 flex items-center justify-center">
+            <div className="bg-white/20 backdrop-blur-sm rounded-full p-2 transform scale-90 group-hover/image:scale-100 transition-transform duration-200">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 5v14l11-7z"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+        
+
+      </div>
+    );
+  });
+
+  // Add display name for better debugging
+  MovieImage.displayName = 'MovieImage';
 
   // Save search history to localStorage
   useEffect(() => {
     localStorage.setItem('searchHistory', JSON.stringify(searchHistory));
   }, [searchHistory]);
 
-  // Cleanup search state on unmount
+  // Comprehensive cleanup on component unmount
   useEffect(() => {
     return () => {
       // Clear search state
@@ -639,6 +656,11 @@ const Navbar = ({ onMovieSelect }) => {
         clearTimeout(handleKeyDown.typeaheadTimeout);
       }
       
+      // Cancel any pending search requests
+      if (searchAbortControllerRef.current) {
+        searchAbortControllerRef.current.abort();
+      }
+      
       // Clear any pending animations
       if (window.requestAnimationFrame) {
         // Cancel any pending animation frames
@@ -646,6 +668,11 @@ const Navbar = ({ onMovieSelect }) => {
         if (cancelAnimationFrame) {
           // Note: We can't track all animation frames, but this helps with cleanup
         }
+      }
+      
+      // Clear typeahead buffer
+      if (handleKeyDown.typeaheadBuffer) {
+        handleKeyDown.typeaheadBuffer = '';
       }
     };
   }, []);
@@ -674,11 +701,16 @@ const Navbar = ({ onMovieSelect }) => {
     setIsMenuOpen(false);
   }, [location.pathname]);
 
-  // Close mobile search overlay when clicking outside
+  // Close mobile search overlay when clicking outside with proper cleanup
   useEffect(() => {
     if (!isMobileSearchOpen) return;
     
-    const handleClick = (e) => {
+    let isActive = true;
+    let touchStartTarget = null;
+    
+    const handleMouseDown = (e) => {
+      if (!isActive) return;
+      
       // FIXED: More precise click outside detection - only close if clicking outside the entire search overlay
       if (
         mobileSearchOverlayRef.current &&
@@ -688,7 +720,9 @@ const Navbar = ({ onMovieSelect }) => {
         const isSearchElement = e.target.closest('[data-search-element]') || 
                                e.target.closest('.search-results') ||
                                e.target.closest('.search-input') ||
-                               e.target.closest('.search-overlay');
+                               e.target.closest('.search-overlay') ||
+                               e.target.matches('input[type="text"]') ||
+                               e.target.closest('input[type="text"]');
         
         if (!isSearchElement) {
           setIsMobileSearchOpen(false);
@@ -696,19 +730,69 @@ const Navbar = ({ onMovieSelect }) => {
       }
     };
     
+    const handleTouchStart = (e) => {
+      if (!isActive) return;
+      
+      // Store the touch start target to compare with touch end
+      touchStartTarget = e.target;
+      
+      // Don't close immediately on touch start - wait for touch end
+      // This prevents closing when user is just trying to scroll or focus input
+    };
+    
+    const handleTouchEnd = (e) => {
+      if (!isActive) return;
+      
+      // Only close if touch started and ended outside the search overlay
+      // and the touch wasn't on the search input or related elements
+      if (
+        touchStartTarget &&
+        mobileSearchOverlayRef.current &&
+        !mobileSearchOverlayRef.current.contains(touchStartTarget) &&
+        !mobileSearchOverlayRef.current.contains(e.target)
+      ) {
+        // Enhanced search element detection for mobile
+        const isSearchElement = touchStartTarget.closest('[data-search-element]') || 
+                               touchStartTarget.closest('.search-results') ||
+                               touchStartTarget.closest('.search-input') ||
+                               touchStartTarget.closest('.search-overlay') ||
+                               touchStartTarget.matches('input[type="text"]') ||
+                               touchStartTarget.closest('input[type="text"]') ||
+                               e.target.closest('[data-search-element]') ||
+                               e.target.closest('.search-results') ||
+                               e.target.closest('.search-input') ||
+                               e.target.closest('.search-overlay') ||
+                               e.target.matches('input[type="text"]') ||
+                               e.target.closest('input[type="text"]');
+        
+        if (!isSearchElement) {
+          setIsMobileSearchOpen(false);
+        }
+      }
+      
+      // Reset touch target
+      touchStartTarget = null;
+    };
+    
     // Use passive listeners for better performance
-    document.addEventListener('mousedown', handleClick, { passive: true });
-    document.addEventListener('touchstart', handleClick, { passive: true });
+    document.addEventListener('mousedown', handleMouseDown, { passive: true });
+    document.addEventListener('touchstart', handleTouchStart, { passive: true });
+    document.addEventListener('touchend', handleTouchEnd, { passive: true });
     
     return () => {
-      document.removeEventListener('mousedown', handleClick);
-      document.removeEventListener('touchstart', handleClick);
+      isActive = false;
+      touchStartTarget = null;
+      document.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('touchstart', handleTouchStart);
+      document.removeEventListener('touchend', handleTouchEnd);
     };
   }, [isMobileSearchOpen]);
 
-  // Enhanced mobile menu event listeners
+  // Enhanced mobile menu event listeners with proper cleanup
   useEffect(() => {
     if (!isMobileMenuOpen) return;
+    
+    let isActive = true;
     
     // Add escape key listener
     document.addEventListener('keydown', handleEscapeKey, { passive: true });
@@ -716,6 +800,7 @@ const Navbar = ({ onMovieSelect }) => {
     document.addEventListener('touchstart', handleTouchStart, { passive: true });
     
     return () => {
+      isActive = false;
       document.removeEventListener('keydown', handleEscapeKey);
       document.removeEventListener('touchstart', handleTouchStart);
     };
@@ -873,7 +958,7 @@ const Navbar = ({ onMovieSelect }) => {
       });
   }, []);
 
-  // Enhanced search handler
+  // Enhanced search handler with proper cleanup
   const handleSearch = useCallback(async (query) => {
     const trimmedQuery = query.trim();
     if (!trimmedQuery) {
@@ -924,6 +1009,9 @@ const Navbar = ({ onMovieSelect }) => {
     };
   }, [processSearchResults]);
 
+  // Store abort controller for cleanup
+  const searchAbortControllerRef = useRef(null);
+
   // Debounced search handler with proper cleanup
   const debouncedSearch = useMemo(() => {
     const debouncedFn = debounce((query) => handleSearch(query), 300);
@@ -935,18 +1023,16 @@ const Navbar = ({ onMovieSelect }) => {
     };
   }, [handleSearch]);
 
-  // Cleanup debounced search on unmount
+  // Cleanup debounced search on component unmount
   useEffect(() => {
     return () => {
-      // Cancel any pending search operations
-      if (debouncedSearch.cancel) {
+      if (debouncedSearch && debouncedSearch.cancel) {
         debouncedSearch.cancel();
       }
     };
   }, [debouncedSearch]);
 
-  // Handle search input changes
-  // Advanced search input handler with IME, composition, and accessibility support
+  // Handle search input changes with proper cleanup
   const handleSearchChange = useCallback((e) => {
     const query = e.target.value;
     setSearchQuery(query);
@@ -972,6 +1058,11 @@ const Navbar = ({ onMovieSelect }) => {
           }
         }
       });
+    }
+
+    // Cancel previous search request
+    if (searchAbortControllerRef.current) {
+      searchAbortControllerRef.current.abort();
     }
 
     if (query.trim()) {
@@ -1183,6 +1274,14 @@ const Navbar = ({ onMovieSelect }) => {
     if (!handleKeyDown.typeaheadBuffer) handleKeyDown.typeaheadBuffer = '';
     if (!handleKeyDown.typeaheadTimeout) handleKeyDown.typeaheadTimeout = null;
 
+    // Cleanup function for typeahead timeout
+    const cleanupTypeahead = () => {
+      if (handleKeyDown.typeaheadTimeout) {
+        clearTimeout(handleKeyDown.typeaheadTimeout);
+        handleKeyDown.typeaheadTimeout = null;
+      }
+    };
+
     // Enhanced helper: Scroll selected item into view with advanced animation, accessibility, and performance optimizations
     const scrollToSelected = (index) => {
       const selectedElement = document.querySelector(`[data-index="${index}"]`);
@@ -1299,9 +1398,9 @@ const Navbar = ({ onMovieSelect }) => {
       return idx;
     };
 
-    // Enhanced typeahead with better matching
+    // Enhanced typeahead with better matching and cleanup
     const handleTypeahead = (char) => {
-      clearTimeout(handleKeyDown.typeaheadTimeout);
+      cleanupTypeahead();
       handleKeyDown.typeaheadBuffer += char.toLowerCase();
       
       // Find matching item starting from current position
@@ -1337,7 +1436,7 @@ const Navbar = ({ onMovieSelect }) => {
         if (element) {
           element.classList.add('animate-navbar-select');
           setTimeout(() => element.classList.remove('animate-navbar-select'), 300);
-      }
+        }
       }
       
       // Clear typeahead buffer after delay
@@ -1492,7 +1591,7 @@ const Navbar = ({ onMovieSelect }) => {
         // Clear typeahead buffer on backspace
         if (handleKeyDown.typeaheadBuffer) {
           handleKeyDown.typeaheadBuffer = '';
-          clearTimeout(handleKeyDown.typeaheadTimeout);
+          cleanupTypeahead();
         }
         break;
         
@@ -1511,7 +1610,7 @@ const Navbar = ({ onMovieSelect }) => {
     setSearchHistory([]);
   }, []);
 
-  // Enhanced history item click handler with advanced error handling, analytics, and user experience optimizations
+  // Enhanced history item click handler with proper cleanup
   const handleHistoryItemClick = useCallback(async (query) => {
     // Performance optimization: Use requestIdleCallback for non-critical operations
     const scheduleNonCritical = (fn) => {
@@ -1527,6 +1626,11 @@ const Navbar = ({ onMovieSelect }) => {
     if (!normalizedQuery) {
       console.warn('Invalid query provided to handleHistoryItemClick:', query);
       return;
+    }
+
+    // Cancel any existing search
+    if (searchAbortControllerRef.current) {
+      searchAbortControllerRef.current.abort();
     }
 
     // Immediate UI feedback for better perceived performance
@@ -3346,7 +3450,7 @@ const Navbar = ({ onMovieSelect }) => {
         </motion.button>
         </div>
 
-      {/* MOBILE SEARCH OVERLAY */}
+      {/* MOBILE SEARCH OVERLAY - REDESIGNED */}
       <AnimatePresence mode="wait">
         {isMobileSearchOpen && (
           <motion.div
@@ -3355,367 +3459,349 @@ const Navbar = ({ onMovieSelect }) => {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ 
-              duration: 0.2,
+              duration: 0.25,
               ease: "easeInOut"
             }}
-            className="fixed inset-0 z-[90000] sm:hidden search-overlay"
+            className="fixed inset-0 z-[90000] sm:hidden bg-black/90 backdrop-blur-md"
             data-search-element="true"
             onClick={(e) => {
-              // FIXED: Only close search when clicking on the overlay background, not on search content
               if (e.target === e.currentTarget) {
                 setIsMobileSearchOpen(false);
               }
             }}
           >
+            {/* Minimalist Search Container */}
             <motion.div
-              initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
+              initial={{ opacity: 0, y: -20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -20, scale: 0.95 }}
               transition={{ 
-                duration: 0.2, 
-                ease: "easeOut"
+                duration: 0.3, 
+                ease: [0.4, 0, 0.2, 1]
               }}
-              className="absolute top-20 left-4 right-4 search-results"
+              className="absolute top-0 left-0 right-0 bg-gradient-to-b from-[#23272F]/95 via-[#181A20]/90 to-[#181A20]/85 backdrop-blur-xl border-b border-white/10 shadow-2xl"
               data-search-element="true"
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
               }}
             >
-              <motion.div
-                initial={{ scale: 0.98, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.98, opacity: 0 }}
-                transition={{ 
-                  duration: 0.2, 
-                  ease: "easeOut"
-                }}
-                className="relative"
-              >
+              {/* Search Header */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
                 <motion.div
-                                  className="relative bg-[#1a1d21]/95 backdrop-blur-2xl rounded-2xl border border-white/20 p-4 shadow-2xl shadow-black/50 search-content"
-                data-search-element="true"
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.1 }}
+                  className="flex items-center gap-3"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-[#2b3036]/80 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/80" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </div>
+                  <span className="text-white/90 font-medium text-base">Search</span>
+                </motion.div>
+                
+                <motion.button
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.15 }}
+                  onClick={() => setIsMobileSearchOpen(false)}
+                  className="w-8 h-8 rounded-lg bg-[#2b3036]/80 hover:bg-[#323840]/90 flex items-center justify-center transition-all duration-200"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/80" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </motion.button>
+              </div>
+
+              {/* Search Input */}
+              <div 
+                className="px-4 py-4"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
                 }}
-                  whileHover={{ scale: 1.005 }}
-                  transition={{ duration: 0.15 }}
-                >
-                  <motion.div
-                    initial={{ opacity: 0, x: -5 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ 
-                      duration: 0.2, 
-                      ease: "easeOut"
-                    }}
-                    className="flex items-center gap-3 mb-4"
-                  >
-                    <motion.div
-                      className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center"
-                      whileHover={{ scale: 1.02, rotate: 2 }}
-                      whileTap={{ scale: 0.98 }}
-                      transition={{ duration: 0.15 }}
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white/80" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                      </svg>
-                    </motion.div>
-                    <span className="text-white/90 font-medium text-lg">Search Movies & TV Shows</span>
-                  </motion.div>
-                  
-                  <motion.div
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ 
-                      duration: 0.2, 
-                      ease: "easeOut"
-                    }}
-                    className="relative"
-                  >
-              <input
-                ref={inputRef}
-                      type="text"
-                      placeholder="Search for movies, TV shows, actors..."
-                value={searchQuery}
-                onChange={handleSearchChange}
-                onKeyDown={handleKeyDown}
-                      onFocus={() => {
-                        setIsSearchFocused(true);
-                        setShowResults(true);
-                      }}
-                      className="w-full bg-white/10 border border-white/30 rounded-xl px-4 py-3 pr-12 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-white/40 transition-all duration-300 search-input"
-                      data-search-element="true"
-                autoFocus
-                    />
-              {searchQuery && (
-                      <motion.div
-                        className="absolute right-3 top-0 bottom-0 flex items-center z-10"
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        transition={{ 
-                          duration: 0.15, 
-                          ease: "easeOut"
-                        }}
-                      >
-                        <motion.div
-                          onClick={(e) => {
-                            e.preventDefault();
-                    e.stopPropagation();
-                    setSearchQuery('');
-                            // Ensure input stays focused
-                            if (inputRef.current) {
-                              inputRef.current.focus();
-                            }
-                          }}
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                          }}
-                          onTouchStart={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                          }}
-                          className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center hover:bg-white/30 transition-colors duration-200 cursor-pointer select-none search-clear-button"
-                          data-search-element="true"
-                          whileHover={{ scale: 1.02 }}
-                          whileTap={{ scale: 0.98 }}
-                          transition={{ duration: 0.1 }}
-                >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                        </motion.div>
-                      </motion.div>
-              )}
-                  </motion.div>
-                  
-                  {/* Search Results */}
-                  <AnimatePresence mode="wait">
-                    {showResults && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        transition={{ 
-                          duration: 0.2,
-                          ease: "easeInOut"
-                        }}
-                        className="mt-4 search-results-container"
-                        data-search-element="true"
+                onTouchStart={(e) => {
+                  e.stopPropagation();
+                }}
+                onTouchEnd={(e) => {
+                  e.stopPropagation();
+                }}
               >
-                        {/* Search History */}
-                {!searchQuery && searchHistory.length > 0 && (
-                          <motion.div
-                            initial={{ opacity: 0, y: 3 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: 3 }}
-                            transition={{ 
-                              duration: 0.2, 
-                              ease: "easeOut"
-                            }}
-                            className="mb-4 search-history"
-                            data-search-element="true"
-                          >
-                    <div className="flex items-center justify-between mb-3">
-                              <h4 className="text-white/90 font-medium text-sm">Recent Searches</h4>
-                      <button
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 }}
+                  className="relative"
+                >
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    placeholder="Search movies, TV shows, actors..."
+                    value={searchQuery}
+                    onChange={handleSearchChange}
+                    onKeyDown={handleKeyDown}
+                    onFocus={() => {
+                      setIsSearchFocused(true);
+                      setShowResults(true);
+                    }}
+                    onTouchStart={(e) => {
+                      // Prevent touch events from bubbling up and closing the search overlay
+                      e.stopPropagation();
+                    }}
+                    onTouchEnd={(e) => {
+                      // Prevent touch events from bubbling up and closing the search overlay
+                      e.stopPropagation();
+                    }}
+                    className="w-full bg-[#2b3036]/80 border border-white/20 rounded-xl px-4 py-3 pr-12 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-white/40 focus:bg-[#323840]/90 transition-all duration-200 text-base"
+                    data-search-element="true"
+                    autoFocus
+                  />
+                  
+                  {/* Clear Button */}
+                  {searchQuery && (
+                    <motion.button
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.8 }}
+                      onClick={() => {
+                        setSearchQuery('');
+                        setSearchResults([]);
+                        setShowResults(false);
+                        inputRef.current?.focus();
+                      }}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-[#2b3036]/80 hover:bg-[#323840]/90 flex items-center justify-center transition-all duration-200"
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-white/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </motion.button>
+                  )}
+                </motion.div>
+              </div>
+
+              {/* Search Content */}
+              <AnimatePresence mode="wait">
+                {showResults && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ 
+                      duration: 0.25,
+                      ease: "easeInOut"
+                    }}
+                    className="border-t border-white/10 bg-gradient-to-b from-[#2b3036]/80 via-[#1a1d21]/70 to-[#1a1d21]/60 backdrop-blur-sm"
+                    data-search-element="true"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                  >
+                    {/* Search History */}
+                    {!searchQuery && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 10 }}
+                        transition={{ delay: 0.1 }}
+                        className="p-4"
+                        data-search-element="true"
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          clearHistory();
                         }}
-                                className="text-white/50 hover:text-white/70 text-xs transition-colors search-clear-history"
-                                data-search-element="true"
                       >
-                                Clear
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {searchHistory.map((query, index) => (
-                                <motion.button
-                          key={index}
-                                                      onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              handleHistoryItemClick(query);
-                            }}
-                                  className="px-3 py-1.5 bg-white/15 hover:bg-white/25 rounded-full text-white/80 hover:text-white text-xs transition-colors flex items-center gap-2 border border-white/20 search-history-item"
-                                  data-search-element="true"
-                                  initial={{ opacity: 0, scale: 0.95 }}
-                                  animate={{ opacity: 1, scale: 1 }}
-                                  transition={{ 
-                                    duration: 0.15, 
-                                    delay: index * 0.02,
-                                    ease: "easeOut"
-                                  }}
-                                  whileHover={{ scale: 1.01 }}
-                                  whileTap={{ scale: 0.99 }}
-                        >
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                          </svg>
-                          {query}
-                                </motion.button>
-                      ))}
-                    </div>
-                          </motion.div>
-                )}
-
-                        {/* Initial State - When mobile search is focused but empty */}
-                        {!searchQuery && searchHistory.length === 0 && (
-                          <motion.div
-                            initial={{ opacity: 0, y: 3 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: 3 }}
-                            transition={{ 
-                              duration: 0.2, 
-                              ease: "easeOut"
-                            }}
-                            className="text-center py-8"
-                          >
-                            <motion.svg 
-                              width="48" height="48" fill="none" viewBox="0 0 48 48" className="mx-auto mb-4"
-                              initial={{ scale: 0.8, opacity: 0 }}
-                              animate={{ scale: 1, opacity: 1 }}
-                              transition={{ duration: 0.3 }}
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-white/80 font-medium text-sm">Recent Searches</h4>
+                          {searchHistory.length > 0 && (
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                clearHistory(e);
+                              }}
+                              className="text-white/50 hover:text-white/70 text-xs transition-colors"
+                              data-search-element="true"
                             >
-                              <rect width="48" height="48" rx="12" fill="#1a1a1a"/>
-                              <circle cx="24" cy="24" r="12" fill="none" stroke="#fff" strokeWidth="2"/>
-                              <path d="M18 24l3 3 6-6" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                            </motion.svg>
-                            <motion.div 
-                              className="text-white/80 mb-2 text-base font-medium"
-                              initial={{ opacity: 0, y: 10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              transition={{ delay: 0.1 }}
-                            >
-                              Start searching for movies & TV shows
-                            </motion.div>
-                            <motion.div 
-                              className="text-white/50 text-xs"
-                              initial={{ opacity: 0, y: 10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              transition={{ delay: 0.2 }}
-                            >
-                              Type to discover amazing content
-                            </motion.div>
-                          </motion.div>
-                        )}
-
-                        {/* Loading State */}
-                        {isSearching && (
-                          <motion.div
-                            initial={{ opacity: 0, scale: 0.98 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.98 }}
-                            transition={{ 
-                              duration: 0.2,
-                              ease: "easeOut"
-                            }}
-                            className="flex justify-center items-center py-8"
-                          >
-                            <div className="w-8 h-8 border-4 border-white/20 border-t-white rounded-full animate-spin"></div>
-                          </motion.div>
-                        )}
-
-                        {/* Search Results */}
-                        {searchQuery.trim() && !isSearching && (
-                          <motion.div
-                            initial={{ opacity: 0, y: 3 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: 3 }}
-                            transition={{ 
-                              duration: 0.2,
-                              ease: "easeOut"
-                            }}
-                            className="max-h-96 overflow-y-auto search-results-list"
-                            data-search-element="true"
-                          >
-                            {searchResults.length > 0 ? (
-                              <div className="space-y-2">
-                      {searchResults.map((movie, index) => (
-                                  <motion.button
-                          key={movie.id}
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      handleMovieSelect(movie);
-                                      setIsMobileSearchOpen(false);
-                                    }}
-                                    className="w-full p-3 flex items-center gap-3 transition-all duration-200 group hover:bg-white/8 rounded-xl search-result-item"
-                                    data-search-element="true"
-                                    initial={{ opacity: 0, y: 5, scale: 0.99 }}
-                                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                                    exit={{ opacity: 0, y: 5, scale: 0.99 }}
-                                    transition={{ 
-                                      duration: 0.2, 
-                                      delay: index * 0.015,
-                                      ease: "easeOut"
-                                    }}
-                                    whileHover={{ scale: 1.005, y: -0.5 }}
-                                    whileTap={{ scale: 0.995 }}
-                        >
-                                    <div className="w-20 h-28 flex-shrink-0 relative overflow-hidden rounded-xl bg-white/8 border border-white/15 shadow-lg">
-                            <MovieImage
-                              src={movie.image || movie.poster_path ? `https://image.tmdb.org/t/p/w185${movie.poster_path || movie.image}` : ''}
-                              alt={movie.title}
-                              className="w-full h-full"
-                            />
-                          </div>
-                                    <div className="flex-1 min-w-0 text-left">
-                                      <h3 className="text-white font-medium truncate text-sm">{movie.title}</h3>
-                                      <div className="flex items-center gap-2 mt-1 text-xs text-white/60">
-                                  <span>{movie.year}</span>
-                                  <span>•</span>
-                                  <span>{movie.type === 'tv' ? 'TV Show' : 'Movie'}</span>
-                                        {movie.rating > 0 && (
-                                          <>
-                                            <span>•</span>
-                                            <span className="text-yellow-400 flex items-center gap-1">
-                                              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                                                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.967a1 1 0 00.95.69h4.178c.969 0 1.371 1.24.588 1.81l-3.385 2.46a1 1 0 00-.364 1.118l1.287 3.966c.3.922-.755 1.688-1.54 1.118l-3.385-2.46a1 1 0 00-1.175 0l-3.385 2.46c-.784.57-1.838-.196-1.54-1.118l1.287-3.966a1 1 0 00-.364-1.118l-3.385-2.46c-.783-.57-.38-1.81.588-1.81h4.178a1 1 0 00.95-.69l1.286-3.967z"/>
-                                              </svg>
-                                              {typeof movie.rating === 'number' && !isNaN(movie.rating) 
-                                                ? movie.rating.toFixed(1) 
-                                                : movie.rating || 'N/A'}
-                                            </span>
-                                          </>
-                                        )}
-                            </div>
-                            {movie.overview && (
-                                        <div className="mt-1 text-xs text-white/50 line-clamp-2">{movie.overview}</div>
-                            )}
-                          </div>
-                                  </motion.button>
-                      ))}
-                    </div>
-                  ) : (
-                              <motion.div
-                                initial={{ opacity: 0, scale: 0.98 }}
+                              Clear
+                            </button>
+                          )}
+                        </div>
+                        {searchHistory.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {searchHistory.map((query, index) => (
+                              <motion.button
+                                key={index}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleHistoryItemClick(query);
+                                }}
+                                className="px-3 py-2 bg-[#2b3036]/80 hover:bg-[#323840]/90 rounded-lg text-white/80 hover:text-white text-sm transition-all duration-200 flex items-center gap-2"
+                                data-search-element="true"
+                                initial={{ opacity: 0, scale: 0.95 }}
                                 animate={{ opacity: 1, scale: 1 }}
                                 transition={{ 
-                                  duration: 0.2,
-                                  ease: "easeOut"
+                                  duration: 0.2, 
+                                  delay: index * 0.03
                                 }}
-                                className="text-center py-8"
+                                whileHover={{ scale: 1.02 }}
+                                whileTap={{ scale: 0.98 }}
                               >
-                                <div className="text-white/60 mb-2">No results found for "{searchQuery}"</div>
-                                <div className="text-white/40 text-xs">Try different keywords or check your spelling</div>
-                              </motion.div>
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="currentColor">
+                                  <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                {query}
+                              </motion.button>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-center py-4">
+                            <div className="text-white/40 text-sm">No recent searches</div>
+                          </div>
                         )}
+                      </motion.div>
+                    )}
+
+
+
+                    {/* Loading State */}
+                    {isSearching && (
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="flex justify-center items-center py-8"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                      >
+                        <div className="w-6 h-6 border-2 border-white/20 border-t-white/60 rounded-full animate-spin"></div>
+                      </motion.div>
+                    )}
+
+                    {/* Search Results */}
+                    {searchQuery.trim() && !isSearching && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 10 }}
+                        transition={{ delay: 0.1 }}
+                        className="max-h-96 overflow-y-auto"
+                        data-search-element="true"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                      >
+                        {searchResults.length > 0 ? (
+                          <div className="divide-y divide-white/10">
+                            {searchResults.map((movie, index) => (
+                              <motion.button
+                                key={movie.id}
+                                onClick={() => {
+                                  handleMovieSelect(movie);
+                                  setIsMobileSearchOpen(false);
+                                }}
+                                className="w-full p-4 flex items-center gap-4 transition-all duration-200 hover:bg-[#2b3036]/60 group"
+                                data-search-element="true"
+                                initial={{ opacity: 0, x: -10 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ 
+                                  duration: 0.2, 
+                                  delay: index * 0.02
+                                }}
+                                whileHover={{ x: 5 }}
+                                whileTap={{ scale: 0.98 }}
+                              >
+                                {/* Movie Poster */}
+                                <div className="w-16 h-24 flex-shrink-0 relative overflow-hidden rounded-lg bg-[#2b3036]/80 border border-white/20">
+                                  <MovieImage
+                                    src={movie.image || movie.poster_path ? `https://image.tmdb.org/t/p/w185${movie.poster_path || movie.image}` : ''}
+                                    alt={movie.title}
+                                    className="w-full h-full"
+                                  />
+                                </div>
+                                
+                                {/* Movie Info */}
+                                <div className="flex-1 min-w-0 text-left">
+                                  <h3 className="text-white/90 font-medium truncate text-base mb-1">
+                                    {movie.title}
+                                  </h3>
+                                  <div className="flex items-center gap-2 text-sm text-white/60 mb-2">
+                                    <span>{movie.year}</span>
+                                    <span>•</span>
+                                    <span className="capitalize">{movie.type === 'tv' ? 'TV Show' : 'Movie'}</span>
+                                    {movie.rating > 0 && (
+                                      <>
+                                        <span>•</span>
+                                        <span className="text-yellow-400 flex items-center gap-1">
+                                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.967a1 1 0 00.95.69h4.178c.969 0 1.371 1.24.588 1.81l-3.385 2.46a1 1 0 00-.364 1.118l1.287 3.966c.3.922-.755 1.688-1.54 1.118l-3.385-2.46a1 1 0 00-1.175 0l-3.385 2.46c-.784.57-1.838-.196-1.54-1.118l1.287-3.966a1 1 0 00-.364-1.118l-3.385-2.46c-.783-.57-.38-1.81.588-1.81h4.178a1 1 0 00.95-.69l1.286-3.967z"/>
+                                          </svg>
+                                          {typeof movie.rating === 'number' && !isNaN(movie.rating) 
+                                            ? movie.rating.toFixed(1) 
+                                            : movie.rating || 'N/A'}
+                                        </span>
+                                      </>
+                                    )}
+                                  </div>
+                                  {movie.overview && (
+                                    <div className="text-sm text-white/50 line-clamp-2 leading-relaxed">
+                                      {movie.overview}
+                                    </div>
+                                  )}
+                                </div>
+                                
+                                {/* Arrow Icon */}
+                                <div className="w-6 h-6 rounded-full bg-[#2b3036]/80 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 18l6-6-6-6" />
+                                  </svg>
+                                </div>
+                              </motion.button>
+                            ))}
+                          </div>
+                        ) : (
+                          <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ delay: 0.1 }}
+                            className="text-center py-8"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
+                          >
+                            <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-[#2b3036]/80 flex items-center justify-center">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white/40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9.172 16.172a4 4 0 015.656 0M9 12h6m-6-4h6m2 5.291A7.962 7.962 0 0112 15c-2.34 0-4.47-.881-6.08-2.33" />
+                              </svg>
+                            </div>
+                            <div className="text-white/60 mb-1 text-base font-medium">
+                              No results found
+                            </div>
+                            <div className="text-white/40 text-sm">
+                              Try different keywords or check your spelling
+                            </div>
                           </motion.div>
                         )}
                       </motion.div>
                     )}
-                  </AnimatePresence>
-                </motion.div>
-              </motion.div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           </motion.div>
         )}
-        </AnimatePresence>
+      </AnimatePresence>
 
       {/* MOBILE MENU (hamburger) */}
       <AnimatePresence>

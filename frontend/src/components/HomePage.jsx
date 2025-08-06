@@ -27,7 +27,8 @@ import {
   getPopularTVShows,
   getTopRatedTVShows,
   getAiringTodayTVShows,
-  getNowPlayingMovies
+  getNowPlayingMovies,
+
 } from '../services/tmdbService';
 import { PageLoader, SectionLoader, CardLoader } from './Loader';
 import { useLoading } from '../contexts/LoadingContext';
@@ -136,37 +137,21 @@ const ProgressiveImage = memo(
         fullImage.loading = 'lazy';
       }
       
-      // FIXED: Mobile-specific image loading optimization
-      // Use smaller image sizes for mobile to improve loading performance
-      const isMobile = window.innerWidth < 768;
-      let optimizedSrc = src;
-      
-      if (isMobile && src.includes('/w')) {
-        // For mobile, use smaller image sizes if available
-        if (src.includes('/w500')) {
-          optimizedSrc = src.replace('/w500', '/w300');
-        } else if (src.includes('/w780')) {
-          optimizedSrc = src.replace('/w780', '/w300');
-        } else if (src.includes('/w1280')) {
-          optimizedSrc = src.replace('/w1280', '/w300');
-        }
-      }
-      
-      fullImage.src = optimizedSrc;
+      // Consistent image loading across all devices
+      fullImage.src = src;
       if (srcSet) fullImage.srcset = srcSet;
       
       // Store reference for cleanup
       preloadRef.current = fullImage;
       
       fullImage.onload = () => {
-        setCurrentSrc(optimizedSrc);
+        setCurrentSrc(src);
         setImageLoaded(true);
         if (onLoad) onLoad();
       };
       
       fullImage.onerror = (e) => {
-        // FIXED: Better error handling for mobile
-        console.warn('Image failed to load:', optimizedSrc, 'Error:', e);
+        console.warn('Image failed to load:', src, 'Error:', e);
         setImageError(true);
         if (onError) onError(e);
       };
@@ -324,6 +309,71 @@ const ProgressiveImage = memo(
   }
 );
 
+// Enhanced loading card component with consistent sizing
+const LoadingCard = memo(() => {
+  // Enhanced responsive card width for better desktop experience
+  const getCardWidth = () => {
+    const isMobile = typeof window !== "undefined" && window.innerWidth <= 768;
+    const screenWidth = typeof window !== "undefined" ? window.innerWidth : 1024;
+    
+    if (isMobile) {
+      // Mobile: Optimized for touch interaction
+      return "w-44 sm:w-52"; // 176px on mobile, 208px on small screens
+    } else if (screenWidth >= 2560) {
+      // 4K and larger displays
+      return "w-[480px]"; // 480px for 4K displays
+    } else if (screenWidth >= 1920) {
+      // Full HD displays
+      return "w-[420px]"; // 420px for 1920px+ screens
+    } else if (screenWidth >= 1440) {
+      // Large desktop displays
+      return "w-[380px]"; // 380px for 1440px+ screens
+    } else if (screenWidth >= 1280) {
+      // Standard desktop displays
+      return "w-[340px]"; // 340px for 1280px+ screens
+    } else if (screenWidth >= 1024) {
+      // Small desktop/large tablet
+      return "w-[300px]"; // 300px for 1024px+ screens
+    }
+    return "w-80"; // Fallback
+  };
+
+  // Enhanced aspect ratio for optimal desktop display
+  const getAspectRatio = () => {
+    const isMobile = typeof window !== "undefined" && window.innerWidth <= 768;
+    const screenWidth = typeof window !== "undefined" ? window.innerWidth : 1024;
+    
+    if (isMobile) {
+      // Use poster aspect ratio on mobile (2:3 ratio typical for movie posters)
+      return "2/3";
+    } else if (screenWidth >= 2560) {
+      // 4K displays - wider aspect ratio for cinematic feel
+      return "5/2"; // 2.5:1 ratio for 4K displays
+    } else if (screenWidth >= 1920) {
+      // Full HD displays - cinematic aspect ratio
+      return "21/9"; // Ultra-wide cinematic ratio
+    } else if (screenWidth >= 1440) {
+      // Large desktop displays
+      return "16/9"; // Standard widescreen ratio
+    } else if (screenWidth >= 1024) {
+      // Standard desktop displays
+      return "16/10"; // Slightly taller for better content display
+    }
+    return "16/10"; // Fallback for better desktop experience
+  };
+
+  const cardWidth = getCardWidth();
+  const aspectRatio = getAspectRatio();
+
+  return (
+    <div className={`group flex flex-col gap-4 rounded-lg ${cardWidth} flex-shrink-0`}>
+      <div className={`relative rounded-lg overflow-hidden bg-black/20 w-full`} style={{ aspectRatio }}>
+        <div className="w-6 h-6 sm:w-8 sm:h-8 border-4 border-white/20 border-t-white rounded-full animate-spin absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"></div>
+      </div>
+    </div>
+  );
+});
+
 const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, duration, runtime, onMouseLeave, onClick, id, prefetching, cardClassName, poster, poster_path, backdrop_path, overview, genres, release_date, first_air_date, vote_average, media_type, onPrefetch }) => {
   const { addToWatchlist, removeFromWatchlist, isInWatchlist } = useWatchlist();
   const [isInWatchlistState, setIsInWatchlistState] = useState(false);
@@ -331,60 +381,41 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
   const [prefetchComplete, setPrefetchComplete] = useState(false);
   const hoverTimeoutRef = useRef(null);
   const prefetchTimeoutRef = useRef(null);
-  const [isMobile, setIsMobile] = useState(false);
+  // Removed isMobile state - using consistent desktop behavior
 
-  // Enhanced: Responsive image source, aspect ratio, and card width with fallback, retina, and ultra-wide support
-  // Determine best image source based on device, pixel density, and available fields
+  // Mobile-aware image source selection
   const getBestImageSource = () => {
-    // Prefer highest quality available, fallback to next best
+    // Handle both transformed data (backdrop/poster) and raw TMDB data (backdrop_path/poster_path)
+    const backdropImage = backdrop || backdrop_path;
+    const posterImage = poster || poster_path;
+    
+    // Check if mobile device (screen width <= 768px)
+    const isMobile = typeof window !== "undefined" && window.innerWidth <= 768;
+    
     if (isMobile) {
-      // On mobile, prefer portrait poster, fallback to landscape if poster missing
-      return poster || poster_path || image || backdrop || backdrop_path || null;
+      // On mobile, prefer poster images (better for vertical/portrait orientation)
+      return posterImage || backdropImage || image || null;
     } else {
-      // On desktop, prefer landscape, fallback to poster if no backdrop
-      return backdrop || backdrop_path || image || poster || poster_path || null;
+      // On desktop, prefer backdrop images (better for horizontal/landscape orientation)
+      return backdropImage || posterImage || image || null;
     }
   };
 
-  // FIXED: Add debugging for movie card rendering - moved after isMobile definition
+  // Movie card debugging for consistent rendering
   useEffect(() => {
     console.log(`MovieCard Debug - ${id}:`, {
       title,
-      isMobile,
       imageSource: getBestImageSource(),
       poster_path,
       backdrop_path
     });
-  }, [id, title, isMobile, poster_path, backdrop_path]);
+  }, [id, title, poster_path, backdrop_path]);
 
   useEffect(() => {
     setIsInWatchlistState(isInWatchlist(id));
   }, [id, isInWatchlist]);
 
-  // Check if we're on mobile for responsive layout - FIXED: Proper cleanup and mobile detection
-  useEffect(() => {
-    const checkScreenSize = () => {
-      // FIXED: More reliable mobile detection
-      const isNowMobile = window.innerWidth < 768 || 
-                         (window.navigator && window.navigator.userAgent && 
-                          /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(window.navigator.userAgent));
-      setIsMobile(prev => {
-        if (prev !== isNowMobile) {
-          console.log('Mobile detection changed:', isNowMobile, 'Screen width:', window.innerWidth);
-          return isNowMobile;
-        }
-        return prev;
-      });
-    };
-    
-    checkScreenSize();
-    const resizeHandler = checkScreenSize;
-    window.addEventListener('resize', resizeHandler);
-    
-    return () => {
-      window.removeEventListener('resize', resizeHandler);
-    };
-  }, []);
+  // Removed mobile detection - using consistent desktop behavior
 
   // Further enhanced prefetching function with image preloading, error logging, and smarter checks
   const handlePrefetch = useCallback(async () => {
@@ -550,29 +581,7 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
     };
   }, []);
 
-  // FIXED: Add proper cleanup for mobile detection
-  useEffect(() => {
-    const checkScreenSize = () => {
-      const isNowMobile = window.innerWidth < 768 || 
-                         (window.navigator && window.navigator.userAgent && 
-                          /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(window.navigator.userAgent));
-      setIsMobile(prev => {
-        if (prev !== isNowMobile) {
-          console.log('MovieCard Mobile detection changed:', isNowMobile, 'Screen width:', window.innerWidth);
-          return isNowMobile;
-        }
-        return prev;
-      });
-    };
-    
-    checkScreenSize();
-    const resizeHandler = checkScreenSize;
-    window.addEventListener('resize', resizeHandler);
-    
-    return () => {
-      window.removeEventListener('resize', resizeHandler);
-    };
-  }, []);
+  // Consistent desktop-style behavior across all devices
 
   const handleWatchlistClick = (e) => {
     e.preventDefault();
@@ -617,23 +626,55 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
     return duration;
   };
 
-  // Responsive aspect ratio: portrait for mobile, landscape for desktop, ultra-wide for very large screens
+  // Enhanced aspect ratio for optimal desktop display
   const getAspectRatio = () => {
-    if (typeof window !== "undefined" && window.innerWidth > 1800 && !isMobile) {
-      return "21/9"; // Ultra-wide for big screens
+    const isMobile = typeof window !== "undefined" && window.innerWidth <= 768;
+    const screenWidth = typeof window !== "undefined" ? window.innerWidth : 1024;
+    
+    if (isMobile) {
+      // Use poster aspect ratio on mobile (2:3 ratio typical for movie posters)
+      return "2/3";
+    } else if (screenWidth >= 2560) {
+      // 4K displays - wider aspect ratio for cinematic feel
+      return "5/2"; // 2.5:1 ratio for 4K displays
+    } else if (screenWidth >= 1920) {
+      // Full HD displays - cinematic aspect ratio
+      return "21/9"; // Ultra-wide cinematic ratio
+    } else if (screenWidth >= 1440) {
+      // Large desktop displays
+      return "16/9"; // Standard widescreen ratio
+    } else if (screenWidth >= 1024) {
+      // Standard desktop displays
+      return "16/10"; // Slightly taller for better content display
     }
-    return isMobile ? "2/3" : "16/10";
+    return "16/10"; // Fallback for better desktop experience
   };
 
-  // Responsive card width: larger on tablets, ultra-wide on big screens
+  // Enhanced responsive card width for better desktop experience
   const getCardWidth = () => {
-    if (typeof window !== "undefined" && window.innerWidth > 1800 && !isMobile) {
-      return "w-[420px]"; // Ultra-wide
-    }
+    const isMobile = typeof window !== "undefined" && window.innerWidth <= 768;
+    const screenWidth = typeof window !== "undefined" ? window.innerWidth : 1024;
+    
     if (isMobile) {
-      return "w-[160px] sm:w-[180px] md:w-[200px]";
+      // Mobile: Optimized for touch interaction
+      return "w-44 sm:w-52"; // 176px on mobile, 208px on small screens
+    } else if (screenWidth >= 2560) {
+      // 4K and larger displays
+      return "w-[480px]"; // 480px for 4K displays
+    } else if (screenWidth >= 1920) {
+      // Full HD displays
+      return "w-[420px]"; // 420px for 1920px+ screens
+    } else if (screenWidth >= 1440) {
+      // Large desktop displays
+      return "w-[380px]"; // 380px for 1440px+ screens
+    } else if (screenWidth >= 1280) {
+      // Standard desktop displays
+      return "w-[340px]"; // 340px for 1280px+ screens
+    } else if (screenWidth >= 1024) {
+      // Small desktop/large tablet
+      return "w-[300px]"; // 300px for 1024px+ screens
     }
-    return "w-80 xl:w-[340px]";
+    return "w-80"; // Fallback
   };
 
   const imageSource = getBestImageSource();
@@ -656,7 +697,7 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
         touchAction: 'manipulation',
       }}
     >
-      <div className={`relative ${isMobile ? 'aspect-[2/3]' : 'aspect-[16/10]'} rounded-lg overflow-hidden transform-gpu transition-all duration-300 md:group-hover:scale-[1.02] md:group-hover:shadow-2xl md:group-hover:shadow-black/20 w-full active:scale-[0.98] active:shadow-lg`}>
+      <div className={`relative rounded-lg overflow-hidden transform-gpu transition-all duration-300 md:group-hover:scale-[1.02] md:group-hover:shadow-2xl md:group-hover:shadow-black/20 w-full active:scale-[0.98] active:shadow-lg`} style={{ aspectRatio }}>
         {/* Prefetch shimmer/spinner overlay */}
         {prefetching && (
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/30 pointer-events-none">
@@ -684,35 +725,35 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
             alt={title}
             className="w-full h-full object-cover transition-transform duration-700 md:group-hover:scale-110"
             aspectRatio={aspectRatio}
+            crossOrigin="anonymous"
+            loading="lazy"
           />
-          {/* Movie info overlay - only show on desktop for landscape cards */}
-          {!isMobile && (
-            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent opacity-0 md:group-hover:opacity-100 transition-all duration-500">
-              <div className="absolute bottom-0 left-0 right-0 p-4 transform translate-y-2 md:group-hover:translate-y-0 transition-transform duration-500">
-                <h3 className="text-white font-medium text-lg truncate mb-1">{title}</h3>
-                <div className="flex items-center gap-2 text-white/80 text-sm">
-                  <span className="flex items-center gap-1">
-                    {year}
-                  </span>
-                  <span>•</span>
-                  <span className="flex items-center gap-1">
-                    {type === 'tv' ? 'TV Show' : 'Movie'}
-                  </span>
-                  <span>•</span>
-                  <span className="flex items-center gap-1">
-                    {formatDuration()}
-                  </span>
-                  <span>•</span>
-                  <span className="flex items-center gap-1">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-yellow-400" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
-                    </svg>
-                    {rating}
-                  </span>
-                </div>
+          {/* Movie info overlay - consistent across all devices */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent opacity-0 md:group-hover:opacity-100 transition-all duration-500">
+            <div className="absolute bottom-0 left-0 right-0 p-4 transform translate-y-2 md:group-hover:translate-y-0 transition-transform duration-500">
+              <h3 className="text-white font-medium text-lg truncate mb-1">{title}</h3>
+              <div className="flex items-center gap-2 text-white/80 text-sm">
+                <span className="flex items-center gap-1">
+                  {year}
+                </span>
+                <span>•</span>
+                <span className="flex items-center gap-1">
+                  {type === 'tv' ? 'TV Show' : 'Movie'}
+                </span>
+                <span>•</span>
+                <span className="flex items-center gap-1">
+                  {formatDuration()}
+                </span>
+                <span>•</span>
+                <span className="flex items-center gap-1">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-yellow-400" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
+                  </svg>
+                  {rating}
+                </span>
               </div>
             </div>
-          )}
+          </div>
         </div>
         {/* Watchlist button - outside the clickable area */}
         <div className="absolute top-3 right-3 z-10">
@@ -739,22 +780,7 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
         </div>
       </div>
       
-      {/* Movie info below card for mobile portrait layout */}
-      {isMobile && (
-        <div className="px-1 touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
-          <h3 className="text-white font-medium text-sm truncate mb-1 leading-tight">{title}</h3>
-          <div className="flex items-center gap-2 text-white/60 text-xs">
-            <span className="flex-shrink-0">{year}</span>
-            <span className="flex-shrink-0">•</span>
-            <span className="flex items-center gap-1 flex-shrink-0">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-yellow-400 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
-              </svg>
-              <span className="flex-shrink-0">{rating}</span>
-            </span>
-          </div>
-        </div>
-      )}
+      {/* Consistent desktop-style layout - no mobile-specific text below cards */}
     </div>
   );
 });
@@ -893,14 +919,12 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
     });
   }, [sectionKey, title, movies, loading, hasMore, currentPage]);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [isViewAllMode, setIsViewAllMode] = useState(false);
-  const [isTransitioning, setIsTransitioning] = useState(false);
-  const [isScrolling, setIsScrolling] = useState(false);
-  const [isDesktop, setIsDesktop] = useState(false);
+
+  // Removed isDesktop state - using consistent desktop behavior
   const swiperRef = useRef(null);
   const holdTimerRef = useRef(null);
   const isHoldingRef = useRef(false);
-  const scrollContainerRef = useRef(null);
+
   const loadingRef = useRef(false);
   const preloadTriggeredRef = useRef(false);
   const preloadTimeoutRef = useRef(null);
@@ -908,41 +932,27 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
   const autoRotateIntervalRef = useRef(null);
   const visibilityObserverRef = useRef(null);
   const isTransitioningRef = useRef(false);
-  const scrollTimeoutRef = useRef(null);
+  const lastLoadMoreTrigger = useRef(0);
+  const loadMoreThrottleDelay = 2000; // 2 seconds throttle
+
   const preloadedPagesRef = useRef(new Set());
 
   // Step 9: Track prefetching state for user feedback
   const [prefetchingIds, setPrefetchingIds] = useState([]);
 
-  // Check if we're on desktop for navigation buttons - FIXED: Proper cleanup and mobile detection
-  useEffect(() => {
-    const checkScreenSize = () => {
-      // FIXED: More reliable mobile/desktop detection
-      const isNowDesktop = window.innerWidth > 768 && 
-                          !(window.navigator && window.navigator.userAgent && 
-                            /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(window.navigator.userAgent));
-      setIsDesktop(prev => {
-        if (prev !== isNowDesktop) {
-          console.log('MovieSection Desktop detection changed:', isNowDesktop, 'Screen width:', window.innerWidth);
-          return isNowDesktop;
-        }
-        return prev;
-      });
-    };
-    
-    checkScreenSize();
-    const resizeHandler = checkScreenSize;
-    window.addEventListener('resize', resizeHandler);
-    
-    return () => {
-      window.removeEventListener('resize', resizeHandler);
-    };
-  }, []);
+  // Consistent desktop-style behavior across all devices
 
-  const handleReachEnd = async (sectionKey) => {
+  const handleReachEnd = async (sectionKey, swiper = null) => {
     // FIXED: Enhanced validation with proper parameter handling
     if (!sectionKey) {
       console.warn('⚠️ handleReachEnd called without sectionKey');
+      return;
+    }
+    
+    // Enhanced throttling to prevent excessive calls
+    const now = Date.now();
+    if (now - lastLoadMoreTrigger.current < loadMoreThrottleDelay) {
+      console.debug(`🚫 Throttling load more for ${sectionKey} - ${loadMoreThrottleDelay - (now - lastLoadMoreTrigger.current)}ms remaining`);
       return;
     }
     
@@ -961,6 +971,22 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
       return;
     }
 
+    // Enhanced swiper validation - check if we're actually at the end
+    if (swiper) {
+      const isAtEnd = swiper.isEnd;
+      const progress = swiper.progress;
+      const remainingSlides = swiper.slides?.length - (swiper.activeIndex + (swiper.params?.slidesPerView || 1));
+      
+      // Only proceed if we're truly at the end or very close
+      if (!isAtEnd && progress < 0.85 && remainingSlides > 2) {
+        console.debug('🚫 Not at swiper end yet, skipping load more');
+        return;
+      }
+    }
+
+    // Update throttle timestamp
+    lastLoadMoreTrigger.current = now;
+
     // Performance monitoring
     const startTime = performance.now();
     console.debug(`🚀 Starting load more for section: ${sectionKey}`);
@@ -976,6 +1002,21 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
       while (retryCount <= maxRetries) {
         try {
           await onLoadMore(sectionKey);
+          
+          // Enhanced feedback - if swiper exists, update it after content loads
+          if (swiper && swiper.update) {
+            setTimeout(() => {
+              try {
+                swiper.update();
+                swiper.updateSlides();
+                swiper.updateProgress();
+                swiper.updateSlidesClasses();
+              } catch (updateError) {
+                console.warn('⚠️ Failed to update swiper after content load:', updateError);
+              }
+            }, 100);
+          }
+          
           break; // Success, exit retry loop
         } catch (error) {
           retryCount++;
@@ -1098,175 +1139,13 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
     }
   }, [hasMore, isLoadingMore, currentPage, onLoadMore, sectionKey]);
 
-  // Enhanced scroll handler with progressive preloading - FIXED: Timeout leaks
-  const handleScroll = useCallback(() => {
-    if (!scrollContainerRef.current || loadingRef.current || !hasMore || isLoadingMore) return;
 
-    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
-    const scrollThreshold = 400;
-    const isNearBottom = scrollHeight - scrollTop - clientHeight < scrollThreshold;
 
-    // Update scroll state for visual feedback
-    setIsScrolling(true);
-    if (scrollTimeoutRef.current) {
-      clearTimeout(scrollTimeoutRef.current);
-    }
-    scrollTimeoutRef.current = setTimeout(() => {
-      setIsScrolling(false);
-    }, 150);
 
-    // Progressive preloading based on scroll position
-    if (isNearBottom) {
-      if (preloadTimeoutRef.current) {
-        clearTimeout(preloadTimeoutRef.current);
-      }
-      preloadTimeoutRef.current = setTimeout(() => {
-        preloadNextPages();
-      }, 100);
-    }
-  }, [hasMore, isLoadingMore, preloadNextPages]);
 
-  // Preload next page when entering view all mode
-  useEffect(() => {
-    if (isViewAllMode && hasMore && !isLoadingMore && !preloadedPagesRef.current.has(currentPage + 1)) {
-      preloadNextPages();
-    }
-  }, [isViewAllMode, hasMore, isLoadingMore, currentPage, preloadNextPages]);
 
-  // Enhanced cleanup function for view mode changes with comprehensive state management
-  const cleanupViewMode = useCallback(() => {
-    // Reset scroll position with smooth animation
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTo({
-        top: 0,
-        behavior: 'smooth'
-      });
-    }
-    
-    // Update Swiper instance and reset its state
-    if (swiperRef.current?.swiper) {
-      const swiper = swiperRef.current.swiper;
-      swiper.update();
-      swiper.slideTo(0, 0, false); // Reset to first slide without animation
-    }
-    
-    // Comprehensive preload state cleanup
-    preloadedPagesRef.current.clear(); // More explicit than new Set()
-    if (preloadTimeoutRef.current) {
-      clearTimeout(preloadTimeoutRef.current);
-      preloadTimeoutRef.current = null;
-    }
-    
-    // Reset scroll-related states
-    setIsScrolling(false);
-    if (scrollTimeoutRef.current) {
-      clearTimeout(scrollTimeoutRef.current);
-      scrollTimeoutRef.current = null;
-    }
-    
-    // Reset loading states to prevent stuck states
-    loadingRef.current = false;
-    setIsLoadingMore(false);
-    
-    // Clear any pending prefetch operations
-    setPrefetchingIds(prev => {
-      const filtered = prev.filter(id => !id.startsWith(sectionKey));
-      return filtered;
-    });
-  }, [sectionKey]);
 
-  // Enhanced view mode change handler with improved transitions and user feedback
-  const handleViewAll = useCallback(() => {
-    // Prevent rapid state changes during transition
-    if (isTransitioning) return;
-    
-    setIsTransitioning(true);
-    
-    if (!isViewAllMode) {
-      // Transition to grid view with enhanced UX
-      setIsViewAllMode(true);
-      
-      // Optimize preloading strategy
-      if (hasMore && !preloadedPagesRef.current.has(currentPage + 1)) {
-        // Use requestIdleCallback for better performance during transition
-        if (window.requestIdleCallback) {
-          requestIdleCallback(() => preloadNextPages(), { timeout: 1000 });
-        } else {
-          setTimeout(preloadNextPages, 100);
-        }
-      }
-      
-      // Enhanced scroll behavior with better timing - FIXED: Observer leaks
-      setTimeout(() => {
-        const sectionElement = document.getElementById(`section-${sectionKey}`);
-        if (sectionElement) {
-          // Use intersection observer for smoother scroll
-          const observer = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-              if (entry.isIntersecting) {
-                entry.target.scrollIntoView({ 
-                  behavior: 'smooth', 
-                  block: 'start',
-                  inline: 'nearest'
-                });
-                observer.disconnect();
-              }
-            });
-          }, { threshold: 0.1 });
-          
-          observer.observe(sectionElement);
-          
-          // Fallback scroll if observer doesn't trigger
-          const fallbackTimeout = setTimeout(() => {
-            if (observer) {
-              observer.disconnect();
-              sectionElement.scrollIntoView({ 
-                behavior: 'smooth', 
-                block: 'start' 
-              });
-            }
-          }, 300);
-          
-          // Clean up fallback timeout
-          return () => {
-            if (fallbackTimeout) {
-              clearTimeout(fallbackTimeout);
-            }
-            if (observer) {
-              observer.disconnect();
-            }
-          };
-        }
-      }, 150); // Slightly increased delay for better transition timing
-      
-    } else {
-      // Enhanced cleanup with better state management
-      cleanupViewMode();
-      setIsViewAllMode(false);
-      
-      // Add subtle feedback for mode change
-      if (scrollContainerRef.current) {
-        scrollContainerRef.current.style.transition = 'all 0.3s ease-out';
-        setTimeout(() => {
-          if (scrollContainerRef.current) {
-            scrollContainerRef.current.style.transition = '';
-          }
-        }, 300);
-      }
-    }
-    
-    // Optimized transition timing with better user feedback - FIXED: Timeout leaks
-    const transitionTimeout = setTimeout(() => {
-      setIsTransitioning(false);
-    }, 450); // Slightly longer for smoother transitions
-    
-    // Clean up transition timeout
-    return () => {
-      if (transitionTimeout) {
-        clearTimeout(transitionTimeout);
-      }
-    };
-  }, [isViewAllMode, isTransitioning, hasMore, currentPage, preloadNextPages, sectionKey, cleanupViewMode]);
+
 
   // Enhanced cleanup on unmount with comprehensive resource management - FIXED: Memory leaks
   useEffect(() => {
@@ -1274,7 +1153,6 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
       // Clear all timeouts with enhanced error handling
       const timeouts = [
         preloadTimeoutRef.current,
-        scrollTimeoutRef.current,
         holdTimerRef.current,
         transitionTimeoutRef.current
       ];
@@ -1329,7 +1207,6 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
 
       // Reset refs to prevent memory leaks
       preloadTimeoutRef.current = null;
-      scrollTimeoutRef.current = null;
       holdTimerRef.current = null;
       transitionTimeoutRef.current = null;
       autoRotateIntervalRef.current = null;
@@ -1338,40 +1215,14 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
       isTransitioningRef.current = false;
       loadingRef.current = false;
       preloadTriggeredRef.current = false;
+      lastLoadMoreTrigger.current = 0;
     };
   }, []);
 
-  // FIXED: Add proper cleanup for mobile detection in MovieSection
-  useEffect(() => {
-    const checkScreenSize = () => {
-      const isNowDesktop = window.innerWidth > 768 && 
-                          !(window.navigator && window.navigator.userAgent && 
-                            /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(window.navigator.userAgent));
-      setIsDesktop(prev => {
-        if (prev !== isNowDesktop) {
-          console.log('MovieSection Desktop detection changed:', isNowDesktop, 'Screen width:', window.innerWidth);
-          return isNowDesktop;
-        }
-        return prev;
-      });
-    };
-    
-    checkScreenSize();
-    const resizeHandler = checkScreenSize;
-    window.addEventListener('resize', resizeHandler);
-    
-    return () => {
-      window.removeEventListener('resize', resizeHandler);
-    };
-  }, []);
+  // Desktop-consistent behavior - no mobile detection needed
 
 
-  // Reset loading states when view mode changes
-  useEffect(() => {
-    loadingRef.current = false;
-    setIsLoadingMore(false);
-    preloadTriggeredRef.current = false;
-  }, [isViewAllMode]);
+
 
   if (loading && !movies.length) {
     return (
@@ -1403,473 +1254,131 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
           <h2 className="text-white/80 leading-relaxed pl-0 sm:pl-6 text-lg sm:text-2xl font-bold leading-tight tracking-[-0.02em] group-hover/section:text-[#a1abb5] transition-colors duration-300 whitespace-nowrap">{title}</h2>
           <span className="h-4 w-[1px] bg-white/10 group-hover/section:bg-white/20 transition-colors duration-300 hidden sm:inline-block"></span>
           <span className="text-white/50 text-xs sm:text-sm font-medium group-hover/section:text-white/70 transition-colors duration-300 truncate">
-            {isViewAllMode ? 'Scroll to explore' : (movies.length > 1 ? 'Swipe to explore' : 'Swipe to view')}
+            {movies.length > 1 ? 'Swipe to explore' : 'Swipe to view'}
           </span>
         </div>
-        <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto justify-end">
-          <button 
-            onClick={handleViewAll}
-            className="opacity-100 sm:opacity-0 sm:group-hover/section:opacity-100 transition-all duration-300 text-[#a1abb5] hover:text-white text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2 hover:gap-2 sm:hover:gap-3 relative overflow-hidden"
-          >
-            <span className="relative inline-block">
-              <span className={`block transition-transform duration-300 ${isViewAllMode ? 'translate-y-[-100%]' : 'translate-y-0'}`}>View All</span>
-              <span className={`block absolute top-0 left-0 transition-transform duration-300 ${isViewAllMode ? 'translate-y-0' : 'translate-y-[100%]'}`}>View Less</span>
-            </span>
-            <svg 
-              xmlns="http://www.w3.org/2000/svg" 
-              className={`h-4 w-4 transition-all duration-300 ${isViewAllMode ? 'rotate-180' : 'sm:group-hover/section:translate-x-1'}`} 
-              viewBox="0 0 24 24" 
-              fill="currentColor"
-            >
-              <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
-            </svg>
-          </button>
-        </div>
       </div>
-      <div className="relative px-8 pt-2">
-        <div className="absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-[#121417] to-transparent z-10 pointer-events-none"></div>
-        <div className="absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-[#121417] to-transparent z-10 pointer-events-none"></div>
-        <div 
-          className={`transition-all duration-400 ease-in-out transform ${isTransitioning ? 'opacity-0 scale-95' : 'opacity-100 scale-100'}`}
-          style={{ willChange: 'transform, opacity' }}
-        >
-          {isViewAllMode ? (
-            <div 
-              ref={scrollContainerRef}
-                className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 sm:gap-6 max-h-[600px] overflow-y-auto overflow-x-hidden w-full sm:px-4 scrollbar-hide justify-items-center`}
-              style={{
-                scrollbarWidth: 'thin',
-                scrollbarColor: isScrolling ? 'rgba(255, 255, 255, 0.2) transparent' : 'rgba(255, 255, 255, 0.1) transparent',
-                scrollBehavior: 'smooth',
-                overscrollBehavior: 'contain',
-                WebkitOverflowScrolling: 'touch',
-                scrollSnapType: 'y proximity',
-                scrollPadding: '1rem',
-                maxWidth: '100vw',
-              }}
-            >
-              {movies.map((movie, index) => (
-                <div 
-                  key={`${sectionKey}-${movie.id}-${index}`}
-                  id={`movie-card-${sectionKey}-${movie.id}`}
-                  className="scroll-snap-align-start w-full max-w-[160px] sm:max-w-[180px] md:max-w-[200px] lg:max-w-[320px] xl:max-w-[320px] 2xl:max-w-[320px] mx-auto flex-shrink-0"
-                  style={{ willChange: 'transform', maxWidth: '100vw' }}
-                  onMouseEnter={() => onMovieHover && onMovieHover(movie, index, movies)}
-                >
-                  <MovieCard 
-                    {...movie} 
-                    onClick={() => onMovieSelect(movie)} 
-                    id={movie.id}
-                    priority={index < 10} // Prioritize loading for first 10 items
-                    prefetching={prefetchingIds.includes(movie.id)}
-                    onPrefetch={() => onPrefetch && onPrefetch(movie.id)} 
-                    cardClassName="w-80"
-                  />
-                </div>
-              ))}
-              {isLoadingMore && (
-                <div className="col-span-full flex justify-center py-4">
-                  <div className="w-8 h-8 border-4 border-white/20 border-t-white rounded-full animate-spin"></div>
-                </div>
-              )}
-              {!hasMore && movies.length > 0 && (
-                <div className="col-span-full text-center py-4 text-white/60">
-                  No more movies to load
-                </div>
-              )}
-            </div>
-          ) : (
+      <div className="relative px-4 sm:px-6 md:px-8 lg:px-10 xl:px-12 2xl:px-16 pt-2">
+        <div className="absolute inset-y-0 left-0 w-12 sm:w-16 md:w-24 lg:w-32 xl:w-40 2xl:w-48 bg-gradient-to-r from-[#121417] to-transparent z-10 pointer-events-none"></div>
+        <div className="absolute inset-y-0 right-0 w-12 sm:w-16 md:w-24 lg:w-32 xl:w-40 2xl:w-48 bg-gradient-to-l from-[#121417] to-transparent z-10 pointer-events-none"></div>
+
             <div className="swiper-container touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
               <Swiper
-                key={`${sectionKey}-${isDesktop ? 'desktop' : 'mobile'}`}
+                key={`${sectionKey}-responsive`}
                 ref={swiperRef}
                 modules={[Navigation, A11y]}
-                spaceBetween={24}
+                spaceBetween={typeof window !== "undefined" && window.innerWidth <= 768 ? 16 : 32}
                 slidesPerView="auto"
                 breakpoints={{
-                  0: {
-                    slidesPerView: 2.2, // Increased from 1.8 for better mobile experience
-                    spaceBetween: 8, // Reduced for better fit
-                    speed: 300, // Optimized for mobile responsiveness
-                    touchRatio: 1.5, // More responsive to touch
-                    touchAngle: 45, // More restrictive for better control
-                    freeMode: {
-                      enabled: true,
-                      momentum: true,
-                      sticky: false,
-                      momentumRatio: 0.8, // Smoother momentum
-                      momentumVelocityRatio: 0.8,
-                      momentumBounce: false,
-                      minimumVelocity: 0.02,
-                      momentumFriction: 0.8,
-                    },
-                    resistance: true,
-                    resistanceRatio: 0.6, // More resistance for better control
-                    grabCursor: true,
-                    navigation: false,
-                    allowTouchMove: true,
-                    touchStartPreventDefault: false, // Better touch handling
-                    touchMoveStopPropagation: true,
-                    preventInteractionOnTransition: false,
-                    style: {
-                      '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.25, 0.46, 0.45, 0.94)', // Optimized curve
-                      'scroll-behavior': 'smooth',
-                      'will-change': 'transform',
-                      'overscroll-behavior': 'contain',
-                      'touch-action': 'pan-x', // Restrict to horizontal only
-                      '-webkit-overflow-scrolling': 'touch', // iOS momentum
-                      'scroll-snap-type': 'x mandatory',
-                      'scroll-snap-align': 'start',
-                    },
-                    // Enhanced mobile-specific settings
-                    watchSlidesProgress: true,
-                    watchSlidesVisibility: true,
-                    observer: true,
-                    observeParents: true,
-                    updateOnWindowResize: true,
-                    // Better lazy loading for mobile
-                    lazy: {
-                      loadPrevNext: true,
-                      loadPrevNextAmount: 2,
-                      loadOnTransitionStart: true,
-                      elementClass: 'swiper-lazy',
-                      loadingClass: 'swiper-lazy-loading',
-                      loadedClass: 'swiper-lazy-loaded',
-                      preloaderClass: 'swiper-lazy-preloader',
-                    },
-                    // Improved accessibility
-                    a11y: {
-                      enabled: true,
-                      prevSlideMessage: 'Previous slide',
-                      nextSlideMessage: 'Next slide',
-                      firstSlideMessage: 'This is the first slide',
-                      lastSlideMessage: 'This is the last slide',
-                      paginationBulletMessage: 'Go to slide {{index}}',
-                    },
-                  },
-                  480: { 
-                    slidesPerView: 2.5, // Increased for better tablet experience
+                  // Mobile
+                  320: {
                     spaceBetween: 12,
-                    speed: 350,
-                    touchRatio: 1.4,
-                    touchAngle: 50,
-                    freeMode: {
-                      enabled: true,
-                      momentum: true,
-                      sticky: false,
-                      momentumRatio: 0.85,
-                      momentumVelocityRatio: 0.85,
-                      momentumBounce: false,
-                      minimumVelocity: 0.02,
-                      momentumFriction: 0.85,
-                    },
-                    resistance: true,
-                    resistanceRatio: 0.55,
-                    grabCursor: true,
-                    navigation: false,
-                    allowTouchMove: true,
-                    touchStartPreventDefault: false,
-                    touchMoveStopPropagation: true,
-                    preventInteractionOnTransition: false,
-                    style: {
-                      '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.25, 0.46, 0.45, 0.94)',
-                      'will-change': 'transform',
-                      'overscroll-behavior': 'contain',
-                      'touch-action': 'pan-x',
-                      '-webkit-overflow-scrolling': 'touch',
-                      'scroll-snap-type': 'x mandatory',
-                      'scroll-snap-align': 'start',
-                    },
-                    watchSlidesProgress: true,
-                    watchSlidesVisibility: true,
-                    observer: true,
-                    observeParents: true,
-                    updateOnWindowResize: true,
-                    lazy: {
-                      loadPrevNext: true,
-                      loadPrevNextAmount: 2,
-                      loadOnTransitionStart: true,
-                      elementClass: 'swiper-lazy',
-                      loadingClass: 'swiper-lazy-loading',
-                      loadedClass: 'swiper-lazy-loaded',
-                      preloaderClass: 'swiper-lazy-preloader',
-                    },
-                    a11y: {
-                      enabled: true,
-                      prevSlideMessage: 'Previous slide',
-                      nextSlideMessage: 'Next slide',
-                      firstSlideMessage: 'This is the first slide',
-                      lastSlideMessage: 'This is the last slide',
-                      paginationBulletMessage: 'Go to slide {{index}}',
-                    },
+                    slidesPerView: 'auto',
                   },
-                  640: {
-                    slidesPerView: 2.8, // Increased for better small tablet experience
+                  // Small mobile
+                  480: {
                     spaceBetween: 16,
-                    speed: 400,
-                    touchRatio: 1.3,
-                    touchAngle: 60,
-                    freeMode: true,
-                    resistance: true,
-                    resistanceRatio: 0.4,
-                    grabCursor: true,
-                    navigation: isDesktop ? {
-                      nextEl: '.swiper-button-next',
-                      prevEl: '.swiper-button-prev',
-                      disabledClass: 'swiper-button-disabled',
-                      lockClass: 'swiper-button-lock',
-                      hiddenClass: 'swiper-button-hidden',
-                    } : false,
-                    momentum: true,
-                    momentumRatio: 0.9,
-                    momentumVelocityRatio: 0.9,
-                    allowTouchMove: true,
-                    touchStartPreventDefault: false,
-                    touchMoveStopPropagation: true,
-                    preventInteractionOnTransition: false,
-                    style: {
-                      '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.16, 1, 0.3, 1)',
-                      'will-change': 'transform',
-                      'overscroll-behavior': 'contain',
-                      'touch-action': 'pan-x',
-                      '-webkit-overflow-scrolling': 'touch',
-                    },
-                    watchSlidesProgress: true,
-                    watchSlidesVisibility: true,
-                    observer: true,
-                    observeParents: true,
-                    updateOnWindowResize: true,
-                    lazy: {
-                      loadPrevNext: true,
-                      loadPrevNextAmount: 3,
-                      loadOnTransitionStart: true,
-                    },
-                    a11y: {
-                      enabled: true,
-                      prevSlideMessage: 'Previous slide',
-                      nextSlideMessage: 'Next slide',
-                      firstSlideMessage: 'This is the first slide',
-                      lastSlideMessage: 'This is the last slide',
-                      paginationBulletMessage: 'Go to slide {{index}}',
-                    },
+                    slidesPerView: 'auto',
                   },
+                  // Tablet
                   768: {
-                    slidesPerView: 3,
                     spaceBetween: 20,
-                    speed: 450,
-                    touchRatio: 1.2,
-                    touchAngle: 70,
-                    freeMode: true,
-                    resistance: true,
-                    resistanceRatio: 0.4,
-                    grabCursor: true,
-                    navigation: isDesktop ? {
-                      nextEl: '.swiper-button-next',
-                      prevEl: '.swiper-button-prev',
-                      disabledClass: 'swiper-button-disabled',
-                      lockClass: 'swiper-button-lock',
-                      hiddenClass: 'swiper-button-hidden',
-                    } : false,
-                    momentum: true,
-                    momentumRatio: 0.92,
-                    momentumVelocityRatio: 0.92,
-                    allowTouchMove: true,
-                    touchStartPreventDefault: false,
-                    touchMoveStopPropagation: true,
-                    preventInteractionOnTransition: false,
-                    style: {
-                      '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.16, 1, 0.3, 1)',
-                      'will-change': 'transform',
-                      'overscroll-behavior': 'contain',
-                      'touch-action': 'pan-x',
-                      '-webkit-overflow-scrolling': 'touch',
-                    },
-                    watchSlidesProgress: true,
-                    watchSlidesVisibility: true,
-                    observer: true,
-                    observeParents: true,
-                    updateOnWindowResize: true,
-                    lazy: {
-                      loadPrevNext: true,
-                      loadPrevNextAmount: 3,
-                      loadOnTransitionStart: true,
-                    },
-                    a11y: {
-                      enabled: true,
-                      prevSlideMessage: 'Previous slide',
-                      nextSlideMessage: 'Next slide',
-                      firstSlideMessage: 'This is the first slide',
-                      lastSlideMessage: 'This is the last slide',
-                      paginationBulletMessage: 'Go to slide {{index}}',
-                    },
+                    slidesPerView: 'auto',
                   },
-                  1024: { 
-                    slidesPerView: 4, 
-                    spaceBetween: 24,
-                    speed: 500,
-                    touchRatio: 1.1,
-                    touchAngle: 65,
-                    freeMode: true,
-                    resistance: true,
-                    resistanceRatio: 0.5,
-                    grabCursor: true,
-                    navigation: isDesktop ? {
-                      nextEl: '.swiper-button-next',
-                      prevEl: '.swiper-button-prev',
-                      disabledClass: 'swiper-button-disabled',
-                      lockClass: 'swiper-button-lock',
-                      hiddenClass: 'swiper-button-hidden',
-                    } : false,
-                    momentum: true,
-                    momentumRatio: 0.95,
-                    momentumVelocityRatio: 0.95,
-                    allowTouchMove: true,
-                    touchStartPreventDefault: false,
-                    touchMoveStopPropagation: true,
-                    preventInteractionOnTransition: false,
-                    style: {
-                      '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.16, 1, 0.3, 1)',
-                      'will-change': 'transform',
-                      'overscroll-behavior': 'contain',
-                      'touch-action': 'pan-x',
-                      '-webkit-overflow-scrolling': 'touch',
-                    },
-                    watchSlidesProgress: true,
-                    watchSlidesVisibility: true,
-                    observer: true,
-                    observeParents: true,
-                    updateOnWindowResize: true,
-                    lazy: {
-                      loadPrevNext: true,
-                      loadPrevNextAmount: 3,
-                      loadOnTransitionStart: true,
-                    },
-                    a11y: {
-                      enabled: true,
-                      prevSlideMessage: 'Previous slide',
-                      nextSlideMessage: 'Next slide',
-                      firstSlideMessage: 'This is the first slide',
-                      lastSlideMessage: 'This is the last slide',
-                      paginationBulletMessage: 'Go to slide {{index}}',
-                    },
+                  // Small desktop
+                  1024: {
+                    spaceBetween: 28,
+                    slidesPerView: 'auto',
                   },
-                  1280: { 
-                    slidesPerView: 5, 
-                    spaceBetween: 24,
-                    speed: 600,
-                    touchRatio: 1.0,
-                    touchAngle: 60,
-                    freeMode: true,
-                    resistance: true,
-                    resistanceRatio: 0.6,
-                    grabCursor: true,
-                    navigation: isDesktop ? {
-                      nextEl: '.swiper-button-next',
-                      prevEl: '.swiper-button-prev',
-                      disabledClass: 'swiper-button-disabled',
-                      lockClass: 'swiper-button-lock',
-                      hiddenClass: 'swiper-button-hidden',
-                    } : false,
-                    momentum: true,
-                    momentumRatio: 0.98,
-                    momentumVelocityRatio: 0.98,
-                    allowTouchMove: true,
-                    touchStartPreventDefault: false,
-                    touchMoveStopPropagation: true,
-                    preventInteractionOnTransition: false,
-                    style: {
-                      '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.16, 1, 0.3, 1)',
-                      'will-change': 'transform',
-                      'overscroll-behavior': 'contain',
-                      'touch-action': 'pan-x',
-                      '-webkit-overflow-scrolling': 'touch',
-                    },
-                    watchSlidesProgress: true,
-                    watchSlidesVisibility: true,
-                    observer: true,
-                    observeParents: true,
-                    updateOnWindowResize: true,
-                    lazy: {
-                      loadPrevNext: true,
-                      loadPrevNextAmount: 3,
-                      loadOnTransitionStart: true,
-                    },
-                    a11y: {
-                      enabled: true,
-                      prevSlideMessage: 'Previous slide',
-                      nextSlideMessage: 'Next slide',
-                      firstSlideMessage: 'This is the first slide',
-                      lastSlideMessage: 'This is the last slide',
-                      paginationBulletMessage: 'Go to slide {{index}}',
-                    },
+                  // Standard desktop
+                  1280: {
+                    spaceBetween: 32,
+                    slidesPerView: 'auto',
+                  },
+                  // Large desktop
+                  1440: {
+                    spaceBetween: 36,
+                    slidesPerView: 'auto',
+                  },
+                  // Full HD and above
+                  1920: {
+                    spaceBetween: 40,
+                    slidesPerView: 'auto',
+                  },
+                  // 4K displays
+                  2560: {
+                    spaceBetween: 48,
+                    slidesPerView: 'auto',
                   },
                 }}
-                speed={isDesktop ? 600 : 400}
+                // Mobile-optimized navigation
+                navigation={{
+                  nextEl: '.swiper-button-next',
+                  prevEl: '.swiper-button-prev',
+                  disabledClass: 'swiper-button-disabled',
+                  lockClass: 'swiper-button-lock',
+                  hiddenClass: 'swiper-button-hidden',
+                }}
+                speed={600}
                 resistance={true}
-                resistanceRatio={isDesktop ? 0.6 : 0.6}
-                touchRatio={isDesktop ? 1.1 : 1.5}
-                touchAngle={isDesktop ? 60 : 45}
+                resistanceRatio={0.6}
+                touchRatio={1.1}
+                touchAngle={60}
                 touchMoveStopPropagation={true}
                 watchSlidesProgress={true}
                 grabCursor={true}
-                freeMode={
-                  isDesktop
-                    ? true
-                    : { 
-                        enabled: true, 
-                        momentum: true, 
-                        sticky: false,
-                        momentumRatio: 0.8,
-                        momentumVelocityRatio: 0.8,
-                        momentumBounce: false,
-                        minimumVelocity: 0.02,
-                        momentumFriction: 0.8,
-                      }
-                }
+                freeMode={true}
                 allowTouchMove={true}
                 touchStartPreventDefault={false}
                 preventInteractionOnTransition={false}
-                onReachEnd={handleReachEnd}
+                onReachEnd={(swiper) => handleReachEnd(sectionKey, swiper)}
                 onSlideChange={useCallback((swiper) => {
-                  // Enhanced prefetching with better mobile detection
-                  const remainingSlides = swiper.slides.length - (swiper.activeIndex + swiper.params.slidesPerView);
-                  if (remainingSlides <= 3 && !isLoadingMore && hasMore) {
-                    handleReachEnd();
+                  // Enhanced prefetching for desktop-consistent behavior with debouncing
+                  const remainingSlides = swiper.slides?.length - (swiper.activeIndex + (swiper.params?.slidesPerView || 1));
+                  if (remainingSlides <= 3 && !isLoadingMore && hasMore && swiper.isEnd) {
+                    handleReachEnd(sectionKey, swiper);
                   }
-                }, [isLoadingMore, hasMore, handleReachEnd])}
+                }, [isLoadingMore, hasMore, handleReachEnd, sectionKey])}
                 onProgress={useCallback((swiper, progress) => {
-                  // More aggressive prefetching for mobile
-                  if (progress > 0.7 && !isLoadingMore && hasMore) {
-                    handleReachEnd();
+                  // Consistent prefetching behavior with improved thresholds
+                  if (progress > 0.85 && !isLoadingMore && hasMore && swiper.isEnd) {
+                    handleReachEnd(sectionKey, swiper);
                   }
-                }, [isLoadingMore, hasMore, handleReachEnd])}
-                onTouchStart={useCallback(() => {
-                  // Immediate prefetch on touch for better mobile experience
-                  if (!isLoadingMore && hasMore) {
-                    handleReachEnd();
+                }, [isLoadingMore, hasMore, handleReachEnd, sectionKey])}
+                onTransitionEnd={useCallback((swiper) => {
+                  // Load more content when transition ends and we're at the end
+                  if (swiper.isEnd && !isLoadingMore && hasMore) {
+                    handleReachEnd(sectionKey, swiper);
                   }
-                }, [isLoadingMore, hasMore, handleReachEnd])}
+                }, [isLoadingMore, hasMore, handleReachEnd, sectionKey])}
                 onTouchMove={useCallback((swiper, event) => {
-                  // Enhanced touch feedback
+                  // Enhanced touch feedback with null checks
+                  if (!swiper || !event) return;
                   if (event.touches && event.touches.length === 1) {
                     // Single touch - normal behavior
                     return;
                   }
                 }, [])}
                 onTouchEnd={useCallback((swiper, event) => {
-                  // Enhanced touch end handling
-                  if (swiper.touches && swiper.touches.diff === 0) {
-                    // Touch ended without movement - could trigger tap
-                    return;
+                  // Enhanced touch end handling with null checks
+                  if (!swiper || !event) return;
+                  try {
+                    if (swiper.touches && swiper.touches.diff === 0) {
+                      // Touch ended without movement - could trigger tap
+                      return;
+                    }
+                  } catch (error) {
+                    // Silently handle touch event errors during component lifecycle
+                    console.debug('Touch end event handled during swiper lifecycle:', error);
                   }
                 }, [])}
-                className="px-2 sm:px-4"
+                className="px-1 sm:px-2 md:px-4 lg:px-6 xl:px-8 2xl:px-10"
                 observer={true}
                 observeParents={true}
                 updateOnWindowResize={true}
                 lazy={{
                   loadPrevNext: true,
-                  loadPrevNextAmount: isDesktop ? 3 : 2,
+                  loadPrevNextAmount: 3,
                   loadOnTransitionStart: true,
                   elementClass: 'swiper-lazy',
                   loadingClass: 'swiper-lazy-loading',
@@ -1885,16 +1394,26 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
                   paginationBulletMessage: 'Go to slide {{index}}',
                 }}
                 onBeforeDestroy={useCallback((swiper) => {
-                  // Enhanced cleanup for better memory management
-                  if (swiper.navigation && swiper.navigation.nextEl) {
-                    swiper.navigation.nextEl = null;
-                  }
-                  if (swiper.navigation && swiper.navigation.prevEl) {
-                    swiper.navigation.prevEl = null;
-                  }
-                  // Clear any pending timeouts
-                  if (swiper.autoplay && swiper.autoplay.running) {
-                    swiper.autoplay.stop();
+                  // Enhanced cleanup for better memory management with error handling
+                  try {
+                    if (swiper && swiper.navigation) {
+                      if (swiper.navigation.nextEl) {
+                        swiper.navigation.nextEl = null;
+                      }
+                      if (swiper.navigation.prevEl) {
+                        swiper.navigation.prevEl = null;
+                      }
+                    }
+                    // Clear any pending timeouts
+                    if (swiper && swiper.autoplay && swiper.autoplay.running) {
+                      swiper.autoplay.stop();
+                    }
+                    // Remove touch event listeners to prevent memory leaks
+                    if (swiper && swiper.el) {
+                      swiper.el.style.touchAction = '';
+                    }
+                  } catch (error) {
+                    console.debug('Swiper cleanup handled during destroy:', error);
                   }
                 }, [])}
                 style={{
@@ -1916,30 +1435,59 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
                 ))}
                 {isLoadingMore && (
                   <SwiperSlide key={`${sectionKey}-loading-more`} className="!w-auto">
-                    <div className="group flex flex-col gap-4 rounded-lg w-80 flex-shrink-0">
-                      <div className="relative aspect-[16/10] rounded-lg overflow-hidden bg-black/20 w-full">
-                        <div className="w-8 h-8 border-4 border-white/20 border-t-white rounded-full animate-spin absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"></div>
+                    <div className="flex-shrink-0">
+                      <div className="w-full max-w-[180px] sm:max-w-[220px] md:max-w-[250px] animate-pulse">
+                        <div className="aspect-[2/3] bg-gradient-to-r from-white/5 via-white/10 to-white/5 rounded-lg w-full relative overflow-hidden">
+                          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer" 
+                               style={{
+                                 animation: 'shimmer 2s infinite',
+                                 backgroundSize: '200% 100%'
+                               }}>
+                          </div>
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                          </div>
+                        </div>
+                        <div className="h-4 bg-gradient-to-r from-white/5 via-white/10 to-white/5 rounded mt-2 w-3/4 animate-pulse"></div>
+                        <div className="h-3 bg-gradient-to-r from-white/5 via-white/10 to-white/5 rounded mt-1 w-1/2 animate-pulse"></div>
+                        <div className="text-xs text-white/60 mt-1 flex items-center">
+                          <div className="w-2 h-2 bg-blue-400 rounded-full animate-ping mr-1"></div>
+                          Loading more...
+                        </div>
                       </div>
                     </div>
                   </SwiperSlide>
                 )}
-                {isDesktop && (
-                  <div 
-                    className="swiper-button-prev !w-10 !h-10 !bg-white/5 hover:!bg-white/10 !rounded-full !border !border-white/10 !transition-all !duration-300 opacity-0 group-hover/section:opacity-100 !-left-0 !-translate-y-1/2 !top-[35%] !m-0 after:!text-white after:!text-sm after:!font-bold !z-10 hover:!scale-110 hover:!shadow-lg hover:!shadow-black/20"
-                    onMouseDown={handlePrevButtonMouseDown}
-                    onMouseUp={handlePrevButtonMouseUp}
-                    onMouseLeave={handlePrevButtonMouseUp}
-                    onTouchStart={handlePrevButtonMouseDown}
-                    onTouchEnd={handlePrevButtonMouseUp}
-                  ></div>
+                {hasMore && !isLoadingMore && (
+                  <SwiperSlide key={`${sectionKey}-load-more-hint`} className="!w-auto">
+                    <div className="flex-shrink-0">
+                      <div className="w-full max-w-[180px] sm:max-w-[220px] md:max-w-[250px] opacity-60 hover:opacity-100 transition-opacity duration-300">
+                        <div className="aspect-[2/3] bg-white/5 hover:bg-white/10 rounded-lg w-full border-2 border-dashed border-white/20 hover:border-white/40 transition-all duration-300 flex items-center justify-center cursor-pointer group"
+                             onClick={() => handleReachEnd(sectionKey, swiperRef.current?.swiper)}>
+                          <div className="text-center text-white/60 group-hover:text-white/90 transition-colors duration-300">
+                            <div className="w-12 h-12 mx-auto mb-2 border-2 border-white/30 group-hover:border-white/60 rounded-full flex items-center justify-center transition-all duration-300">
+                              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                              </svg>
+                            </div>
+                            <div className="text-xs font-medium">Load More</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </SwiperSlide>
                 )}
-                {isDesktop && (
-                  <div className="swiper-button-next !w-10 !h-10 !bg-white/5 hover:!bg-white/10 !rounded-full !border !border-white/10 !transition-all !duration-300 opacity-0 group-hover/section:opacity-100 !-right-0 !-translate-y-1/2 !top-[35%] !m-0 after:!text-white after:!text-sm after:!font-bold !z-10 hover:!scale-110 hover:!shadow-lg hover:!shadow-black/20"></div>
-                )}
+                <div 
+                  className="swiper-button-prev !w-8 !h-8 sm:!w-9 sm:!h-9 lg:!w-10 lg:!h-10 xl:!w-11 xl:!h-11 !bg-white hover:!bg-gray-100 !rounded-full !border-2 !border-gray-200 hover:!border-gray-300 !transition-all !duration-300 !shadow-lg hover:!shadow-xl opacity-0 md:group-hover/section:opacity-100 sm:opacity-80 md:opacity-0 !-left-0 !-translate-y-1/2 !top-1/2 !m-0 after:!text-black after:!text-xs sm:after:!text-sm lg:after:!text-sm xl:after:!text-base after:!font-bold !z-10 hover:!scale-105 hover:!shadow-2xl hover:!shadow-black/30 active:!scale-95 backdrop-blur-sm"
+                  onMouseDown={handlePrevButtonMouseDown}
+                  onMouseUp={handlePrevButtonMouseUp}
+                  onMouseLeave={handlePrevButtonMouseUp}
+                  onTouchStart={handlePrevButtonMouseDown}
+                  onTouchEnd={handlePrevButtonMouseUp}
+                ></div>
+                <div className="swiper-button-next !w-8 !h-8 sm:!w-9 sm:!h-9 lg:!w-10 lg:!h-10 xl:!w-11 xl:!h-11 !bg-white hover:!bg-gray-100 !rounded-full !border-2 !border-gray-200 hover:!border-gray-300 !transition-all !duration-300 !shadow-lg hover:!shadow-xl opacity-0 md:group-hover/section:opacity-100 sm:opacity-80 md:opacity-0 !-right-0 !-translate-y-1/2 !top-1/2 !m-0 after:!text-black after:!text-xs sm:after:!text-sm lg:after:!text-sm xl:after:!text-base after:!font-bold !z-10 hover:!scale-105 hover:!shadow-2xl hover:!shadow-black/30 active:!scale-95 backdrop-blur-sm"></div>
               </Swiper>
             </div>
-          )}
-        </div>
       </div>
     </div>
   );
@@ -2489,6 +2037,7 @@ const categoriesList = [
     color: 'from-orange-500 to-red-600',
     gradient: 'bg-gradient-to-r from-orange-500/20 to-red-600/20'
   },
+
   { 
     id: 'popular', 
     label: 'Popular', 
@@ -2863,6 +2412,7 @@ const HomePage = () => {
   const [animationMovies, setAnimationMovies] = useState([]);
   const [awardWinningMovies, setAwardWinningMovies] = useState([]);
   const [latestMovies, setLatestMovies] = useState([]);
+
   const [selectedMovie, setSelectedMovie] = useState(null);
   const [error, setError] = useState(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -2874,8 +2424,7 @@ const HomePage = () => {
   const { addToWatchlist, isInWatchlist, removeFromWatchlist } = useWatchlist();
   const [isInWatchlistState, setIsInWatchlistState] = useState(false);
 
-  // Add mobile detection state
-  const [isMobile, setIsMobile] = useState(false);
+  // Removed mobile detection state - using consistent desktop behavior
 
   // Add new state for TV shows and now playing movies
   const [popularTVShows, setPopularTVShows] = useState([]);
@@ -2968,29 +2517,7 @@ const HomePage = () => {
     };
   }, []); // Removed visibleSections from dependencies to prevent infinite loop
 
-  // FIXED: Enhanced mobile detection effect with proper cleanup
-  useEffect(() => {
-    const checkScreenSize = () => {
-      const isNowMobile = window.innerWidth < 768 || 
-                         (window.navigator && window.navigator.userAgent && 
-                          /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(window.navigator.userAgent));
-      setIsMobile(prev => {
-        if (prev !== isNowMobile) {
-          console.log('Mobile detection changed:', isNowMobile, 'Screen width:', window.innerWidth);
-          return isNowMobile;
-        }
-        return prev;
-      });
-    };
-    
-    checkScreenSize();
-    const resizeHandler = checkScreenSize;
-    window.addEventListener('resize', resizeHandler);
-    
-    return () => {
-      window.removeEventListener('resize', resizeHandler);
-    };
-  }, []);
+  // Removed mobile detection - using consistent desktop behavior
 
   // 🧹 NEW: Memory optimization registration
   useEffect(() => {
@@ -3038,6 +2565,7 @@ const HomePage = () => {
   const getFetchFunction = (key) => {
     const fetchFunctions = {
       trending: getTrendingMovies,
+      
       popular: getPopularMovies,
       topRated: getTopRatedMovies,
       upcoming: getUpcomingMovies,
@@ -3421,6 +2949,7 @@ const HomePage = () => {
     popular: { movies: popularMovies },
     topRated: { movies: topRatedMovies },
     upcoming: { movies: upcomingMovies },
+
     action: { movies: actionMovies },
     comedy: { movies: comedyMovies },
     drama: { movies: dramaMovies },
@@ -3437,6 +2966,7 @@ const HomePage = () => {
     nowPlaying: { movies: nowPlayingMovies }
   }), [
     trendingMovies, popularMovies, topRatedMovies, upcomingMovies,
+
     actionMovies, comedyMovies, dramaMovies, horrorMovies,
     sciFiMovies, documentaryMovies, familyMovies, animationMovies,
     awardWinningMovies, latestMovies, popularTVShows, topRatedTVShows,
@@ -4066,15 +3596,14 @@ const HomePage = () => {
     };
   }, []);
 
-  // FIXED: Add debugging for mobile content loading - moved before early returns
+  // Content loading debugging
   useEffect(() => {
-    console.log('HomePage Debug - Mobile:', isMobile);
     console.log('HomePage Debug - Trending movies:', trendingMovies.length);
     console.log('HomePage Debug - Popular movies:', popularMovies.length);
     console.log('HomePage Debug - Top rated movies:', topRatedMovies.length);
     console.log('HomePage Debug - Upcoming movies:', upcomingMovies.length);
     console.log('HomePage Debug - Active category:', activeCategory);
-  }, [isMobile, trendingMovies.length, popularMovies.length, topRatedMovies.length, upcomingMovies.length, activeCategory]);
+  }, [trendingMovies.length, popularMovies.length, topRatedMovies.length, upcomingMovies.length, activeCategory]);
 
   // Pagination states for all categories
   const [pageStates, setPageStates] = useState({
@@ -4085,6 +3614,7 @@ const HomePage = () => {
     
     // Medium priority sections
     upcoming: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+
     action: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
     comedy: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
     drama: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
@@ -4111,6 +3641,7 @@ const HomePage = () => {
     popular: new Set(),
     topRated: new Set(),
     upcoming: new Set(),
+
     action: new Set(),
     comedy: new Set(),
     drama: new Set(),
@@ -4943,6 +4474,7 @@ const HomePage = () => {
               new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), timeout))
             ]);
             break;
+
           case 'action':
             result = await Promise.race([
               getActionMovies(page),
@@ -5635,6 +5167,7 @@ const HomePage = () => {
       case 'popular': return popularMovies;
       case 'topRated': return topRatedMovies;
       case 'upcoming': return upcomingMovies;
+      
       case 'action': return actionMovies;
       case 'comedy': return comedyMovies;
       case 'drama': return dramaMovies;
@@ -5698,6 +5231,22 @@ const HomePage = () => {
     }
   }, []);
 
+  // Handle load more movies for Netflix-style sections
+  const handleLoadMore = useCallback(async (category) => {
+    try {
+      await loadMoreMovies(category);
+    } catch (error) {
+      console.error(`Failed to load more movies for ${category}:`, error);
+    }
+  }, [loadMoreMovies]);
+
+  // Handle prefetch for movie sections
+  const handlePrefetch = useCallback((movieId) => {
+    if (movieId) {
+      queuePrefetch(movieId);
+    }
+  }, [queuePrefetch]);
+
   // Handle category changes and fetch data - MOVED BEFORE EARLY RETURNS
   useEffect(() => {
     console.log('useEffect triggered - activeCategory:', activeCategory);
@@ -5748,63 +5297,11 @@ const HomePage = () => {
             <div className="relative">
               <div className="absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-[#121417] to-transparent z-10 pointer-events-none"></div>
               <div className="absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-[#121417] to-transparent z-10 pointer-events-none"></div>
-              <Swiper
-                modules={[Navigation, A11y]}
-                spaceBetween={16}
-                slidesPerView="auto"
-                speed={500}
-                navigation={{
-                  nextEl: '.category-button-next',
-                  prevEl: '.category-button-prev',
-                }}
-                className="px-4 h-10 mt-6 pl-8"
-                grabCursor={true}
-                mousewheel={{
-                  forceToAxis: true,
-                  sensitivity: 1,
-                  releaseOnEdges: true
-                }}
-                keyboard={{
-                  enabled: true,
-                  onlyInViewport: true
-                }}
-                scrollbar={{
-                  draggable: true,
-                  snapOnRelease: true
-                }}
-                breakpoints={{
-                  320: {
-                    spaceBetween: 12,
-                    slidesPerView: 2.5
-                  },
-                  480: {
-                    spaceBetween: 14,
-                    slidesPerView: 3.5
-                  },
-                  768: {
-                    spaceBetween: 16,
-                    slidesPerView: "auto"
-                  },
-                  1024: {
-                    spaceBetween: 16,
-                    slidesPerView: "auto"
-                  }
-                }}
-                onSlideChange={(swiper) => {
-                  // Smooth scroll behavior when navigating
-                  const activeSlide = swiper.slides[swiper.activeIndex];
-                  if (activeSlide) {
-                    activeSlide.scrollIntoView({
-                      behavior: 'smooth',
-                      block: 'nearest',
-                      inline: 'center'
-                    });
-                  }
-                }}
-              >
-                {categories.map(category => (
-                  <SwiperSlide key={category.id} className="!w-auto">
+              <div className="px-4 h-10 mt-6 pl-8 overflow-x-auto scrollbar-hide">
+                <div className="flex space-x-4 h-full items-center">
+                  {categories.map(category => (
                     <button
+                      key={category.id}
                       onClick={() => handleCategoryButtonClick(category)}
                       className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all duration-300 whitespace-nowrap ${
                         activeCategory === category.id
@@ -5815,78 +5312,260 @@ const HomePage = () => {
                       <span className="flex-shrink-0">{category.icon}</span>
                       <span>{category.label}</span>
                     </button>
-                  </SwiperSlide>
-                ))}
-                <div className="category-button-prev !w-8 !h-8 !bg-white/5 hover:!bg-white/10 !rounded-full !border !border-white/10 !transition-all !duration-300 opacity-0 group-hover:opacity-100 !-left-0 !-translate-y-1/2 !top-[35%] !m-0 after:!text-white after:!text-sm after:!font-bold !z-10 hover:!scale-110 hover:!shadow-lg hover:!shadow-black/20"></div>
-                <div className="category-button-next !w-8 !h-8 !bg-white/5 hover:!bg-white/10 !rounded-full !border !border-white/10 !transition-all !duration-300 opacity-0 group-hover:opacity-100 !-right-0 !-translate-y-1/2 !top-[35%] !m-0 after:!text-white after:!text-sm after:!font-bold !z-10 hover:!scale-110 hover:!shadow-lg hover:!shadow-black/20"></div>
-              </Swiper>
+                  ))}
+                </div>
+              </div>
             </div>
-            {/* Movie Sections */}
-            {activeCategory === 'all' ? (
-              <>
-                <MemoizedMovieSection 
-                  title="Trending Now" 
-                  movies={trendingMovies} 
-                  loading={loadingStates.trending} 
-                  onLoadMore={() => loadMoreMovies('trending')}
-                  hasMore={pageStates.trending.current < pageStates.trending.total}
-                  currentPage={pageStates.trending.current}
-                  sectionKey="trending"
-                  onMovieSelect={handleMovieSelect}
-                  onMovieHover={handleMovieHover}
-                  onPrefetch={queuePrefetch}
-                />
-                <MemoizedMovieSection 
-                  title="Popular Movies" 
-                  movies={popularMovies} 
-                  loading={loadingStates.popular} 
-                  onLoadMore={() => loadMoreMovies('popular')}
-                  hasMore={pageStates.popular.current < pageStates.popular.total}
-                  currentPage={pageStates.popular.current}
-                  sectionKey="popular"
-                  onMovieSelect={handleMovieSelect}
-                  onMovieHover={handleMovieHover}
-                  onPrefetch={queuePrefetch}
-                />
-                <MemoizedMovieSection 
-                  title="Top Rated Movies" 
-                  movies={topRatedMovies} 
-                  loading={loadingStates.topRated} 
-                  onLoadMore={() => loadMoreMovies('topRated')}
-                  hasMore={pageStates.topRated.current < pageStates.topRated.total}
-                  currentPage={pageStates.topRated.current}
-                  sectionKey="topRated"
-                  onMovieSelect={handleMovieSelect}
-                  onMovieHover={handleMovieHover}
-                  onPrefetch={queuePrefetch}
-                />
-                <MemoizedMovieSection 
-                  title="Coming Soon" 
-                  movies={upcomingMovies} 
-                  loading={loadingStates.upcoming} 
-                  onLoadMore={() => loadMoreMovies('upcoming')}
-                  hasMore={pageStates.upcoming.current < pageStates.upcoming.total}
-                  currentPage={pageStates.upcoming.current}
-                  sectionKey="upcoming"
-                  onMovieSelect={handleMovieSelect}
-                  onMovieHover={handleMovieHover}
-                  onPrefetch={queuePrefetch}
-                />
-              </>
-            ) : (
-              <MemoizedMovieSection 
-                title={categories.find(c => c.id === activeCategory)?.label || ''}
-                movies={getMoviesForCategory(activeCategory)}
-                loading={loadingStates[activeCategory]}
-                onLoadMore={() => loadMoreMovies(activeCategory)}
-                hasMore={pageStates[activeCategory].current < pageStates[activeCategory].total}
-                currentPage={pageStates[activeCategory].current}
-                sectionKey={activeCategory}
-                onMovieSelect={handleMovieSelect}
-                onMovieHover={handleMovieHover}
-                onPrefetch={queuePrefetch}
-              />
+
+            {/* Netflix-style Category Sections */}
+            {activeCategory === 'all' && (
+              <div className="flex flex-col space-y-8 mt-8 pb-12">
+                {/* Trending Section */}
+                {trendingMovies?.length > 0 && (
+                  <MemoizedMovieSection 
+                    title="Trending Now"
+                    movies={trendingMovies}
+                    loading={loadingStates.trending}
+                    onLoadMore={() => handleLoadMore('trending')}
+                    hasMore={pageStates.trending?.current < pageStates.trending?.total}
+                    currentPage={pageStates.trending?.current || 1}
+                    sectionKey="trending"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={handleMovieHover}
+                    onPrefetch={handlePrefetch}
+                  />
+                )}
+
+                {/* Popular Section */}
+                {popularMovies?.length > 0 && (
+                  <MemoizedMovieSection 
+                    title="Popular Movies"
+                    movies={popularMovies}
+                    loading={loadingStates.popular}
+                    onLoadMore={() => handleLoadMore('popular')}
+                    hasMore={pageStates.popular?.current < pageStates.popular?.total}
+                    currentPage={pageStates.popular?.current || 1}
+                    sectionKey="popular"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={handleMovieHover}
+                    onPrefetch={handlePrefetch}
+                  />
+                )}
+
+
+
+                {/* Top Rated Section */}
+                {topRatedMovies?.length > 0 && (
+                  <MemoizedMovieSection 
+                    title="Top Rated Movies"
+                    movies={topRatedMovies}
+                    loading={loadingStates.topRated}
+                    onLoadMore={() => handleLoadMore('topRated')}
+                    hasMore={pageStates.topRated?.current < pageStates.topRated?.total}
+                    currentPage={pageStates.topRated?.current || 1}
+                    sectionKey="topRated"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={handleMovieHover}
+                    onPrefetch={handlePrefetch}
+                  />
+                )}
+
+                {/* Action Movies Section */}
+                {actionMovies?.length > 0 && (
+                  <MemoizedMovieSection 
+                    title="Action Movies"
+                    movies={actionMovies}
+                    loading={loadingStates.action}
+                    onLoadMore={() => handleLoadMore('action')}
+                    hasMore={pageStates.action?.current < pageStates.action?.total}
+                    currentPage={pageStates.action?.current || 1}
+                    sectionKey="action"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={handleMovieHover}
+                    onPrefetch={handlePrefetch}
+                  />
+                )}
+
+                {/* Comedy Movies Section */}
+                {comedyMovies?.length > 0 && (
+                  <MemoizedMovieSection 
+                    title="Comedy Movies"
+                    movies={comedyMovies}
+                    loading={loadingStates.comedy}
+                    onLoadMore={() => handleLoadMore('comedy')}
+                    hasMore={pageStates.comedy?.current < pageStates.comedy?.total}
+                    currentPage={pageStates.comedy?.current || 1}
+                    sectionKey="comedy"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={handleMovieHover}
+                    onPrefetch={handlePrefetch}
+                  />
+                )}
+
+                {/* Drama Movies Section */}
+                {dramaMovies?.length > 0 && (
+                  <MemoizedMovieSection 
+                    title="Drama Movies"
+                    movies={dramaMovies}
+                    loading={loadingStates.drama}
+                    onLoadMore={() => handleLoadMore('drama')}
+                    hasMore={pageStates.drama?.current < pageStates.drama?.total}
+                    currentPage={pageStates.drama?.current || 1}
+                    sectionKey="drama"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={handleMovieHover}
+                    onPrefetch={handlePrefetch}
+                  />
+                )}
+
+                {/* Horror Movies Section */}
+                {horrorMovies?.length > 0 && (
+                  <MemoizedMovieSection 
+                    title="Horror Movies"
+                    movies={horrorMovies}
+                    loading={loadingStates.horror}
+                    onLoadMore={() => handleLoadMore('horror')}
+                    hasMore={pageStates.horror?.current < pageStates.horror?.total}
+                    currentPage={pageStates.horror?.current || 1}
+                    sectionKey="horror"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={handleMovieHover}
+                    onPrefetch={handlePrefetch}
+                  />
+                )}
+
+                {/* Sci-Fi Movies Section */}
+                {sciFiMovies?.length > 0 && (
+                  <MemoizedMovieSection 
+                    title="Sci-Fi Movies"
+                    movies={sciFiMovies}
+                    loading={loadingStates.sciFi}
+                    onLoadMore={() => handleLoadMore('sciFi')}
+                    hasMore={pageStates.sciFi?.current < pageStates.sciFi?.total}
+                    currentPage={pageStates.sciFi?.current || 1}
+                    sectionKey="sciFi"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={handleMovieHover}
+                    onPrefetch={handlePrefetch}
+                  />
+                )}
+
+                {/* Family Movies Section */}
+                {familyMovies?.length > 0 && (
+                  <MemoizedMovieSection 
+                    title="Family Movies"
+                    movies={familyMovies}
+                    loading={loadingStates.family}
+                    onLoadMore={() => handleLoadMore('family')}
+                    hasMore={pageStates.family?.current < pageStates.family?.total}
+                    currentPage={pageStates.family?.current || 1}
+                    sectionKey="family"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={handleMovieHover}
+                    onPrefetch={handlePrefetch}
+                  />
+                )}
+
+                {/* Animation Movies Section */}
+                {animationMovies?.length > 0 && (
+                  <MemoizedMovieSection 
+                    title="Animation Movies"
+                    movies={animationMovies}
+                    loading={loadingStates.animation}
+                    onLoadMore={() => handleLoadMore('animation')}
+                    hasMore={pageStates.animation?.current < pageStates.animation?.total}
+                    currentPage={pageStates.animation?.current || 1}
+                    sectionKey="animation"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={handleMovieHover}
+                    onPrefetch={handlePrefetch}
+                  />
+                )}
+
+                {/* Popular TV Shows Section */}
+                {popularTVShows?.length > 0 && (
+                  <MemoizedMovieSection 
+                    title="Popular TV Shows"
+                    movies={popularTVShows}
+                    loading={loadingStates.popularTV}
+                    onLoadMore={() => handleLoadMore('popularTV')}
+                    hasMore={pageStates.popularTV?.current < pageStates.popularTV?.total}
+                    currentPage={pageStates.popularTV?.current || 1}
+                    sectionKey="popularTV"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={handleMovieHover}
+                    onPrefetch={handlePrefetch}
+                  />
+                )}
+
+                {/* Top Rated TV Shows Section */}
+                {topRatedTVShows?.length > 0 && (
+                  <MemoizedMovieSection 
+                    title="Top Rated TV Shows"
+                    movies={topRatedTVShows}
+                    loading={loadingStates.topRatedTV}
+                    onLoadMore={() => handleLoadMore('topRatedTV')}
+                    hasMore={pageStates.topRatedTV?.current < pageStates.topRatedTV?.total}
+                    currentPage={pageStates.topRatedTV?.current || 1}
+                    sectionKey="topRatedTV"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={handleMovieHover}
+                    onPrefetch={handlePrefetch}
+                  />
+                )}
+
+                {/* Coming Soon Section */}
+                {upcomingMovies?.length > 0 && (
+                  <MemoizedMovieSection 
+                    title="Coming Soon"
+                    movies={upcomingMovies}
+                    loading={loadingStates.upcoming}
+                    onLoadMore={() => handleLoadMore('upcoming')}
+                    hasMore={pageStates.upcoming?.current < pageStates.upcoming?.total}
+                    currentPage={pageStates.upcoming?.current || 1}
+                    sectionKey="upcoming"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={handleMovieHover}
+                    onPrefetch={handlePrefetch}
+                  />
+                )}
+
+                {/* Now Playing Section */}
+                {nowPlayingMovies?.length > 0 && (
+                  <MemoizedMovieSection 
+                    title="Now Playing"
+                    movies={nowPlayingMovies}
+                    loading={loadingStates.nowPlaying}
+                    onLoadMore={() => handleLoadMore('nowPlaying')}
+                    hasMore={pageStates.nowPlaying?.current < pageStates.nowPlaying?.total}
+                    currentPage={pageStates.nowPlaying?.current || 1}
+                    sectionKey="nowPlaying"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={handleMovieHover}
+                    onPrefetch={handlePrefetch}
+                  />
+                )}
+              </div>
             )}
+
+            {/* Single Category View */}
+            {activeCategory !== 'all' && (
+              <div className="mt-8 pb-12">
+                <MemoizedMovieSection 
+                  title={categories.find(c => c.id === activeCategory)?.label || ''}
+                  movies={getMoviesForCategory(activeCategory)}
+                  loading={loadingStates[activeCategory]}
+                  onLoadMore={() => handleLoadMore(activeCategory)}
+                  hasMore={pageStates[activeCategory]?.current < pageStates[activeCategory]?.total}
+                  currentPage={pageStates[activeCategory]?.current || 1}
+                  sectionKey={activeCategory}
+                  onMovieSelect={handleMovieSelect}
+                  onMovieHover={handleMovieHover}
+                  onPrefetch={handlePrefetch}
+                />
+              </div>
+            )}
+
           </div>
         </div>
       </div>

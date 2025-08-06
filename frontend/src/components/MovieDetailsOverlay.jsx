@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, Suspense, lazy, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { getMovieDetails, getMovieCredits, getMovieVideos, getSimilarMovies, getTVSeason, getTVSeasons } from '../services/tmdbService';
 import { useWatchlist } from '../contexts/WatchlistContext';
 import { Loader, PageLoader, SectionLoader, CardLoader } from './Loader';
@@ -12,6 +13,8 @@ import { getOptimizedImageUrl } from '../services/imageOptimizationService';
 import memoryOptimizationService from '../utils/memoryOptimizationService';
 import movieDetailsMemoryOptimizer from '../utils/movieDetailsMemoryOptimizer';
 import EnhancedLoadMoreButton from './enhanced/EnhancedLoadMoreButton';
+
+// No scroll lock utility functions - allow normal scrolling
 
 // Custom Modern Minimalist Dropdown Component
 const CustomDropdown = React.memo(({ 
@@ -170,30 +173,68 @@ const clearCache = () => {
   }
 };
 
-// 📊 NEW: Performance tracking with enhanced memory monitoring
-const trackPerformance = (operation, duration, success = true) => {
-  if (window.gtag) {
-    window.gtag('event', 'movie_details_performance', {
-      event_category: 'MovieDetails',
-      event_label: operation,
-      value: Math.round(duration),
-      success
-    });
-  }
-  
-  // Enhanced memory monitoring with automatic cleanup
-  if (performance.memory) {
-    const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-    if (memoryMB > 400) { // Reduced threshold from 600 to 400
-      console.warn(`[MovieDetailsOverlay] High memory usage during ${operation}: ${memoryMB.toFixed(2)}MB`);
-      // Force cleanup if memory is too high
-      clearCache();
-      if (window.gc) {
-        window.gc();
+  // 📊 NEW: Enhanced performance tracking with memory monitoring and analytics
+  const trackPerformance = (operation, duration, success = true, additionalData = {}) => {
+    // Enhanced analytics tracking
+    if (window.gtag) {
+      window.gtag('event', 'movie_details_performance', {
+        event_category: 'MovieDetails',
+        event_label: operation,
+        value: Math.round(duration),
+        success,
+        ...additionalData
+      });
+    }
+    
+    // Performance monitoring for slow operations
+    if (duration > 2000) {
+      console.warn(`[MovieDetailsOverlay] Slow operation detected: ${operation} took ${duration.toFixed(2)}ms`);
+      
+      // Send performance warning to analytics
+      if (window.gtag) {
+        window.gtag('event', 'performance_warning', {
+          event_category: 'MovieDetails',
+          event_label: operation,
+          value: Math.round(duration),
+          threshold: 2000
+        });
       }
     }
-  }
-};
+    
+    // Enhanced memory monitoring with automatic cleanup
+    if (performance.memory) {
+      const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
+      if (memoryMB > 400) { // Reduced threshold from 600 to 400
+        console.warn(`[MovieDetailsOverlay] High memory usage during ${operation}: ${memoryMB.toFixed(2)}MB`);
+        // Force cleanup if memory is too high
+        clearCache();
+        if (window.gc) {
+          window.gc();
+        }
+      }
+    }
+    
+    // Store performance metrics for optimization insights
+    if (typeof window !== 'undefined') {
+      if (!window.movieDetailsPerformanceMetrics) {
+        window.movieDetailsPerformanceMetrics = [];
+      }
+      
+      window.movieDetailsPerformanceMetrics.push({
+        operation,
+        duration,
+        success,
+        timestamp: Date.now(),
+        memoryUsage: performance.memory ? performance.memory.usedJSHeapSize / 1024 / 1024 : null,
+        ...additionalData
+      });
+      
+      // Keep only last 100 metrics to prevent memory bloat
+      if (window.movieDetailsPerformanceMetrics.length > 100) {
+        window.movieDetailsPerformanceMetrics = window.movieDetailsPerformanceMetrics.slice(-100);
+      }
+    }
+  };
 
 // 🔄 NEW: Real-time update manager with enhanced memory management and reduced subscribers
 class RealTimeUpdateManager {
@@ -403,11 +444,13 @@ const NetworkDisplay = ({ networks, network }) => {
 // Lazy load YouTube player for trailer modal
 const LazyYouTube = lazy(() => import('react-youtube'));
 
-// 🚀 Ultra-optimized Cast Card with enhanced image loading and memory management
+// 🚀 Ultra-optimized Cast Card with enhanced image loading, intersection observer, and memory management
 const CastCard = React.memo(function CastCard({ person }) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [isInView, setIsInView] = useState(false);
   const imageRef = useRef(null);
+  const cardRef = useRef(null);
 
   // Enhanced image loading with memory optimization
   const handleImageLoad = useCallback(() => {
@@ -425,20 +468,47 @@ const CastCard = React.memo(function CastCard({ person }) {
     }
   }, []);
 
+  // Intersection Observer for lazy loading
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsInView(true);
+          observer.disconnect(); // Only load once
+        }
+      },
+      {
+        rootMargin: '50px', // Start loading 50px before entering viewport
+        threshold: 0.1
+      }
+    );
+
+    if (cardRef.current) {
+      observer.observe(cardRef.current);
+    }
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (imageRef.current) {
         imageRef.current = null;
       }
+      if (cardRef.current) {
+        cardRef.current = null;
+      }
     };
   }, []);
 
   return (
-    <div className="text-center group">
+    <div ref={cardRef} className="text-center group">
       <div className="relative w-24 h-24 mx-auto mb-3">
         <div className="rounded-full overflow-hidden w-full h-full transition-all duration-300 transform group-hover:scale-110 shadow-lg will-change-transform">
-          {person.image && !imageError ? (
+          {person.image && !imageError && isInView ? (
             <>
               {/* Loading placeholder */}
               {!imageLoaded && (
@@ -480,11 +550,13 @@ const CastCard = React.memo(function CastCard({ person }) {
   );
 });
 
-// 🚀 Ultra-optimized Similar Movie Card with enhanced image loading and memory management
+// 🚀 Ultra-optimized Similar Movie Card with enhanced image loading, intersection observer, and memory management
 const SimilarMovieCard = React.memo(function SimilarMovieCard({ similar, onClick, isMobile }) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [isInView, setIsInView] = useState(false);
   const imageRef = useRef(null);
+  const cardRef = useRef(null);
   
   const displayTitle = similar.title || similar.name || 'Untitled';
   let displayYear = 'N/A';
@@ -512,19 +584,46 @@ const SimilarMovieCard = React.memo(function SimilarMovieCard({ similar, onClick
     }
   }, []);
 
+  // Intersection Observer for lazy loading
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsInView(true);
+          observer.disconnect(); // Only load once
+        }
+      },
+      {
+        rootMargin: '100px', // Start loading 100px before entering viewport
+        threshold: 0.1
+      }
+    );
+
+    if (cardRef.current) {
+      observer.observe(cardRef.current);
+    }
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (imageRef.current) {
         imageRef.current = null;
       }
+      if (cardRef.current) {
+        cardRef.current = null;
+      }
     };
   }, []);
 
   return (
-    <div className="group cursor-pointer" onClick={() => onClick(similar)}>
+    <div ref={cardRef} className="group cursor-pointer" onClick={() => onClick(similar)}>
       <div className="aspect-[2/3] rounded-lg overflow-hidden bg-gray-800 relative shadow-lg">
-        {similar.poster_path && !imageError ? (
+        {similar.poster_path && !imageError && isInView ? (
           <>
             {/* Loading placeholder */}
             {!imageLoaded && (
@@ -633,8 +732,94 @@ const useIsMobile = () => {
   return { isMobile, isTablet, isDesktop };
 };
 
+// 🚀 NEW: Virtual scrolling hook for optimized list rendering
+const useVirtualScroll = (items, itemHeight = 80, containerHeight = 400, overscan = 5) => {
+  const [scrollTop, setScrollTop] = React.useState(0);
+  const containerRef = React.useRef(null);
+
+  const totalHeight = items.length * itemHeight;
+  const startIndex = Math.max(0, Math.floor(scrollTop / itemHeight) - overscan);
+  const endIndex = Math.min(
+    items.length - 1,
+    Math.ceil((scrollTop + containerHeight) / itemHeight) + overscan
+  );
+
+  const visibleItems = items.slice(startIndex, endIndex + 1);
+  const offsetY = startIndex * itemHeight;
+
+  const handleScroll = React.useCallback((e) => {
+    setScrollTop(e.target.scrollTop);
+  }, []);
+
+  React.useEffect(() => {
+    const container = containerRef.current;
+    if (container) {
+      container.addEventListener('scroll', handleScroll, { passive: true });
+      return () => container.removeEventListener('scroll', handleScroll);
+    }
+  }, [handleScroll]);
+
+  return {
+    containerRef,
+    visibleItems,
+    offsetY,
+    totalHeight,
+    startIndex,
+    endIndex
+  };
+};
+
 const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) => {
   const { addToWatchlist, removeFromWatchlist, isInWatchlist } = useWatchlist();
+  const navigate = useNavigate();
+
+  // Global genre click handler fallback when no local handler is provided
+  const globalGenreClickHandler = useCallback((genre) => {
+    if (!genre || !genre.id) {
+      console.warn('Invalid genre provided to globalGenreClickHandler:', genre);
+      return;
+    }
+
+    console.log('Global genre click handler called with:', genre);
+    
+    // Close the movie details overlay first
+    if (onClose) {
+      onClose();
+    }
+    
+    // Determine the best page to navigate to based on current context
+    const currentPath = window.location.pathname;
+    let targetPath = '/movies'; // Default to movies page
+    
+    // If we're currently on the series page and the genre is more TV-related, 
+    // keep the user on series page, otherwise go to movies
+    if (currentPath.includes('/series')) {
+      // For now, always go to movies page for genre filtering since SeriesPage
+      // doesn't have URL-based genre filtering implemented
+      targetPath = '/movies';
+    }
+    
+    // Use URL search params to maintain state across navigation
+    const searchParams = new URLSearchParams();
+    searchParams.set('genre', genre.name.toLowerCase());
+    
+    // Navigate to the target page with the genre filter
+    navigate(`${targetPath}?${searchParams.toString()}`);
+    
+    // Track analytics for genre navigation
+    if (window.gtag) {
+      window.gtag('event', 'genre_navigation', {
+        event_category: 'Navigation',
+        event_label: genre.name,
+        value: genre.id,
+        source_page: currentPath,
+        target_page: targetPath,
+      });
+    }
+  }, [navigate, onClose]);
+
+  // Use the provided onGenreClick handler, or fall back to the global one
+  const handleGenreClick = onGenreClick || globalGenreClickHandler;
   const [movieDetails, setMovieDetails] = useState(null);
   const [credits, setCredits] = useState(null);
   const [videos, setVideos] = useState(null);
@@ -647,6 +832,8 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   const overlayRef = useRef(null);
   const contentRef = useRef(null);
   const playerRef = useRef(null);
+  
+  // No scroll lock state needed
   const [isCastLoading, setIsCastLoading] = useState(true);
   const [isSimilarLoading, setIsSimilarLoading] = useState(true);
   const [isTrailerLoading, setIsTrailerLoading] = useState(false);
@@ -664,105 +851,253 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   // Add state to control how many rows of cast are shown
   const [castRowsShown, setCastRowsShown] = useState(1);
 
-  // Enhanced motion variants with ultra-smooth spring physics and optimized performance
-  const containerVariants = useMemo(() => ({
-    hidden: { 
-      opacity: 0,
-      scale: 0.95,
-      y: 20,
+  // 🚀 NEW: Ultra-optimized animation variants moved outside component to prevent recreation
+  const ANIMATION_VARIANTS = {
+    container: {
+      hidden: { 
+        opacity: 0,
+        scale: 0.95,
+        y: 20,
+      },
+      visible: {
+        opacity: 1,
+        scale: 1,
+        y: 0,
+        transition: {
+          type: 'spring',
+          stiffness: 300,
+          damping: 35,
+          mass: 0.8,
+          duration: 0.4,
+          ease: [0.25, 0.46, 0.45, 0.94], // Custom cubic-bezier for ultra-smooth feel
+        },
+      },
+      exit: {
+        opacity: 0,
+        scale: 0.95,
+        y: 20,
+        transition: {
+          type: 'spring',
+          stiffness: 400,
+          damping: 40,
+          duration: 0.3,
+          ease: [0.25, 0.46, 0.45, 0.94],
+        },
+      },
     },
-    visible: {
-      opacity: 1,
-      scale: 1,
-      y: 0,
-      transition: {
+    item: {
+      hidden: { 
+        y: 15, 
+        opacity: 0,
+        scale: 0.98,
+        filter: 'blur(4px)',
+      },
+      visible: {
+        y: 0,
+        opacity: 1,
+        scale: 1,
+        filter: 'blur(0px)',
+        transition: {
+          type: 'spring',
+          stiffness: 350,
+          damping: 30,
+          mass: 0.9,
+          duration: 0.3,
+          ease: [0.25, 0.46, 0.45, 0.94],
+        },
+      },
+      exit: {
+        y: -10,
+        opacity: 0,
+        scale: 0.98,
+        filter: 'blur(4px)',
+        transition: {
+          type: 'spring',
+          stiffness: 400,
+          damping: 35,
+          duration: 0.25,
+          ease: [0.25, 0.46, 0.45, 0.94],
+        },
+      },
+    },
+    fadeIn: {
+      hidden: { 
+        opacity: 0,
+        filter: 'blur(2px)',
+      },
+      visible: {
+        opacity: 1,
+        filter: 'blur(0px)',
+        transition: {
+          type: 'spring',
+          stiffness: 300,
+          damping: 35,
+          duration: 0.4,
+          ease: [0.25, 0.46, 0.45, 0.94],
+        },
+      },
+    },
+    slideUp: {
+      hidden: { 
+        y: 25, 
+        opacity: 0,
+        filter: 'blur(2px)',
+      },
+      visible: {
+        y: 0,
+        opacity: 1,
+        filter: 'blur(0px)',
+        transition: {
+          type: 'spring',
+          stiffness: 350,
+          damping: 30,
+          duration: 0.5,
+          ease: [0.25, 0.46, 0.45, 0.94],
+        },
+      },
+    },
+    staggerContainer: {
+      hidden: { opacity: 0 },
+      visible: {
+        opacity: 1,
+        transition: {
+          staggerChildren: 0.04,
+          delayChildren: 0.08,
+          type: 'spring',
+          stiffness: 300,
+          damping: 35
+        }
+      }
+    },
+    staggerItem: {
+      hidden: { 
+        opacity: 0, 
+        y: 20, 
+        scale: 0.98,
+        filter: 'blur(2px)',
+      },
+      visible: {
+        opacity: 1,
+        y: 0,
+        scale: 1,
+        filter: 'blur(0px)',
+        transition: {
+          type: 'spring',
+          stiffness: 350,
+          damping: 30,
+          duration: 0.4,
+          ease: [0.25, 0.46, 0.45, 0.94]
+        }
+      }
+    },
+    button: {
+      initial: { scale: 1, filter: 'brightness(1)' },
+      hover: { 
+        scale: 1.05, 
+        filter: 'brightness(1.1)',
+        transition: {
+          type: 'spring',
+          stiffness: 400,
+          damping: 25,
+          duration: 0.2,
+        }
+      },
+      tap: { 
+        scale: 0.98,
+        transition: {
+          type: 'spring',
+          stiffness: 500,
+          damping: 30,
+          duration: 0.1,
+        }
+      }
+    },
+    card: {
+      initial: { 
+        scale: 1, 
+        y: 0,
+        filter: 'brightness(1)',
+        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+      },
+      hover: { 
+        scale: 1.02, 
+        y: -4,
+        filter: 'brightness(1.05)',
+        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)',
+        transition: {
+          type: 'spring',
+          stiffness: 300,
+          damping: 25,
+          duration: 0.3,
+        }
+      },
+      tap: { 
+        scale: 0.98,
+        y: -2,
+        transition: {
+          type: 'spring',
+          stiffness: 400,
+          damping: 30,
+          duration: 0.1,
+        }
+      }
+    },
+    image: {
+      initial: { 
+        opacity: 0, 
+        scale: 1.1,
+        filter: 'blur(4px)',
+      },
+      loaded: { 
+        opacity: 1, 
+        scale: 1,
+        filter: 'blur(0px)',
+        transition: {
+          type: 'spring',
+          stiffness: 300,
+          damping: 35,
+          duration: 0.5,
+          ease: [0.25, 0.46, 0.45, 0.94],
+        }
+      }
+    },
+    textReveal: {
+      hidden: { 
+        opacity: 0, 
+        y: 10,
+        filter: 'blur(1px)',
+      },
+      visible: { 
+        opacity: 1, 
+        y: 0,
+        filter: 'blur(0px)',
+        transition: {
+          type: 'spring',
+          stiffness: 300,
+          damping: 35,
+          duration: 0.4,
+          ease: [0.25, 0.46, 0.45, 0.94],
+        }
+      }
+    }
+  };
+
+  // 🚀 NEW: Pre-computed motion props for better performance
+  const MOTION_PROPS = {
+    fadeIn: {
+      initial: { opacity: 0, y: 20, filter: 'blur(2px)' },
+      animate: { opacity: 1, y: 0, filter: 'blur(0px)' },
+      transition: { 
         type: 'spring',
         stiffness: 300,
         damping: 35,
-        mass: 0.8,
-        duration: 0.4,
-        ease: [0.25, 0.46, 0.45, 0.94], // Custom cubic-bezier for ultra-smooth feel
-      },
-    },
-    exit: {
-      opacity: 0,
-      scale: 0.95,
-      y: 20,
-      transition: {
-        type: 'spring',
-        stiffness: 400,
-        damping: 40,
-        duration: 0.3,
-        ease: [0.25, 0.46, 0.45, 0.94],
-      },
-    },
-  }), []);
-
-  const itemVariants = useMemo(() => ({
-    hidden: { 
-      y: 15, 
-      opacity: 0,
-      scale: 0.98,
-      filter: 'blur(4px)',
-    },
-    visible: {
-      y: 0,
-      opacity: 1,
-      scale: 1,
-      filter: 'blur(0px)',
-      transition: {
-        type: 'spring',
-        stiffness: 350,
-        damping: 30,
-        mass: 0.9,
-        duration: 0.3,
-        ease: [0.25, 0.46, 0.45, 0.94],
-      },
-    },
-    exit: {
-      y: -10,
-      opacity: 0,
-      scale: 0.98,
-      filter: 'blur(4px)',
-      transition: {
-        type: 'spring',
-        stiffness: 400,
-        damping: 35,
-        duration: 0.25,
-        ease: [0.25, 0.46, 0.45, 0.94],
-      },
-    },
-  }), []);
-
-  // Additional variants for different animation types with ultra-smooth physics
-  const fadeInVariants = useMemo(() => ({
-    hidden: { 
-      opacity: 0,
-      filter: 'blur(2px)',
-    },
-    visible: {
-      opacity: 1,
-      filter: 'blur(0px)',
-      transition: {
-        type: 'spring',
-        stiffness: 300,
-        damping: 35,
         duration: 0.4,
         ease: [0.25, 0.46, 0.45, 0.94],
       },
     },
-  }), []);
-
-  const slideUpVariants = useMemo(() => ({
-    hidden: { 
-      y: 25, 
-      opacity: 0,
-      filter: 'blur(2px)',
-    },
-    visible: {
-      y: 0,
-      opacity: 1,
-      filter: 'blur(0px)',
+    slideUp: {
+      initial: { y: 30, opacity: 0, filter: 'blur(2px)' },
+      animate: { y: 0, opacity: 1, filter: 'blur(0px)' },
       transition: {
         type: 'spring',
         stiffness: 350,
@@ -770,201 +1105,46 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         duration: 0.5,
         ease: [0.25, 0.46, 0.45, 0.94],
       },
-    },
-  }), []);
-
-  // Enhanced utility animations with spring physics and scroll-based triggers
-  const fadeInMotionProps = useMemo(() => ({
-    initial: { opacity: 0, y: 20, filter: 'blur(2px)' },
-    animate: { opacity: 1, y: 0, filter: 'blur(0px)' },
-    transition: { 
-      type: 'spring',
-      stiffness: 300,
-      damping: 35,
-      duration: 0.4,
-      ease: [0.25, 0.46, 0.45, 0.94],
-    },
-  }), []);
-
-  const slideUpMotionProps = useMemo(() => ({
-    initial: { y: 30, opacity: 0, filter: 'blur(2px)' },
-    animate: { y: 0, opacity: 1, filter: 'blur(0px)' },
-    transition: {
-      type: 'spring',
-      stiffness: 350,
-      damping: 30,
-      duration: 0.5,
-      ease: [0.25, 0.46, 0.45, 0.94],
-    },
-  }), []);
-
-
-
-  // Ultra-smooth stagger animation for list items
-  const staggerContainerVariants = useMemo(() => ({
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.04,
-        delayChildren: 0.08,
-        type: 'spring',
-        stiffness: 300,
-        damping: 35
-      }
     }
-  }), []);
+  };
 
-  const staggerItemVariants = useMemo(() => ({
-    hidden: { 
-      opacity: 0, 
-      y: 20, 
-      scale: 0.98,
-      filter: 'blur(2px)',
-    },
-    visible: {
-      opacity: 1,
-      y: 0,
-      scale: 1,
-      filter: 'blur(0px)',
-      transition: {
-        type: 'spring',
-        stiffness: 350,
-        damping: 30,
-        duration: 0.4,
-        ease: [0.25, 0.46, 0.45, 0.94]
-      }
-    }
-  }), []);
+    // 🚀 NEW: Request debouncing and throttling utilities
+  const useDebounce = (value, delay) => {
+    const [debouncedValue, setDebouncedValue] = React.useState(value);
 
-  // New: Micro-interaction variants for buttons and interactive elements
-  const buttonVariants = useMemo(() => ({
-    initial: { scale: 1, filter: 'brightness(1)' },
-    hover: { 
-      scale: 1.05, 
-      filter: 'brightness(1.1)',
-      transition: {
-        type: 'spring',
-        stiffness: 400,
-        damping: 25,
-        duration: 0.2,
-      }
-    },
-    tap: { 
-      scale: 0.98,
-      transition: {
-        type: 'spring',
-        stiffness: 500,
-        damping: 30,
-        duration: 0.1,
-      }
-    }
-  }), []);
+    React.useEffect(() => {
+      const handler = setTimeout(() => {
+        setDebouncedValue(value);
+      }, delay);
 
-  // New: Card hover variants for enhanced interactivity
-  const cardVariants = useMemo(() => ({
-    initial: { 
-      scale: 1, 
-      y: 0,
-      filter: 'brightness(1)',
-      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-    },
-    hover: { 
-      scale: 1.02, 
-      y: -4,
-      filter: 'brightness(1.05)',
-      boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)',
-      transition: {
-        type: 'spring',
-        stiffness: 300,
-        damping: 25,
-        duration: 0.3,
-      }
-    },
-    tap: { 
-      scale: 0.98,
-      y: -2,
-      transition: {
-        type: 'spring',
-        stiffness: 400,
-        damping: 30,
-        duration: 0.1,
-      }
-    }
-  }), []);
+      return () => {
+        clearTimeout(handler);
+      };
+    }, [value, delay]);
 
-  // New: Image loading variants for smooth image transitions
-  const imageVariants = useMemo(() => ({
-    initial: { 
-      opacity: 0, 
-      scale: 1.1,
-      filter: 'blur(4px)',
-    },
-    loaded: { 
-      opacity: 1, 
-      scale: 1,
-      filter: 'blur(0px)',
-      transition: {
-        type: 'spring',
-        stiffness: 300,
-        damping: 35,
-        duration: 0.5,
-        ease: [0.25, 0.46, 0.45, 0.94],
-      }
-    }
-  }), []);
+    return debouncedValue;
+  };
 
-  // New: Text reveal variants for smooth text animations
-  const textRevealVariants = useMemo(() => ({
-    hidden: { 
-      opacity: 0, 
-      y: 10,
-      filter: 'blur(1px)',
-    },
-    visible: { 
-      opacity: 1, 
-      y: 0,
-      filter: 'blur(0px)',
-      transition: {
-        type: 'spring',
-        stiffness: 300,
-        damping: 35,
-        duration: 0.4,
-        ease: [0.25, 0.46, 0.45, 0.94],
-      }
-    }
-  }), []);
+  const useThrottle = (value, delay) => {
+    const [throttledValue, setThrottledValue] = React.useState(value);
+    const lastExecuted = React.useRef(Date.now());
 
-  // Hide scrollbars globally for MovieDetailsOverlay
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof document === 'undefined') return;
-    
-    // Check if style already exists to prevent duplicates
-    if (document.getElementById('movie-details-overlay-scrollbar-style')) return;
-    
-    const style = document.createElement('style');
-    style.id = 'movie-details-overlay-scrollbar-style';
-    style.innerHTML = `
-      .hide-scrollbar {
-        scrollbar-width: none !important;
-        -ms-overflow-style: none !important;
+    React.useEffect(() => {
+      if (Date.now() >= lastExecuted.current + delay) {
+        lastExecuted.current = Date.now();
+        setThrottledValue(value);
+      } else {
+        const timerId = setTimeout(() => {
+          lastExecuted.current = Date.now();
+          setThrottledValue(value);
+        }, delay - (Date.now() - lastExecuted.current));
+
+        return () => clearTimeout(timerId);
       }
-      .hide-scrollbar::-webkit-scrollbar {
-        display: none !important;
-        width: 0 !important;
-        background: transparent !important;
-      }
-    `;
-    document.head.appendChild(style);
-    
-    // Cleanup function to remove style when component unmounts
-    return () => {
-      const existingStyle = document.getElementById('movie-details-overlay-scrollbar-style');
-      if (existingStyle && existingStyle.parentNode) {
-        existingStyle.parentNode.removeChild(existingStyle);
-      }
-    };
-  }, []);
+    }, [value, delay]);
+
+    return throttledValue;
+  };
 
   // 🚀 NEW: Enhanced memoization with performance optimization
   const movieStats = React.useMemo(() => {
@@ -1043,6 +1223,38 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     }
     return filteredCast.slice(0, castRowsShown * castPerRow);
   }, [movieDetails?.cast, castSearchTerm, castRowsShown, castPerRow]);
+
+  // Basic overlay styles for scrollbar hiding
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    
+    // Check if style already exists to prevent duplicates
+    if (document.getElementById('movie-details-overlay-scrollbar-style')) return;
+    
+    const style = document.createElement('style');
+    style.id = 'movie-details-overlay-scrollbar-style';
+    style.innerHTML = `
+      /* Hide scrollbars */
+      .hide-scrollbar {
+        scrollbar-width: none !important;
+        -ms-overflow-style: none !important;
+      }
+      .hide-scrollbar::-webkit-scrollbar {
+        display: none !important;
+        width: 0 !important;
+        background: transparent !important;
+      }
+    `;
+    document.head.appendChild(style);
+    
+    // Cleanup function to remove style when component unmounts
+    return () => {
+      const existingStyle = document.getElementById('movie-details-overlay-scrollbar-style');
+      if (existingStyle && existingStyle.parentNode) {
+        existingStyle.parentNode.removeChild(existingStyle);
+      }
+    };
+  }, []);
 
   const optimizedSimilarMovies = React.useMemo(() => {
     if (!similarMovies || !Array.isArray(similarMovies)) return [];
@@ -1137,7 +1349,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   // Memoized callback for toggling showAllCast
   const handleToggleShowAllCast = useCallback(() => setShowAllCast(v => !v), []);
 
-  // 🚀 Enhanced scroll handler with performance optimization and memory leak prevention
+  // 🚀 Enhanced scroll handler with performance optimization, throttling, and memory leak prevention
   const handleScroll = useCallback(() => {
     if (!scrollContainerRef.current) return;
     
@@ -1158,6 +1370,9 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       }
     }
   }, [scrollY]);
+
+  // Throttled scroll handler for better performance
+  const throttledScrollY = useThrottle(scrollY, 16); // ~60fps
 
   // 🚀 Enhanced scroll event listener with better performance and cleanup
   useEffect(() => {
@@ -1396,7 +1611,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
 
   const [retryCount, setRetryCount] = useState(0);
 
-  // 🚀 Ultra-enhanced fetchMovieData with advanced memory management, performance tracking, and intelligent caching
+  // 🚀 Ultra-enhanced fetchMovieData with advanced memory management, performance tracking, intelligent caching, and request cancellation
   const fetchMovieData = useCallback(async (attempt = 0) => {
     if (!movie?.id) {
       console.warn('Invalid movie data provided to fetchMovieData');
@@ -1422,8 +1637,20 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     }
 
     const fetchStartTime = performance.now();
-    let abortController = null;
+    let abortController = new AbortController();
     let timeoutId = null;
+    
+    // Enhanced request cancellation with cleanup
+    const cleanup = () => {
+      if (abortController) {
+        abortController.abort();
+        abortController = null;
+      }
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+    };
 
     try {
       // Reset all states at the beginning with memory optimization
@@ -2000,35 +2227,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     return cleanup;
   }, [movie?.id, movie?.media_type, movie?.type]); // Include movie dependencies to ensure proper cleanup on movie change
 
-  // 🚀 Ultra-enhanced scroll lock with advanced state management, performance optimizations, and accessibility features
-  useEffect(() => {
-    // Store original body styles for precise restoration
-    const originalStyles = {
-      overflow: document.body.style.overflow,
-      paddingRight: document.body.style.paddingRight
-    };
-
-    // Calculate scrollbar width to prevent layout shift
-    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
-    
-    // Simple and reliable approach: just hide overflow
-    document.body.style.overflow = 'hidden';
-    
-    // Prevent layout shift by compensating for hidden scrollbar
-    if (scrollbarWidth > 0) {
-      document.body.style.paddingRight = `${scrollbarWidth}px`;
-    }
-
-    // Enhanced cleanup with comprehensive state restoration
-    return () => {
-      // Restore all original styles
-      Object.entries(originalStyles).forEach(([property, value]) => {
-        if (document.body.style[property] !== undefined) {
-          document.body.style[property] = value;
-        }
-      });
-    };
-  }, []); // Empty dependency array ensures this runs only on mount/unmount
+  // No scroll lock - allow background scrolling while overlay is open
 
   // 🚀 Enhanced trailer handlers with accessibility, analytics, and robust state management
   const handleTrailerClick = useCallback(() => {
@@ -2808,9 +3007,10 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     };
   }, [movie?.id, movie?.media_type, movie?.type, movieDetails, fetchMovieData]);
   
-  // 🆕 Memory monitoring effect with specialized optimizer
+  // 🆕 Enhanced memory monitoring effect with specialized optimizer and automatic cleanup
   useEffect(() => {
     let unregisterCleanup = null;
+    let memoryCheckInterval = null;
     
     if (movie?.id) {
       // Register with specialized memory optimizer
@@ -2824,11 +3024,57 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       
       // Start monitoring if not already started
       movieDetailsMemoryOptimizer.start();
+      
+      // Enhanced memory monitoring with automatic cleanup
+      if (performance.memory) {
+        memoryCheckInterval = setInterval(() => {
+          const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
+          
+          // Aggressive cleanup thresholds
+          if (memoryMB > 300) {
+            console.warn(`[MovieDetailsOverlay] High memory usage detected: ${memoryMB.toFixed(2)}MB`);
+            clearCache();
+            
+            // Force garbage collection if available
+            if (window.gc) {
+              window.gc();
+            }
+            
+            // Clear image caches
+            if ('caches' in window) {
+              caches.keys().then(cacheNames => {
+                cacheNames.forEach(cacheName => {
+                  if (cacheName.includes('image') || cacheName.includes('movie')) {
+                    caches.delete(cacheName);
+                  }
+                });
+              });
+            }
+          }
+          
+          // Critical memory threshold
+          if (memoryMB > 500) {
+            console.error(`[MovieDetailsOverlay] Critical memory usage: ${memoryMB.toFixed(2)}MB`);
+            // Force component cleanup
+            setMovieDetails(null);
+            setCredits(null);
+            setVideos(null);
+            setSimilarMovies([]);
+            clearCache();
+            if (window.gc) {
+              window.gc();
+            }
+          }
+        }, 10000); // Check every 10 seconds
+      }
     }
     
     return () => {
       if (unregisterCleanup) {
         unregisterCleanup();
+      }
+      if (memoryCheckInterval) {
+        clearInterval(memoryCheckInterval);
       }
     };
   }, [movie?.id]);
@@ -2977,36 +3223,90 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   }
 
   const overlayContent = (
-    <AnimatePresence>
-      {/* Overlay background - parallax removed */}
+    <AnimatePresence mode="wait">
+      {/* Overlay background - Enhanced with smooth fade and non-interactable backdrop */}
       <motion.div
-        className="fixed inset-0 bg-black/85 flex items-center justify-center z-[999999999] p-2 sm:p-4 contain-paint transition-none sm:mt-0"
+        data-movie-overlay
+        className="fixed inset-0 bg-black/85 flex items-center justify-center z-[999999999] p-2 sm:p-4 contain-paint transition-none sm:mt-0 pointer-events-none"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ 
-          duration: 0.3, 
-          ease: [0.25, 0.46, 0.45, 0.94]
+          duration: 0.4,
+          ease: [0.16, 1, 0.3, 1], // Enhanced easing curve for smoother fade
+          when: "beforeChildren"
         }}
-        onClick={handleClickOutside}
         tabIndex={-1}
-        style={{ zIndex: 999999999 }}
+        style={{ 
+          zIndex: 999999999,
+          userSelect: 'none', // Prevent text selection
+          WebkitUserSelect: 'none', // Safari
+          MozUserSelect: 'none', // Firefox
+          msUserSelect: 'none' // IE/Edge
+        }}
       >
-        {/* Main content - parallax removed */}
+        {/* Invisible clickable backdrop for closing - positioned behind content */}
+        <div
+          className="absolute inset-0 z-0 pointer-events-auto cursor-pointer"
+          onClick={handleClickOutside}
+          onWheel={(e) => e.stopPropagation()}
+          onTouchMove={(e) => e.stopPropagation()}
+          onScroll={(e) => e.stopPropagation()}
+          style={{
+            WebkitTouchCallout: 'none',
+            WebkitUserSelect: 'none',
+            KhtmlUserSelect: 'none',
+            MozUserSelect: 'none',
+            msUserSelect: 'none',
+            userSelect: 'none'
+          }}
+        />
+        {/* Main content - Enhanced with spring physics and GPU acceleration */}
         <motion.div
           ref={contentRef}
           className="relative w-full max-w-6xl h-auto max-h-[calc(100vh-1rem)] z-[1000000000] sm:max-h-[95vh] bg-gradient-to-br from-[#1a1d24] to-[#121417] rounded-2xl shadow-2xl overflow-hidden flex flex-col pointer-events-auto overflow-y-auto mt-2 sm:mt-6"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 20 }}
+          initial={{ 
+            opacity: 0, 
+            scale: 0.92,
+            y: 40,
+            rotateX: 3,
+            filter: "blur(4px)"
+          }}
+          animate={{ 
+            opacity: 1, 
+            scale: 1,
+            y: 0,
+            rotateX: 0,
+            filter: "blur(0px)"
+          }}
+          exit={{ 
+            opacity: 0, 
+            scale: 0.95,
+            y: -20,
+            rotateX: -2,
+            filter: "blur(2px)"
+          }}
           transition={{ 
-            duration: 0.3, 
-            ease: [0.25, 0.46, 0.45, 0.94]
+            type: "spring",
+            damping: 30,
+            stiffness: 300,
+            mass: 0.8,
+            opacity: { duration: 0.3, ease: [0.16, 1, 0.3, 1] },
+            filter: { duration: 0.25, ease: "easeOut" },
+            scale: { duration: 0.4, ease: [0.16, 1, 0.3, 1] },
+            delayChildren: 0.1,
+            staggerChildren: 0.05
           }}
           onClick={(e) => e.stopPropagation()}
+          onWheel={(e) => e.stopPropagation()}
+          onTouchMove={(e) => e.stopPropagation()}
+          onScroll={(e) => e.stopPropagation()}
           tabIndex={-1}
           style={{ 
-            zIndex: 1000000000
+            zIndex: 1000000000,
+            willChange: "transform, opacity", // GPU acceleration hint
+            backfaceVisibility: "hidden",
+            perspective: 1000
           }}
         >
                       {/* Mobile drag functionality removed */}
@@ -3029,18 +3329,63 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
               </button>
             </div>
           ) : movieDetails ? (
-            <div ref={scrollContainerRef} className="h-full overflow-y-auto hide-scrollbar">
+            <div 
+              ref={scrollContainerRef} 
+              className="h-full overflow-y-auto hide-scrollbar"
+              onWheel={(e) => {
+                // Prevent background scrolling on wheel events
+                e.stopPropagation();
+                
+                const container = e.currentTarget;
+                const { scrollTop, scrollHeight, clientHeight } = container;
+                const delta = e.deltaY;
+                
+                // Check if we're at scroll boundaries and adjust scroll position instead of preventDefault
+                if (delta > 0 && scrollTop + clientHeight >= scrollHeight) {
+                  // At bottom - prevent further downward scrolling by setting scroll position
+                  container.scrollTop = scrollHeight - clientHeight;
+                } else if (delta < 0 && scrollTop <= 0) {
+                  // At top - prevent further upward scrolling by setting scroll position
+                  container.scrollTop = 0;
+                }
+              }}
+              onTouchMove={(e) => {
+                // Prevent background scrolling on touch events
+                e.stopPropagation();
+                
+                const container = e.currentTarget;
+                const { scrollTop, scrollHeight, clientHeight } = container;
+                const touch = e.touches[0];
+                const startY = container.dataset.touchStartY;
+                
+                if (startY) {
+                  const deltaY = parseInt(startY) - touch.clientY;
+                  
+                  // Check if we're at scroll boundaries and adjust scroll position instead of preventDefault
+                  if (deltaY > 0 && scrollTop + clientHeight >= scrollHeight) {
+                    // At bottom - prevent further downward scrolling by setting scroll position
+                    container.scrollTop = scrollHeight - clientHeight;
+                  } else if (deltaY < 0 && scrollTop <= 0) {
+                    // At top - prevent further upward scrolling by setting scroll position
+                    container.scrollTop = 0;
+                  }
+                }
+              }}
+              onTouchStart={(e) => {
+                // Store initial touch position for boundary detection
+                const touch = e.touches[0];
+                e.currentTarget.dataset.touchStartY = touch.clientY;
+              }}
+              onScroll={(e) => e.stopPropagation()}
+            >
               <div className="relative h-[75vh] sm:h-[80vh]">
                 {movieDetails.backdrop && (
                   <div className="absolute inset-0 overflow-hidden">
                     <motion.div 
                       className="absolute inset-0"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ 
-                        duration: 0.4, 
-                        ease: [0.25, 0.46, 0.45, 0.94] 
-                      }}
+                      variants={ANIMATION_VARIANTS.fadeIn}
+                      initial="hidden"
+                      animate="visible"
                     >
                       {/* Loading placeholder with smooth transition */}
                       <motion.div 
@@ -3079,16 +3424,26 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                 <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-8">
                   <motion.div 
                     className="flex flex-col sm:flex-row items-start sm:items-end gap-4 sm:gap-8 relative"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3, delay: 0.1 }}
+                    variants={{
+                      hidden: { opacity: 0, y: 20 },
+                      visible: { opacity: 1, y: 0 }
+                    }}
+                    initial="hidden"
+                    animate="visible"
+                    transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
                   >
                                           {movieDetails.image && (
                         <motion.div 
                           className="w-32 h-48 sm:w-56 sm:h-84 flex-shrink-0 rounded-lg overflow-hidden shadow-2xl group mx-auto sm:mx-0"
-                          initial={{ opacity: 0, scale: 0.95 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          transition={{ duration: 0.3, delay: 0.2 }}
+                          variants={{
+                            hidden: { opacity: 0, scale: 0.9, y: 30 },
+                            visible: { opacity: 1, scale: 1, y: 0 }
+                          }}
+                          transition={{ 
+                            duration: 0.5,
+                            ease: [0.16, 1, 0.3, 1],
+                            delay: 0.1
+                          }}
                         >
                           {/* Loading placeholder with smooth transition */}
                           <motion.div 
@@ -3123,16 +3478,28 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                     <div className="flex-1 w-full sm:w-auto text-center sm:text-left">
                                               <motion.div 
                           className="flex flex-col sm:flex-row items-center sm:items-center gap-2 sm:gap-3 mb-4 sm:mb-7"
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ duration: 0.3, delay: 0.3 }}
+                          variants={{
+                            hidden: { opacity: 0, y: 15, scale: 0.95 },
+                            visible: { opacity: 1, y: 0, scale: 1 }
+                          }}
+                          transition={{ 
+                            duration: 0.5,
+                            ease: [0.16, 1, 0.3, 1],
+                            delay: 0.2
+                          }}
                         >
                                                   {movieDetails.logo ? (
                             <motion.div 
                               className="relative"
-                              initial={{ opacity: 0, scale: 0.95 }}
-                              animate={{ opacity: 1, scale: 1 }}
-                              transition={{ duration: 0.3, delay: 0.4 }}
+                              variants={{
+                                hidden: { opacity: 0, scale: 0.9, rotateY: -10 },
+                                visible: { opacity: 1, scale: 1, rotateY: 0 }
+                              }}
+                              transition={{ 
+                                duration: 0.6,
+                                ease: [0.16, 1, 0.3, 1],
+                                delay: 0.1
+                              }}
                             >
                               {/* Movie logo - parallax removed */}
                               <motion.img
@@ -3164,9 +3531,15 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                           ) : (
                             <motion.h2 
                               className="text-2xl sm:text-4xl font-bold text-white"
-                              initial={{ opacity: 0, y: 10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              transition={{ duration: 0.3, delay: 0.4 }}
+                              variants={{
+                                hidden: { opacity: 0, y: 15, scale: 0.95 },
+                                visible: { opacity: 1, y: 0, scale: 1 }
+                              }}
+                              transition={{ 
+                                duration: 0.5,
+                                ease: [0.16, 1, 0.3, 1],
+                                delay: 0.1
+                              }}
                             >
                               {movieDetails.title}
                             </motion.h2>
@@ -3174,7 +3547,18 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                       </motion.div>
                       
 
-                      <div className="flex flex-row items-center justify-center sm:justify-start gap-6 sm:gap-3 text-white/60 text-sm mb-4 sm:mb-6">
+                      <motion.div 
+                        className="flex flex-row items-center justify-center sm:justify-start gap-6 sm:gap-3 text-white/60 text-sm mb-4 sm:mb-6"
+                        variants={{
+                          hidden: { opacity: 0, y: 15 },
+                          visible: { opacity: 1, y: 0 }
+                        }}
+                        transition={{ 
+                          duration: 0.4,
+                          ease: [0.16, 1, 0.3, 1],
+                          delay: 0.3
+                        }}
+                      >
                         {movieDetails.type === 'movie' && movieDetails.release_date && (
                           <>
                             <div className="flex items-center gap-1">
@@ -3242,10 +3626,21 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                           </svg>
                           {formatRating(movieDetails.rating)}
                         </span>
-                      </div>
+                      </motion.div>
 
                       {movieDetails.genres && (
-                        <div className="flex flex-wrap justify-center sm:justify-start gap-1.5 sm:gap-2 mb-3 sm:mb-6">
+                        <motion.div 
+                          className="flex flex-wrap justify-center sm:justify-start gap-1.5 sm:gap-2 mb-3 sm:mb-6"
+                          variants={{
+                            hidden: { opacity: 0, y: 15 },
+                            visible: { opacity: 1, y: 0 }
+                          }}
+                          transition={{ 
+                            duration: 0.4,
+                            ease: [0.16, 1, 0.3, 1],
+                            delay: 0.4
+                          }}
+                        >
                           {movieDetails.genres.map((genre, idx) => {
                             let key = '';
                             if (genre.id && typeof genre.id !== 'undefined' && genre.id !== null && genre.id !== '') {
@@ -3258,34 +3653,40 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                             return (
                               <span 
                                 key={key}
-                                onClick={() => onGenreClick && onGenreClick(genre)}
+                                onClick={() => handleGenreClick && handleGenreClick(genre)}
                                 className="px-2.5 sm:px-3 py-0.5 sm:py-1 text-white/50 overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 rounded-full text-white/60 text-xs sm:text-sm transform transition-all duration-300 hover:bg-white/10 hover:cursor-pointer will-change-transform"
                               >
                                 {genre.name}
                               </span>
                             );
                           })}
-                        </div>
+                        </motion.div>
                       )}
 
                       {/* Action Buttons and Info Section */}
                       <motion.div 
                         className="flex flex-col sm:flex-row items-center sm:items-end justify-between gap-4 my-4 sm:my-6"
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.3, delay: 0.5 }}
+                        variants={{
+                          hidden: { opacity: 0, y: 20, scale: 0.95 },
+                          visible: { opacity: 1, y: 0, scale: 1 }
+                        }}
+                        transition={{ 
+                          duration: 0.5,
+                          ease: [0.16, 1, 0.3, 1],
+                          delay: 0.5
+                        }}
                       >
                       {/* Action Buttons */}
-                        <motion.div 
-                          className="flex flex-row items-center justify-center sm:justify-start gap-3 sm:gap-4 w-full"
-                          variants={staggerItemVariants}
-                        >
+                                                  <motion.div 
+                            className="flex flex-row items-center justify-center sm:justify-start gap-3 sm:gap-4 w-full"
+                            variants={ANIMATION_VARIANTS.staggerItem}
+                          >
                         {/* Watch Now Button - Only show if streaming is available and it's a movie */}
                         {isStreamingAvailable(movie) && (movie.media_type || movie.type || 'movie') === 'movie' && (
                           <motion.button
                             onClick={handleStreamingClick}
                             className="group relative px-4 sm:px-6 py-2 sm:py-3 rounded-full flex items-center gap-2 font-medium text-black bg-white flex-1 sm:flex-none w-full sm:w-auto justify-center min-w-0 transform-gpu will-change-transform"
-                            variants={buttonVariants}
+                            variants={ANIMATION_VARIANTS.button}
                             initial="initial"
                             whileHover="hover"
                             whileTap="tap"
@@ -3319,7 +3720,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                           data-trailer-button
                           onClick={handleTrailerClick}
                           className="group relative px-4 sm:px-6 py-2 sm:py-3 rounded-full flex items-center gap-2 font-medium text-white/80 overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 hover:bg-white/10 flex-1 sm:flex-none w-full sm:w-auto justify-center min-w-0 transform-gpu will-change-transform"
-                          variants={buttonVariants}
+                          variants={ANIMATION_VARIANTS.button}
                           initial="initial"
                           whileHover="hover"
                           whileTap="tap"
@@ -3350,12 +3751,12 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
 
                         <motion.button 
                           onClick={handleWatchlistClick}
-                          className={`group relative px-4 sm:px-6 py-3 rounded-full flex items-center gap-2 font-medium overflow-hidden w-full sm:w-auto justify-center min-w-0 hidden sm:flex transform-gpu will-change-transform ${
-                            isOptimisticallyInWatchlist
-                              ? 'text-white/80 overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 hover:bg-white/10' 
-                              : 'text-white/80 overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 hover:bg-white/10'
-                          }`}
-                          variants={buttonVariants}
+                                                      className={`group relative px-4 sm:px-6 py-3 rounded-full flex items-center gap-2 font-medium overflow-hidden w-full sm:w-auto justify-center min-w-0 hidden sm:flex transform-gpu will-change-transform ${
+                              isOptimisticallyInWatchlist
+                                ? 'text-white/80 overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 hover:bg-white/10' 
+                                : 'text-white/80 overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 hover:bg-white/10'
+                            }`}
+                            variants={ANIMATION_VARIANTS.button}
                           initial="initial"
                           whileHover="hover"
                           whileTap="tap"
@@ -3395,7 +3796,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                         {/* Desktop Info Section - Rightmost */}
                         <motion.div 
                           className="hidden lg:block text-white/60 text-sm text-right"
-                          variants={staggerItemVariants}
+                          variants={ANIMATION_VARIANTS.staggerItem}
                         >
                           {/* Top Cast */}
                           {movieDetails.cast && movieDetails.cast.length > 0 && (
@@ -3421,7 +3822,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                                 {movieDetails.genres.slice(0, 3).map((genre, idx) => (
                                   <span 
                                     key={genre.id || idx}
-                                    onClick={() => onGenreClick && onGenreClick(genre)}
+                                    onClick={() => handleGenreClick && handleGenreClick(genre)}
                                     className="hover:text-white hover:cursor-pointer transition-colors duration-200"
                                   >
                                     {genre.name}
@@ -3455,7 +3856,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                       >
                         <motion.div 
                           className="text-white/60 text-sm space-y-3"
-                          variants={staggerContainerVariants}
+                          variants={ANIMATION_VARIANTS.staggerContainer}
                           initial="hidden"
                           whileInView="visible"
                           viewport={{ once: true, amount: 0.5 }}
@@ -3464,7 +3865,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                           {movieDetails.overview && movieDetails.overview.trim() !== "" && (
                             <motion.div 
                               className="mb-3"
-                              variants={staggerItemVariants}
+                              variants={ANIMATION_VARIANTS.staggerItem}
                             >
                               <p
                                 className="text-white/90 text-sm leading-relaxed pl-0 text-justify text-left"
@@ -3500,9 +3901,9 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                       </motion.div>
 
                                                                                          {/* Mobile Action Buttons - Above Overview */}
-                                             <motion.div 
-                                               className="flex sm:hidden items-center justify-center gap-8 mt-4"
-                                               variants={staggerContainerVariants}
+                                                                       <motion.div 
+                            className="flex sm:hidden items-center justify-center gap-8 mt-4"
+                            variants={ANIMATION_VARIANTS.staggerContainer}
                                                initial="hidden"
                                                whileInView="visible"
                                                viewport={{ once: true, amount: 0.5 }}
@@ -4233,7 +4634,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
           <motion.button
             onClick={onClose}
             className="absolute top-4 right-4 z-10 p-2 rounded-full text-white group overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-l-[1px] border-r-[1px] border-white/30 hover:bg-white/10 transform-gpu will-change-transform"
-            variants={buttonVariants}
+            variants={ANIMATION_VARIANTS.button}
             initial="initial"
             whileHover="hover"
             whileTap="tap"

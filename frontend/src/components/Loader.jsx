@@ -1,5 +1,6 @@
 import React from 'react';
 import PropTypes from 'prop-types';
+import { motion, AnimatePresence } from 'framer-motion';
 
 /**
  * @typedef {Object} LoaderProps
@@ -367,7 +368,105 @@ const Loader = ({
 };
 
 /**
- * Full Page Loader Component
+ * Animated Center Icon Component
+ * 
+ * Morphs between different website-related icons:
+ * - Movie camera (cinema)
+ * - TV screen (television)
+ * - Bookmark (watchlist)
+ * - Star (favorites)
+ * - Play button (streaming)
+ */
+const AnimatedCenterIcon = () => {
+  const [currentIcon, setCurrentIcon] = React.useState(0);
+  
+  const icons = [
+    // Movie Camera
+    <svg key="camera" className="w-full h-full text-white" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/>
+    </svg>,
+    
+    // Monitor/TV Screen
+    <svg key="tv" className="w-full h-full text-white" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M20 3H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h4l-2 2h8l-2-2h4c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/>
+    </svg>,
+    
+    // Bookmark/Watchlist
+    <svg key="bookmark" className="w-full h-full text-white" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/>
+    </svg>,
+    
+    // Star/Favorites
+    <svg key="star" className="w-full h-full text-white" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
+    </svg>,
+    
+    // Play Button
+    <svg key="play" className="w-full h-full text-white" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M8 5v14l11-7z"/>
+    </svg>,
+    
+    // Search/Explore
+    <svg key="search" className="w-full h-full text-white" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+    </svg>
+  ];
+
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentIcon((prev) => (prev + 1) % icons.length);
+    }, 2000); // Change icon every 2 seconds
+
+    return () => clearInterval(interval);
+  }, [icons.length]);
+
+  return (
+    <div className="relative w-full h-full">
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={currentIcon}
+          initial={{ 
+            opacity: 0, 
+            scale: 0.8, 
+            rotate: -15,
+            filter: 'blur(2px)'
+          }}
+          animate={{ 
+            opacity: 1, 
+            scale: 1, 
+            rotate: 0,
+            filter: 'blur(0px)'
+          }}
+          exit={{ 
+            opacity: 0, 
+            scale: 0.8, 
+            rotate: 15,
+            filter: 'blur(2px)'
+          }}
+          transition={{ 
+            duration: 0.6, 
+            ease: [0.4, 0, 0.2, 1],
+            type: "spring",
+            stiffness: 200,
+            damping: 20
+          }}
+          className="absolute inset-0 flex items-center justify-center"
+        >
+          {icons[currentIcon]}
+        </motion.div>
+      </AnimatePresence>
+      
+      {/* Subtle glow effect */}
+      <div 
+        className="absolute inset-0 bg-white/10 rounded-full blur-sm"
+        style={{ animation: 'iconGlow 3s ease-in-out infinite' }}
+      ></div>
+    </div>
+  );
+};
+
+/**
+ * Full Page Loader Component - Minimalist & Modern Design
  * 
  * Usage Examples:
  * 1. Initial App Loading:
@@ -383,7 +482,7 @@ import { useEffect, useRef } from "react";
 
 const PageLoader = ({
   text = "Loading your cinematic experience...",
-  showProgress = true, // Changed to true by default
+  showProgress = false,
   progress = 0,
   tips = [
     "Tip: Add movies to your watchlist for quick access later.",
@@ -394,7 +493,7 @@ const PageLoader = ({
     "Hint: Use keyboard arrows to navigate carousels.",
   ],
   showTips = true,
-  tipInterval = 3000, // Reduced from 5000 to 3000ms for faster tip rotation
+  tipInterval = 4000,
 }) => {
   const [currentTip, setCurrentTip] = React.useState(
     tips && tips.length > 0 ? Math.floor(Math.random() * tips.length) : 0
@@ -422,102 +521,149 @@ const PageLoader = ({
       ref={containerRef}
       tabIndex={-1}
       aria-live="polite"
-      className="fixed inset-0 flex items-center justify-center bg-gradient-to-b from-[#0f0f0f] via-[#121417] to-[#0f0f0f] backdrop-blur-xl z-50"
+      className="fixed inset-0 flex items-center justify-center bg-black z-50"
       role="dialog"
       aria-modal="true"
     >
-      {/* Noise overlay */}
-      <div className="absolute inset-0 bg-[url('/noise.png')] opacity-20 mix-blend-overlay pointer-events-none"></div>
-      {/* Subtle vertical gradient */}
-      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#121417]/50 to-transparent pointer-events-none"></div>
-      {/* Animated aurora effect */}
-      <div className="absolute inset-0 pointer-events-none">
-        <svg
-          width="100%"
-          height="100%"
-          className="w-full h-full"
-          style={{ filter: "blur(32px)" }}
-        >
-          <defs>
-            <radialGradient id="aurora1" cx="60%" cy="30%" r="60%">
-              <stop offset="0%" stopColor="#6ee7b7" stopOpacity="0.18" />
-              <stop offset="100%" stopColor="#0f0f0f" stopOpacity="0" />
-            </radialGradient>
-            <radialGradient id="aurora2" cx="30%" cy="70%" r="60%">
-              <stop offset="0%" stopColor="#818cf8" stopOpacity="0.14" />
-              <stop offset="100%" stopColor="#0f0f0f" stopOpacity="0" />
-            </radialGradient>
-          </defs>
-          <circle cx="60%" cy="30%" r="320" fill="url(#aurora1)" />
-          <circle cx="30%" cy="70%" r="260" fill="url(#aurora2)" />
-        </svg>
+      {/* Minimalist background */}
+      <div className="absolute inset-0 bg-black"></div>
+      
+      {/* Subtle gradient overlay */}
+      <div className="absolute inset-0 bg-gradient-to-br from-black via-black to-gray-900/20"></div>
+      
+      {/* Minimal noise texture */}
+      <div className="absolute inset-0 opacity-3">
+        <div className="w-full h-full" style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100' height='100' filter='url(%23noise)' opacity='0.3'/%3E%3C/svg%3E")`,
+        }}></div>
       </div>
-      <div className="flex flex-col items-center gap-6 relative z-10">
-        {/* Main Loader */}
+
+      <div className="flex flex-col items-center gap-12 relative z-10">
+        {/* Minimalist Loader */}
         <div className="relative">
-          <Loader size="large" />
-          {/* Orbiting Elements - now with more orbs and color */}
-          <div className="absolute inset-0 animate-[spin_3s_linear_infinite]">
-            {[...Array(5)].map((_, i) => (
-              <div
-                key={i}
-                className={`absolute w-3 h-3 rounded-full backdrop-blur-sm`}
-                style={{
-                  top: "50%",
-                  left: "50%",
-                  background:
-                    i % 2 === 0
-                      ? "rgba(129,140,248,0.25)"
-                      : "rgba(110,231,183,0.22)",
-                  boxShadow:
-                    i % 2 === 0
-                      ? "0 0 8px 2px #818cf8aa"
-                      : "0 0 8px 2px #6ee7b7aa",
-                  transform: `rotate(${i * 72}deg) translateX(44px) translateY(-50%)`,
-                }}
-              />
-            ))}
+          {/* Main loader container */}
+          <div className="w-24 h-24 relative">
+            {/* Outer ring - static background */}
+            <div className="absolute inset-0 border border-white/10 rounded-full"></div>
+            
+            {/* Animated progress ring */}
+            <div 
+              className="absolute inset-0 border border-white rounded-full"
+              style={{
+                clipPath: 'polygon(0 0, 50% 0, 50% 50%, 0 50%)',
+                animation: 'spin 2s linear infinite'
+              }}
+            ></div>
+            
+            {/* Inner ring - subtle accent */}
+            <div className="absolute inset-3 border border-white/5 rounded-full"></div>
+            
+            {/* Animated center illustration */}
+            <div className="absolute top-1/2 left-1/2 w-6 h-6 transform -translate-x-1/2 -translate-y-1/2">
+              <AnimatedCenterIcon />
+            </div>
           </div>
-          {/* Pulsing center dot */}
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 bg-white/40 rounded-full animate-pulse"></div>
-          {/* Progress bar (optional) */}
-          {showProgress && (
-            <div className="absolute left-1/2 -translate-x-1/2 bottom-[-18px] w-24 h-2 bg-white/10 rounded-full overflow-hidden">
+
+          {/* Progress indicator */}
+          <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 w-48 h-1.5 bg-white/15 rounded-full overflow-hidden shadow-inner">
+            {showProgress ? (
               <div
-                className="h-full bg-gradient-to-r from-[#818cf8] to-[#6ee7b7] transition-all duration-500"
-                style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
+                className="h-full bg-gradient-to-r from-blue-400 via-white to-blue-400 transition-all duration-500 ease-out rounded-full shadow-lg"
+                style={{ 
+                  width: `${Math.max(0, Math.min(100, progress))}%`,
+                  boxShadow: '0 0 8px rgba(96, 165, 250, 0.4)'
+                }}
               ></div>
+            ) : (
+              <div
+                className="h-full bg-gradient-to-r from-transparent via-white to-transparent rounded-full"
+                style={{ 
+                  width: '35%',
+                  animation: 'progressSweep 2s ease-in-out infinite'
+                }}
+              ></div>
+            )}
+          </div>
+          
+          {/* Progress percentage */}
+          {showProgress && (
+            <div className="absolute -bottom-12 left-1/2 transform -translate-x-1/2 text-xs text-white/50 font-medium">
+              {Math.round(progress)}%
             </div>
           )}
         </div>
-        {/* Main loading text */}
-        <div className="text-white/70 text-base font-semibold tracking-wide animate-[pulse_2s_ease-in-out_infinite] text-center px-4">
-          {text}
-        </div>
-        {/* Rotating tip or fun fact */}
-        {showTips && tips && tips.length > 0 && (
-          <div className="text-xs text-white/40 font-medium text-center max-w-xs mt-2 transition-opacity duration-500 animate-fade-in">
-            <span className="inline-flex items-center gap-1">
-              <svg
-                className="w-4 h-4 text-white/30"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity="0.3" />
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M12 8v4m0 4h.01"
-                />
-              </svg>
+
+        {/* Loading text */}
+        <div className="text-center space-y-4">
+          <h1 className="text-white text-xl font-light tracking-wide">
+            {text}
+          </h1>
+          
+          {/* Rotating tip */}
+          {showTips && tips && tips.length > 0 && (
+            <motion.p 
+              key={currentTip}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.4 }}
+              className="text-white/40 text-sm font-light max-w-md leading-relaxed"
+            >
               {tips[currentTip]}
-            </span>
-          </div>
-        )}
+            </motion.p>
+          )}
+        </div>
+
+        {/* Subtle decorative elements */}
+        <div className="absolute inset-0 pointer-events-none">
+          {/* Corner accents */}
+          <div className="absolute top-8 left-8 w-0.5 h-0.5 bg-white/15"></div>
+          <div className="absolute top-8 right-8 w-0.5 h-0.5 bg-white/15"></div>
+          <div className="absolute bottom-8 left-8 w-0.5 h-0.5 bg-white/15"></div>
+          <div className="absolute bottom-8 right-8 w-0.5 h-0.5 bg-white/15"></div>
+          
+          {/* Subtle lines */}
+          <div className="absolute top-1/2 left-6 w-6 h-px bg-gradient-to-r from-transparent to-white/10"></div>
+          <div className="absolute top-1/2 right-6 w-6 h-px bg-gradient-to-l from-transparent to-white/10"></div>
+        </div>
       </div>
+
+      {/* CSS Animations */}
+      <style>{`
+        @keyframes spin {
+          0% { 
+            transform: rotate(0deg); 
+          }
+          100% { 
+            transform: rotate(360deg); 
+          }
+        }
+        
+        @keyframes iconGlow {
+          0%, 100% { 
+            opacity: 0.1; 
+            transform: scale(1); 
+          }
+          50% { 
+            opacity: 0.2; 
+            transform: scale(1.05); 
+          }
+        }
+        
+        @keyframes progressSweep {
+          0% { 
+            transform: translateX(-120%);
+            opacity: 0.6;
+          }
+          50% { 
+            opacity: 1;
+          }
+          100% { 
+            transform: translateX(400%);
+            opacity: 0.6;
+          }
+        }
+      `}</style>
     </div>
   );
 };

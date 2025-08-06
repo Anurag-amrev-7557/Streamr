@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useWatchlist } from '../contexts/WatchlistContext';
 import { useAuth } from '../contexts/AuthContext';
 import { formatRating } from '../utils/ratingUtils';
+import WatchlistImage from '../components/WatchlistImage';
 
 const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p';
 const PLACEHOLDER_IMAGE = 'https://placehold.co/500x750/1a1d21/ffffff?text=No+Image';
@@ -30,7 +31,6 @@ const WatchlistPage = () => {
   const [activeTab, setActiveTab] = useState('all');
   const [sortBy, setSortBy] = useState('added');
   const [showSortDropdown, setShowSortDropdown] = useState(false);
-  const [loadedImages, setLoadedImages] = useState({});
   const [showClearDialog, setShowClearDialog] = useState(false);
   const [showLoginBanner, setShowLoginBanner] = useState(() => {
     // Check if user has dismissed the banner before
@@ -77,7 +77,6 @@ const WatchlistPage = () => {
       setSelectedMovie(null);
       setShowSortDropdown(false);
       setShowClearDialog(false);
-      setLoadedImages({});
     };
   }, []);
 
@@ -163,17 +162,17 @@ const WatchlistPage = () => {
   }, [removeFromWatchlist]);
 
   const handleImageLoad = useCallback((movieId) => {
-    setLoadedImages(prev => ({
-      ...prev,
-      [movieId]: true
-    }));
+    // Image loaded successfully - can be used for analytics or other purposes
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`Image loaded for movie ${movieId}`);
+    }
   }, []);
 
   const handleImageError = useCallback((movieId) => {
-    setLoadedImages(prev => ({
-      ...prev,
-      [movieId]: 'error'
-    }));
+    // Image failed to load - can be used for analytics or fallback handling
+    if (process.env.NODE_ENV === 'development') {
+      console.warn(`Image failed to load for movie ${movieId}`);
+    }
   }, []);
 
   // Debounced image loading to prevent excessive state updates
@@ -184,20 +183,6 @@ const WatchlistPage = () => {
 
     return () => clearTimeout(timeoutId);
   }, [handleImageLoad]);
-
-  // Cleanup loadedImages state when watchlist changes to prevent memory leaks
-  useEffect(() => {
-    const currentMovieIds = new Set(watchlist.map(movie => movie.id));
-    setLoadedImages(prev => {
-      const cleaned = {};
-      Object.keys(prev).forEach(movieId => {
-        if (currentMovieIds.has(parseInt(movieId))) {
-          cleaned[movieId] = prev[movieId];
-        }
-      });
-      return cleaned;
-    });
-  }, [watchlist]);
 
   const getImageUrl = (path) => {
     
@@ -555,13 +540,13 @@ const WatchlistPage = () => {
               {filteredWatchlist.length > 0 && (
                 <motion.button
                   onClick={() => setShowClearDialog(true)}
-                  className="relative px-4 py-2.5 rounded-lg font-medium text-sm transition-colors duration-200 shadow-sm overflow-hidden focus:outline-none bg-[#1a1d21] text-gray-400 hover:text-black hover:bg-white flex-shrink-0 ml-2"
+                  className="relative px-4 py-2.5 rounded-full font-medium text-sm transition-colors duration-200 shadow-sm overflow-hidden focus:outline-none bg-[#1a1d21] text-gray-400 hover:text-black hover:bg-white flex-shrink-0 ml-2"
                   style={{ minWidth: 90 }}
                 >
                   <span className="relative z-10">{getClearLabel()}</span>
                   <motion.div
                     layoutId="activeWatchlistTabClear"
-                    className="absolute inset-0 rounded-lg z-0"
+                    className="absolute inset-0 rounded-full z-0"
                     initial={{ backgroundColor: 'rgba(255,255,255,0)' }}
                     whileHover={{ backgroundColor: 'rgba(255,255,255,0.85)' }}
                     transition={{ type: 'spring', stiffness: 300, damping: 30 }}
@@ -635,30 +620,61 @@ const WatchlistPage = () => {
                 <motion.div
                   layout
                   key={movie.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
+                  initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.8, transition: { duration: 0.2 } }}
-                  className="group relative aspect-[2/3] rounded-lg overflow-hidden bg-[#1a1d21] cursor-pointer w-full max-w-xs mx-auto"
+                  transition={{ 
+                    duration: 0.4, 
+                    ease: [0.25, 0.46, 0.45, 0.94],
+                    delay: Math.random() * 0.2 // Stagger effect
+                  }}
+                  className="group relative aspect-[2/3] rounded-lg overflow-hidden bg-[#1a1d21] cursor-pointer w-full max-w-xs mx-auto transform-gpu shadow-lg hover:shadow-xl transition-shadow duration-300"
                   onClick={() => handleMovieSelect(movie)}
+                  whileHover={{ 
+                    scale: 1.02,
+                    transition: { duration: 0.2, ease: "easeOut" }
+                  }}
+                  whileTap={{ 
+                    scale: 0.98,
+                    transition: { duration: 0.1 }
+                  }}
                 >
                   {/* Movie Poster */}
-                  <div className="relative w-full h-full">
-                    {!loadedImages[movie.id] && (
-                      <div className="absolute inset-0 bg-[#1a1d21] animate-pulse" />
+                  <div className="relative w-full h-full overflow-hidden">
+                    {/* Enhanced Rating Badge - Responsive */}
+                    {movie.rating && movie.rating > 0 && (
+                      <div 
+                        className={`absolute top-1 left-1 sm:top-2 sm:left-2 z-10 backdrop-blur-sm rounded-md sm:rounded-lg px-1.5 py-0.5 sm:px-2 sm:py-1 text-xs sm:text-xs font-semibold shadow-md sm:shadow-lg border flex items-center gap-0.5 sm:gap-1 ${
+                          movie.rating >= 8 ? 'bg-black/80 text-white border-white/30' :
+                          movie.rating >= 7 ? 'bg-black/70 text-gray-100 border-white/25' :
+                          movie.rating >= 6 ? 'bg-black/60 text-gray-200 border-white/20' :
+                          'bg-black/50 text-gray-300 border-white/15'
+                        }`}
+                      >
+                        <svg 
+                          xmlns="http://www.w3.org/2000/svg" 
+                          className={`h-2.5 w-2.5 sm:h-3 sm:w-3 ${
+                            movie.rating >= 8 ? 'text-white' :
+                            movie.rating >= 7 ? 'text-gray-100' :
+                            movie.rating >= 6 ? 'text-gray-200' :
+                            'text-gray-300'
+                          }`}
+                          viewBox="0 0 24 24" 
+                          fill="currentColor"
+                        >
+                          <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
+                        </svg>
+                        <span className="drop-shadow-md text-xs sm:text-xs">{formatRating(movie.rating)}</span>
+                      </div>
                     )}
-                    <img
+                    
+                    <WatchlistImage
                       src={getImageUrl(movie.poster_path)}
                       alt={movie.title}
-                      className={`w-full h-full object-cover transition-transform duration-300 group-hover:scale-110 ${
-                        loadedImages[movie.id] ? 'opacity-100' : 'opacity-0'
-                      }`}
+                      className="w-full h-full transition-all duration-500 ease-out group-hover:scale-110"
                       onLoad={() => debouncedImageLoad(movie.id)}
-                      onError={(e) => {
-                        handleImageError(movie.id);
-                        e.target.src = PLACEHOLDER_IMAGE;
-                      }}
-                      loading="lazy"
-                      decoding="async"
+                      onError={() => handleImageError(movie.id)}
+                      priority={false}
                     />
                   </div>
                   {/* Overlay: always visible on mobile, hover on desktop */}

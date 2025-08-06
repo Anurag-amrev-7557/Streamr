@@ -30,6 +30,7 @@ import { useWatchlist } from '../contexts/WatchlistContext';
 const EnhancedSearchBar = lazy(() => import('./EnhancedSearchBar'));
 import searchHistoryService from '../services/searchHistoryService';
 import { getPosterProps, getBackdropProps } from '../utils/imageUtils';
+import { formatRating } from '../utils/ratingUtils';
 
 const fadeInAnimation = {
   '@keyframes fadeIn': {
@@ -179,30 +180,64 @@ const MovieCard = ({ movie, index, onClick, onPrefetch }) => {
         })
       );
       
-      // Prefetch higher resolution poster image
+      // Prefetch higher resolution poster image with cleanup
       const posterPath = movie.poster_path || movie.poster;
       if (posterPath && !posterPath.startsWith('http')) {
         const highResUrl = `https://image.tmdb.org/t/p/w780${posterPath}`;
         prefetchPromises.push(
           new Promise((resolve) => {
             const img = new Image();
-            img.onload = () => resolve(highResUrl);
-            img.onerror = () => resolve(null);
+            const cleanup = () => {
+              img.onload = null;
+              img.onerror = null;
+              img.src = '';
+            };
+            img.onload = () => {
+              cleanup();
+              resolve(highResUrl);
+            };
+            img.onerror = () => {
+              cleanup();
+              resolve(null);
+            };
             img.src = highResUrl;
+            
+            // Add timeout to prevent hanging
+            setTimeout(() => {
+              cleanup();
+              resolve(null);
+            }, 5000);
           })
         );
       }
       
-      // Prefetch backdrop image
+      // Prefetch backdrop image with cleanup
       const backdropPath = movie.backdrop_path;
       if (backdropPath) {
         const backdropUrl = `https://image.tmdb.org/t/p/w1280${backdropPath}`;
         prefetchPromises.push(
           new Promise((resolve) => {
             const img = new Image();
-            img.onload = () => resolve(backdropUrl);
-            img.onerror = () => resolve(null);
+            const cleanup = () => {
+              img.onload = null;
+              img.onerror = null;
+              img.src = '';
+            };
+            img.onload = () => {
+              cleanup();
+              resolve(backdropUrl);
+            };
+            img.onerror = () => {
+              cleanup();
+              resolve(null);
+            };
             img.src = backdropUrl;
+            
+            // Add timeout to prevent hanging
+            setTimeout(() => {
+              cleanup();
+              resolve(null);
+            }, 5000);
           })
         );
       }
@@ -268,7 +303,9 @@ const MovieCard = ({ movie, index, onClick, onPrefetch }) => {
       }
       
       // Clear any pending image loads
-      if (imgRef.current && imgRef.current.src) {
+      if (imgRef.current) {
+        imgRef.current.onload = null;
+        imgRef.current.onerror = null;
         imgRef.current.src = '';
       }
     };
@@ -318,6 +355,36 @@ const MovieCard = ({ movie, index, onClick, onPrefetch }) => {
         layout
         className="aspect-[2/3] rounded-lg overflow-hidden bg-gray-800 relative w-full"
       >
+        {/* Enhanced Rating Badge - Responsive */}
+        {(() => {
+          const rating = movie.vote_average || movie.rating || 0;
+          return rating > 0 && (
+            <div 
+              className={`absolute top-1 left-1 sm:top-2 sm:left-2 z-10 backdrop-blur-sm rounded-md sm:rounded-lg px-1.5 py-0.5 sm:px-2 sm:py-1 text-xs sm:text-xs font-semibold shadow-md sm:shadow-lg border flex items-center gap-0.5 sm:gap-1 ${
+                rating >= 8 ? 'bg-black/80 text-white border-white/30' :
+                rating >= 7 ? 'bg-black/70 text-gray-100 border-white/25' :
+                rating >= 6 ? 'bg-black/60 text-gray-200 border-white/20' :
+                'bg-black/50 text-gray-300 border-white/15'
+              }`}
+            >
+              <svg 
+                xmlns="http://www.w3.org/2000/svg" 
+                className={`h-2.5 w-2.5 sm:h-3 sm:w-3 ${
+                  rating >= 8 ? 'text-white' :
+                  rating >= 7 ? 'text-gray-100' :
+                  rating >= 6 ? 'text-gray-200' :
+                  'text-gray-300'
+                }`}
+                viewBox="0 0 24 24" 
+                fill="currentColor"
+              >
+                <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
+              </svg>
+              <span className="drop-shadow-md text-xs sm:text-xs">{formatRating(rating)}</span>
+            </div>
+          );
+        })()}
+        
         <AnimatePresence>
           <motion.button
             onClick={handleBookmarkClick}
@@ -385,7 +452,7 @@ const MovieCard = ({ movie, index, onClick, onPrefetch }) => {
             </svg>
           `)}`}
           alt={movie.title}
-          className={`w-full h-full object-cover ${
+          className={`w-full h-full object-cover transition-transform duration-300 group-hover:scale-110 ${
             imageLoaded ? 'opacity-100' : 'opacity-0'
           }`}
           onLoad={handleImageLoad}
@@ -498,11 +565,24 @@ const MoviesPage = () => {
   const [isLoadingNextPage, setIsLoadingNextPage] = useState(false);
   const [nextPageMovies, setNextPageMovies] = useState([]);
 
+  // Add AbortController for API cleanup
+  const abortControllerRef = useRef(null);
+
   // Define fetchMovies function before useEffect hooks
   const fetchMovies = useCallback(async (category, pageNum = 1) => {
     if (fetchInProgress.current) {
       return;
     }
+    
+    // Cancel previous request if exists
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    
+    // Create new AbortController for this request
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+    
     fetchInProgress.current = true;
     try {
       if (pageNum === 1) {
@@ -518,18 +598,55 @@ const MoviesPage = () => {
 
       // Check if we have filters applied (year or genre)
       if (selectedYear || selectedGenre) {
-        console.log('🎬 Fetching filtered movies:', { selectedYear, selectedGenre: selectedGenre?.name });
+        console.log('🎬 Fetching filtered movies:', { category, selectedYear, selectedGenre: selectedGenre?.name });
         
-        // Use discoverMovies for filtered results
+        // Use discoverMovies for filtered results with category-based sorting
         const discoverParams = {
           page: pageNum,
-          sort_by: 'popularity.desc',
           vote_count_gte: 10,
           include_adult: false
         };
 
+        // Apply category-specific sorting and date filters
+        switch (category) {
+          case 'popular':
+            discoverParams.sort_by = 'popularity.desc';
+            break;
+          case 'top_rated':
+            discoverParams.sort_by = 'vote_average.desc';
+            discoverParams.vote_count_gte = 50; // Higher threshold for top rated
+            break;
+          case 'upcoming':
+            discoverParams.sort_by = 'release_date.desc';
+            // Add upcoming movies date filter
+            const today = new Date();
+            const futureDate = new Date();
+            futureDate.setMonth(futureDate.getMonth() + 6);
+            discoverParams.primary_release_date_gte = today.toISOString().split('T')[0];
+            discoverParams.primary_release_date_lte = futureDate.toISOString().split('T')[0];
+            break;
+          case 'now_playing':
+            discoverParams.sort_by = 'popularity.desc';
+            // Add now playing date filter
+            const nowDate = new Date();
+            const pastDate = new Date();
+            pastDate.setMonth(pastDate.getMonth() - 2);
+            const nextDate = new Date();
+            nextDate.setMonth(nextDate.getMonth() + 1);
+            discoverParams.primary_release_date_gte = pastDate.toISOString().split('T')[0];
+            discoverParams.primary_release_date_lte = nextDate.toISOString().split('T')[0];
+            break;
+          default:
+            discoverParams.sort_by = 'popularity.desc';
+        }
+
+        // Apply user-selected filters
         if (selectedYear) {
+          // Override category date filters if user selected a specific year
           discoverParams.primary_release_year = selectedYear;
+          // Remove category-specific date filters if year is specified
+          delete discoverParams.primary_release_date_gte;
+          delete discoverParams.primary_release_date_lte;
         }
 
         if (selectedGenre && selectedGenre.id) {
@@ -537,7 +654,7 @@ const MoviesPage = () => {
         }
 
         console.log('🔍 Discover params:', discoverParams);
-        response = await discoverMovies(discoverParams);
+        response = await discoverMovies({ ...discoverParams, signal });
         results = response.movies || [];
         totalPages = response.totalPages || 1;
         
@@ -546,19 +663,19 @@ const MoviesPage = () => {
         // Use category-based service functions for unfiltered results
         switch (category) {
           case 'popular':
-            response = await getPopularMovies(pageNum);
+            response = await getPopularMovies(pageNum, { signal });
             break;
           case 'top_rated':
-            response = await getTopRatedMovies(pageNum);
+            response = await getTopRatedMovies(pageNum, { signal });
             break;
           case 'upcoming':
-            response = await getUpcomingMovies(pageNum);
+            response = await getUpcomingMovies(pageNum, { signal });
             break;
           case 'now_playing':
-            response = await getNowPlayingMovies(pageNum);
+            response = await getNowPlayingMovies(pageNum, { signal });
             break;
           default:
-            response = await getPopularMovies(pageNum);
+            response = await getPopularMovies(pageNum, { signal });
         }
         results = response.movies || response.results || [];
         totalPages = response.totalPages || response.total_pages || 1;
@@ -587,6 +704,10 @@ const MoviesPage = () => {
       setCurrentPage(pageNum);
       setLoadedSections(prev => ({ ...prev, [category]: true }));
     } catch (err) {
+      if (err.name === 'AbortError') {
+        console.log('Movie fetch was aborted');
+        return;
+      }
       setError('Failed to load movies: ' + (err.message || 'Unknown error'));
     } finally {
       if (pageNum === 1) {
@@ -595,12 +716,19 @@ const MoviesPage = () => {
         setIsLoadingNextPage(false);
       }
       fetchInProgress.current = false;
+      abortControllerRef.current = null;
     }
   }, [selectedYear, selectedGenre, activeCategory]);
   
   // Memory optimization: Clear fetchMovies callback on unmount
   useEffect(() => {
     return () => {
+      // Abort any ongoing API requests
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      
       // Reset fetch states on cleanup
       if (fetchInProgress.current) {
         fetchInProgress.current = false;
@@ -628,6 +756,7 @@ const MoviesPage = () => {
     setNextPageMovies([]);
     
     // Fetch movies for the new category immediately
+    // Note: fetchMovies will automatically respect selectedYear and selectedGenre filters
     fetchMovies(category, 1);
     
     // Clear transition state after animation completes
@@ -996,7 +1125,7 @@ const MoviesPage = () => {
     setPage(1);
   };
 
-  const performSearch = async (query, pageNum = 1) => {
+  const performSearch = useCallback(async (query, pageNum = 1) => {
     console.log('🎬 performSearch called with:', query, 'page:', pageNum);
     
     if (!query.trim()) {
@@ -1006,12 +1135,21 @@ const MoviesPage = () => {
       return;
     }
 
+    // Cancel previous search request if exists
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    
+    // Create new AbortController for this search
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+
     try {
       console.log('🔍 Starting search for:', query);
       setIsSearching(true);
       setError(null); // Clear any previous errors
       
-      const response = await searchMovies(query, pageNum);
+      const response = await searchMovies(query, pageNum, { signal });
       
       console.log('📊 Search response:', response);
       
@@ -1022,21 +1160,34 @@ const MoviesPage = () => {
         const newResults = (response.results || []).filter(newMovie => 
           !searchResults.some(existingMovie => existingMovie.id === newMovie.id)
         );
-        setSearchResults(prev => [...prev, ...newResults]);
+        setSearchResults(prev => {
+          const updatedResults = [...prev, ...newResults];
+          // Memory optimization: Limit search results to prevent memory leaks
+          const MAX_SEARCH_RESULTS = 200;
+          if (updatedResults.length > MAX_SEARCH_RESULTS) {
+            return updatedResults.slice(-MAX_SEARCH_RESULTS);
+          }
+          return updatedResults;
+        });
         console.log('✅ Added new results:', newResults.length, 'movies');
       }
 
       setHasMoreSearchResults(response.page < response.total_pages);
       console.log('📄 Has more results:', response.page < response.total_pages);
     } catch (err) {
+      if (err.name === 'AbortError') {
+        console.log('Search was aborted');
+        return;
+      }
       console.error('Error searching movies:', err);
       setError('Failed to search movies');
       setSearchResults([]);
       setHasMoreSearchResults(false);
     } finally {
       setIsSearching(false);
+      abortControllerRef.current = null;
     }
-  };
+  }, [searchResults]);
   
   // Memory optimization: Clear performSearch function on unmount
   useEffect(() => {
@@ -2236,4 +2387,4 @@ const MoviesPage = () => {
   );
 };
 
-export default MoviesPage;
+export default MoviesPage

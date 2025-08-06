@@ -14,14 +14,21 @@ const generateTokens = (user, res) => {
   const accessToken = signAccessToken({ id: user._id });
   const refreshToken = signRefreshToken({ id: user._id });
 
+  console.log('🔧 Generating tokens for user:', user._id);
+  console.log('🔧 NODE_ENV:', process.env.NODE_ENV);
+  console.log('🔧 Cookie secure setting:', process.env.NODE_ENV === 'production');
+  console.log('🔧 Cookie sameSite setting:', process.env.NODE_ENV === 'production' ? 'none' : 'lax');
+
   // Set refresh token in HTTP-only cookie
   res.cookie('refreshToken', refreshToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Changed from 'strict' to 'none' for cross-origin
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     path: '/'
   });
+
+  console.log('🍪 Refresh token cookie set successfully');
 
   return { accessToken, refreshToken };
 };
@@ -119,6 +126,15 @@ exports.login = async (req, res) => {
 
     console.log('Login successful for user:', user._id);
     const { accessToken, refreshToken } = generateTokens(user, res);
+    
+    console.log('🍪 Setting refresh token cookie...');
+    console.log('🔧 Cookie settings:', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: '/'
+    });
 
     res.json({
       success: true,
@@ -146,7 +162,7 @@ exports.logout = async (req, res) => {
   res.clearCookie('refreshToken', {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     path: '/'
   });
   
@@ -159,18 +175,25 @@ exports.logout = async (req, res) => {
 // Refresh Token
 exports.refreshToken = async (req, res) => {
   try {
+    console.log('🔄 Refresh token request received');
+    console.log('🍪 Cookies:', req.cookies);
+    console.log('📋 Headers:', req.headers);
+    
     // Try to get refresh token from cookie first
     let refreshToken = req.cookies.refreshToken;
+    console.log('🍪 Refresh token from cookie:', refreshToken ? 'Found' : 'Not found');
     
     // If not in cookie, try Authorization header
     if (!refreshToken) {
       const authHeader = req.headers.authorization;
       if (authHeader && authHeader.startsWith('Bearer ')) {
         refreshToken = authHeader.split(' ')[1];
+        console.log('🔑 Refresh token from Authorization header:', refreshToken ? 'Found' : 'Not found');
       }
     }
 
     if (!refreshToken) {
+      console.log('❌ No refresh token provided');
       return res.status(401).json({ 
         success: false,
         message: 'No refresh token provided' 

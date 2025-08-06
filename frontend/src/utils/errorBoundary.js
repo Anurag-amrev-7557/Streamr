@@ -66,7 +66,15 @@ const isExternalResourceError = (error) => {
                           errorMessage.includes('cors') ||
                           errorMessage.includes('cross-origin');
   
-  return isExternalDomain || isBlockedRequest;
+  // Check for Swiper touch event errors that occur during component lifecycle
+  const isSwiperTouchError = errorMessage.includes('cannot read properties of undefined') &&
+                           (errorMessage.includes('ontouchend') || 
+                            errorMessage.includes('ontouchmove') ||
+                            errorMessage.includes('ontouchstart') ||
+                            errorMessage.includes('swiper') ||
+                            errorUrl.includes('chunk-VJAKIW3L.js'));
+  
+  return isExternalDomain || isBlockedRequest || isSwiperTouchError;
 };
 
 // React Error Boundary Component

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { communityService } from '../../services/communityService';
+import communityService from '../../services/communityService';
 import { socketService } from '../../services/socketService';
 import { formatDistanceToNow, isValid } from 'date-fns';
 import { toast } from 'react-hot-toast';

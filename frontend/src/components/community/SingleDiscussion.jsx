@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { communityService } from '../../services/communityService';
+import communityService from '../../services/communityService';
 import { socketService } from '../../services/socketService';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'react-hot-toast';

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
-import { communityService } from '../services/communityService';
+import communityService from '../services/communityService';
 import DiscussionCard from './community/DiscussionCard';
 import CreateDiscussion from './community/CreateDiscussion';
 import DiscussionFilters from './community/DiscussionFilters';
