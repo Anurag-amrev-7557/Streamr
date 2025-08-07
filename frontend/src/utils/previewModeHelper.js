@@ -28,8 +28,8 @@ export const testNetworkConnectivity = async () => {
     // Try multiple endpoints to test connectivity
     const endpoints = [
       '/api/health',
-      'https://httpbin.org/get',
-      'https://httpbin.org/status/200'
+      'https://api.themoviedb.org/3/configuration',
+      'https://httpbin.org/get'
     ];
 
     for (const endpoint of endpoints) {

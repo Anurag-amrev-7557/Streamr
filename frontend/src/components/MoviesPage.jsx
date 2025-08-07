@@ -30,7 +30,6 @@ import { useWatchlist } from '../contexts/WatchlistContext';
 const EnhancedSearchBar = lazy(() => import('./EnhancedSearchBar'));
 import searchHistoryService from '../services/searchHistoryService';
 import { getPosterProps, getBackdropProps } from '../utils/imageUtils';
-import { formatRating } from '../utils/ratingUtils';
 
 const fadeInAnimation = {
   '@keyframes fadeIn': {
@@ -180,64 +179,30 @@ const MovieCard = ({ movie, index, onClick, onPrefetch }) => {
         })
       );
       
-      // Prefetch higher resolution poster image with cleanup
+      // Prefetch higher resolution poster image
       const posterPath = movie.poster_path || movie.poster;
       if (posterPath && !posterPath.startsWith('http')) {
         const highResUrl = `https://image.tmdb.org/t/p/w780${posterPath}`;
         prefetchPromises.push(
           new Promise((resolve) => {
             const img = new Image();
-            const cleanup = () => {
-              img.onload = null;
-              img.onerror = null;
-              img.src = '';
-            };
-            img.onload = () => {
-              cleanup();
-              resolve(highResUrl);
-            };
-            img.onerror = () => {
-              cleanup();
-              resolve(null);
-            };
+            img.onload = () => resolve(highResUrl);
+            img.onerror = () => resolve(null);
             img.src = highResUrl;
-            
-            // Add timeout to prevent hanging
-            setTimeout(() => {
-              cleanup();
-              resolve(null);
-            }, 5000);
           })
         );
       }
       
-      // Prefetch backdrop image with cleanup
+      // Prefetch backdrop image
       const backdropPath = movie.backdrop_path;
       if (backdropPath) {
         const backdropUrl = `https://image.tmdb.org/t/p/w1280${backdropPath}`;
         prefetchPromises.push(
           new Promise((resolve) => {
             const img = new Image();
-            const cleanup = () => {
-              img.onload = null;
-              img.onerror = null;
-              img.src = '';
-            };
-            img.onload = () => {
-              cleanup();
-              resolve(backdropUrl);
-            };
-            img.onerror = () => {
-              cleanup();
-              resolve(null);
-            };
+            img.onload = () => resolve(backdropUrl);
+            img.onerror = () => resolve(null);
             img.src = backdropUrl;
-            
-            // Add timeout to prevent hanging
-            setTimeout(() => {
-              cleanup();
-              resolve(null);
-            }, 5000);
           })
         );
       }
@@ -303,9 +268,7 @@ const MovieCard = ({ movie, index, onClick, onPrefetch }) => {
       }
       
       // Clear any pending image loads
-      if (imgRef.current) {
-        imgRef.current.onload = null;
-        imgRef.current.onerror = null;
+      if (imgRef.current && imgRef.current.src) {
         imgRef.current.src = '';
       }
     };
@@ -355,36 +318,6 @@ const MovieCard = ({ movie, index, onClick, onPrefetch }) => {
         layout
         className="aspect-[2/3] rounded-lg overflow-hidden bg-gray-800 relative w-full"
       >
-        {/* Enhanced Rating Badge - Responsive */}
-        {(() => {
-          const rating = movie.vote_average || movie.rating || 0;
-          return rating > 0 && (
-            <div 
-              className={`absolute top-1 left-1 sm:top-2 sm:left-2 z-10 backdrop-blur-sm rounded-md sm:rounded-lg px-1.5 py-0.5 sm:px-2 sm:py-1 text-xs sm:text-xs font-semibold shadow-md sm:shadow-lg border flex items-center gap-0.5 sm:gap-1 ${
-                rating >= 8 ? 'bg-black/80 text-white border-white/30' :
-                rating >= 7 ? 'bg-black/70 text-gray-100 border-white/25' :
-                rating >= 6 ? 'bg-black/60 text-gray-200 border-white/20' :
-                'bg-black/50 text-gray-300 border-white/15'
-              }`}
-            >
-              <svg 
-                xmlns="http://www.w3.org/2000/svg" 
-                className={`h-2.5 w-2.5 sm:h-3 sm:w-3 ${
-                  rating >= 8 ? 'text-white' :
-                  rating >= 7 ? 'text-gray-100' :
-                  rating >= 6 ? 'text-gray-200' :
-                  'text-gray-300'
-                }`}
-                viewBox="0 0 24 24" 
-                fill="currentColor"
-              >
-                <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
-              </svg>
-              <span className="drop-shadow-md text-xs sm:text-xs">{formatRating(rating)}</span>
-            </div>
-          );
-        })()}
-        
         <AnimatePresence>
           <motion.button
             onClick={handleBookmarkClick}
@@ -452,7 +385,7 @@ const MovieCard = ({ movie, index, onClick, onPrefetch }) => {
             </svg>
           `)}`}
           alt={movie.title}
-          className={`w-full h-full object-cover transition-transform duration-300 group-hover:scale-110 ${
+          className={`w-full h-full object-cover ${
             imageLoaded ? 'opacity-100' : 'opacity-0'
           }`}
           onLoad={handleImageLoad}
@@ -487,9 +420,6 @@ const MovieCard = ({ movie, index, onClick, onPrefetch }) => {
 };
 
 const MoviesPage = () => {
-  // FIXED: Add debug logging for component initialization
-  console.log('🎬 MoviesPage: Component mounted/rendered');
-  
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGenre, setSelectedGenre] = useState(null);
@@ -568,32 +498,12 @@ const MoviesPage = () => {
   const [isLoadingNextPage, setIsLoadingNextPage] = useState(false);
   const [nextPageMovies, setNextPageMovies] = useState([]);
 
-  // Add AbortController for API cleanup
-  const abortControllerRef = useRef(null);
-  
-  // FIXED: Add ref to track initial load
-  const hasLoadedInitial = useRef(false);
-  
-  // FIXED: Simplified fetchMovies function with better error handling and initialization
+  // Define fetchMovies function before useEffect hooks
   const fetchMovies = useCallback(async (category, pageNum = 1) => {
-    console.log('🎬 fetchMovies called:', { category, pageNum, fetchInProgress: fetchInProgress.current });
-    
     if (fetchInProgress.current) {
-      console.log('🎬 fetchMovies: Already in progress, skipping');
       return;
     }
-    
-    // Cancel previous request if exists
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    
-    // Create new AbortController for this request
-    abortControllerRef.current = new AbortController();
-    const signal = abortControllerRef.current.signal;
-    
     fetchInProgress.current = true;
-    
     try {
       if (pageNum === 1) {
         setLoading(true);
@@ -608,55 +518,18 @@ const MoviesPage = () => {
 
       // Check if we have filters applied (year or genre)
       if (selectedYear || selectedGenre) {
-        console.log('🎬 Fetching filtered movies:', { category, selectedYear, selectedGenre: selectedGenre?.name });
+        console.log('🎬 Fetching filtered movies:', { selectedYear, selectedGenre: selectedGenre?.name });
         
-        // Use discoverMovies for filtered results with category-based sorting
+        // Use discoverMovies for filtered results
         const discoverParams = {
           page: pageNum,
+          sort_by: 'popularity.desc',
           vote_count_gte: 10,
           include_adult: false
         };
 
-        // Apply category-specific sorting and date filters
-        switch (category) {
-          case 'popular':
-            discoverParams.sort_by = 'popularity.desc';
-            break;
-          case 'top_rated':
-            discoverParams.sort_by = 'vote_average.desc';
-            discoverParams.vote_count_gte = 50; // Higher threshold for top rated
-            break;
-          case 'upcoming':
-            discoverParams.sort_by = 'release_date.desc';
-            // Add upcoming movies date filter
-            const today = new Date();
-            const futureDate = new Date();
-            futureDate.setMonth(futureDate.getMonth() + 6);
-            discoverParams.primary_release_date_gte = today.toISOString().split('T')[0];
-            discoverParams.primary_release_date_lte = futureDate.toISOString().split('T')[0];
-            break;
-          case 'now_playing':
-            discoverParams.sort_by = 'popularity.desc';
-            // Add now playing date filter
-            const nowDate = new Date();
-            const pastDate = new Date();
-            pastDate.setMonth(pastDate.getMonth() - 2);
-            const nextDate = new Date();
-            nextDate.setMonth(nextDate.getMonth() + 1);
-            discoverParams.primary_release_date_gte = pastDate.toISOString().split('T')[0];
-            discoverParams.primary_release_date_lte = nextDate.toISOString().split('T')[0];
-            break;
-          default:
-            discoverParams.sort_by = 'popularity.desc';
-        }
-
-        // Apply user-selected filters
         if (selectedYear) {
-          // Override category date filters if user selected a specific year
           discoverParams.primary_release_year = selectedYear;
-          // Remove category-specific date filters if year is specified
-          delete discoverParams.primary_release_date_gte;
-          delete discoverParams.primary_release_date_lte;
         }
 
         if (selectedGenre && selectedGenre.id) {
@@ -664,7 +537,7 @@ const MoviesPage = () => {
         }
 
         console.log('🔍 Discover params:', discoverParams);
-        response = await discoverMovies({ ...discoverParams, signal });
+        response = await discoverMovies(discoverParams);
         results = response.movies || [];
         totalPages = response.totalPages || 1;
         
@@ -673,25 +546,23 @@ const MoviesPage = () => {
         // Use category-based service functions for unfiltered results
         switch (category) {
           case 'popular':
-            response = await getPopularMovies(pageNum, { signal });
+            response = await getPopularMovies(pageNum);
             break;
           case 'top_rated':
-            response = await getTopRatedMovies(pageNum, { signal });
+            response = await getTopRatedMovies(pageNum);
             break;
           case 'upcoming':
-            response = await getUpcomingMovies(pageNum, { signal });
+            response = await getUpcomingMovies(pageNum);
             break;
           case 'now_playing':
-            response = await getNowPlayingMovies(pageNum, { signal });
+            response = await getNowPlayingMovies(pageNum);
             break;
           default:
-            response = await getPopularMovies(pageNum, { signal });
+            response = await getPopularMovies(pageNum);
         }
         results = response.movies || response.results || [];
         totalPages = response.totalPages || response.total_pages || 1;
       }
-
-      console.log('🎬 fetchMovies: Setting movies:', { count: results.length, pageNum });
 
       if (pageNum === 1) {
         setMovies(results);
@@ -711,18 +582,11 @@ const MoviesPage = () => {
           return updatedMovies;
         });
       }
-      
       console.log('🎬 fetchMovies setting hasMore:', { pageNum, totalPages, hasMore: pageNum < totalPages });
       setHasMore(pageNum < totalPages);
       setCurrentPage(pageNum);
       setLoadedSections(prev => ({ ...prev, [category]: true }));
-      
     } catch (err) {
-      if (err.name === 'AbortError') {
-        console.log('Movie fetch was aborted');
-        return;
-      }
-      console.error('🎬 fetchMovies error:', err);
       setError('Failed to load movies: ' + (err.message || 'Unknown error'));
     } finally {
       if (pageNum === 1) {
@@ -731,55 +595,24 @@ const MoviesPage = () => {
         setIsLoadingNextPage(false);
       }
       fetchInProgress.current = false;
-      abortControllerRef.current = null;
     }
-  }, [selectedYear, selectedGenre]);
+  }, [selectedYear, selectedGenre, activeCategory]);
   
-  // FIXED: Enhanced initial load effect with proper dependencies
+  // Memory optimization: Clear fetchMovies callback on unmount
   useEffect(() => {
-    console.log('🎬 MoviesPage: Initial load effect triggered');
-    
-    if (!hasLoadedInitial.current && !searchQuery.trim()) {
-      console.log('🎬 MoviesPage: Fetching initial movies for category:', activeCategory);
-      hasLoadedInitial.current = true;
-      fetchMovies(activeCategory, 1);
-    }
-  }, [activeCategory, fetchMovies, searchQuery]); // Include proper dependencies
-
-  // FIXED: Separate effect for category changes
-  useEffect(() => {
-    if (!searchQuery.trim() && movies.length === 0) {
-      console.log('🎬 MoviesPage: Category changed, fetching movies for:', activeCategory);
-      fetchMovies(activeCategory, 1);
-    }
-  }, [activeCategory, fetchMovies, searchQuery, movies.length]);
-
-  // FIXED: Separate effect for filter changes
-  useEffect(() => {
-    // Only refetch if we're not in a search state
-    if (!searchQuery.trim()) {
-      console.log('🎬 MoviesPage: Filters changed, refetching movies');
-      setMovies([]);
-      setPage(1);
-      setHasMore(true);
-      setError(null);
-      setLoading(true);
+    return () => {
+      // Reset fetch states on cleanup
+      if (fetchInProgress.current) {
+        fetchInProgress.current = false;
+      }
+      setLoading(false);
       setIsLoadingNextPage(false);
-      setNextPageMovies([]);
-      
-      fetchMovies(activeCategory, 1);
-    }
-  }, [selectedYear, selectedGenre, fetchMovies, searchQuery]);
-  
-  // FIXED: Simplified category change handler
+    };
+  }, []);
+
   const handleCategoryChange = useCallback((category) => {
-    console.log('🎬 handleCategoryChange called:', category);
-    
     // Prevent multiple rapid clicks
-    if (activeCategory === category || isTransitioning) {
-      console.log('🎬 handleCategoryChange: Skipping - same category or transitioning');
-      return;
-    }
+    if (activeCategory === category || isTransitioning) return;
     
     // Set transition state for smooth animations
     setIsTransitioning(true);
@@ -802,25 +635,12 @@ const MoviesPage = () => {
       setIsTransitioning(false);
     }, 400);
   }, [activeCategory, isTransitioning, fetchMovies]);
-
-  // Memory optimization: Clear fetchMovies callback on unmount
+  
+  // Memory optimization: Clear handleCategoryChange callback on unmount
   useEffect(() => {
     return () => {
-      // Abort any ongoing API requests
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-        abortControllerRef.current = null;
-      }
-      
-      // Reset fetch states on cleanup
-      if (fetchInProgress.current) {
-        fetchInProgress.current = false;
-      }
-      setLoading(false);
-      setIsLoadingNextPage(false);
-      
-      // Reset initial load flag
-      hasLoadedInitial.current = false;
+      // Reset transition state on cleanup
+      setIsTransitioning(false);
     };
   }, []);
 
@@ -847,18 +667,14 @@ const MoviesPage = () => {
     };
   }, []);
 
-  // FIXED: Enhanced URL parameter handling with better initialization
+  // Add URL parameter handling
   useEffect(() => {
-    console.log('🎬 MoviesPage: URL parameter handling effect triggered');
     const searchParams = new URLSearchParams(window.location.search);
     const category = searchParams.get('category');
     const genreParam = searchParams.get('genre');
     const yearParam = searchParams.get('year');
     
-    console.log('🎬 MoviesPage: URL params:', { category, genreParam, yearParam });
-    
-    if (category && category !== activeCategory) {
-      console.log('🎬 MoviesPage: Setting category from URL:', category);
+    if (category) {
       handleCategoryChange(category);
     }
 
@@ -889,8 +705,7 @@ const MoviesPage = () => {
       const genreId = genreIdMap[genreParam.toLowerCase()];
       if (genreId) {
         const genreObj = genres.find(g => g.id === genreId);
-        if (genreObj && (!selectedGenre || selectedGenre.id !== genreObj.id)) {
-          console.log('🎬 MoviesPage: Setting genre from URL:', genreObj.name);
+        if (genreObj) {
           setSelectedGenre(genreObj);
         }
       }
@@ -898,8 +713,7 @@ const MoviesPage = () => {
 
     if (yearParam) {
       const year = parseInt(yearParam);
-      if (year && year >= 1900 && year <= new Date().getFullYear() && year !== selectedYear) {
-        console.log('🎬 MoviesPage: Setting year from URL:', year);
+      if (year && year >= 1900 && year <= new Date().getFullYear()) {
         setSelectedYear(year);
       }
     }
@@ -908,111 +722,7 @@ const MoviesPage = () => {
       // Cleanup function for URL parameter handling
       // No specific cleanup needed as this effect only reads URL parameters
     };
-  }, [window.location.search, genres, activeCategory, selectedGenre, selectedYear, handleCategoryChange]);
-
-  // FIXED: Mobile-specific navigation fix - ensure content loads when navigating via bottom nav
-  useEffect(() => {
-    console.log('🎬 MoviesPage: Mobile navigation check effect triggered');
-    
-    // Check if we're on mobile and the component just mounted
-    const isMobile = window.innerWidth <= 768;
-    
-    if (isMobile && !hasLoadedInitial.current && movies.length === 0 && !loading) {
-      console.log('🎬 MoviesPage: Mobile detected, forcing initial load');
-      hasLoadedInitial.current = true;
-      fetchMovies(activeCategory, 1);
-    }
-    
-    // FIXED: Add timeout-based fallback for mobile devices
-    if (isMobile && movies.length === 0 && !loading) {
-      const timeoutId = setTimeout(() => {
-        if (movies.length === 0 && !loading && !hasLoadedInitial.current) {
-          console.log('🎬 MoviesPage: Mobile timeout fallback - forcing load');
-          hasLoadedInitial.current = true;
-          fetchMovies(activeCategory, 1);
-        }
-      }, 1000); // 1 second timeout
-      
-      return () => clearTimeout(timeoutId);
-    }
-  }, [movies.length, loading, activeCategory, fetchMovies]);
-
-  // FIXED: Add visibility-based loading for mobile devices
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (!document.hidden && window.innerWidth <= 768) {
-        console.log('🎬 MoviesPage: Page became visible on mobile');
-        if (movies.length === 0 && !loading && !hasLoadedInitial.current) {
-          console.log('🎬 MoviesPage: Visibility change triggered load');
-          hasLoadedInitial.current = true;
-          fetchMovies(activeCategory, 1);
-        }
-      }
-    };
-
-    const handleFocus = () => {
-      if (window.innerWidth <= 768) {
-        console.log('🎬 MoviesPage: Window focused on mobile');
-        if (movies.length === 0 && !loading && !hasLoadedInitial.current) {
-          console.log('🎬 MoviesPage: Focus change triggered load');
-          hasLoadedInitial.current = true;
-          fetchMovies(activeCategory, 1);
-        }
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleFocus);
-    
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleFocus);
-    };
-  }, [movies.length, loading, activeCategory, fetchMovies]);
-
-  // FIXED: Immediate check for mobile navigation
-  useEffect(() => {
-    console.log('🎬 MoviesPage: Immediate mount check');
-    const isMobile = window.innerWidth <= 768;
-    
-    if (isMobile && movies.length === 0 && !loading) {
-      console.log('🎬 MoviesPage: Immediate mobile load triggered');
-      hasLoadedInitial.current = true;
-      fetchMovies(activeCategory, 1);
-    }
-  }, []); // Run only once on mount
-  
-  // FIXED: Comprehensive mobile navigation fix
-  useEffect(() => {
-    const isMobile = window.innerWidth <= 768;
-    
-    if (isMobile) {
-      console.log('🎬 MoviesPage: Mobile navigation fix triggered');
-      
-      // Multiple fallback mechanisms for mobile
-      const checkAndLoad = () => {
-        if (movies.length === 0 && !loading && !hasLoadedInitial.current) {
-          console.log('🎬 MoviesPage: Mobile fallback load triggered');
-          hasLoadedInitial.current = true;
-          fetchMovies(activeCategory, 1);
-        }
-      };
-      
-      // Immediate check
-      checkAndLoad();
-      
-      // Delayed check after a short timeout
-      const timeoutId = setTimeout(checkAndLoad, 500);
-      
-      // Another check after a longer timeout
-      const longTimeoutId = setTimeout(checkAndLoad, 2000);
-      
-      return () => {
-        clearTimeout(timeoutId);
-        clearTimeout(longTimeoutId);
-      };
-    }
-  }, [movies.length, loading, activeCategory, fetchMovies]);
+  }, [window.location.search, genres]);
 
   useEffect(() => {
     return () => {
@@ -1204,20 +914,18 @@ const MoviesPage = () => {
     };
   }, []);
 
-  // FIXED: Enhanced genres fetching with better error handling
+  // Fetch genres on component mount
   useEffect(() => {
     let isMounted = true;
     
     const fetchGenres = async () => {
       try {
-        console.log('🎬 MoviesPage: Fetching genres');
         const response = await getGenres();
         if (isMounted) {
           setGenres(response.genres || []);
-          console.log('🎬 MoviesPage: Genres loaded:', response.genres?.length || 0);
         }
       } catch (error) {
-        console.error('🎬 MoviesPage: Error fetching genres:', error);
+        console.error('Error fetching genres:', error);
       }
     };
     
@@ -1288,7 +996,7 @@ const MoviesPage = () => {
     setPage(1);
   };
 
-  const performSearch = useCallback(async (query, pageNum = 1) => {
+  const performSearch = async (query, pageNum = 1) => {
     console.log('🎬 performSearch called with:', query, 'page:', pageNum);
     
     if (!query.trim()) {
@@ -1298,21 +1006,12 @@ const MoviesPage = () => {
       return;
     }
 
-    // Cancel previous search request if exists
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    
-    // Create new AbortController for this search
-    abortControllerRef.current = new AbortController();
-    const signal = abortControllerRef.current.signal;
-
     try {
       console.log('🔍 Starting search for:', query);
       setIsSearching(true);
       setError(null); // Clear any previous errors
       
-      const response = await searchMovies(query, pageNum, { signal });
+      const response = await searchMovies(query, pageNum);
       
       console.log('📊 Search response:', response);
       
@@ -1323,34 +1022,21 @@ const MoviesPage = () => {
         const newResults = (response.results || []).filter(newMovie => 
           !searchResults.some(existingMovie => existingMovie.id === newMovie.id)
         );
-        setSearchResults(prev => {
-          const updatedResults = [...prev, ...newResults];
-          // Memory optimization: Limit search results to prevent memory leaks
-          const MAX_SEARCH_RESULTS = 200;
-          if (updatedResults.length > MAX_SEARCH_RESULTS) {
-            return updatedResults.slice(-MAX_SEARCH_RESULTS);
-          }
-          return updatedResults;
-        });
+        setSearchResults(prev => [...prev, ...newResults]);
         console.log('✅ Added new results:', newResults.length, 'movies');
       }
 
       setHasMoreSearchResults(response.page < response.total_pages);
       console.log('📄 Has more results:', response.page < response.total_pages);
     } catch (err) {
-      if (err.name === 'AbortError') {
-        console.log('Search was aborted');
-        return;
-      }
       console.error('Error searching movies:', err);
       setError('Failed to search movies');
       setSearchResults([]);
       setHasMoreSearchResults(false);
     } finally {
       setIsSearching(false);
-      abortControllerRef.current = null;
     }
-  }, [searchResults]);
+  };
   
   // Memory optimization: Clear performSearch function on unmount
   useEffect(() => {
@@ -1647,7 +1333,41 @@ const MoviesPage = () => {
     };
   }, [movies]);
 
-  // FIXED: Removed conflicting useEffect hooks that were causing initialization issues
+  // Add effect to refetch movies when filters change
+  useEffect(() => {
+    // Only refetch if we're not in a search state
+    if (!searchQuery.trim()) {
+      setMovies([]);
+      setPage(1);
+      setHasMore(true);
+      setError(null);
+      setLoading(true);
+      setIsLoadingNextPage(false);
+      setNextPageMovies([]);
+      
+      fetchMovies(activeCategory, 1);
+    }
+    
+    return () => {
+      // Cleanup on filter change
+      setNextPageMovies([]);
+      setIsLoadingNextPage(false);
+    };
+  }, [selectedYear, selectedGenre, activeCategory, searchQuery, fetchMovies]);
+
+  // Initial load effect
+  useEffect(() => {
+    if (!searchQuery.trim() && movies.length === 0) {
+      fetchMovies(activeCategory, 1);
+    }
+    
+    return () => {
+      // Cleanup on initial load effect unmount
+      if (fetchInProgress.current) {
+        fetchInProgress.current = false;
+      }
+    };
+  }, [fetchMovies, activeCategory, searchQuery, movies.length]);
 
   // Update the loadMoreMovies function with memory optimization
   const loadMoreMovies = useCallback(async () => {
@@ -2229,7 +1949,7 @@ const MoviesPage = () => {
                 </svg>
               </button>
               {yearDropdownOpen && (
-                <div className="absolute z-50 mt-2 w-48 bg-[#1a1a1a] rounded-lg shadow-lg py-1">
+                <div className="absolute z-10 mt-2 w-48 bg-[#1a1a1a] rounded-lg shadow-lg py-1">
                   <button
                     onClick={() => handleYearSelect(null)}
                     className="w-full px-4 py-2 text-left text-sm text-gray-400 hover:text-white hover:bg-[#2b3036]"
@@ -2279,7 +1999,7 @@ const MoviesPage = () => {
                 </svg>
               </button>
               {genreDropdownOpen && (
-                <div className="absolute z-50 mt-2 w-48 bg-[#1a1a1a] rounded-lg shadow-lg py-1 max-h-60 overflow-y-auto">
+                <div className="absolute z-10 mt-2 w-48 bg-[#1a1a1a] rounded-lg shadow-lg py-1 max-h-60 overflow-y-auto">
                   <button
                     onClick={() => handleGenreSelect(null)}
                     className="w-full px-4 py-2 text-left text-sm text-gray-400 hover:text-white hover:bg-[#2b3036]"
@@ -2368,7 +2088,7 @@ const MoviesPage = () => {
             >
               {error}
             </motion.div>
-          ) : (loading && movies.length === 0) ? (
+          ) : (loading && movies.length === 0) || (loading && !isLoadingMore) ? (
             <motion.div 
               initial="hidden"
               animate="visible"
@@ -2378,7 +2098,7 @@ const MoviesPage = () => {
             >
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
             </motion.div>
-          ) : (
+                      ) : (
               <motion.div
                 key={`movies-grid-${activeCategory}-${selectedGenre?.id || 'all'}-${selectedYear || 'all'}`}
                 variants={gridVariants}
@@ -2392,31 +2112,20 @@ const MoviesPage = () => {
                 }}
                 className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 3xl:grid-cols-10 gap-4"
               >
-                {displayMovies.length > 0 ? (
-                  displayMovies.map((movie, index) => {
-                    if (!movie || !movie.id) {
-                      return null;
-                    }
-                    return (
-                      <MovieCard
-                        key={`movie-${movie.id}`}
-                        movie={movie}
-                        index={index}
-                        onClick={handleMovieClick}
-                        onPrefetch={queuePrefetch}
-                      />
-                    );
-                  })
-                ) : (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="col-span-full text-center py-12 text-gray-400"
-                  >
-                    <div className="text-lg font-medium mb-2">No movies found</div>
-                    <div className="text-sm">Try adjusting your filters or search terms</div>
-                  </motion.div>
-                )}
+                {displayMovies.map((movie, index) => {
+                  if (!movie || !movie.id) {
+                    return null;
+                  }
+                  return (
+                    <MovieCard
+                      key={`movie-${movie.id}`}
+                      movie={movie}
+                      index={index}
+                      onClick={handleMovieClick}
+                      onPrefetch={queuePrefetch}
+                    />
+                  );
+                })}
                 {/* Show loading placeholders for next page */}
                 {isLoadingNextPage && (
                   <>
@@ -2527,4 +2236,4 @@ const MoviesPage = () => {
   );
 };
 
-export default MoviesPage
+export default MoviesPage;

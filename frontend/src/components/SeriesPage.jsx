@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   getPopularTVShows, 
@@ -58,10 +58,9 @@ const cardVariants = {
   }
 };
 
-const SeriesCard = React.memo(({ series, onSeriesClick, onShowEpisodes }) => {
+const SeriesCard = ({ series, onSeriesClick, onShowEpisodes }) => {
   const { watchlist, addToWatchlist, removeFromWatchlist } = useWatchlist();
   const [loadedImages, setLoadedImages] = useState({});
-  const imgRef = useRef(null);
   
   // Validate the series object
   if (!series || typeof series !== 'object') {
@@ -71,40 +70,28 @@ const SeriesCard = React.memo(({ series, onSeriesClick, onShowEpisodes }) => {
   
   const isBookmarked = watchlist.some(item => item.id === series.id);
 
-  const handleBookmarkClick = useCallback((e) => {
+  const handleBookmarkClick = (e) => {
     e.stopPropagation();
     if (isBookmarked) {
       removeFromWatchlist(series.id);
     } else {
       addToWatchlist({ ...series, title: series.name || series.title, type: 'tv' });
     }
-  }, [isBookmarked, removeFromWatchlist, addToWatchlist, series]);
+  };
 
-  const handleEpisodesClick = useCallback((e) => {
+  const handleEpisodesClick = (e) => {
     e.stopPropagation();
     onShowEpisodes?.(series);
-  }, [onShowEpisodes, series]);
+  };
 
-  const handleImageLoad = useCallback((id) => {
+  const handleImageLoad = (id) => {
     setLoadedImages(prev => ({ ...prev, [id]: true }));
-  }, []);
+  };
 
-  // Cleanup image loading on unmount
-  useEffect(() => {
-    return () => {
-      if (imgRef.current) {
-        imgRef.current.onload = null;
-        imgRef.current.onerror = null;
-        imgRef.current.src = '';
-        imgRef.current = null;
-      }
-    };
-  }, []);
-
-  const getImageUrl = useCallback((path) => {
+  const getImageUrl = (path) => {
     if (!path) return `https://via.placeholder.com/500x750.png/1a1d24/ffffff?text=${encodeURIComponent(series.name || series.title || 'Unknown')}`;
     return `https://image.tmdb.org/t/p/w500${path}`;
-  }, [series.name, series.title]);
+  };
 
   const seriesName = series.name || series.title || 'Unknown Title';
   const seriesYear = series.first_air_date ? new Date(series.first_air_date).getFullYear() : 
@@ -113,54 +100,10 @@ const SeriesCard = React.memo(({ series, onSeriesClick, onShowEpisodes }) => {
 
   return (
     <motion.div
-      variants={cardVariants}
-      initial="hidden"
-      animate="visible"
-      className="group cursor-pointer transform relative"
+      className="group cursor-pointer transform transition-all duration-300 hover:scale-105"
       onClick={() => onSeriesClick(series)}
-      whileHover={{ 
-        scale: 1.03,
-        transition: {
-          type: "spring",
-          stiffness: 400,
-          damping: 25
-        }
-      }}
-      transition={{
-        type: "spring",
-        stiffness: 300,
-        damping: 30,
-        mass: 0.8
-      }}
     >
       <div className="group aspect-[2/3] rounded-lg overflow-hidden bg-gray-800 relative">
-        {/* Enhanced Rating Badge - Responsive */}
-        {seriesRating && seriesRating > 0 && (
-          <div 
-            className={`absolute top-1 left-1 sm:top-2 sm:left-2 z-10 backdrop-blur-sm rounded-md sm:rounded-lg px-1.5 py-0.5 sm:px-2 sm:py-1 text-xs sm:text-xs font-semibold shadow-md sm:shadow-lg border flex items-center gap-0.5 sm:gap-1 ${
-              seriesRating >= 8 ? 'bg-black/80 text-white border-white/30' :
-              seriesRating >= 7 ? 'bg-black/70 text-gray-100 border-white/25' :
-              seriesRating >= 6 ? 'bg-black/60 text-gray-200 border-white/20' :
-              'bg-black/50 text-gray-300 border-white/15'
-            }`}
-          >
-            <svg 
-              xmlns="http://www.w3.org/2000/svg" 
-              className={`h-2.5 w-2.5 sm:h-3 sm:w-3 ${
-                seriesRating >= 8 ? 'text-white' :
-                seriesRating >= 7 ? 'text-gray-100' :
-                seriesRating >= 6 ? 'text-gray-200' :
-                'text-gray-300'
-              }`}
-              viewBox="0 0 24 24" 
-              fill="currentColor"
-            >
-              <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
-            </svg>
-            <span className="drop-shadow-md text-xs sm:text-xs">{formatRating(seriesRating)}</span>
-          </div>
-        )}
-        
         <AnimatePresence>
           <motion.button
             onClick={handleBookmarkClick}
@@ -208,14 +151,12 @@ const SeriesCard = React.memo(({ series, onSeriesClick, onShowEpisodes }) => {
         {series.poster_path ? (
           <>
             <img
-              ref={imgRef}
               src={getImageUrl(series.poster_path)}
               alt={seriesName}
               className={`w-full h-full object-cover transition-transform duration-300 group-hover:scale-110 ${
                 loadedImages[series.id] ? 'opacity-100' : 'opacity-0'
               }`}
               onLoad={() => handleImageLoad(series.id)}
-              onError={() => handleImageLoad(series.id)}
             />
             {!loadedImages[series.id] && (
               <div className="absolute inset-0 flex items-center justify-center">
@@ -245,7 +186,7 @@ const SeriesCard = React.memo(({ series, onSeriesClick, onShowEpisodes }) => {
       </div>
     </motion.div>
   );
-});
+};
 
 const SeriesPage = () => {
   const navigate = useNavigate();
@@ -300,52 +241,12 @@ const SeriesPage = () => {
 
   const yearOptions = Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i);
 
-  // Add comprehensive cleanup on component unmount
-  useEffect(() => {
-    return () => {
-      // Clear all state to prevent memory leaks
-      setSeries([]);
-      setSearchResults([]);
-      setLoadedImages({});
-      setSearchHistoryItems([]);
-      setTrendingSearches([]);
-      
-      // Clear selected states
-      setSelectedSeries(null);
-      setSelectedSeriesForEpisodes(null);
-      
-      // Reset loading states
-      setLoading(false);
-      setIsLoadingMore(false);
-      setIsSearching(false);
-      setEpisodeListLoading(false);
-      
-      // Close any open modals
-      setShowEpisodeList(false);
-      
-      // Clear filters
-      setSearchQuery('');
-      setSelectedGenre(null);
-      setSelectedYear(null);
-      
-      // Force garbage collection if available
-      if (window.gc && typeof window.gc === 'function') {
-        try {
-          window.gc();
-        } catch (e) {
-          // Silently fail if gc is not available
-        }
-      }
-    };
-  }, []);
-
   useEffect(() => {
     fetchGenres();
     fetchInitialSeries();
     return () => {
       if (observerRef.current) {
         observerRef.current.disconnect();
-        observerRef.current = null;
       }
     };
   }, []);
@@ -367,14 +268,7 @@ const SeriesPage = () => {
       loadSearchData();
     });
 
-    return () => {
-      if (unsubscribe && typeof unsubscribe === 'function') {
-        unsubscribe();
-      }
-      // Clear search data on cleanup
-      setSearchHistoryItems([]);
-      setTrendingSearches([]);
-    };
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
@@ -1124,8 +1018,8 @@ const SeriesPage = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
-                              {showYearDropdown && (
-                  <div className="absolute z-50 mt-2 w-48 rounded-lg bg-[#1a1a1a] shadow-lg max-h-[60vh] overflow-y-auto">
+              {showYearDropdown && (
+                <div className="absolute z-10 mt-2 w-48 rounded-lg bg-[#1a1a1a] shadow-lg max-h-[60vh] overflow-y-auto">
                   <div className="py-1">
                     <button
                       onClick={() => {
@@ -1177,8 +1071,8 @@ const SeriesPage = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
-                              {showGenreDropdown && (
-                  <div className="absolute z-50 mt-2 w-48 rounded-lg bg-[#1a1a1a] shadow-lg max-h-[60vh] overflow-y-auto">
+              {showGenreDropdown && (
+                <div className="absolute z-10 mt-2 w-48 rounded-lg bg-[#1a1a1a] shadow-lg max-h-[60vh] overflow-y-auto">
                   <div className="py-1">
                     <button
                       onClick={() => {
@@ -1346,18 +1240,20 @@ const SeriesPage = () => {
           <div ref={loadMoreRef} className="h-10" />
         )}
 
-        <AnimatePresence mode="wait">
-          {selectedSeries && (
-            <Suspense fallback={null}>
-              <MovieDetailsOverlay
-                movie={selectedSeries}
-                onClose={handleCloseOverlay}
-                onMovieSelect={handleSimilarSeriesClick}
-                onGenreClick={handleGenreNavigation}
-              />
-            </Suspense>
-          )}
-        </AnimatePresence>
+        {selectedSeries && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <div className="relative w-full max-w-7xl max-h-[90vh] bg-[#141414] rounded-xl overflow-hidden">
+              <Suspense fallback={null}>
+                <MovieDetailsOverlay
+                  movie={selectedSeries}
+                  onClose={handleCloseOverlay}
+                  onMovieSelect={handleSimilarSeriesClick}
+                  onGenreClick={handleGenreNavigation}
+                />
+              </Suspense>
+            </div>
+          </div>
+        )}
 
         {/* Enhanced Episode List Modal */}
         {showEpisodeList && selectedSeriesForEpisodes && (

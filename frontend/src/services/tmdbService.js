@@ -254,8 +254,8 @@ export const checkNetworkConnectivity = async () => {
       
       // Use navigator.onLine as a fallback
       if (navigator.onLine) {
-        // Try a simple fetch to a reliable endpoint with API key
-        const response = await fetch(`https://api.themoviedb.org/3/configuration?api_key=${TMDB_API_KEY}`, {
+        // Try a simple fetch to a reliable endpoint
+        const response = await fetch('https://api.themoviedb.org/3/configuration', {
           method: 'HEAD',
           signal: controller.signal,
           cache: 'no-cache'
@@ -378,20 +378,7 @@ const queueRequest = async (request, priority = false, metadata = {}, options = 
         });
       }
       
-      // Create a more informative error with better stack trace
-      const enhancedError = new Error(classifiedError.userMessage);
-      enhancedError.originalError = error;
-      enhancedError.errorType = classifiedError.type;
-      enhancedError.severity = classifiedError.severity;
-      enhancedError.retryable = classifiedError.retryable;
-      enhancedError.attempts = attempt;
-      
-      // Add stack trace information
-      if (error.stack) {
-        enhancedError.stack = `${enhancedError.message}\nOriginal error: ${error.message}\n${error.stack}`;
-      }
-      
-      throw enhancedError;
+      throw new Error(classifiedError.userMessage);
     }
   };
   
@@ -5397,137 +5384,5 @@ export const getNonExistentMovieCacheStats = () => {
     entries: Array.from(nonExistentMovieCache),
     knownNonExistent: KNOWN_NON_EXISTENT_MOVIES
   };
-};
-
-// Get Top 10 Movies Today (trending daily + popular filter)
-export const getTop10MoviesToday = async (page = 1) => {
-  const MAX_RETRIES = 3;
-  const INITIAL_RETRY_DELAY = 1000;
-
-  const fetchWithRetry = async (url, attempt = 1) => {
-    try {
-      const response = await sharedFetchWithRetry(url, attempt);
-      return await response.json();
-    } catch (error) {
-      if (attempt < MAX_RETRIES) {
-        const delay = INITIAL_RETRY_DELAY * Math.pow(2, attempt - 1);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        return fetchWithRetry(url, attempt + 1);
-      }
-      throw error;
-    }
-  };
-
-  try {
-    // Get daily trending movies (more current than weekly)
-    const trendingData = await fetchWithRetry(
-      `${TMDB_BASE_URL}/trending/movie/day?api_key=${TMDB_API_KEY}&page=${page}`
-    );
-    
-    if (!trendingData || !trendingData.results) {
-      throw new Error('Invalid API response structure for top 10 movies today');
-    }
-
-    // Get only movies (filter out TV shows) and take top 10
-    const topMovies = trendingData.results
-      .filter(movie => movie && movie.id && movie.title && movie.vote_average > 6.0) // Filter for quality
-      .slice(0, 10) // Take only top 10
-      .map(transformMovieData)
-      .filter(Boolean);
-
-    return {
-      movies: topMovies,
-      totalPages: 1, // Always 1 page for top 10
-      currentPage: 1,
-      totalResults: topMovies.length,
-      hasMore: false,
-      metadata: {
-        category: 'Top 10 Movies Today',
-        fetchedAt: new Date().toISOString(),
-        filterCriteria: {
-          trending: 'daily',
-          mediaType: 'movie',
-          minRating: 6.0,
-          limit: 10
-        }
-      }
-    };
-  } catch (error) {
-    console.error('Error fetching top 10 movies today:', error);
-    return {
-      movies: [],
-      totalPages: 1,
-      currentPage: 1,
-      totalResults: 0,
-      hasMore: false,
-      error: error.message
-    };
-  }
-};
-
-// Get Top 10 TV Series Today (trending daily + popular filter)
-export const getTop10SeriesToday = async (page = 1) => {
-  const MAX_RETRIES = 3;
-  const INITIAL_RETRY_DELAY = 1000;
-
-  const fetchWithRetry = async (url, attempt = 1) => {
-    try {
-      const response = await sharedFetchWithRetry(url, attempt);
-      return await response.json();
-    } catch (error) {
-      if (attempt < MAX_RETRIES) {
-        const delay = INITIAL_RETRY_DELAY * Math.pow(2, attempt - 1);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        return fetchWithRetry(url, attempt + 1);
-      }
-      throw error;
-    }
-  };
-
-  try {
-    // Get daily trending TV shows
-    const trendingData = await fetchWithRetry(
-      `${TMDB_BASE_URL}/trending/tv/day?api_key=${TMDB_API_KEY}&page=${page}`
-    );
-    
-    if (!trendingData || !trendingData.results) {
-      throw new Error('Invalid API response structure for top 10 series today');
-    }
-
-    // Get only TV shows and take top 10
-    const topSeries = trendingData.results
-      .filter(show => show && show.id && show.name && show.vote_average > 6.0) // Filter for quality
-      .slice(0, 10) // Take only top 10
-      .map(transformTVData)
-      .filter(Boolean);
-
-    return {
-      movies: topSeries, // Using 'movies' for consistency with other functions
-      totalPages: 1, // Always 1 page for top 10
-      currentPage: 1,
-      totalResults: topSeries.length,
-      hasMore: false,
-      metadata: {
-        category: 'Top 10 Series Today',
-        fetchedAt: new Date().toISOString(),
-        filterCriteria: {
-          trending: 'daily',
-          mediaType: 'tv',
-          minRating: 6.0,
-          limit: 10
-        }
-      }
-    };
-  } catch (error) {
-    console.error('Error fetching top 10 series today:', error);
-    return {
-      movies: [],
-      totalPages: 1,
-      currentPage: 1,
-      totalResults: 0,
-      hasMore: false,
-      error: error.message
-    };
-  }
 };
 

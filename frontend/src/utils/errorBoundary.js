@@ -14,18 +14,6 @@ export const setupGlobalErrorHandling = () => {
       return;
     }
     
-    // Check if it's a tmdbService error
-    if (isTmdbServiceError(reason)) {
-      console.warn('TMDB Service error caught:', {
-        message: reason.message,
-        errorType: reason.errorType,
-        severity: reason.severity,
-        stack: reason.stack
-      });
-      event.preventDefault();
-      return;
-    }
-    
     // Log other errors but don't crash the app
     console.warn('Unhandled promise rejection:', reason);
     event.preventDefault();
@@ -38,18 +26,6 @@ export const setupGlobalErrorHandling = () => {
     // Check if it's an external resource error
     if (isExternalResourceError(error)) {
       console.debug('Ignoring external resource error:', error);
-      event.preventDefault();
-      return;
-    }
-    
-    // Check if it's a tmdbService error
-    if (isTmdbServiceError(error)) {
-      console.warn('TMDB Service error caught:', {
-        message: error.message,
-        errorType: error.errorType,
-        severity: error.severity,
-        stack: error.stack
-      });
       event.preventDefault();
       return;
     }
@@ -90,30 +66,7 @@ const isExternalResourceError = (error) => {
                           errorMessage.includes('cors') ||
                           errorMessage.includes('cross-origin');
   
-  // Check for Swiper touch event errors that occur during component lifecycle
-  const isSwiperTouchError = errorMessage.includes('cannot read properties of undefined') &&
-                           (errorMessage.includes('ontouchend') || 
-                            errorMessage.includes('ontouchmove') ||
-                            errorMessage.includes('ontouchstart') ||
-                            errorMessage.includes('swiper') ||
-                            errorUrl.includes('chunk-VJAKIW3L.js'));
-  
-  return isExternalDomain || isBlockedRequest || isSwiperTouchError;
-};
-
-// Check if an error is from tmdbService
-const isTmdbServiceError = (error) => {
-  if (!error) return false;
-  
-  // Check for tmdbService specific error properties
-  return error.errorType && 
-         (error.severity === 'high' || error.severity === 'medium' || error.severity === 'low') &&
-         (error.message.includes('An unexpected error occurred') ||
-          error.message.includes('Request failed') ||
-          error.message.includes('Connection was reset') ||
-          error.message.includes('Request timed out') ||
-          error.message.includes('Rate limit exceeded') ||
-          error.message.includes('Server error'));
+  return isExternalDomain || isBlockedRequest;
 };
 
 // React Error Boundary Component
@@ -200,35 +153,6 @@ export const withErrorHandling = (asyncFn) => {
         console.debug('Ignoring external resource error in wrapped function:', error);
         return null;
       }
-      throw error;
-    }
-  };
-};
-
-// Utility for wrapping tmdbService calls with enhanced error handling
-export const withTmdbErrorHandling = (tmdbFunction) => {
-  return async (...args) => {
-    try {
-      return await tmdbFunction(...args);
-    } catch (error) {
-      // Check if it's a tmdbService error
-      if (isTmdbServiceError(error)) {
-        console.warn('TMDB Service error in wrapped function:', {
-          function: tmdbFunction.name,
-          message: error.message,
-          errorType: error.errorType,
-          severity: error.severity
-        });
-        
-        // Return a fallback response instead of throwing
-        return {
-          movies: [],
-          totalPages: 1,
-          error: error.message
-        };
-      }
-      
-      // Re-throw non-tmdbService errors
       throw error;
     }
   };

@@ -97,33 +97,15 @@ class PerformanceMonitor {
     
     this.metrics.memoryUsage.push(memory);
     
-    // Keep only last 50 entries to reduce memory footprint
-    if (this.metrics.memoryUsage.length > 50) {
-      this.metrics.memoryUsage = this.metrics.memoryUsage.slice(-50);
+    // Keep only last 100 entries
+    if (this.metrics.memoryUsage.length > 100) {
+      this.metrics.memoryUsage = this.metrics.memoryUsage.slice(-100);
     }
     
-    // Warn if memory usage is high (increased threshold to reduce noise)
-    if (memory.used > 800) {
+    // Warn if memory usage is high
+    if (memory.used > 500) {
       console.warn(`⚠️ High memory usage: ${memory.used}MB / ${memory.limit}MB`);
     }
-    
-    // Log memory usage for debugging (only in development and less frequently)
-    if (process.env.NODE_ENV === 'development' && Math.random() < 0.1) {
-      console.log(`performanceMonitor.js:${this.getLineNumber()} Memory usage: ${memory.used}MB / ${memory.limit}MB`);
-    }
-  }
-  
-  // Helper method to get current line number for debugging
-  getLineNumber() {
-    const stack = new Error().stack;
-    const lines = stack.split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i].includes('performanceMonitor.js')) {
-        const match = lines[i].match(/:(\d+):/);
-        return match ? match[1] : 'unknown';
-      }
-    }
-    return 'unknown';
   }
 
   // Get performance summary

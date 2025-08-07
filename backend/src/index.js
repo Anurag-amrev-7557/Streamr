@@ -7,13 +7,11 @@ const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const cookieParser = require('cookie-parser');
 const session = require('express-session');
-const MongoStore = require('connect-mongo');
 const passport = require('./config/passport');
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/user');
 const tmdbRoutes = require('./routes/tmdb');
 const communityRoutes = require('./routes/community');
-const sessionRoutes = require('./routes/session');
 const { createServer } = require('http');
 const socketIo = require('socket.io');
 const { authenticate } = require('./middleware/auth');
@@ -52,7 +50,6 @@ const communityNamespace = io.of('/community');
 // Middleware
 const allowedOrigins = [
   'https://streamr-see.web.app', // Always allow deployed frontend
-  'https://streamr-jjj9.onrender.com', // Allow backend domain for same-origin requests
   'http://localhost:5173',
   'http://localhost:3000',
   'http://127.0.0.1:5173',
@@ -76,40 +73,17 @@ app.use(cors({
   exposedHeaders: ['Set-Cookie']
 }));
 
-// Session middleware with MongoDB store
-const sessionMiddleware = session({
+// Session middleware
+app.use(session({
   secret: process.env.SESSION_SECRET || 'your-secret-key',
   resave: false,
   saveUninitialized: false,
-  store: MongoStore.create({
-    mongoUrl: process.env.MONGO_URI,
-    collectionName: 'sessions',
-    ttl: 24 * 60 * 60, // 24 hours in seconds
-    autoRemove: 'native', // Use MongoDB's TTL index
-    touchAfter: 24 * 3600, // Only update session once per day
-    crypto: {
-      secret: process.env.SESSION_SECRET || 'your-secret-key'
-    }
-  }),
   cookie: {
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     maxAge: 24 * 60 * 60 * 1000 // 24 hours
-  },
-  name: 'streamr.sid' // Custom session name for security
-});
-
-// Apply session middleware with error handling
-app.use((req, res, next) => {
-  sessionMiddleware(req, res, (err) => {
-    if (err) {
-      logger.error('Session error:', err);
-      return res.status(500).json({ error: 'Session error occurred' });
-    }
-    next();
-  });
-});
+  }
+}));
 
 // Configure Helmet with more permissive settings for development
 app.use(helmet({
@@ -170,33 +144,6 @@ app.use(compression());
 // Health check route
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
-});
-
-// Test cookie route
-app.get('/api/test-cookie', (req, res) => {
-  console.log('🍪 Test cookie route - cookies received:', req.cookies);
-  res.cookie('testCookie', 'testValue', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-    maxAge: 60 * 1000, // 1 minute
-    path: '/'
-  });
-  res.json({ 
-    success: true, 
-    message: 'Test cookie set',
-    cookies: req.cookies,
-    env: process.env.NODE_ENV
-  });
-});
-
-app.get('/api/test-cookie-read', (req, res) => {
-  console.log('🍪 Test cookie read - cookies received:', req.cookies);
-  res.json({ 
-    success: true, 
-    cookies: req.cookies,
-    testCookie: req.cookies.testCookie
-  });
 });
 
 // Initialize Passport
@@ -261,7 +208,6 @@ app.use('/api/auth', authRoutes);
 app.use('/api/user', authenticate, userRoutes);
 app.use('/api/tmdb', tmdbRoutes);
 app.use('/api/community', communityRoutes);
-app.use('/api/session', sessionRoutes);
 
 // Health check endpoints
 app.get('/', (req, res) => {

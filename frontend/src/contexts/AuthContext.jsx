@@ -1,26 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { getApiUrl, switchBackendMode, getCurrentBackendMode } from '../config/api';
 
-// Helper function to diagnose authentication issues
-const diagnoseAuthIssue = () => {
-  const hasAccessToken = !!localStorage.getItem('accessToken');
-  const hasRefreshToken = !!localStorage.getItem('refreshToken');
-  const currentApiUrl = getApiUrl();
-  
-  console.log('🔍 Authentication Diagnosis:');
-  console.log('  - Access Token in localStorage:', hasAccessToken);
-  console.log('  - Refresh Token in localStorage:', hasRefreshToken);
-  console.log('  - Current API URL:', currentApiUrl);
-  console.log('  - Document cookies:', document.cookie);
-  
-  return {
-    hasAccessToken,
-    hasRefreshToken,
-    currentApiUrl,
-    cookieCount: document.cookie.split(';').length
-  };
-};
-
 // Authentication API functions
 const authAPI = {
   refreshToken: async () => {
@@ -311,69 +291,15 @@ export const AuthProvider = ({ children }) => {
     try {
       console.log('🔄 Attempting to refresh token...');
       console.log('🌐 Using API URL:', getApiUrl());
-      
-      // Run diagnostics
-      diagnoseAuthIssue();
-      
-      let response;
-      let lastError;
-      
-      // Try cookie-based refresh first (preferred method)
-      try {
-        console.log('🔄 Trying cookie-based refresh...');
-        response = await authAPI.refreshToken();
-        if (response.ok) {
-          console.log('✅ Cookie-based refresh successful');
-        } else {
-          throw new Error(`Cookie refresh failed: ${response.status}`);
-        }
-      } catch (cookieError) {
-        console.log('❌ Cookie-based refresh failed:', cookieError.message);
-        lastError = cookieError;
-        
-        // Fallback to localStorage token if available
-        const storedRefreshToken = localStorage.getItem('refreshToken');
-        if (storedRefreshToken) {
-          console.log('🔄 Trying localStorage refresh token as fallback...');
-          try {
-            response = await fetch(`${getApiUrl()}/auth/refresh-token`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${storedRefreshToken}`
-              },
-              credentials: 'include',
-            });
-            if (response.ok) {
-              console.log('✅ localStorage token refresh successful');
-            } else {
-              throw new Error(`localStorage refresh failed: ${response.status}`);
-            }
-          } catch (localStorageError) {
-            console.log('❌ localStorage refresh also failed:', localStorageError.message);
-            // Clear invalid token
-            localStorage.removeItem('refreshToken');
-            throw localStorageError;
-          }
-        } else {
-          console.log('❌ No localStorage refresh token available');
-          throw cookieError;
-        }
-      }
+      const response = await authAPI.refreshToken();
       
       console.log('🔄 Refresh response:', response);
       
-      if (!response.ok) {
+      if (!response.success) {
         throw new Error('Token refresh failed');
       }
       
-      const responseData = await response.json();
-      
-      if (!responseData.success) {
-        throw new Error('Token refresh failed');
-      }
-      
-      const { accessToken, refreshToken: newRefreshToken } = responseData.data || responseData;
+      const { accessToken } = response.data || response;
       
       if (!accessToken) {
         console.error('❌ No access token received from refresh');
@@ -381,12 +307,6 @@ export const AuthProvider = ({ children }) => {
       }
 
       localStorage.setItem('accessToken', accessToken);
-      
-      // Store the new refresh token if provided
-      if (newRefreshToken) {
-        localStorage.setItem('refreshToken', newRefreshToken);
-      }
-      
       console.log('✅ New access token stored');
       
       // Get fresh user data
@@ -406,23 +326,9 @@ export const AuthProvider = ({ children }) => {
       return true;
     } catch (err) {
       console.error('❌ Token refresh failed:', err);
-      
-      // Check if this is a 401 error (token expired/invalid)
-      if (err.message.includes('401') || err.message.includes('unauthorized')) {
-        console.log('🔓 Session expired - user needs to log in again');
-      }
-      
-      // Clear all authentication data
       localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
-      
       if (isMountedRef.current) {
         setUser(null);
-        setSessionWarning(false);
-        
-        // Optional: Show a user-friendly message about session expiry
-        // You can expand this to show a toast notification if needed
-        console.log('🔄 Authentication session expired. Please log in again.');
       }
       return false;
     }
@@ -572,18 +478,12 @@ export const AuthProvider = ({ children }) => {
       }
       
       // Set user data and token
-      const { user, accessToken, refreshToken } = response.data;
+      const { user, accessToken } = response.data;
       if (!accessToken) {
         throw new Error('No access token received from login');
       }
       
       localStorage.setItem('accessToken', accessToken);
-      
-      // Store refresh token as fallback if provided
-      if (refreshToken) {
-        localStorage.setItem('refreshToken', refreshToken);
-      }
-      
       setUser(user);
       setLastActivity(Date.now());
       setSessionWarning(false);
@@ -642,7 +542,6 @@ export const AuthProvider = ({ children }) => {
       setUser(null);
       setRememberMe(false);
       localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
       console.log('Logout successful');
     }
   }, []);

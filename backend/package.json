@@ -14,7 +14,6 @@
     "bcryptjs": "^2.4.3",
     "bullmq": "^5.56.0",
     "compression": "^1.8.0",
-    "connect-mongo": "^5.1.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.0.3",

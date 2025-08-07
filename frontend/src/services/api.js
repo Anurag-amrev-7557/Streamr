@@ -85,33 +85,17 @@ export const fetchWithRetry = async (requestFn, retryConfig = {}) => {
       
       console.warn(`Request failed (attempt ${attempt}/${config.maxRetries}):`, error.message);
       
-      // Check if this is a rate limit error (429)
-      const isRateLimitError = error.response?.status === 429 || 
-                              error.message?.includes('Too many requests') ||
-                              error.message?.includes('rate limit');
-      
       if (attempt === config.maxRetries) {
         break;
       }
       
       // Calculate delay with exponential backoff
-      let delay;
-      if (isRateLimitError) {
-        // For rate limit errors, use longer delays and exponential backoff
-        delay = Math.min(
-          config.baseDelay * Math.pow(3, attempt - 1), // Use 3x multiplier for rate limits
-          config.maxDelay * 2 // Allow longer max delay for rate limits
-        );
-        console.log(`Rate limit hit, retrying in ${delay}ms... (attempt ${attempt})`);
-      } else {
-        // For other errors, use standard exponential backoff
-        delay = Math.min(
-          config.baseDelay * Math.pow(2, attempt - 1),
-          config.maxDelay
-        );
-        console.log(`Retrying in ${delay}ms... (attempt ${attempt})`);
-      }
+      const delay = Math.min(
+        config.baseDelay * Math.pow(2, attempt - 1),
+        config.maxDelay
+      );
       
+      console.log(`Retrying in ${delay}ms...`);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }

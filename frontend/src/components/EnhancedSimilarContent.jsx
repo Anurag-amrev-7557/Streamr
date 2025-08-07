@@ -4,23 +4,16 @@ import { similarContentUtils } from '../services/enhancedSimilarContentService';
 import { formatRating } from '../utils/ratingUtils';
 import memoryOptimizationService from '../utils/memoryOptimizationService';
 
-// FIXED: Memory leak detection utility with proper cleanup
+// FIXED: Memory leak detection utility
 const memoryLeakDetector = {
   snapshots: new Map(),
-  maxSnapshots: 5, // Reduced from 10 to minimize memory usage
-  cleanupScheduled: false,
+  maxSnapshots: 10,
   
   takeSnapshot(componentName, data) {
-    // Avoid taking snapshots if memory is already high
-    if (this.snapshots.size > 50) {
-      this.scheduleCleanup();
-      return;
-    }
-    
     const snapshot = {
       timestamp: Date.now(),
       memoryUsage: performance.memory ? performance.memory.usedJSHeapSize / 1024 / 1024 : 0,
-      dataSize: data ? (typeof data === 'string' ? data.length : JSON.stringify(data).length) : 0,
+      dataSize: JSON.stringify(data).length,
       itemCount: Array.isArray(data) ? data.length : 0
     };
     
@@ -31,53 +24,22 @@ const memoryLeakDetector = {
     const componentSnapshots = this.snapshots.get(componentName);
     componentSnapshots.push(snapshot);
     
-    // Keep only recent snapshots with more aggressive cleanup
+    // Keep only recent snapshots
     if (componentSnapshots.length > this.maxSnapshots) {
-      // Remove older snapshots more aggressively
-      componentSnapshots.splice(0, componentSnapshots.length - this.maxSnapshots);
+      componentSnapshots.shift();
     }
     
-    // Check for memory leaks with tighter thresholds
+    // Check for memory leaks
     if (componentSnapshots.length >= 3) {
       const recent = componentSnapshots.slice(-3);
       const memoryIncrease = recent[recent.length - 1].memoryUsage - recent[0].memoryUsage;
       const dataIncrease = recent[recent.length - 1].dataSize - recent[0].dataSize;
       
-      if (memoryIncrease > 50 || dataIncrease > 5000) { // Reduced thresholds
+      if (memoryIncrease > 100 || dataIncrease > 10000) {
         console.warn(`[MemoryLeakDetector] Potential memory leak detected in ${componentName}:`, {
           memoryIncrease: `${memoryIncrease.toFixed(2)}MB`,
-          dataIncrease: `${dataIncrease} bytes`,
-          snapshotCount: componentSnapshots.length
+          dataIncrease: `${dataIncrease} bytes`
         });
-        
-        // Auto-cleanup on detected leak
-        this.scheduleCleanup();
-      }
-    }
-  },
-  
-  scheduleCleanup() {
-    if (this.cleanupScheduled) return;
-    
-    this.cleanupScheduled = true;
-    requestIdleCallback(() => {
-      this.performCleanup();
-      this.cleanupScheduled = false;
-    }, { timeout: 2000 });
-  },
-  
-  performCleanup() {
-    const now = Date.now();
-    const maxAge = 300000; // 5 minutes
-    
-    for (const [componentName, snapshots] of this.snapshots.entries()) {
-      // Remove old snapshots
-      const filtered = snapshots.filter(snapshot => now - snapshot.timestamp < maxAge);
-      
-      if (filtered.length === 0) {
-        this.snapshots.delete(componentName);
-      } else {
-        this.snapshots.set(componentName, filtered);
       }
     }
   },
@@ -91,90 +53,57 @@ const memoryLeakDetector = {
   }
 };
 
-// FIXED: Memory optimization utility using centralized memory manager with proper initialization
+// FIXED: Memory optimization utility using centralized memory manager
 const memoryOptimizer = {
-  // FIXED: Properly initialized WeakMap for better memory management
+  // FIXED: Use WeakMap for better memory management
   cachedData: new WeakMap(),
-  lastCleanup: 0,
-  cleanupThreshold: 300000, // 5 minutes
   
   cleanup: () => {
-    const now = Date.now();
-    
-    // Throttle cleanup operations
-    if (now - memoryOptimizer.lastCleanup < 30000) { // Minimum 30 seconds between cleanups
-      return;
+    // Clear any cached data
+    if (similarContentUtils.clearCache) {
+      similarContentUtils.clearCache();
     }
     
-    memoryOptimizer.lastCleanup = now;
+    // FIXED: Clear all similar content cache
+    if (similarContentUtils.clearAllSimilarContentCache) {
+      similarContentUtils.clearAllSimilarContentCache();
+    }
     
-    try {
-      // Clear any cached data
-      if (similarContentUtils.clearCache) {
-        similarContentUtils.clearCache();
-      }
-      
-      // FIXED: Clear all similar content cache
-      if (similarContentUtils.clearAllSimilarContentCache) {
-        similarContentUtils.clearAllSimilarContentCache();
-      }
-      
-      // FIXED: Properly clear WeakMap cache by creating new instance
-      memoryOptimizer.cachedData = new WeakMap();
-      
-      // Get memory stats from centralized manager
-      const stats = memoryOptimizationService.getStats();
-      if (stats && stats.current > 800) {
-        console.warn(`[MemoryOptimizer] Memory usage high: ${stats.current.toFixed(2)}MB, performing cleanup`);
-        
-        // Schedule memory leak detector cleanup
-        memoryLeakDetector.scheduleCleanup();
-      }
-    } catch (error) {
-      console.error('[MemoryOptimizer] Cleanup error:', error);
+    // FIXED: Clear WeakMap cache
+    memoryOptimizer.cachedData = new WeakMap();
+    
+    // Get memory stats from centralized manager
+    const stats = memoryOptimizationService.getStats();
+    if (stats && stats.current > 800) {
+      console.warn(`[MemoryOptimizer] Memory usage high: ${stats.current.toFixed(2)}MB, performing cleanup`);
     }
   },
   
   monitor: () => {
-    try {
-      // Delegate to centralized memory manager
-      const stats = memoryOptimizationService.getStats();
-      if (stats && stats.current > 1000) {
-        console.warn(`[MemoryOptimizer] Critical memory usage: ${stats.current.toFixed(2)}MB`);
-        memoryOptimizer.cleanup();
-      }
-    } catch (error) {
-      console.error('[MemoryOptimizer] Monitor error:', error);
+    // Delegate to centralized memory manager
+    const stats = memoryOptimizationService.getStats();
+    if (stats && stats.current > 1000) {
+      console.warn(`[MemoryOptimizer] Critical memory usage: ${stats.current.toFixed(2)}MB`);
+      memoryOptimizer.cleanup();
     }
   },
   
-  // FIXED: Enhanced cleanup for component unmount with error handling
+  // FIXED: Enhanced cleanup for component unmount
   componentCleanup: () => {
-    try {
-      // Clear all caches
-      if (similarContentUtils.clearAllSimilarContentCache) {
-        similarContentUtils.clearAllSimilarContentCache();
-      }
-      
-      // FIXED: Properly clear WeakMap to prevent circular references
-      memoryOptimizer.cachedData = new WeakMap();
-      
-      // FIXED: Clear memory leak detection
-      memoryLeakDetector.clearSnapshots();
-      
-      // Schedule final cleanup
-      memoryLeakDetector.performCleanup();
-      
-      // Force garbage collection hint
-      if (window.gc && typeof window.gc === 'function') {
-        try {
-          window.gc();
-        } catch (gcError) {
-          // GC not available, ignore
-        }
-      }
-    } catch (error) {
-      console.error('[MemoryOptimizer] Component cleanup error:', error);
+    // Clear all caches
+    if (similarContentUtils.clearAllSimilarContentCache) {
+      similarContentUtils.clearAllSimilarContentCache();
+    }
+    
+    // FIXED: Clear WeakMap to prevent circular references
+    memoryOptimizer.cachedData = new WeakMap();
+    
+    // FIXED: Clear memory leak detection
+    memoryLeakDetector.clearSnapshots();
+    
+    // Force garbage collection hint
+    if (window.gc) {
+      window.gc();
     }
   }
 };
@@ -207,24 +136,17 @@ const CustomDropdown = React.memo(({
   }, []);
 
   useEffect(() => {
-    // Only add listener if dropdown is open and component is mounted
-    if (isOpen && isMountedRef.current) {
-      document.addEventListener('mousedown', handleClickOutside, { passive: true });
-      
+    // Only add listener if dropdown is open
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
       return () => {
-        // FIXED: Always remove listener on cleanup, regardless of mount status
-        document.removeEventListener('mousedown', handleClickOutside, { passive: true });
+        // FIXED: Only remove listener if component is still mounted
+        if (isMountedRef.current) {
+          document.removeEventListener('mousedown', handleClickOutside);
+        }
       };
     }
   }, [isOpen, handleClickOutside]);
-
-  // FIXED: Additional cleanup on unmount to ensure no lingering listeners
-  useEffect(() => {
-    return () => {
-      // Force remove any potential lingering event listeners
-      document.removeEventListener('mousedown', handleClickOutside, { passive: true });
-    };
-  }, [handleClickOutside]);
 
   const selectedOption = options.find(option => option.value === value) || options[0];
 
@@ -836,58 +758,35 @@ const EnhancedSimilarContent = React.memo(({
         
         if (append) {
           setSimilarContent(prev => {
-            // FIXED: Enhanced duplicate handling with performance optimizations
-            if (!prev || prev.length === 0) {
-              return results.slice(0, maxItems);
-            }
+            // Enhanced duplicate handling with smart strategy
+            const combined = [...prev, ...results];
             
-            // FIXED: Use Set for faster duplicate detection
-            const existingIds = new Set(prev.map(item => item.id));
-            const newItems = results.filter(item => !existingIds.has(item.id));
-            
-            // FIXED: Optimize array concatenation
-            const combined = [...prev, ...newItems];
-            
-            // FIXED: Use the service's enhanced duplicate removal only if needed
-            const uniqueItems = combined.length > maxItems || similarContentUtils.removeDuplicates ? 
-              (similarContentUtils.removeDuplicates ? 
-                similarContentUtils.removeDuplicates(combined, {
-                  strategy: 'smart',
-                  keepBestScore: true,
-                  preserveOrder: false
-                }) : 
-                // FIXED: More efficient fallback duplicate removal
-                Array.from(new Map(combined.map(item => [item.id, item])).values())
-              ) : 
-              combined;
-            
-            // FIXED: Memory-aware slicing with dynamic limits
-            const memoryStats = memoryOptimizationService.getStats();
-            const adjustedMaxItems = memoryStats && memoryStats.current > 800 ? 
-              Math.floor(maxItems * 0.7) : maxItems;
-            
-            return uniqueItems.slice(0, adjustedMaxItems);
-          });
-        } else {
-          // FIXED: For initial load, optimized duplicate removal
-          const processedResults = results && results.length > 0 ? 
-            (similarContentUtils.removeDuplicates ? 
-              similarContentUtils.removeDuplicates(results, {
+            // Use the service's enhanced duplicate removal
+            const uniqueItems = similarContentUtils.removeDuplicates ? 
+              similarContentUtils.removeDuplicates(combined, {
                 strategy: 'smart',
                 keepBestScore: true,
                 preserveOrder: false
               }) : 
-              // FIXED: Efficient initial duplicate removal using Map
-              Array.from(new Map(results.map(item => [item.id, item])).values())
-            ) : 
+              // Fallback to basic duplicate removal
+              combined.filter((item, index, self) => 
+                index === self.findIndex(t => t.id === item.id)
+              );
+            
+            // Limit total items to prevent memory issues
+            return uniqueItems.slice(0, maxItems);
+          });
+        } else {
+          // For initial load, also apply duplicate removal
+          const uniqueResults = similarContentUtils.removeDuplicates ? 
+            similarContentUtils.removeDuplicates(results, {
+              strategy: 'smart',
+              keepBestScore: true,
+              preserveOrder: false
+            }) : 
             results;
           
-          // FIXED: Memory-aware initial content setting
-          const memoryStats = memoryOptimizationService.getStats();
-          const adjustedMaxItems = memoryStats && memoryStats.current > 800 ? 
-            Math.floor(maxItems * 0.7) : maxItems;
-          
-          setSimilarContent(processedResults.slice(0, adjustedMaxItems));
+          setSimilarContent(uniqueResults.slice(0, maxItems));
         }
         
         setHasMore(results.length >= 10); // FIXED: Reduced threshold for better performance
@@ -914,34 +813,20 @@ const EnhancedSimilarContent = React.memo(({
     }
   }, [contentId, contentType, maxItems]);
 
-  // FIXED: Optimized filter and sort content with performance improvements
+  // Filter and sort content - FIXED: Optimized with useMemo
   const filteredContent = useMemo(() => {
-    // FIXED: Early return for empty data to avoid unnecessary processing
-    if (!similarContent || similarContent.length === 0) {
-      return [];
-    }
-
-    // FIXED: Use more efficient filtering with combined conditions
-    const filtered = similarContent.filter(item => {
-      // FIXED: Cache expensive computations
-      const score = item.similarityScore || 0;
-      const minRel = filters.minRelevance || 0;
-      
-      // Relevance filter - early exit for performance
-      if (minRel > 0 && score < minRel) {
+    let filtered = similarContent.filter(item => {
+      // Relevance filter
+      if (filters.minRelevance && (!item.similarityScore || item.similarityScore < filters.minRelevance)) {
         return false;
       }
       
-      // Year filter - optimized date parsing
+      // Year filter
       if (filters.year > 0) {
-        // FIXED: Cache year extraction to avoid repeated date parsing
-        if (!item._cachedYear) {
-          item._cachedYear = item.year || 
-            (item.release_date ? parseInt(item.release_date.substring(0, 4)) : 
-             item.first_air_date ? parseInt(item.first_air_date.substring(0, 4)) : 0);
-        }
-        
-        if (item._cachedYear !== filters.year) {
+        const itemYear = item.year || 
+          (item.release_date ? new Date(item.release_date).getFullYear() : 
+           item.first_air_date ? new Date(item.first_air_date).getFullYear() : 0);
+        if (itemYear !== filters.year) {
           return false;
         }
       }
@@ -949,72 +834,43 @@ const EnhancedSimilarContent = React.memo(({
       return true;
     });
 
-    // FIXED: Optimized sorting with pre-computed sort keys
-    const sortBy = filters.sortBy || 'relevance';
-    
-    // FIXED: Use more efficient sorting algorithms
-    switch (sortBy) {
+    // Sort content
+    switch (filters.sortBy) {
       case 'rating':
-        return filtered.sort((a, b) => (b.vote_average || 0) - (a.vote_average || 0));
-      
+        filtered.sort((a, b) => (b.vote_average || 0) - (a.vote_average || 0));
+        break;
       case 'year':
-        return filtered.sort((a, b) => {
-          // FIXED: Use cached year values
-          const yearA = a._cachedYear || a.year || 
-            (a.release_date ? parseInt(a.release_date.substring(0, 4)) : 
-             a.first_air_date ? parseInt(a.first_air_date.substring(0, 4)) : 0);
-          const yearB = b._cachedYear || b.year || 
-            (b.release_date ? parseInt(b.release_date.substring(0, 4)) : 
-             b.first_air_date ? parseInt(b.first_air_date.substring(0, 4)) : 0);
-          
-          // Cache for future use
-          a._cachedYear = yearA;
-          b._cachedYear = yearB;
-          
+        filtered.sort((a, b) => {
+          const yearA = a.year || new Date(a.release_date || a.first_air_date).getFullYear();
+          const yearB = b.year || new Date(b.release_date || b.first_air_date).getFullYear();
           return yearB - yearA;
         });
-      
+        break;
       case 'popularity':
-        return filtered.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
-      
+        filtered.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+        break;
       case 'title':
-        return filtered.sort((a, b) => {
-          // FIXED: Cache lowercased titles for performance
-          if (!a._cachedTitle) {
-            a._cachedTitle = (a.title || a.name || '').toLowerCase();
-          }
-          if (!b._cachedTitle) {
-            b._cachedTitle = (b.title || b.name || '').toLowerCase();
-          }
-          return a._cachedTitle.localeCompare(b._cachedTitle, 'en', { numeric: true });
+        filtered.sort((a, b) => {
+          const titleA = (a.title || a.name || '').toLowerCase();
+          const titleB = (b.title || b.name || '').toLowerCase();
+          return titleA.localeCompare(titleB);
         });
-      
+        break;
       case 'relevance':
       default:
-        return filtered.sort((a, b) => (b.similarityScore || 0) - (a.similarityScore || 0));
+        filtered.sort((a, b) => (b.similarityScore || 0) - (a.similarityScore || 0));
+        break;
     }
+
+    return filtered;
   }, [similarContent, filters]);
 
-  // FIXED: Get content to display with enhanced memory and performance optimizations
+  // Get content to display (first N items) - FIXED: Optimized with useMemo and memory limits
   const displayedContent = useMemo(() => {
-    // FIXED: Early return for empty filtered content
-    if (!filteredContent || filteredContent.length === 0) {
-      return [];
-    }
-    
-    // FIXED: Dynamic limit based on device capabilities and memory usage
-    const baseLimit = isMobile ? 12 : 24;
-    const memoryStats = memoryOptimizationService.getStats();
-    const memoryAdjustment = memoryStats && memoryStats.current > 800 ? 0.7 : 1;
-    const dynamicLimit = Math.floor(baseLimit * memoryAdjustment);
-    
-    // FIXED: Strict limit to prevent memory issues
-    const maxDisplayItems = Math.min(displayedItems, dynamicLimit, 32); // Absolute max 32 items
-    
-    // FIXED: Use more efficient slicing with bounds checking
-    const endIndex = Math.min(maxDisplayItems, filteredContent.length);
-    return filteredContent.slice(0, endIndex);
-  }, [filteredContent, displayedItems, isMobile]);
+    // FIXED: Limit the maximum number of items to prevent memory issues
+    const maxDisplayItems = Math.min(displayedItems, 24); // Hard limit of 24 items
+    return filteredContent.slice(0, maxDisplayItems);
+  }, [filteredContent, displayedItems]);
 
   // Handle filter changes - FIXED: Optimized with useCallback
   const handleFilterChange = useCallback((filterName, value) => {
@@ -1581,78 +1437,48 @@ const EnhancedSimilarContent = React.memo(({
         initial="initial"
         animate="animate"
       >
-        {/* FIXED: Enhanced AnimatePresence with proper cleanup and memory optimizations */}
-        <AnimatePresence 
-          mode="sync"
-          onExitComplete={() => {
-            // FIXED: Cleanup completed animations to prevent memory leaks
-            if (isMountedRef.current && intersectionObserverRef.current) {
-              intersectionObserverRef.current.disconnect();
-              intersectionObserverRef.current = null;
-            }
-            
-            // FIXED: Force garbage collection hint after animation cleanup
-            if (window.gc && typeof window.gc === 'function') {
-              try {
-                requestIdleCallback(() => window.gc(), { timeout: 1000 });
-              } catch (error) {
-                // GC not available, ignore
-              }
-            }
-          }}
-        >
-          {displayedContent.map((item, index) => {
-            // FIXED: Optimize animation delay calculation
-            const animationDelay = Math.min(index * 0.03, 0.3); // Reduced from 0.05 to 0.03, max 0.3s
-            
-            return (
-              <motion.div
-                key={`${item.id}-${contentId}`} // FIXED: More stable key using contentId
-                variants={itemVariants}
-                transition={{ 
-                  duration: 0.25, // Reduced from 0.3 to 0.25 for faster animations
-                  delay: animationDelay,
-                  type: "spring",
-                  stiffness: 400, // Increased for faster spring
-                  damping: 35
-                }}
-                layoutId={`similar-card-${item.id}`} // FIXED: Add layoutId for better animation performance
-                // FIXED: Optimized intersection observer for lazy loading with cleanup
-                whileInView={{ 
-                  opacity: 1, 
-                  scale: 1,
-                  transition: { duration: 0.15 } // Reduced from 0.2 to 0.15
-                }}
-                viewport={{ once: true, margin: "30px", amount: 0.1 }} // Reduced margin for earlier loading
-                onAnimationStart={() => {
-                  // FIXED: Track animation start for memory monitoring
-                  if (isMountedRef.current && index < 5) { // Only monitor first 5 items
-                    memoryOptimizer.monitor();
-                  }
-                }}
-                onAnimationComplete={() => {
-                  // FIXED: Cleanup animation references to prevent memory leaks
-                  if (!isMountedRef.current) {
-                    return;
-                  }
-                  
-                  // FIXED: Memory cleanup for large datasets
-                  if (index % 10 === 0 && index > 0) { // Every 10th item
-                    requestIdleCallback(() => {
-                      memoryOptimizer.monitor();
-                    }, { timeout: 500 });
-                  }
-                }}
-              >
-                <EnhancedSimilarCard
-                  item={item}
-                  onClick={handleItemClick}
-                  isMobile={isMobile}
-                  showRelevanceScore={filters.showRelevanceScore}
-                />
-              </motion.div>
-            );
-          })}
+        {/* FIXED: Enhanced AnimatePresence with proper cleanup - removed mode="wait" for multiple children */}
+        <AnimatePresence onExitComplete={() => {
+          // FIXED: Cleanup completed animations to prevent memory leaks
+          if (intersectionObserverRef.current) {
+            intersectionObserverRef.current.disconnect();
+            intersectionObserverRef.current = null;
+          }
+        }}>
+          {displayedContent.map((item, index) => (
+            <motion.div
+              key={`${item.id}-${index}`}
+              variants={itemVariants}
+              transition={{ 
+                duration: 0.3, 
+                delay: Math.min(index * 0.05, 0.5), // Cap delay to prevent long animations
+                type: "spring",
+                stiffness: 300,
+                damping: 30
+              }}
+              layout
+              // FIXED: Enhanced intersection observer for lazy loading with cleanup
+              whileInView={{ 
+                opacity: 1, 
+                scale: 1,
+                transition: { duration: 0.2 }
+              }}
+              viewport={{ once: true, margin: "50px" }}
+              onAnimationComplete={() => {
+                // FIXED: Cleanup animation references to prevent memory leaks
+                if (!isMountedRef.current) {
+                  return;
+                }
+              }}
+            >
+              <EnhancedSimilarCard
+                item={item}
+                onClick={handleItemClick}
+                isMobile={isMobile}
+                showRelevanceScore={filters.showRelevanceScore}
+              />
+            </motion.div>
+          ))}
         </AnimatePresence>
       </motion.div>
 
