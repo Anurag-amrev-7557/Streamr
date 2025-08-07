@@ -1,88 +1,109 @@
 // MovieDetailsOverlay Memory Optimizer
-// Specialized memory management for MovieDetailsOverlay component
+// Specialized memory management for the MovieDetailsOverlay component
 
 class MovieDetailsMemoryOptimizer {
   constructor() {
-    this.isMonitoring = false;
-    this.intervalId = null;
-    this.memoryHistory = [];
-    this.maxHistorySize = 20;
-    this.threshold = 400; // MB - Lower threshold for MovieDetailsOverlay
-    this.criticalThreshold = 600; // MB
+    this.isActive = false;
     this.cleanupCallbacks = new Set();
-    this.lastCleanup = 0;
-    this.cleanupCooldown = 20000; // 20 seconds - More frequent cleanup
-    this.cacheSize = 0;
-    this.maxCacheSize = 15; // Reduced cache size
+    this.memoryCheckInterval = null;
+    this.performanceMetrics = [];
+    this.maxMetrics = 30; // Reduced from 50 to 30
+    this.memoryThresholds = {
+      warning: 250, // MB
+      critical: 400, // MB
+      emergency: 600  // MB
+    };
+    this.cleanupInterval = 30000; // 30 seconds
   }
 
+  // Start memory monitoring
   start() {
-    if (this.isMonitoring) return;
+    if (this.isActive) return;
     
-    this.isMonitoring = true;
-    this.intervalId = setInterval(() => {
-      this.checkMemory();
-    }, 20000); // Check every 20 seconds - reduced frequency to prevent performance impact
+    this.isActive = true;
+    console.log('[MovieDetailsMemoryOptimizer] Starting memory monitoring');
     
-    console.log('[MovieDetailsMemoryOptimizer] Started monitoring memory usage');
-  }
-
-  stop() {
-    if (!this.isMonitoring) return;
-    
-    this.isMonitoring = false;
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = null;
+    // Monitor memory usage
+    if (performance.memory) {
+      this.memoryCheckInterval = setInterval(() => {
+        this.checkMemoryUsage();
+      }, this.cleanupInterval);
     }
-    
-    console.log('[MovieDetailsMemoryOptimizer] Stopped monitoring memory usage');
   }
 
-  checkMemory() {
+  // Stop memory monitoring
+  stop() {
+    if (!this.isActive) return;
+    
+    this.isActive = false;
+    console.log('[MovieDetailsMemoryOptimizer] Stopping memory monitoring');
+    
+    if (this.memoryCheckInterval) {
+      clearInterval(this.memoryCheckInterval);
+      this.memoryCheckInterval = null;
+    }
+  }
+
+  // Check current memory usage and trigger cleanup if needed
+  checkMemoryUsage() {
     if (!performance.memory) return;
     
     const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
     const timestamp = Date.now();
     
-    this.memoryHistory.push({ memoryMB, timestamp });
+    // Store performance metric
+    this.performanceMetrics.push({
+      memory: memoryMB,
+      timestamp,
+      type: 'memory_check'
+    });
     
-    // Keep only recent history
-    if (this.memoryHistory.length > this.maxHistorySize) {
-      this.memoryHistory.shift();
+    // Keep only recent metrics
+    if (this.performanceMetrics.length > this.maxMetrics) {
+      this.performanceMetrics = this.performanceMetrics.slice(-this.maxMetrics);
     }
     
-    // Check for memory leaks (continuous increase)
-    if (this.memoryHistory.length >= 4) { // Check over 40 seconds
-      const recent = this.memoryHistory.slice(-4);
-      const first = recent[0].memoryMB;
-      const last = recent[recent.length - 1].memoryMB;
-      const increase = last - first;
-      
-      if (increase > 200) { // 200MB increase over 40 seconds
-        console.warn(`[MovieDetailsMemoryOptimizer] Potential memory leak detected: ${increase.toFixed(2)}MB increase over 40s`);
-        this.performCleanup();
-      }
-    }
-    
-    // Check for high memory usage
-    if (memoryMB > this.criticalThreshold) {
-      console.error(`[MovieDetailsMemoryOptimizer] Critical memory usage: ${memoryMB.toFixed(2)}MB`);
-      this.performEmergencyCleanup();
-    } else if (memoryMB > this.threshold) {
-      console.warn(`[MovieDetailsMemoryOptimizer] High memory usage: ${memoryMB.toFixed(2)}MB`);
-      this.performCleanup();
+    // Check thresholds and trigger cleanup
+    if (memoryMB > this.memoryThresholds.emergency) {
+      console.error(`[MovieDetailsMemoryOptimizer] EMERGENCY: Memory usage ${memoryMB.toFixed(2)}MB`);
+      this.emergencyCleanup();
+    } else if (memoryMB > this.memoryThresholds.critical) {
+      console.warn(`[MovieDetailsMemoryOptimizer] CRITICAL: Memory usage ${memoryMB.toFixed(2)}MB`);
+      this.criticalCleanup();
+    } else if (memoryMB > this.memoryThresholds.warning) {
+      console.warn(`[MovieDetailsMemoryOptimizer] WARNING: Memory usage ${memoryMB.toFixed(2)}MB`);
+      this.warningCleanup();
     }
   }
 
-  performCleanup() {
-    const now = Date.now();
-    if (now - this.lastCleanup < this.cleanupCooldown) {
-      return; // Skip if cleanup was recent
+  // Warning level cleanup
+  warningCleanup() {
+    // Clear performance metrics
+    this.performanceMetrics = [];
+    
+    // Force garbage collection if available
+    if (window.gc) {
+      window.gc();
     }
     
-    this.lastCleanup = now;
-    console.log('[MovieDetailsMemoryOptimizer] Performing cleanup...');
+    // Clear image caches
+    this.clearImageCaches();
+  }
+
+  // Critical level cleanup
+  criticalCleanup() {
+    this.warningCleanup();
+    
+    // Clear localStorage caches
+    this.clearLocalStorageCaches();
+    
+    // Clear any global references
+    this.clearGlobalReferences();
+  }
+
+  // Emergency level cleanup
+  emergencyCleanup() {
+    this.criticalCleanup();
     
     // Execute all registered cleanup callbacks
     this.cleanupCallbacks.forEach(callback => {
@@ -93,53 +114,25 @@ class MovieDetailsMemoryOptimizer {
       }
     });
     
-    // Clear memory history to free up space
-    this.memoryHistory = [];
-    
-    // Force garbage collection if available
-    if (window.gc) {
-      window.gc();
-    }
-    
-    console.log('[MovieDetailsMemoryOptimizer] Cleanup completed');
+    // Force aggressive cleanup
+    this.aggressiveCleanup();
   }
 
-  performEmergencyCleanup() {
-    console.error('[MovieDetailsMemoryOptimizer] Performing emergency cleanup...');
-    
-    // Clear all caches immediately
-    this.clearAllCaches();
-    
-    // Execute all cleanup callbacks
-    this.cleanupCallbacks.forEach(callback => {
-      try {
-        callback();
-      } catch (error) {
-        console.warn('[MovieDetailsMemoryOptimizer] Emergency cleanup callback failed:', error);
-      }
-    });
-    
-    // Clear memory history
-    this.memoryHistory = [];
-    
-    // Force garbage collection
-    if (window.gc) {
-      window.gc();
+  // Clear image caches
+  clearImageCaches() {
+    if ('caches' in window) {
+      caches.keys().then(cacheNames => {
+        cacheNames.forEach(cacheName => {
+          if (cacheName.includes('image') || cacheName.includes('movie')) {
+            caches.delete(cacheName);
+          }
+        });
+      });
     }
-    
-    // Clear browser caches
-    this.clearBrowserCaches();
-    
-    console.error('[MovieDetailsMemoryOptimizer] Emergency cleanup completed');
   }
 
-  clearAllCaches() {
-    // Clear any global caches
-    if (window.movieDetailsCache) {
-      delete window.movieDetailsCache;
-    }
-    
-    // Clear localStorage caches
+  // Clear localStorage caches
+  clearLocalStorageCaches() {
     try {
       const keys = Object.keys(localStorage);
       keys.forEach(key => {
@@ -150,39 +143,43 @@ class MovieDetailsMemoryOptimizer {
     } catch (error) {
       console.warn('[MovieDetailsMemoryOptimizer] Failed to clear localStorage:', error);
     }
-    
-    // Clear sessionStorage
-    try {
-      sessionStorage.clear();
-    } catch (error) {
-      console.warn('[MovieDetailsMemoryOptimizer] Failed to clear sessionStorage:', error);
-    }
   }
 
-  clearBrowserCaches() {
-    // Clear image caches
-    if ('caches' in window) {
-      caches.keys().then(cacheNames => {
-        cacheNames.forEach(cacheName => {
-          if (cacheName.includes('image') || cacheName.includes('movie')) {
-            caches.delete(cacheName);
-          }
-        });
-      });
-    }
-    
-    // Clear any remaining references
+  // Clear global references
+  clearGlobalReferences() {
     if (typeof window !== 'undefined') {
-      // Clear any global variables that might be holding references
-      const globalVars = ['movieDetailsCache', 'imageCache', 'tempCache'];
-      globalVars.forEach(varName => {
-        if (window[varName]) {
-          delete window[varName];
-        }
-      });
+      // Clear any global references that might be holding onto data
+      if (window.movieDetailsCache) {
+        delete window.movieDetailsCache;
+      }
+      if (window.movieDetailsOverlayRefs) {
+        delete window.movieDetailsOverlayRefs;
+      }
+      if (window.movieDetailsPerformanceMetrics) {
+        delete window.movieDetailsPerformanceMetrics;
+      }
     }
   }
 
+  // Aggressive cleanup for emergency situations
+  aggressiveCleanup() {
+    // Clear all intervals and timeouts
+    const highestTimeoutId = setTimeout(() => {}, 0);
+    for (let i = 0; i < highestTimeoutId; i++) {
+      clearTimeout(i);
+      clearInterval(i);
+    }
+    
+    // Clear any remaining DOM references
+    const elements = document.querySelectorAll('[data-movie-overlay]');
+    elements.forEach(element => {
+      if (element && element.parentNode) {
+        element.parentNode.removeChild(element);
+      }
+    });
+  }
+
+  // Register cleanup callback
   registerCleanupCallback(callback) {
     this.cleanupCallbacks.add(callback);
     
@@ -192,49 +189,95 @@ class MovieDetailsMemoryOptimizer {
     };
   }
 
-  getStats() {
-    if (this.memoryHistory.length === 0) return null;
+  // Get memory statistics
+  getMemoryStats() {
+    if (!performance.memory) return null;
     
-    const current = this.memoryHistory[this.memoryHistory.length - 1];
-    const min = Math.min(...this.memoryHistory.map(h => h.memoryMB));
-    const max = Math.max(...this.memoryHistory.map(h => h.memoryMB));
-    const avg = this.memoryHistory.reduce((sum, h) => sum + h.memoryMB, 0) / this.memoryHistory.length;
+    const current = performance.memory.usedJSHeapSize / 1024 / 1024;
+    const peak = performance.memory.peakJSHeapSize / 1024 / 1024;
+    const total = performance.memory.totalJSHeapSize / 1024 / 1024;
     
     return {
-      current: current.memoryMB,
-      min,
-      max,
-      average: avg,
-      trend: max - min,
-      cacheSize: this.cacheSize
+      current: current.toFixed(2),
+      peak: peak.toFixed(2),
+      total: total.toFixed(2),
+      percentage: ((current / total) * 100).toFixed(1)
     };
   }
 
-  clearHistory() {
-    this.memoryHistory = [];
+  // Get performance metrics
+  getPerformanceMetrics() {
+    return [...this.performanceMetrics];
   }
 
-  // Utility method to check if memory usage is acceptable
-  isMemoryUsageAcceptable() {
-    if (!performance.memory) return true;
-    
-    const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-    return memoryMB < this.threshold;
-  }
-
-  // Utility method to get current memory usage
-  getCurrentMemoryUsage() {
-    if (!performance.memory) return 0;
-    return performance.memory.usedJSHeapSize / 1024 / 1024;
+  // Cleanup on destroy
+  destroy() {
+    this.stop();
+    this.cleanupCallbacks.clear();
+    this.performanceMetrics = [];
   }
 }
 
 // Create singleton instance
 const movieDetailsMemoryOptimizer = new MovieDetailsMemoryOptimizer();
 
-// Auto-start in development
-if (import.meta.env.DEV) {
-  movieDetailsMemoryOptimizer.start();
-}
+// Export for use in components
+export default movieDetailsMemoryOptimizer;
 
-export default movieDetailsMemoryOptimizer; 
+// Export utility functions
+export const optimizeMovieDetailsMemory = () => {
+  console.log('[MovieDetailsMemoryOptimizer] Running memory optimization');
+  
+  // Get current memory stats
+  const stats = movieDetailsMemoryOptimizer.getMemoryStats();
+  if (stats) {
+    console.log(`Memory stats: ${stats.current}MB / ${stats.total}MB (${stats.percentage}%)`);
+  }
+  
+  // Run cleanup
+  movieDetailsMemoryOptimizer.warningCleanup();
+  
+  return stats;
+};
+
+// Export memory monitoring function
+export const monitorMovieDetailsMemory = (duration = 60000) => {
+  const startTime = Date.now();
+  const memoryReadings = [];
+  
+  const interval = setInterval(() => {
+    if (performance.memory) {
+      const memory = performance.memory.usedJSHeapSize / 1024 / 1024;
+      memoryReadings.push({
+        time: Date.now() - startTime,
+        memory: memory
+      });
+      
+      console.log(`MovieDetails Memory at ${Date.now() - startTime}ms: ${memory.toFixed(2)}MB`);
+    }
+  }, 10000); // Every 10 seconds
+  
+  setTimeout(() => {
+    clearInterval(interval);
+    
+    if (memoryReadings.length > 1) {
+      const firstReading = memoryReadings[0];
+      const lastReading = memoryReadings[memoryReadings.length - 1];
+      const memoryIncrease = lastReading.memory - firstReading.memory;
+      
+      console.log(`📊 MovieDetails Memory monitoring results:`);
+      console.log(`   Duration: ${duration / 1000}s`);
+      console.log(`   Initial memory: ${firstReading.memory.toFixed(2)}MB`);
+      console.log(`   Final memory: ${lastReading.memory.toFixed(2)}MB`);
+      console.log(`   Memory change: ${memoryIncrease.toFixed(2)}MB`);
+      
+      if (memoryIncrease > 50) {
+        console.warn(`⚠️  Significant memory increase detected: ${memoryIncrease.toFixed(2)}MB`);
+      } else {
+        console.log(`✅ Memory usage stable (increase < 50MB)`);
+      }
+    }
+  }, duration);
+  
+  return () => clearInterval(interval);
+}; 

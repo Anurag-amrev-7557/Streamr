@@ -3,12 +3,14 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'r
 // Lazy load all route-level pages/components
 const HomePage = lazy(() => import('./components/HomePage'));
 const Navbar = lazy(() => import('./components/Navbar'));
+const BottomNavigation = lazy(() => import('./components/BottomNavigation'));
 const MoviesPage = lazy(() => import('./components/MoviesPage'));
 const SeriesPage = lazy(() => import('./components/SeriesPage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 const WatchlistPage = lazy(() => import('./pages/WatchlistPage'));
 const CommunityPage = lazy(() => import('./components/CommunityPage'));
 const SingleDiscussion = lazy(() => import('./components/community/SingleDiscussion'));
+
 import './App.css'
 import { LoadingProvider } from './contexts/LoadingContext'
 import { WatchlistProvider } from './contexts/WatchlistContext'
@@ -30,6 +32,8 @@ const MovieDetailsOverlay = lazy(() => import('./components/MovieDetailsOverlay'
 const PerformanceDashboard = lazy(() => import('./components/PerformanceDashboard'));
 // Import memory cleanup utility
 import memoryCleanupUtility from './utils/memoryCleanupUtility';
+// Import global performance cleanup
+import './utils/globalPerformanceCleanup';
 const RateLimitStatus = lazy(() => import('./components/RateLimitStatus'));
 import { useSmoothScroll } from './hooks/useSmoothScroll'
 // Import performance service to initialize it
@@ -180,54 +184,64 @@ const Layout = () => {
   }, []);
   
   return (
-    <div className="min-h-screen bg-[#121417] smooth-scroll performance-scroll">
-      {/* NetworkStatus component removed */}
-      {/* <Suspense fallback={null}>
-        <NetworkStatus />
-      </Suspense> */}
-      <Suspense>
-        <Navbar onMovieSelect={handleMovieSelect} />
-      </Suspense>
-      <main className="momentum-scroll">
-        <AppRoutes />
-      </main>
-      {selectedMovie && (
+    <>
+      <div className="min-h-screen bg-[#121417] smooth-scroll performance-scroll">
+        {/* NetworkStatus component removed */}
+        {/* <Suspense fallback={null}>
+          <NetworkStatus />
+        </Suspense> */}
+        <Suspense>
+          <Navbar onMovieSelect={handleMovieSelect} />
+        </Suspense>
+        <main className="momentum-scroll pb-20 sm:pb-0">
+          <Suspense>
+            <AppRoutes />
+          </Suspense>
+        </main>
+        
+        {selectedMovie && (
+          <Suspense fallback={null}>
+            <MovieDetailsOverlay
+              movie={selectedMovie}
+              onClose={handleCloseOverlay}
+              onMovieSelect={handleMovieSelect}
+              onGenreClick={handleGenreClick}
+            />
+          </Suspense>
+        )}
+        
+        {/* Performance Dashboard */}
         <Suspense fallback={null}>
-          <MovieDetailsOverlay
-            movie={selectedMovie}
-            onClose={handleCloseOverlay}
-            onMovieSelect={handleMovieSelect}
-            onGenreClick={handleGenreClick}
+          <PerformanceDashboard
+            isVisible={showPerformanceDashboard}
+            onClose={() => setShowPerformanceDashboard(false)}
           />
         </Suspense>
-      )}
+        
+        {/* Rate Limit Status */}
+        <Suspense fallback={null}>
+          <RateLimitStatus />
+        </Suspense>
+        
+        {/* Performance Dashboard Toggle Button (Development Only) */}
+        {process.env.NODE_ENV === 'development' && (
+          <button
+            onClick={togglePerformanceDashboard}
+            className="fixed bottom-4 left-4 z-50 p-2 bg-blue-600/80 hover:bg-blue-600 text-white rounded-full shadow-lg backdrop-blur-sm transition-all duration-200"
+            title="Toggle Performance Dashboard (Ctrl+Shift+P)"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2zm0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+          </button>
+        )}
+      </div>
       
-      {/* Performance Dashboard */}
+      {/* Bottom Navigation - Outside main container to ensure proper fixed positioning */}
       <Suspense fallback={null}>
-        <PerformanceDashboard
-          isVisible={showPerformanceDashboard}
-          onClose={() => setShowPerformanceDashboard(false)}
-        />
+        <BottomNavigation />
       </Suspense>
-      
-      {/* Rate Limit Status */}
-      <Suspense fallback={null}>
-        <RateLimitStatus />
-      </Suspense>
-      
-      {/* Performance Dashboard Toggle Button (Development Only) */}
-      {process.env.NODE_ENV === 'development' && (
-        <button
-          onClick={togglePerformanceDashboard}
-          className="fixed bottom-4 left-4 z-50 p-2 bg-blue-600/80 hover:bg-blue-600 text-white rounded-full shadow-lg backdrop-blur-sm transition-all duration-200"
-          title="Toggle Performance Dashboard (Ctrl+Shift+P)"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-          </svg>
-        </button>
-      )}
-    </div>
+    </>
   )
 }
 

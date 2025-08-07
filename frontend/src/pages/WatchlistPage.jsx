@@ -25,7 +25,7 @@ const WatchlistPage = () => {
       }
     }
   }, [user]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // Changed from true to false
   const [error, setError] = useState(null);
   const [selectedMovie, setSelectedMovie] = useState(null);
   const [activeTab, setActiveTab] = useState('all');
@@ -65,10 +65,7 @@ const WatchlistPage = () => {
   const sortDropdownRef = useRef(null);
   const clearDialogRef = useRef(null);
 
-  // Set loading to false after initial render
-  useEffect(() => {
-    setLoading(false);
-  }, []);
+
 
   // Cleanup function to prevent memory leaks when component unmounts
   useEffect(() => {
@@ -429,27 +426,27 @@ const WatchlistPage = () => {
                   aria-haspopup="listbox"
                   aria-expanded={showSortDropdown}
                 >
-                  <AnimatePresence>
-                    {showSortDropdown ? (
-                      <motion.div
-                        key="sortby-bg-open"
-                        layoutId="activeWatchlistTabSort"
-                        className="absolute inset-0 bg-white rounded-full z-0"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                      />
-                    ) : (
-                      <motion.div
-                        key="sortby-bg-hover"
-                        className="absolute inset-0 rounded-full z-0"
-                        initial={{ backgroundColor: 'rgba(255,255,255,0)' }}
-                        whileHover={{ backgroundColor: 'rgba(255,255,255,0.13)' }}
-                        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                      />
-                    )}
-                  </AnimatePresence>
+                                  <AnimatePresence mode="sync">
+                  {showSortDropdown ? (
+                    <motion.div
+                      key="sortby-bg-open"
+                      layoutId="activeWatchlistTabSort"
+                      className="absolute inset-0 bg-white rounded-full z-0"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                    />
+                  ) : (
+                    <motion.div
+                      key="sortby-bg-hover"
+                      className="absolute inset-0 rounded-full z-0"
+                      initial={{ backgroundColor: 'rgba(255,255,255,0)' }}
+                      whileHover={{ backgroundColor: 'rgba(255,255,255,0.13)' }}
+                      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                    />
+                  )}
+                </AnimatePresence>
                   <span className="relative z-10 text-xs sm:text-sm">Sort: {sortBy.charAt(0).toUpperCase() + sortBy.slice(1)}</span>
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -461,7 +458,7 @@ const WatchlistPage = () => {
                   </svg>
                 </motion.button>
                 {/* Dropdown rendered as sibling, not child, to avoid clipping */}
-                <AnimatePresence>
+                <AnimatePresence mode="wait">
                   {showSortDropdown && (
                     <motion.div
                       key="sort-dropdown"
@@ -557,7 +554,7 @@ const WatchlistPage = () => {
           </div>
         </div>
         {/* Confirmation Dialog */}
-        <AnimatePresence>
+        <AnimatePresence mode="wait">
           {showClearDialog && (
             <motion.div
               key="dialog-backdrop"
@@ -615,7 +612,7 @@ const WatchlistPage = () => {
             layout
                             className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-3 sm:gap-4"
           >
-            <AnimatePresence>
+            <AnimatePresence mode="sync">
               {filteredWatchlist.map((movie) => (
                 <motion.div
                   layout
@@ -756,10 +753,10 @@ const WatchlistPage = () => {
                 ease: [0.4, 0, 0.2, 1],
                 delay: 0.1
               }}
-              className="relative mb-8"
+              className="relative mb-6 sm:mb-8"
             >
               {/* Main Container */}
-              <div className="relative w-32 h-32">
+              <div className="relative w-24 h-24 sm:w-32 sm:h-32">
                 {/* Animated Background Circle */}
                 <motion.div
                   initial={{ scale: 0, opacity: 0 }}
@@ -778,7 +775,7 @@ const WatchlistPage = () => {
                   {/* Animated Bookmark Icon */}
                   <motion.svg
                     xmlns="http://www.w3.org/2000/svg"
-                    className="h-16 w-16 text-white/30"
+                    className="h-12 w-12 sm:h-16 sm:w-16 text-white/30"
                     viewBox="0 0 24 24"
                     fill="currentColor"
                     initial={{ scale: 0.8, rotate: -5 }}
@@ -819,11 +816,11 @@ const WatchlistPage = () => {
                         ease: "easeInOut",
                         delay: 0.35
                       }}
-                      className="absolute top-2 right-2"
+                      className="absolute top-1 right-1 sm:top-2 sm:right-2"
                     >
                       <motion.svg
                         xmlns="http://www.w3.org/2000/svg"
-                        className="h-6 w-6 text-white/20"
+                        className="h-4 w-4 sm:h-6 sm:w-6 text-white/20"
                         viewBox="0 0 24 24"
                         fill="currentColor"
                         animate={{ 
@@ -855,11 +852,11 @@ const WatchlistPage = () => {
                         ease: "easeInOut",
                         delay: 0.4
                       }}
-                      className="absolute bottom-2 left-2"
+                      className="absolute bottom-1 left-1 sm:bottom-2 sm:left-2"
                     >
                       <motion.svg
                         xmlns="http://www.w3.org/2000/svg"
-                        className="h-5 w-5 text-white/15"
+                        className="h-4 w-4 sm:h-5 sm:w-5 text-white/15"
                         viewBox="0 0 24 24"
                         fill="currentColor"
                         animate={{ 
@@ -928,7 +925,7 @@ const WatchlistPage = () => {
                         ease: "easeInOut",
                         delay: 0.8
                       }}
-                      className="absolute top-4 left-4 w-2 h-2 bg-white/20 rounded-full"
+                      className="absolute top-3 left-3 sm:top-4 sm:left-4 w-1.5 h-1.5 sm:w-2 sm:h-2 bg-white/20 rounded-full"
                     />
                     
                     {/* Bottom Right Dot */}
@@ -944,7 +941,7 @@ const WatchlistPage = () => {
                         ease: "easeInOut",
                         delay: 1
                       }}
-                      className="absolute bottom-4 right-4 w-1.5 h-1.5 bg-white/15 rounded-full"
+                      className="absolute bottom-3 right-3 sm:bottom-4 sm:right-4 w-1 h-1 sm:w-1.5 sm:h-1.5 bg-white/15 rounded-full"
                     />
                   </motion.div>
                   
@@ -968,9 +965,9 @@ const WatchlistPage = () => {
                         ease: "easeInOut",
                         delay: 1.2
                       }}
-                      className="absolute top-6 right-6"
+                      className="absolute top-4 right-4 sm:top-6 sm:right-6"
                     >
-                      <svg className="w-3 h-3 text-white/30" viewBox="0 0 24 24" fill="currentColor">
+                      <svg className="w-2 h-2 sm:w-3 sm:h-3 text-white/30" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
                       </svg>
                     </motion.div>
@@ -988,9 +985,9 @@ const WatchlistPage = () => {
                         ease: "easeInOut",
                         delay: 1.5
                       }}
-                      className="absolute bottom-6 left-6"
+                      className="absolute bottom-4 left-4 sm:bottom-6 sm:left-6"
                     >
-                      <svg className="w-2.5 h-2.5 text-white/25" viewBox="0 0 24 24" fill="currentColor">
+                      <svg className="w-2 h-2 sm:w-2.5 sm:h-2.5 text-white/25" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
                       </svg>
                     </motion.div>
@@ -1009,12 +1006,12 @@ const WatchlistPage = () => {
                 delay: 0.2
               }}
             >
-              <h2 className="text-2xl font-bold mb-2">Your watchlist is empty</h2>
+              <h2 className="text-xl sm:text-2xl font-bold mb-2">Your watchlist is empty</h2>
               <motion.p 
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.4, delay: 0.3 }}
-                className="text-white/60 mb-6"
+                className="text-white/60 mb-4 sm:mb-6 text-sm sm:text-base"
               >
                 {user ? 
                   "Add movies and TV shows to your watchlist to keep track of what you want to watch" :
@@ -1038,7 +1035,7 @@ const WatchlistPage = () => {
                 delay: 0.4
               }}
               onClick={() => navigate('/')}
-              className="px-6 py-3 bg-white text-black rounded-full font-medium hover:bg-white/90 transition-colors relative overflow-hidden group"
+              className="px-4 sm:px-6 py-2.5 sm:py-3 bg-white text-black rounded-full font-medium hover:bg-white/90 transition-colors relative overflow-hidden group text-sm sm:text-base"
             >
               {/* Button Background Animation */}
               <motion.div

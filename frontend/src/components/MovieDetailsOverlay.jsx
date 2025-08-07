@@ -64,7 +64,7 @@ const CustomDropdown = React.memo(({
       </button>
 
       {/* Dropdown Menu */}
-      <AnimatePresence>
+      <AnimatePresence mode="wait">
         {isOpen && (
           <motion.div
             initial={{ opacity: 0, y: -10, scale: 0.95 }}
@@ -100,10 +100,10 @@ const CustomDropdown = React.memo(({
 
 // 🚀 NEW: Advanced caching and real-time updates with memory leak prevention
 const DETAILS_CACHE = new Map();
-const CACHE_DURATION = 3 * 60 * 1000; // Reduced from 5 to 3 minutes
-const BACKGROUND_REFRESH_INTERVAL = 3 * 60 * 1000; // Increased from 2 to 3 minutes
-const REAL_TIME_UPDATE_INTERVAL = 45 * 1000; // Increased from 30 to 45 seconds
-const MAX_CACHE_SIZE = 20; // Reduced from 30 to 20 to prevent memory bloat
+const CACHE_DURATION = 2 * 60 * 1000; // Reduced from 3 to 2 minutes
+const BACKGROUND_REFRESH_INTERVAL = 5 * 60 * 1000; // Increased from 3 to 5 minutes
+const REAL_TIME_UPDATE_INTERVAL = 60 * 1000; // Increased from 45 to 60 seconds
+const MAX_CACHE_SIZE = 15; // Reduced from 20 to 15 to prevent memory bloat
 
 // 🎯 NEW: Cache management utilities with enhanced memory optimization
 const getCachedDetails = (id, type) => {
@@ -128,8 +128,8 @@ const setCachedDetails = (id, type, data) => {
     const entries = Array.from(DETAILS_CACHE.entries());
     entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
     
-    // Remove oldest 50% of entries instead of 40%
-    const toRemove = Math.floor(MAX_CACHE_SIZE * 0.5);
+    // Remove oldest 60% of entries instead of 50%
+    const toRemove = Math.floor(MAX_CACHE_SIZE * 0.6);
     for (let i = 0; i < toRemove && i < entries.length; i++) {
       DETAILS_CACHE.delete(entries[i][0]);
     }
@@ -187,7 +187,7 @@ const clearCache = () => {
     }
     
     // Performance monitoring for slow operations
-    if (duration > 2000) {
+    if (duration > 3000) { // Increased threshold from 2000 to 3000
       console.warn(`[MovieDetailsOverlay] Slow operation detected: ${operation} took ${duration.toFixed(2)}ms`);
       
       // Send performance warning to analytics
@@ -196,7 +196,7 @@ const clearCache = () => {
           event_category: 'MovieDetails',
           event_label: operation,
           value: Math.round(duration),
-          threshold: 2000
+          threshold: 3000
         });
       }
     }
@@ -204,7 +204,7 @@ const clearCache = () => {
     // Enhanced memory monitoring with automatic cleanup
     if (performance.memory) {
       const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-      if (memoryMB > 400) { // Reduced threshold from 600 to 400
+      if (memoryMB > 300) { // Reduced threshold from 400 to 300
         console.warn(`[MovieDetailsOverlay] High memory usage during ${operation}: ${memoryMB.toFixed(2)}MB`);
         // Force cleanup if memory is too high
         clearCache();
@@ -229,9 +229,9 @@ const clearCache = () => {
         ...additionalData
       });
       
-      // Keep only last 100 metrics to prevent memory bloat
-      if (window.movieDetailsPerformanceMetrics.length > 100) {
-        window.movieDetailsPerformanceMetrics = window.movieDetailsPerformanceMetrics.slice(-100);
+      // Keep only last 50 metrics to prevent memory bloat (reduced from 100)
+      if (window.movieDetailsPerformanceMetrics.length > 50) {
+        window.movieDetailsPerformanceMetrics = window.movieDetailsPerformanceMetrics.slice(-50);
       }
     }
   };
@@ -244,7 +244,7 @@ class RealTimeUpdateManager {
     this.isActive = false;
     this.abortController = null;
     this.lastUpdateTime = 0;
-    this.maxSubscribers = 5; // Reduced from 10 to 5 to prevent memory bloat
+    this.maxSubscribers = 3; // Reduced from 5 to 3 to prevent memory bloat
     this.updateQueue = []; // Queue for rate limiting updates
     this.memoryCheckInterval = null;
   }
@@ -297,12 +297,12 @@ class RealTimeUpdateManager {
     this.memoryCheckInterval = setInterval(() => {
       if (performance.memory) {
         const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-        if (memoryMB > 350) { // Lower threshold for real-time updates
+        if (memoryMB > 250) { // Lower threshold for real-time updates
           console.warn(`[RealTimeUpdateManager] High memory usage: ${memoryMB.toFixed(2)}MB, reducing update frequency`);
           this.cleanup();
         }
       }
-    }, 10000); // Check every 10 seconds
+    }, 15000); // Check every 15 seconds (increased from 10)
   }
 
   stopUpdates() {
@@ -340,7 +340,7 @@ class RealTimeUpdateManager {
     // Memory check before performing updates
     if (performance.memory) {
       const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-      if (memoryMB > 400) { // Reduced threshold from 800 to 400
+      if (memoryMB > 300) { // Reduced threshold from 400 to 300
         console.warn(`[RealTimeUpdateManager] High memory usage: ${memoryMB.toFixed(2)}MB, skipping updates`);
         return;
       }
@@ -348,7 +348,7 @@ class RealTimeUpdateManager {
     
     // Process updates in batches to prevent overwhelming the system
     const updatePromises = [];
-    const batchSize = 3; // Process only 3 updates at a time
+    const batchSize = 2; // Process only 2 updates at a time (reduced from 3)
     
     for (const [key, callback] of this.subscribers.entries()) {
       if (this.abortController?.signal.aborted) break;
@@ -874,14 +874,14 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       },
       exit: {
         opacity: 0,
-        scale: 0.95,
-        y: 20,
+        scale: 0.88,
+        y: -30,
         transition: {
           type: 'spring',
           stiffness: 400,
           damping: 40,
-          duration: 0.3,
-          ease: [0.25, 0.46, 0.45, 0.94],
+          duration: 0.5,
+          ease: [0.25, 0.46, 0.45, 0.94], // Smooth cubic-bezier for closing
         },
       },
     },
@@ -907,16 +907,16 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         },
       },
       exit: {
-        y: -10,
+        y: -15,
         opacity: 0,
-        scale: 0.98,
-        filter: 'blur(4px)',
+        scale: 0.95,
+        filter: 'blur(6px)',
         transition: {
           type: 'spring',
           stiffness: 400,
           damping: 35,
-          duration: 0.25,
-          ease: [0.25, 0.46, 0.45, 0.94],
+          duration: 0.4,
+          ease: [0.25, 0.46, 0.45, 0.94], // Smooth cubic-bezier for closing
         },
       },
     },
@@ -987,6 +987,19 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
           damping: 30,
           duration: 0.4,
           ease: [0.25, 0.46, 0.45, 0.94]
+        }
+      },
+      exit: {
+        opacity: 0,
+        y: -20,
+        scale: 0.92,
+        filter: 'blur(8px)',
+        transition: {
+          type: 'spring',
+          stiffness: 400,
+          damping: 35,
+          duration: 0.4,
+          ease: [0.25, 0.46, 0.45, 0.94] // Smooth cubic-bezier for closing
         }
       }
     },
@@ -1842,7 +1855,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         // Memory check before background refresh
         if (performance.memory) {
           const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-          if (memoryMB > 700) {
+          if (memoryMB > 300) {
             console.warn(`[BackgroundRefresh] High memory usage: ${memoryMB.toFixed(2)}MB, skipping background refresh`);
             return;
           }
@@ -1856,7 +1869,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         // Memory check before applying real-time updates
         if (performance.memory) {
           const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-          if (memoryMB > 800) {
+          if (memoryMB > 400) {
             console.warn(`[RealTimeUpdate] High memory usage: ${memoryMB.toFixed(2)}MB, skipping update`);
             return;
           }
@@ -1896,7 +1909,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       // Memory check after fetch
       if (performance.memory) {
         const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-        if (memoryMB > 600) {
+        if (memoryMB > 400) {
           console.warn(`[PostFetch] High memory usage: ${memoryMB.toFixed(2)}MB`);
         }
       }
@@ -1907,7 +1920,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         // Memory check before applying real-time updates
         if (performance.memory) {
           const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-          if (memoryMB > 800) {
+          if (memoryMB > 400) {
             console.warn(`[RealTimeUpdate] High memory usage: ${memoryMB.toFixed(2)}MB, skipping update`);
             return;
           }
@@ -2990,7 +3003,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       // Check memory again before executing refresh
       if (performance.memory) {
         const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-        if (memoryMB > 500) { // Reduced threshold from 700 to 500
+        if (memoryMB > 350) { // Reduced threshold from 500 to 350
           console.warn(`[BackgroundRefresh] High memory usage before refresh: ${memoryMB.toFixed(2)}MB, clearing cache`);
           clearCache();
         }
@@ -3031,7 +3044,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
           const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
           
           // Aggressive cleanup thresholds
-          if (memoryMB > 300) {
+          if (memoryMB > 250) {
             console.warn(`[MovieDetailsOverlay] High memory usage detected: ${memoryMB.toFixed(2)}MB`);
             clearCache();
             
@@ -3053,7 +3066,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
           }
           
           // Critical memory threshold
-          if (memoryMB > 500) {
+          if (memoryMB > 400) {
             console.error(`[MovieDetailsOverlay] Critical memory usage: ${memoryMB.toFixed(2)}MB`);
             // Force component cleanup
             setMovieDetails(null);
@@ -3065,7 +3078,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
               window.gc();
             }
           }
-        }, 10000); // Check every 10 seconds
+        }, 15000); // Check every 15 seconds (increased from 10)
       }
     }
     
@@ -3224,13 +3237,21 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
 
   const overlayContent = (
     <AnimatePresence mode="wait">
-      {/* Overlay background - Enhanced with smooth fade and non-interactable backdrop */}
+      {/* Overlay background - Enhanced with ultra-smooth fade and backdrop blur */}
       <motion.div
         data-movie-overlay
-        className="fixed inset-0 bg-black/85 flex items-center justify-center z-[999999999] p-2 sm:p-4 contain-paint transition-none sm:mt-0 pointer-events-none"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
+        className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center z-[999999999] p-2 sm:p-4 contain-paint transition-none sm:mt-0 pointer-events-none"
+        initial={{ opacity: 0, backdropFilter: "blur(0px)" }}
+        animate={{ opacity: 1, backdropFilter: "blur(8px)" }}
+        exit={{ 
+          opacity: 0, 
+          backdropFilter: "blur(0px)",
+          transition: {
+            duration: 0.5,
+            ease: [0.25, 0.46, 0.45, 0.94], // Smooth cubic-bezier for closing
+            when: "beforeChildren"
+          }
+        }}
         transition={{ 
           duration: 0.4,
           ease: [0.16, 1, 0.3, 1], // Enhanced easing curve for smoother fade
@@ -3246,8 +3267,12 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         }}
       >
         {/* Invisible clickable backdrop for closing - positioned behind content */}
-        <div
+        <motion.div
           className="absolute inset-0 z-0 pointer-events-auto cursor-pointer"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
           onClick={handleClickOutside}
           onWheel={(e) => e.stopPropagation()}
           onTouchMove={(e) => e.stopPropagation()}
@@ -3261,7 +3286,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
             userSelect: 'none'
           }}
         />
-        {/* Main content - Enhanced with spring physics and GPU acceleration */}
+        {/* Main content - Enhanced with ultra-smooth spring physics and GPU acceleration */}
         <motion.div
           ref={contentRef}
           className="relative w-full max-w-6xl h-auto max-h-[calc(100vh-1rem)] z-[1000000000] sm:max-h-[95vh] bg-gradient-to-br from-[#1a1d24] to-[#121417] rounded-2xl shadow-2xl overflow-hidden flex flex-col pointer-events-auto overflow-y-auto mt-2 sm:mt-6"
@@ -3281,10 +3306,19 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
           }}
           exit={{ 
             opacity: 0, 
-            scale: 0.95,
-            y: -20,
-            rotateX: -2,
-            filter: "blur(2px)"
+            scale: 0.88,
+            y: -30,
+            rotateX: -5,
+            filter: "blur(8px)",
+            transition: {
+              duration: 0.5,
+              ease: [0.25, 0.46, 0.45, 0.94], // Smooth cubic-bezier for closing
+              opacity: { duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] },
+              scale: { duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] },
+              y: { duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] },
+              rotateX: { duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] },
+              filter: { duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }
+            }
           }}
           transition={{ 
             type: "spring",
@@ -3304,7 +3338,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
           tabIndex={-1}
           style={{ 
             zIndex: 1000000000,
-            willChange: "transform, opacity", // GPU acceleration hint
+            willChange: "transform, opacity, filter", // Enhanced GPU acceleration hint
             backfaceVisibility: "hidden",
             perspective: 1000
           }}
@@ -3691,13 +3725,6 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                             whileHover="hover"
                             whileTap="tap"
                           >
-                            {/* Animated background effect */}
-                            <motion.div 
-                              className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full"
-                              initial={{ x: '-100%' }}
-                              whileHover={{ x: '100%' }}
-                              transition={{ duration: 0.6, ease: "easeInOut" }}
-                            />
                             
                             {/* Button content */}
                             <div className="relative flex items-center gap-2 min-w-0">
@@ -4638,6 +4665,24 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
             initial="initial"
             whileHover="hover"
             whileTap="tap"
+            whileInView={{ 
+              opacity: 1, 
+              scale: 1,
+              transition: { 
+                duration: 0.3, 
+                ease: [0.25, 0.46, 0.45, 0.94],
+                delay: 0.2 
+              }
+            }}
+            exit={{ 
+              opacity: 0, 
+              scale: 0.8,
+              rotate: -90,
+              transition: { 
+                duration: 0.3, 
+                ease: [0.25, 0.46, 0.45, 0.94] 
+              }
+            }}
           >
             <motion.svg 
               xmlns="http://www.w3.org/2000/svg" 
@@ -4649,6 +4694,14 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                 scale: 1.1,
                 transition: { type: 'spring', stiffness: 400, damping: 25 }
               }}
+              exit={{ 
+                rotate: -90,
+                scale: 0.8,
+                transition: { 
+                  duration: 0.3, 
+                  ease: [0.25, 0.46, 0.45, 0.94] 
+                }
+              }}
             >
               <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
             </motion.svg>
@@ -4656,6 +4709,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
               className="absolute right-full mr-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-[#1a1a1a] rounded text-sm whitespace-nowrap"
               initial={{ opacity: 0, x: 10 }}
               whileHover={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 10 }}
               transition={{ duration: 0.2 }}
             >
               Close
@@ -4664,14 +4718,21 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         </motion.div>
 
         {/* Trailer Modal */}
-        <AnimatePresence>
+        <AnimatePresence mode="wait">
           {showTrailer && (
             <Suspense fallback={<div className="absolute inset-0 flex items-center justify-center bg-black/50"><Loader size="large" color="white" variant="circular" /></div>}>
               <motion.div 
                 key="trailer-modal"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
+                initial={{ opacity: 0, backdropFilter: "blur(0px)" }}
+                animate={{ opacity: 1, backdropFilter: "blur(8px)" }}
+                exit={{ 
+                  opacity: 0, 
+                  backdropFilter: "blur(0px)",
+                  transition: {
+                    duration: 0.4,
+                    ease: [0.25, 0.46, 0.45, 0.94]
+                  }
+                }}
                 transition={{ 
                   duration: 0.3, 
                   ease: [0.25, 0.46, 0.45, 0.94]
@@ -4681,11 +4742,19 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                 onMouseDown={(e) => e.stopPropagation()}
               >
                 <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 20 }}
+                  initial={{ opacity: 0, y: 30, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ 
+                    opacity: 0, 
+                    y: -30, 
+                    scale: 0.9,
+                    transition: {
+                      duration: 0.4,
+                      ease: [0.25, 0.46, 0.45, 0.94]
+                    }
+                  }}
                   transition={{ 
-                    duration: 0.3, 
+                    duration: 0.4, 
                     ease: [0.25, 0.46, 0.45, 0.94]
                   }}
                   className="relative w-[90vw] max-w-4xl aspect-video"
@@ -4705,23 +4774,36 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                     aria-label="Close trailer"
                     type="button"
                     style={{ pointerEvents: 'auto' }}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ duration: 0.2 }}
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8, rotate: -90 }}
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    transition={{ 
+                      duration: 0.3, 
+                      ease: [0.25, 0.46, 0.45, 0.94] 
+                    }}
                   >
-                                          <svg 
-                        xmlns="http://www.w3.org/2000/svg" 
-                        className="h-6 w-6" 
-                        viewBox="0 0 24 24" 
-                        fill="currentColor"
-                      >
-                        <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-                      </svg>
-                    <span 
+                    <motion.svg 
+                      xmlns="http://www.w3.org/2000/svg" 
+                      className="h-6 w-6" 
+                      viewBox="0 0 24 24" 
+                      fill="currentColor"
+                      whileHover={{ rotate: 90 }}
+                      exit={{ rotate: -90 }}
+                      transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
+                    >
+                      <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                    </motion.svg>
+                    <motion.span 
                       className="absolute right-full mr-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-black rounded text-sm whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                      initial={{ opacity: 0, x: 10 }}
+                      whileHover={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: 10 }}
+                      transition={{ duration: 0.2 }}
                     >
                       Close Trailer
-                    </span>
+                    </motion.span>
                   </motion.button>
                   
                   {/* Video Container */}

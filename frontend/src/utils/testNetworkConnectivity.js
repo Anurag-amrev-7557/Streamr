@@ -29,7 +29,7 @@ export const testNetworkConnectivity = async () => {
   console.log('\n4. Testing retryable fetch...');
   const retryableFetch = createRetryableFetch(2, 1000);
   try {
-    const response = await retryableFetch('https://api.themoviedb.org/3/configuration');
+    const response = await retryableFetch('https://httpbin.org/status/200');
     console.log(`   Retryable fetch: ✅ Success (${response.status})`);
   } catch (error) {
     console.log(`   Retryable fetch: ❌ Failed - ${error.message}`);

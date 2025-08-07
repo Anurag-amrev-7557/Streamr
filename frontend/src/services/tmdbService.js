@@ -254,8 +254,8 @@ export const checkNetworkConnectivity = async () => {
       
       // Use navigator.onLine as a fallback
       if (navigator.onLine) {
-        // Try a simple fetch to a reliable endpoint
-        const response = await fetch('https://api.themoviedb.org/3/configuration', {
+        // Try a simple fetch to a reliable endpoint with API key
+        const response = await fetch(`https://api.themoviedb.org/3/configuration?api_key=${TMDB_API_KEY}`, {
           method: 'HEAD',
           signal: controller.signal,
           cache: 'no-cache'
@@ -378,7 +378,20 @@ const queueRequest = async (request, priority = false, metadata = {}, options = 
         });
       }
       
-      throw new Error(classifiedError.userMessage);
+      // Create a more informative error with better stack trace
+      const enhancedError = new Error(classifiedError.userMessage);
+      enhancedError.originalError = error;
+      enhancedError.errorType = classifiedError.type;
+      enhancedError.severity = classifiedError.severity;
+      enhancedError.retryable = classifiedError.retryable;
+      enhancedError.attempts = attempt;
+      
+      // Add stack trace information
+      if (error.stack) {
+        enhancedError.stack = `${enhancedError.message}\nOriginal error: ${error.message}\n${error.stack}`;
+      }
+      
+      throw enhancedError;
     }
   };
   

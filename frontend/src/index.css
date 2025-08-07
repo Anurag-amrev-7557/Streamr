@@ -342,3 +342,31 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
 }
+
+/* Mobile Search Open State */
+body.mobile-search-open {
+  overflow: hidden;
+}
+
+/* Mobile Search Animation */
+@keyframes mobileSearchSlideDown {
+  from {
+    transform: translateY(-100%) scaleY(0);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0) scaleY(1);
+    opacity: 1;
+  }
+}
+
+@keyframes mobileSearchSlideUp {
+  from {
+    transform: translateY(0) scaleY(1);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-100%) scaleY(0);
+    opacity: 0;
+  }
+}

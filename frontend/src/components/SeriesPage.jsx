@@ -1124,8 +1124,8 @@ const SeriesPage = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
-              {showYearDropdown && (
-                <div className="absolute z-10 mt-2 w-48 rounded-lg bg-[#1a1a1a] shadow-lg max-h-[60vh] overflow-y-auto">
+                              {showYearDropdown && (
+                  <div className="absolute z-50 mt-2 w-48 rounded-lg bg-[#1a1a1a] shadow-lg max-h-[60vh] overflow-y-auto">
                   <div className="py-1">
                     <button
                       onClick={() => {
@@ -1177,8 +1177,8 @@ const SeriesPage = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
-              {showGenreDropdown && (
-                <div className="absolute z-10 mt-2 w-48 rounded-lg bg-[#1a1a1a] shadow-lg max-h-[60vh] overflow-y-auto">
+                              {showGenreDropdown && (
+                  <div className="absolute z-50 mt-2 w-48 rounded-lg bg-[#1a1a1a] shadow-lg max-h-[60vh] overflow-y-auto">
                   <div className="py-1">
                     <button
                       onClick={() => {
@@ -1346,20 +1346,18 @@ const SeriesPage = () => {
           <div ref={loadMoreRef} className="h-10" />
         )}
 
-        {selectedSeries && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-            <div className="relative w-full max-w-7xl max-h-[90vh] bg-[#141414] rounded-xl overflow-hidden">
-              <Suspense fallback={null}>
-                <MovieDetailsOverlay
-                  movie={selectedSeries}
-                  onClose={handleCloseOverlay}
-                  onMovieSelect={handleSimilarSeriesClick}
-                  onGenreClick={handleGenreNavigation}
-                />
-              </Suspense>
-            </div>
-          </div>
-        )}
+        <AnimatePresence mode="wait">
+          {selectedSeries && (
+            <Suspense fallback={null}>
+              <MovieDetailsOverlay
+                movie={selectedSeries}
+                onClose={handleCloseOverlay}
+                onMovieSelect={handleSimilarSeriesClick}
+                onGenreClick={handleGenreNavigation}
+              />
+            </Suspense>
+          )}
+        </AnimatePresence>
 
         {/* Enhanced Episode List Modal */}
         {showEpisodeList && selectedSeriesForEpisodes && (
