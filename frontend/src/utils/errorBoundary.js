@@ -1,5 +1,5 @@
 // Error Boundary Utility for handling external errors gracefully
-import React from 'react';
+import * as React from 'react';
 
 // Global error handler for external resources
 export const setupGlobalErrorHandling = () => {
@@ -63,10 +63,23 @@ const isExternalResourceError = (error) => {
                           errorMessage.includes('net::err_blocked_by_client') ||
                           errorMessage.includes('403 forbidden') ||
                           errorMessage.includes('404 not found') ||
+                          errorMessage.includes('401 unauthorized') ||
+                          errorMessage.includes('api key') ||
                           errorMessage.includes('cors') ||
                           errorMessage.includes('cross-origin');
   
-  return isExternalDomain || isBlockedRequest;
+  // Check for Swiper-related errors that we should handle gracefully
+  const isSwiperError = errorMessage.includes('onTouchEnd') ||
+                       errorMessage.includes('onTouchStart') ||
+                       errorMessage.includes('onTouchMove') ||
+                       errorMessage.includes('swiper') ||
+                       errorMessage.includes('touch') ||
+                       errorMessage.includes('cannot read properties of undefined') ||
+                       errorMessage.includes('reading \'onTouchEnd\'') ||
+                       errorMessage.includes('reading \'onTouchStart\'') ||
+                       errorMessage.includes('reading \'onTouchMove\'');
+  
+  return isExternalDomain || isBlockedRequest || isSwiperError;
 };
 
 // React Error Boundary Component

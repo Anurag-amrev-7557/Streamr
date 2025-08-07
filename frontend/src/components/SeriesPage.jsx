@@ -20,6 +20,7 @@ const EnhancedSearchBar = lazy(() => import('./EnhancedSearchBar'));
 import searchHistoryService from '../services/searchHistoryService';
 import { formatRating } from '../utils/ratingUtils';
 import enhancedEpisodeService from '../services/enhancedEpisodeService';
+import RatingBadge from './RatingBadge';
 
 // Animation variants for smooth transitions
 const gridVariants = {
@@ -104,6 +105,12 @@ const SeriesCard = ({ series, onSeriesClick, onShowEpisodes }) => {
       onClick={() => onSeriesClick(series)}
     >
       <div className="group aspect-[2/3] rounded-lg overflow-hidden bg-gray-800 relative">
+        {/* Rating Badge */}
+        <RatingBadge 
+          rating={seriesRating} 
+          size="default"
+        />
+        
         <AnimatePresence>
           <motion.button
             onClick={handleBookmarkClick}
@@ -1019,7 +1026,7 @@ const SeriesPage = () => {
                 </svg>
               </button>
               {showYearDropdown && (
-                <div className="absolute z-10 mt-2 w-48 rounded-lg bg-[#1a1a1a] shadow-lg max-h-[60vh] overflow-y-auto">
+                <div className="absolute z-30 mt-2 w-48 rounded-lg bg-[#1a1a1a] shadow-lg max-h-[60vh] overflow-y-auto">
                   <div className="py-1">
                     <button
                       onClick={() => {
@@ -1072,7 +1079,7 @@ const SeriesPage = () => {
                 </svg>
               </button>
               {showGenreDropdown && (
-                <div className="absolute z-10 mt-2 w-48 rounded-lg bg-[#1a1a1a] shadow-lg max-h-[60vh] overflow-y-auto">
+                <div className="absolute z-30 mt-2 w-48 rounded-lg bg-[#1a1a1a] shadow-lg max-h-[60vh] overflow-y-auto">
                   <div className="py-1">
                     <button
                       onClick={() => {

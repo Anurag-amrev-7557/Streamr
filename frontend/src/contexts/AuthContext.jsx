@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import * as React from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { getApiUrl, switchBackendMode, getCurrentBackendMode } from '../config/api';
 
 // Authentication API functions
@@ -206,7 +207,7 @@ const userAPI = {
   }
 };
 
-const AuthContext = createContext(null);
+const AuthContext = createContext();
 
 // Token refresh interval (14 minutes - refresh before 15-minute expiration)
 const TOKEN_REFRESH_INTERVAL = 14 * 60 * 1000;

@@ -30,6 +30,7 @@ import { useWatchlist } from '../contexts/WatchlistContext';
 const EnhancedSearchBar = lazy(() => import('./EnhancedSearchBar'));
 import searchHistoryService from '../services/searchHistoryService';
 import { getPosterProps, getBackdropProps } from '../utils/imageUtils';
+import RatingBadge from './RatingBadge';
 
 const fadeInAnimation = {
   '@keyframes fadeIn': {
@@ -318,6 +319,12 @@ const MovieCard = ({ movie, index, onClick, onPrefetch }) => {
         layout
         className="aspect-[2/3] rounded-lg overflow-hidden bg-gray-800 relative w-full"
       >
+        {/* Rating Badge */}
+        <RatingBadge 
+          rating={movie.vote_average || movie.rating} 
+          size="default"
+        />
+        
         <AnimatePresence>
           <motion.button
             onClick={handleBookmarkClick}
@@ -1949,7 +1956,7 @@ const MoviesPage = () => {
                 </svg>
               </button>
               {yearDropdownOpen && (
-                <div className="absolute z-10 mt-2 w-48 bg-[#1a1a1a] rounded-lg shadow-lg py-1">
+                <div className="absolute z-30 mt-2 w-48 bg-[#1a1a1a] rounded-lg shadow-lg py-1">
                   <button
                     onClick={() => handleYearSelect(null)}
                     className="w-full px-4 py-2 text-left text-sm text-gray-400 hover:text-white hover:bg-[#2b3036]"
@@ -1999,7 +2006,7 @@ const MoviesPage = () => {
                 </svg>
               </button>
               {genreDropdownOpen && (
-                <div className="absolute z-10 mt-2 w-48 bg-[#1a1a1a] rounded-lg shadow-lg py-1 max-h-60 overflow-y-auto">
+                <div className="absolute z-30 mt-2 w-48 bg-[#1a1a1a] rounded-lg shadow-lg py-1 max-h-60 overflow-y-auto">
                   <button
                     onClick={() => handleGenreSelect(null)}
                     className="w-full px-4 py-2 text-left text-sm text-gray-400 hover:text-white hover:bg-[#2b3036]"

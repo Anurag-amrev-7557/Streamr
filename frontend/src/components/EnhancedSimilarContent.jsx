@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { similarContentUtils } from '../services/enhancedSimilarContentService';
 import { formatRating } from '../utils/ratingUtils';
 import memoryOptimizationService from '../utils/memoryOptimizationService';
+import RatingBadge from './RatingBadge';
 
 // FIXED: Memory leak detection utility
 const memoryLeakDetector = {
@@ -334,16 +335,11 @@ const EnhancedSimilarCard = React.memo(({ item, onClick, isMobile, showRelevance
         )}
         
         {/* Rating Badge */}
-        {item.vote_average && (
-          <div className="absolute top-2 right-2 px-2 py-1 rounded-full text-xs font-semibold bg-black/80 backdrop-blur-sm text-white border border-white/20">
-            <div className="flex items-center gap-1">
-              <svg className="w-3 h-3 text-yellow-400" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
-              </svg>
-              {formatRating(item.vote_average)}
-            </div>
-          </div>
-        )}
+        <RatingBadge 
+          rating={item.vote_average} 
+          size="default"
+          position="top-2 right-2"
+        />
         
         {/* Hover Overlay - Desktop Only */}
         {!isMobile && (

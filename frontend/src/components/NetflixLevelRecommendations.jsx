@@ -4,6 +4,7 @@ import { similarContentUtils } from '../services/enhancedSimilarContentService';
 import enhancedRecommendationService from '../services/enhancedRecommendationService';
 import { formatRating } from '../utils/ratingUtils';
 import { getPosterProps } from '../utils/imageUtils';
+import RatingBadge from './RatingBadge';
 
 // Netflix-Level Recommendation Strategy Selector
 const RecommendationStrategySelector = React.memo(({ strategy, onStrategyChange, isMobile = false }) => {
@@ -193,16 +194,10 @@ const NetflixRecommendationCard = React.memo(({ item, onClick, isMobile, showAIS
         )}
         
         {/* Rating Badge */}
-        {item.vote_average && (
-          <div className="absolute top-2 right-2 px-2 py-1 rounded-full text-xs font-semibold bg-black/80 backdrop-blur-sm text-white border border-white/20">
-            <div className="flex items-center gap-1">
-              <svg className="w-3 h-3 text-yellow-400" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
-              </svg>
-              {formatRating(item.vote_average)}
-            </div>
-          </div>
-        )}
+        <RatingBadge 
+          rating={item.vote_average} 
+          size="default"
+        />
         
         {/* Hover Overlay - Desktop Only */}
         {!isMobile && (

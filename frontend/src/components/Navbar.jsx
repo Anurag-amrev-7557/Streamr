@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo, useTransition, useDeferredValue } from 'react';
+import * as React from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, useTransition, useDeferredValue } from 'react';
 import { searchMovies, transformMovieData } from '../services/tmdbService';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -358,39 +359,7 @@ function highlightQuery(text, query) {
   return text;
 }
 
-// Performance-optimized mobile menu state management
-const useMobileMenuState = () => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [isPending, startTransition] = useTransition();
-  const deferredIsOpen = useDeferredValue(isOpen);
-  
-  // Optimized state updates with transition
-  const openMenu = useCallback(() => {
-    startTransition(() => {
-      setIsOpen(true);
-    });
-  }, []);
-  
-  const closeMenu = useCallback(() => {
-    startTransition(() => {
-      setIsOpen(false);
-    });
-  }, []);
-  
-  const toggleMenu = useCallback(() => {
-    startTransition(() => {
-      setIsOpen(prev => !prev);
-    });
-  }, []);
-  
-  return {
-    isOpen: deferredIsOpen,
-    isPending,
-    openMenu,
-    closeMenu,
-    toggleMenu
-  };
-};
+
 
 // Performance-optimized animation variants with reduced motion support
 const useOptimizedAnimations = () => {
@@ -408,182 +377,17 @@ const useOptimizedAnimations = () => {
       }
     },
     
-    // Optimized menu container animation
-    menuContainer: {
-      initial: { 
-        opacity: 0, 
-        height: 0, 
-        y: shouldReduceMotion ? 0 : -20, 
-        scale: shouldReduceMotion ? 1 : 0.95 
-      },
-      animate: { 
-        opacity: 1, 
-        height: 'auto', 
-        y: 0, 
-        scale: 1 
-      },
-      exit: { 
-        opacity: 0, 
-        height: 0, 
-        y: shouldReduceMotion ? 0 : -20, 
-        scale: shouldReduceMotion ? 1 : 0.95 
-      },
-      transition: { 
-        duration: shouldReduceMotion ? 0.2 : 0.4,
-        ease: [0.4, 0, 0.2, 1],
-        staggerChildren: shouldReduceMotion ? 0 : 0.08
-      }
-    },
+
     
-    // Optimized menu item animations
-    menuItem: {
-      hidden: { 
-        opacity: 0, 
-        x: shouldReduceMotion ? 0 : -20 
-      },
-      visible: { 
-        opacity: 1, 
-        x: 0 
-      },
-      transition: { 
-        duration: shouldReduceMotion ? 0.1 : 0.4, 
-        ease: "easeOut" 
-      }
-    },
-    
-    // Optimized hamburger button animations
-    hamburger: {
-      initial: { opacity: 0, x: 20 },
-      animate: { opacity: 1, x: 0 },
-      transition: { 
-        duration: shouldReduceMotion ? 0.2 : 0.4, 
-        delay: 0.2 
-      }
-    }
+
   }), [shouldReduceMotion]);
 };
 
-// Performance-optimized event handlers with debouncing and throttling
-const useOptimizedEventHandlers = (closeMenu) => {
-  const closeMenuRef = useRef(closeMenu);
-  closeMenuRef.current = closeMenu;
-  
-  // Optimized click outside handler with passive listeners
-  const handleClickOutside = useCallback((event) => {
-    // Use requestIdleCallback for non-critical operations
-    if ('requestIdleCallback' in window) {
-      requestIdleCallback(() => {
-        closeMenuRef.current();
-      });
-    } else {
-      // Fallback for browsers without requestIdleCallback
-      setTimeout(() => {
-        closeMenuRef.current();
-      }, 0);
-    }
-  }, []);
-  
-  // Optimized escape key handler
-  const handleEscapeKey = useCallback((event) => {
-    if (event.key === 'Escape') {
-      closeMenuRef.current();
-    }
-  }, []);
-  
-  // Optimized touch gesture handler for swipe to close
-  const handleTouchStart = useCallback((event) => {
-    const touch = event.touches[0];
-    const startX = touch.clientX;
-    const startY = touch.clientY;
-    
-    const handleTouchMove = (event) => {
-      const touch = event.touches[0];
-      const deltaX = touch.clientX - startX;
-      const deltaY = touch.clientY - startY;
-      
-      // Close menu on significant horizontal swipe
-      if (Math.abs(deltaX) > 100 && Math.abs(deltaY) < 50) {
-        closeMenuRef.current();
-        cleanupTouchListeners();
-      }
-    };
-    
-    const handleTouchEnd = () => {
-      cleanupTouchListeners();
-    };
-    
-    const cleanupTouchListeners = () => {
-      document.removeEventListener('touchmove', handleTouchMove);
-      document.removeEventListener('touchend', handleTouchEnd);
-    };
-    
-    document.addEventListener('touchmove', handleTouchMove, { passive: true });
-    document.addEventListener('touchend', handleTouchEnd, { passive: true });
-  }, []);
-  
-  return {
-    handleClickOutside,
-    handleEscapeKey,
-    handleTouchStart
-  };
-};
 
-// Performance-optimized haptic feedback with battery consideration
-const useOptimizedHapticFeedback = () => {
-  const hapticEnabled = useMemo(() => {
-    return navigator.vibrate && 
-           'getBattery' in navigator ? 
-           navigator.getBattery().then(battery => battery.level > 0.2) : 
-           Promise.resolve(true);
-  }, []);
-  
-  const triggerHaptic = useCallback(async (pattern) => {
-    try {
-      const enabled = await hapticEnabled;
-      if (enabled && navigator.vibrate) {
-        navigator.vibrate(pattern);
-      }
-    } catch (error) {
-      // Fallback to basic vibration
-      if (navigator.vibrate) {
-        navigator.vibrate(pattern);
-      }
-    }
-  }, [hapticEnabled]);
-  
-  return { triggerHaptic };
-};
 
-// Performance-optimized accessibility announcements
-const useOptimizedAccessibility = () => {
-  const announceToScreenReader = useCallback((message) => {
-    // Use requestIdleCallback for non-critical accessibility updates
-    if ('requestIdleCallback' in window) {
-      requestIdleCallback(() => {
-        const liveRegion = document.getElementById('mobile-menu-live-region');
-        if (liveRegion) {
-          liveRegion.textContent = message;
-          setTimeout(() => { 
-            liveRegion.textContent = ''; 
-          }, 1000);
-        }
-      });
-    } else {
-      // Fallback for browsers without requestIdleCallback
-      setTimeout(() => {
-        const liveRegion = document.getElementById('mobile-menu-live-region');
-        if (liveRegion) {
-          liveRegion.textContent = message;
-          setTimeout(() => { 
-            liveRegion.textContent = ''; 
-          }, 1000);
-        }
-      }, 0);
-    }
-  }, []);
-  
-  return { announceToScreenReader };
-};
+
+
+
 
 const Navbar = ({ onMovieSelect }) => {
   const navigate = useNavigate();
@@ -609,16 +413,8 @@ const Navbar = ({ onMovieSelect }) => {
   const mobileSearchOverlayRef = useRef(null);
   const mobileSearchInputRef = inputRef; // already defined
 
-  // Performance-optimized mobile menu state management
-  const { isOpen: isMobileMenuOpen, isPending, openMenu, closeMenu, toggleMenu } = useMobileMenuState();
   // Performance-optimized animation variants with reduced motion support
   const animations = useOptimizedAnimations();
-  // Performance-optimized event handlers with debouncing and throttling
-  const { handleClickOutside, handleEscapeKey, handleTouchStart } = useOptimizedEventHandlers(closeMenu);
-  // Performance-optimized haptic feedback with battery consideration
-  const { triggerHaptic } = useOptimizedHapticFeedback();
-  // Performance-optimized accessibility announcements
-  const { announceToScreenReader } = useOptimizedAccessibility();
 
   // Save search history to localStorage
   useEffect(() => {
@@ -662,12 +458,14 @@ const Navbar = ({ onMovieSelect }) => {
     }
   }, []));
 
-  // Click outside for search
+  // Click outside for search (only when mobile search is not open)
   useClickOutside(searchRef, useCallback(() => {
-    setShowResults(false);
-    setSelectedIndex(-1);
-    setIsSearchFocused(false);
-  }, []));
+    if (!isMobileSearchOpen) {
+      setShowResults(false);
+      setSelectedIndex(-1);
+      setIsSearchFocused(false);
+    }
+  }, [isMobileSearchOpen]));
 
   // Close menu when route changes
   useEffect(() => {
@@ -692,6 +490,7 @@ const Navbar = ({ onMovieSelect }) => {
         
         if (!isSearchElement) {
           setIsMobileSearchOpen(false);
+          setShowResults(false);
         }
       }
     };
@@ -706,20 +505,7 @@ const Navbar = ({ onMovieSelect }) => {
     };
   }, [isMobileSearchOpen]);
 
-  // Enhanced mobile menu event listeners
-  useEffect(() => {
-    if (!isMobileMenuOpen) return;
-    
-    // Add escape key listener
-    document.addEventListener('keydown', handleEscapeKey, { passive: true });
-    // Add touch gesture listener
-    document.addEventListener('touchstart', handleTouchStart, { passive: true });
-    
-    return () => {
-      document.removeEventListener('keydown', handleEscapeKey);
-      document.removeEventListener('touchstart', handleTouchStart);
-    };
-  }, [isMobileMenuOpen, handleEscapeKey, handleTouchStart]);
+
 
   // Enhanced memoized processSearchResults with advanced scoring algorithm
   const processSearchResults = useCallback((results, query) => {
@@ -1155,19 +941,15 @@ const Navbar = ({ onMovieSelect }) => {
         }
 
         // Enhanced screen reader announcement
-        const announceToScreenReader = (message) => {
-          const liveRegion = document.getElementById('search-live-region') || 
-                           document.getElementById('aria-live-region');
-          if (liveRegion) {
-            liveRegion.textContent = message;
-            // Clear after announcement
-            setTimeout(() => {
-              liveRegion.textContent = '';
-            }, 1000);
-          }
-        };
-
-        announceToScreenReader(`Selected ${movieData.title}. Loading movie details.`);
+        const liveRegion = document.getElementById('search-live-region') || 
+                         document.getElementById('aria-live-region');
+        if (liveRegion) {
+          liveRegion.textContent = `Selected ${movieData.title}. Loading movie details.`;
+          // Clear after announcement
+          setTimeout(() => {
+            liveRegion.textContent = '';
+          }, 1000);
+        }
       } catch (e) {
         console.warn('Failed to handle accessibility features:', e);
       }
@@ -2567,6 +2349,10 @@ const Navbar = ({ onMovieSelect }) => {
                      setSearchQuery('');
                      setSearchResults([]);
                      setShowResults(false);
+                     // Clear search results and cancel any pending searches
+                     debouncedSearch.cancel();
+                     setIsSearching(false);
+                     setSelectedIndex(-1);
                      inputRef.current?.focus();
                    }}
                    className="absolute right-3 top-0 bottom-0 my-auto w-7 h-7 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center transition-all duration-300 z-20 group/clear border border-white/20 hover:border-white/30 shadow-sm hover:shadow-md"
@@ -3158,11 +2944,14 @@ const Navbar = ({ onMovieSelect }) => {
         </div>
       </div>
 
-      {/* RIGHT: Mobile icons (search + hamburger) */}
+      {/* RIGHT: Mobile search icon only */}
       <div className="flex items-center justify-end gap-3 sm:hidden">
         {/* Search icon (mobile) */}
         <motion.button
-          onClick={() => setIsMobileSearchOpen(true)}
+          onClick={() => {
+            setIsMobileSearchOpen(true);
+            setShowResults(true);
+          }}
           className="relative w-11 h-11 flex items-center justify-center group bg-white/8 hover:bg-white/15 rounded-xl transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-white/15 border border-white/10 hover:border-white/20"
           aria-label="Open search"
           whileHover={{ 
@@ -3207,144 +2996,7 @@ const Navbar = ({ onMovieSelect }) => {
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </motion.svg>
         </motion.button>
-        {/* Hamburger menu (mobile) */}
-        <motion.button
-            onClick={() => {
-              toggleMenu();
-              // Add haptic feedback
-              triggerHaptic([20, 10, 20]);
-              // Announce menu state for screen readers
-              announceToScreenReader('Mobile navigation menu opened');
-            }}
-          className="relative w-10 h-10 flex items-center justify-center group bg-white/5 hover:bg-white/10 rounded-lg transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-white/10 overflow-hidden"
-          aria-label={isMobileMenuOpen ? "Close menu" : "Open menu"}
-          aria-expanded={isMobileMenuOpen}
-          aria-controls="mobile-navigation-menu"
-          whileHover={{ 
-            scale: 1.05,
-            rotate: [0, 2, -2, 0],
-            transition: { duration: 0.3 }
-          }}
-          whileTap={{ 
-            scale: 0.95,
-            transition: { duration: 0.1 }
-          }}
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.4, delay: 0.2 }}
-        >
-          {/* Animated Background Glow */}
-          <motion.div 
-            className="absolute inset-0 bg-gradient-to-br from-white/10 via-white/5 to-white/0 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-            whileHover={{ scale: 1.1 }}
-            animate={{
-              scale: [1, 1.05, 1],
-              opacity: [0, 0.3, 0],
-            }}
-            transition={{ 
-              duration: 3,
-              repeat: Infinity,
-              ease: "easeInOut",
-              delay: 0.5,
-              whileHover: { duration: 0.2 }
-            }}
-          />
-          
-          {/* Floating Particles */}
-          <motion.div
-            className="absolute inset-0 pointer-events-none"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.5, delay: 0.8 }}
-          >
-            <motion.div
-              className="absolute top-1 right-1 w-0.5 h-0.5 bg-white/30 rounded-full"
-              animate={{
-                x: [0, 2, 0],
-                y: [0, -2, 0],
-                opacity: [0.3, 0.6, 0.3],
-                scale: [1, 1.5, 1],
-              }}
-              transition={{
-                duration: 2.5,
-                repeat: Infinity,
-                ease: "easeInOut",
-                delay: 1
-              }}
-            />
-            <motion.div
-              className="absolute bottom-1 left-1 w-0.5 h-0.5 bg-white/20 rounded-full"
-              animate={{
-                x: [0, -2, 0],
-                y: [0, 2, 0],
-                opacity: [0.2, 0.5, 0.2],
-                scale: [1, 1.8, 1],
-              }}
-              transition={{
-                duration: 2,
-                repeat: Infinity,
-                ease: "easeInOut",
-                delay: 1.3
-              }}
-            />
-          </motion.div>
-          
-          {/* Animated Ring Effect */}
-          <motion.div
-            className="absolute inset-0 rounded-lg border border-white/20 opacity-0"
-            animate={{
-              scale: [1, 1.1, 1],
-              opacity: [0, 0.4, 0],
-            }}
-            transition={{
-              duration: 2.5,
-              repeat: Infinity,
-              ease: "easeInOut",
-              delay: 0.7
-            }}
-          />
-          
-          <div className="relative w-5 h-4 flex flex-col justify-between z-10">
-            <motion.span 
-              className="w-5 h-0.5 bg-white/80 group-hover:bg-white transform origin-center"
-              animate={{
-                rotate: isMobileMenuOpen ? 45 : 0,
-                y: isMobileMenuOpen ? 6 : 0,
-                scale: [1, 1.05, 1],
-              }}
-              transition={{
-                rotate: { duration: 0.3, ease: "easeInOut" },
-                y: { duration: 0.3, ease: "easeInOut" },
-                scale: { duration: 2, repeat: Infinity, ease: "easeInOut", delay: 0.3 }
-              }}
-            />
-            <motion.span 
-              className="w-5 h-0.5 bg-white/80 group-hover:bg-white"
-              animate={{
-                opacity: isMobileMenuOpen ? 0 : 1,
-                scale: [1, 1.02, 1],
-              }}
-              transition={{
-                opacity: { duration: 0.2, ease: "easeInOut" },
-                scale: { duration: 2.5, repeat: Infinity, ease: "easeInOut", delay: 0.6 }
-              }}
-            />
-            <motion.span 
-              className="w-5 h-0.5 bg-white/80 group-hover:bg-white transform origin-center"
-              animate={{
-                rotate: isMobileMenuOpen ? -45 : 0,
-                y: isMobileMenuOpen ? -6 : 0,
-                scale: [1, 1.05, 1],
-              }}
-              transition={{
-                rotate: { duration: 0.3, ease: "easeInOut" },
-                y: { duration: 0.3, ease: "easeInOut" },
-                scale: { duration: 2, repeat: Infinity, ease: "easeInOut", delay: 0.9 }
-              }}
-            />
-            </div>
-        </motion.button>
-        </div>
+      </div>
 
       {/* MOBILE SEARCH OVERLAY */}
       <AnimatePresence mode="wait">
@@ -3364,6 +3016,7 @@ const Navbar = ({ onMovieSelect }) => {
               // FIXED: Only close search when clicking on the overlay background, not on search content
               if (e.target === e.currentTarget) {
                 setIsMobileSearchOpen(false);
+                setShowResults(false);
               }
             }}
           >
@@ -3462,8 +3115,13 @@ const Navbar = ({ onMovieSelect }) => {
                         <motion.div
                           onClick={(e) => {
                             e.preventDefault();
-                    e.stopPropagation();
-                    setSearchQuery('');
+                            e.stopPropagation();
+                            setSearchQuery('');
+                            // Clear search results and cancel any pending searches
+                            debouncedSearch.cancel();
+                            setSearchResults([]);
+                            setIsSearching(false);
+                            setSelectedIndex(-1);
                             // Ensure input stays focused
                             if (inputRef.current) {
                               inputRef.current.focus();
@@ -3564,7 +3222,7 @@ const Navbar = ({ onMovieSelect }) => {
                 )}
 
                         {/* Initial State - When mobile search is focused but empty */}
-                        {!searchQuery && searchHistory.length === 0 && (
+                        {!searchQuery && searchHistory.length === 0 && showResults && (
                           <motion.div
                             initial={{ opacity: 0, y: 3 }}
                             animate={{ opacity: 1, y: 0 }}
@@ -3574,6 +3232,11 @@ const Navbar = ({ onMovieSelect }) => {
                               ease: "easeOut"
                             }}
                             className="text-center py-8"
+                            data-search-element="true"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
                           >
                             <motion.svg 
                               width="48" height="48" fill="none" viewBox="0 0 48 48" className="mx-auto mb-4"
@@ -3615,6 +3278,11 @@ const Navbar = ({ onMovieSelect }) => {
                               ease: "easeOut"
                             }}
                             className="flex justify-center items-center py-8"
+                            data-search-element="true"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
                           >
                             <div className="w-8 h-8 border-4 border-white/20 border-t-white rounded-full animate-spin"></div>
                           </motion.div>
@@ -3634,64 +3302,170 @@ const Navbar = ({ onMovieSelect }) => {
                             data-search-element="true"
                           >
                             {searchResults.length > 0 ? (
-                              <div className="space-y-2">
-                      {searchResults.map((movie, index) => (
+                              <div className="divide-y divide-white/10" role="listbox">
+                                {searchResults.map((movie, index) => (
                                   <motion.button
-                          key={movie.id}
+                                    key={movie.id}
+                                    data-index={index}
                                     onClick={(e) => {
                                       e.preventDefault();
                                       e.stopPropagation();
                                       handleMovieSelect(movie);
                                       setIsMobileSearchOpen(false);
+                                      setShowResults(false);
                                     }}
-                                    className="w-full p-3 flex items-center gap-3 transition-all duration-200 group hover:bg-white/8 rounded-xl search-result-item"
+                                    initial={{ opacity: 0, y: 16 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: 8 }}
+                                    transition={{ delay: index * 0.025, duration: 0.18, type: 'spring', stiffness: 180, damping: 22 }}
+                                    className={`w-full p-4 flex items-start gap-4 transition-all duration-200 rounded-xl group/item focus:outline-none relative ${
+                                      index === selectedIndex 
+                                        ? 'border-l-4 border-white/40 bg-gradient-to-r from-white/15 to-white/5 shadow-lg shadow-black/30'
+                                        : 'hover:bg-white/8'
+                                    }`}
+                                    tabIndex={0}
+                                    aria-selected={index === selectedIndex}
+                                    role="option"
+                                    style={{
+                                      zIndex: index === selectedIndex ? 2 : 1
+                                    }}
                                     data-search-element="true"
-                                    initial={{ opacity: 0, y: 5, scale: 0.99 }}
-                                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                                    exit={{ opacity: 0, y: 5, scale: 0.99 }}
-                                    transition={{ 
-                                      duration: 0.2, 
-                                      delay: index * 0.015,
-                                      ease: "easeOut"
-                                    }}
-                                    whileHover={{ scale: 1.005, y: -0.5 }}
-                                    whileTap={{ scale: 0.995 }}
-                        >
-                                    <div className="w-20 h-28 flex-shrink-0 relative overflow-hidden rounded-xl bg-white/8 border border-white/15 shadow-lg">
-                            <MovieImage
-                              src={movie.image || movie.poster_path ? `https://image.tmdb.org/t/p/w185${movie.poster_path || movie.image}` : ''}
-                              alt={movie.title}
-                              className="w-full h-full"
-                            />
-                          </div>
-                                    <div className="flex-1 min-w-0 text-left">
-                                      <h3 className="text-white font-medium truncate text-sm">{movie.title}</h3>
-                                      <div className="flex items-center gap-2 mt-1 text-xs text-white/60">
-                                  <span>{movie.year}</span>
-                                  <span>•</span>
-                                  <span>{movie.type === 'tv' ? 'TV Show' : 'Movie'}</span>
-                                        {movie.rating > 0 && (
-                                          <>
+                                  >
+                                    {/* Selection indicator (for accessibility, visually subtle) */}
+                                    {index === selectedIndex && (
+                                      <motion.div
+                                        className="absolute left-0 top-0 bottom-0 w-1.5 bg-white/80 rounded-r-lg"
+                                        initial={{ scaleY: 0 }}
+                                        animate={{ scaleY: 1 }}
+                                        exit={{ scaleY: 0 }}
+                                        transition={{ duration: 0.18 }}
+                                        style={{ zIndex: 3 }}
+                                      />
+                                    )}
+                                    <div className="w-20 h-28 flex-shrink-0 relative group/image overflow-hidden rounded-xl bg-white/8 border border-white/15 shadow-lg">
+                                      <MovieImage
+                                        src={movie.image || movie.poster_path ? `https://image.tmdb.org/t/p/w185${movie.poster_path || movie.image}` : ''}
+                                        alt={movie.title}
+                                        className="w-full h-full"
+                                      />
+                                    </div>
+                                    <div className="flex-1 min-w-0 relative z-10">
+                                      <div className="flex items-start justify-between gap-4">
+                                        <div className='flex flex-col flex-1 items-start gap-2.5'>
+                                          <h3 className="text-white font-semibold truncate text-base md:text-lg leading-tight">{movie.title}</h3>
+                                          <div className="flex items-center gap-2 text-white/70 text-xs md:text-sm">
+                                            <span>{movie.year}</span>
                                             <span>•</span>
-                                            <span className="text-yellow-400 flex items-center gap-1">
-                                              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                                                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.967a1 1 0 00.95.69h4.178c.969 0 1.371 1.24.588 1.81l-3.385 2.46a1 1 0 00-.364 1.118l1.287 3.966c.3.922-.755 1.688-1.54 1.118l-3.385-2.46a1 1 0 00-1.175 0l-3.385 2.46c-.784.57-1.838-.196-1.54-1.118l1.287-3.966a1 1 0 00-.364-1.118l-3.385-2.46c-.783-.57-.38-1.81.588-1.81h4.178a1 1 0 00.95-.69l1.286-3.967z"/>
+                                            <span>{movie.type === 'tv' ? 'TV Show' : 'Movie'}</span>
+                                            {movie.rating > 0 && (
+                                              <>
+                                                <span>•</span>
+                                                <span className="inline-flex items-center gap-1">
+                                                  <svg className="w-3 h-3 text-yellow-400 inline" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.967a1 1 0 00.95.69h4.178c.969 0 1.371 1.24.588 1.81l-3.385 2.46a1 1 0 00-.364 1.118l1.287 3.966c.3.922-.755 1.688-1.54 1.118l-3.385-2.46a1 1 0 00-1.175 0l-3.385-2.46c-.784.57-1.838-.196-1.54-1.118l1.287-3.966a1 1 0 00-.364-1.118l-3.385-2.46c-.783-.57-.38-1.81.588-1.81h4.178a1 1 0 00.95-.69l1.286-3.967z"/>
+                                                  </svg>
+                                                  {formatRating(movie.rating)}
+                                                </span>
+                                              </>
+                                            )}
+                                          </div>
+                                        </div>
+                                        {/* Action buttons */}
+                                        <div className="flex items-center gap-1.5 opacity-0 group-hover/item:opacity-100 transition-all duration-300 transform translate-x-2 group-hover/item:translate-x-0">
+                                          {/* Minimal Add to Watchlist Button */}
+                                          <motion.div
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              if (isInWatchlist(movie.id)) {
+                                                // Remove from watchlist using context
+                                                removeFromWatchlist(movie.id);
+                                              } else {
+                                                // Add to watchlist
+                                                handleAddToWatchlist(e, movie);
+                                              }
+                                            }}
+                                            className={`relative w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-200 cursor-pointer group/btn
+                                              ${isInWatchlist(movie.id)
+                                                ? 'bg-white/20 text-white'
+                                                : 'bg-white/10 text-white/70 hover:bg-white/15 hover:text-white'
+                                              }
+                                            `}
+                                            title={isInWatchlist(movie.id) ? 'Remove from watchlist' : 'Add to watchlist'}
+                                            whileHover={{ scale: 1.1 }}
+                                            whileTap={{ scale: 0.95 }}
+                                          >
+                                            {/* Icon */}
+                                            <div className="relative z-10">
+                                              {isInWatchlist(movie.id) ? (
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
+                                                  <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                                                </svg>
+                                              ) : (
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                  <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                                                </svg>
+                                              )}
+                                            </div>
+                                            
+                                            {/* Subtle success indicator */}
+                                            {isInWatchlist(movie.id) && (
+                                              <motion.div
+                                                className="absolute inset-0 rounded-lg bg-white/10"
+                                                initial={{ scale: 0, opacity: 0 }}
+                                                animate={{ scale: 1, opacity: 1 }}
+                                                transition={{ duration: 0.2 }}
+                                              />
+                                            )}
+                                          </motion.div>
+
+                                          {/* Minimal Share Button */}
+                                          <motion.div
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              if (navigator.share) {
+                                                navigator.share({
+                                                  title: movie.title,
+                                                  text: `Check out ${movie.title} (${movie.year})`,
+                                                  url: window.location.href
+                                                });
+                                              } else {
+                                                navigator.clipboard.writeText(`${movie.title} (${movie.year}) - ${window.location.href}`);
+                                              }
+                                            }}
+                                            className="relative w-7 h-7 rounded-lg bg-white/10 hover:bg-white/15 flex items-center justify-center transition-all duration-200 text-white/70 hover:text-white cursor-pointer group/share"
+                                            title="Share"
+                                            whileHover={{ scale: 1.1 }}
+                                            whileTap={{ scale: 0.95 }}
+                                          >
+                                            {/* Icon */}
+                                            <div className="relative z-10">
+                                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+                                                <polyline points="16 6 12 2 8 6" />
+                                                <line x1="12" y1="2" x2="12" y2="15" />
                                               </svg>
-                                              {typeof movie.rating === 'number' && !isNaN(movie.rating) 
-                                                ? movie.rating.toFixed(1) 
-                                                : movie.rating || 'N/A'}
-                                            </span>
-                                          </>
-                                        )}
-                            </div>
-                            {movie.overview && (
-                                        <div className="mt-1 text-xs text-white/50 line-clamp-2">{movie.overview}</div>
-                            )}
-                          </div>
+                                            </div>
+                                          </motion.div>
+                                        </div>
+                                      </div>
+                                      <div className="mt-3 flex flex-wrap gap-2">
+                                        {movie.genres?.slice(0, 3).map((genre, idx) => (
+                                          <span key={idx} className="px-2 py-1 rounded-full text-xs bg-white/10 text-white/80 border border-white/10">
+                                            {genre}
+                                          </span>
+                                        ))}
+                                      </div>
+                                      {/* Short overview/excerpt */}
+                                      {movie.overview && (
+                                        <div className="mt-3 text-xs text-white/60 line-clamp-2 leading-relaxed">
+                                          {movie.overview}
+                                        </div>
+                                      )}
+                                    </div>
                                   </motion.button>
-                      ))}
-                    </div>
-                  ) : (
+                                ))}
+                              </div>
+                            ) : (
                               <motion.div
                                 initial={{ opacity: 0, scale: 0.98 }}
                                 animate={{ opacity: 1, scale: 1 }}
@@ -3704,7 +3478,7 @@ const Navbar = ({ onMovieSelect }) => {
                                 <div className="text-white/60 mb-2">No results found for "{searchQuery}"</div>
                                 <div className="text-white/40 text-xs">Try different keywords or check your spelling</div>
                               </motion.div>
-                        )}
+                            )}
                           </motion.div>
                         )}
                       </motion.div>
@@ -3717,718 +3491,6 @@ const Navbar = ({ onMovieSelect }) => {
         )}
         </AnimatePresence>
 
-      {/* MOBILE MENU (hamburger) */}
-      <AnimatePresence>
-        {isMobileMenuOpen && (
-          <>
-            {/* Enhanced Backdrop with Blur Effect */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3, ease: "easeInOut" }}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[89999] sm:hidden"
-              onClick={handleClickOutside}
-            />
-            
-            {/* Enhanced Mobile Menu Container */}
-            <motion.div
-              id="mobile-navigation-menu"
-              initial={{ opacity: 0, height: 0, y: -20, scale: 0.95 }}
-              animate={{ opacity: 1, height: 'auto', y: 0, scale: 1 }}
-              exit={{ opacity: 0, height: 0, y: -20, scale: 0.95 }}
-              transition={{ 
-                duration: 0.4,
-                ease: [0.4, 0, 0.2, 1],
-                staggerChildren: 0.08
-              }}
-              className="fixed top-16 left-0 right-0 sm:hidden overflow-hidden z-[90000]"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="mobile-menu-title"
-            >
-              {/* Enhanced Background with Multiple Layers */}
-              <motion.div
-                aria-hidden="true"
-                className="absolute inset-0 z-0 pointer-events-none"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.5, ease: 'easeInOut' }}
-                style={{
-                  background: `
-                    linear-gradient(180deg, 
-                      rgba(30,32,38,0.98) 0%, 
-                      rgba(18,20,23,0.98) 50%,
-                      rgba(12,14,16,0.98) 100%
-                    )
-                  `,
-                  backdropFilter: 'blur(20px)',
-                  WebkitBackdropFilter: 'blur(20px)',
-                }}
-              />
-              
-              {/* Animated Border Glow */}
-              <motion.div
-                className="absolute inset-0 z-0 pointer-events-none"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.6, delay: 0.1 }}
-                style={{
-                  background: `
-                    linear-gradient(90deg, 
-                      transparent 0%, 
-                      rgba(255,255,255,0.1) 50%, 
-                      transparent 100%
-                    )
-                  `,
-                  mask: 'linear-gradient(to bottom, transparent 0%, black 10%, black 90%, transparent 100%)',
-                  WebkitMask: 'linear-gradient(to bottom, transparent 0%, black 10%, black 90%, transparent 100%)',
-                }}
-              />
-              
-              {/* Enhanced Content Container */}
-              <motion.div 
-                className="flex flex-col py-6 relative z-10"
-                initial="hidden"
-                animate="visible"
-                variants={animations.menuContainer}
-                role="menu"
-                aria-label="Mobile navigation menu"
-              >
-                {/* Enhanced Header Section */}
-                <motion.div
-                  variants={animations.menuItem}
-                  transition={{ duration: 0.4, ease: "easeOut" }}
-                  className="px-6 pb-4"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <motion.div 
-                        className="w-10 h-10 rounded-xl bg-gradient-to-br from-white/20 to-white/10 flex items-center justify-center"
-                        whileHover={{ scale: 1.05, rotate: 5 }}
-                        whileTap={{ scale: 0.95 }}
-                        transition={{ duration: 0.2 }}
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white/90" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                          <polyline points="16 17 21 12 16 7" />
-                        </svg>
-                      </motion.div>
-                      <div>
-                        <h2 id="mobile-menu-title" className="text-white font-semibold text-lg">Navigation</h2>
-                        <p className="text-white/60 text-sm">Explore Streamr</p>
-                      </div>
-                    </div>
-                    <motion.button
-                      onClick={closeMenu}
-                      className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all duration-200"
-                      whileHover={{ scale: 1.1, rotate: 90 }}
-                      whileTap={{ scale: 0.9 }}
-                      aria-label="Close menu"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/80" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M18 6L6 18M6 6l12 12" />
-                      </svg>
-                    </motion.button>
-                  </div>
-                </motion.div>
-
-                {/* Enhanced Navigation Links */}
-                <div className="space-y-1">
-                  {/* Home Link */}
-                  <motion.div
-                    variants={animations.menuItem}
-                    transition={{ duration: 0.4, ease: "easeOut" }}
-                  >
-                    <Link 
-                      to="/" 
-                      className="mx-6 px-4 py-4 text-white/90 hover:text-white hover:bg-gradient-to-r hover:from-white/10 hover:to-white/5 active:bg-white/15 transition-all duration-300 flex items-center gap-4 group rounded-xl border border-transparent hover:border-white/10" 
-                      onClick={() => {
-                        closeMenu();
-                        // Add haptic feedback
-                        triggerHaptic([15]);
-                      }} 
-                      aria-label="Home" 
-                      role="menuitem"
-                    >
-                      <motion.div 
-                        className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-white/15 to-white/5 flex items-center justify-center group-hover:from-white/25 group-hover:to-white/10 transition-all duration-300 shadow-lg"
-                        whileHover={{ scale: 1.1, rotate: 5 }}
-                        whileTap={{ scale: 0.95 }}
-                      >
-                        {/* Animated Background Glow */}
-                        <motion.div
-                          className="absolute inset-0 rounded-xl bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-sm"
-                          animate={{
-                            scale: [1, 1.1, 1],
-                            opacity: [0, 0.3, 0],
-                          }}
-                          transition={{
-                            duration: 2,
-                            repeat: Infinity,
-                            ease: "easeInOut",
-                            delay: 0.5
-                          }}
-                        />
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform transition-transform duration-300 group-hover:scale-110 relative z-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                          <polyline points="16 17 21 12 16 7" />
-                        </svg>
-                      </motion.div>
-                      <div className="flex-1">
-                        <span className="font-semibold tracking-wide text-base">Home</span>
-                        <p className="text-white/50 text-xs mt-0.5">Discover trending content</p>
-                      </div>
-                      <motion.div
-                        className="opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                        initial={{ x: 10 }}
-                        animate={{ x: 0 }}
-                        transition={{ duration: 0.2 }}
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M9 18l6-6-6-6" />
-                        </svg>
-                      </motion.div>
-                    </Link>
-                  </motion.div>
-                  
-                  {/* Section: Browse */}
-                  <motion.div
-                    variants={animations.menuItem}
-                    transition={{ duration: 0.4, ease: "easeOut", delay: 0.1 }}
-                    className="px-6 pt-6 pb-2"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-1 h-4 bg-gradient-to-b from-white/60 to-white/20 rounded-full"></div>
-                      <span className="text-xs font-bold uppercase tracking-widest text-white/50">Browse</span>
-                    </div>
-                  </motion.div>
-                  
-                  {/* Movies Link */}
-                  <motion.div
-                    variants={animations.menuItem}
-                    transition={{ duration: 0.4, ease: "easeOut", delay: 0.15 }}
-                  >
-                    <Link 
-                      to="/movies" 
-                      className="mx-6 px-4 py-4 text-white/90 hover:text-white hover:bg-gradient-to-r hover:from-white/10 hover:to-white/5 active:bg-white/15 transition-all duration-300 flex items-center gap-4 group rounded-xl border border-transparent hover:border-white/10" 
-                      onClick={() => {
-                        closeMenu();
-                        // Add haptic feedback
-                        triggerHaptic([15]);
-                      }} 
-                      aria-label="Movies" 
-                      role="menuitem"
-                    >
-                      <motion.div 
-                        className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-white/15 to-white/5 flex items-center justify-center group-hover:from-white/25 group-hover:to-white/10 transition-all duration-300 shadow-lg"
-                        whileHover={{ scale: 1.1, rotate: 5 }}
-                        whileTap={{ scale: 0.95 }}
-                      >
-                        <motion.div
-                          className="absolute inset-0 rounded-xl bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-sm"
-                          animate={{
-                            scale: [1, 1.1, 1],
-                            opacity: [0, 0.3, 0],
-                          }}
-                          transition={{
-                            duration: 2,
-                            repeat: Infinity,
-                            ease: "easeInOut",
-                            delay: 0.6
-                          }}
-                        />
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform transition-transform duration-300 group-hover:scale-110 relative z-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                          <polyline points="14 2 14 8 20 8" />
-                          <line x1="16" y1="13" x2="8" y2="13" />
-                          <line x1="16" y1="17" x2="8" y2="17" />
-                          <polyline points="10 9 9 9 8 9" />
-                        </svg>
-                      </motion.div>
-                      <div className="flex-1">
-                        <span className="font-semibold text-base">Movies</span>
-                        <p className="text-white/50 text-xs mt-0.5">Latest releases & classics</p>
-                      </div>
-                      <motion.div
-                        className="opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                        initial={{ x: 10 }}
-                        animate={{ x: 0 }}
-                        transition={{ duration: 0.2 }}
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M9 18l6-6-6-6" />
-                        </svg>
-                      </motion.div>
-                    </Link>
-                  </motion.div>
-                  
-                  {/* Series Link */}
-                  <motion.div
-                    variants={animations.menuItem}
-                    transition={{ duration: 0.4, ease: "easeOut", delay: 0.2 }}
-                  >
-                    <Link 
-                      to="/series" 
-                      className="mx-6 px-4 py-4 text-white/90 hover:text-white hover:bg-gradient-to-r hover:from-white/10 hover:to-white/5 active:bg-white/15 transition-all duration-300 flex items-center gap-4 group rounded-xl border border-transparent hover:border-white/10" 
-                      onClick={() => {
-                        closeMenu();
-                        // Add haptic feedback
-                        triggerHaptic([15]);
-                      }} 
-                      aria-label="Series" 
-                      role="menuitem"
-                    >
-                      <motion.div 
-                        className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-white/15 to-white/5 flex items-center justify-center group-hover:from-white/25 group-hover:to-white/10 transition-all duration-300 shadow-lg"
-                        whileHover={{ scale: 1.1, rotate: 5 }}
-                        whileTap={{ scale: 0.95 }}
-                      >
-                        <motion.div
-                          className="absolute inset-0 rounded-xl bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-sm"
-                          animate={{
-                            scale: [1, 1.1, 1],
-                            opacity: [0, 0.3, 0],
-                          }}
-                          transition={{
-                            duration: 2,
-                            repeat: Infinity,
-                            ease: "easeInOut",
-                            delay: 0.7
-                          }}
-                        />
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform transition-transform duration-300 group-hover:scale-110 relative z-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-                          <line x1="8" y1="21" x2="16" y2="21" />
-                          <line x1="12" y1="17" x2="12" y2="21" />
-                        </svg>
-                      </motion.div>
-                      <div className="flex-1">
-                        <span className="font-semibold text-base">Series</span>
-                        <p className="text-white/50 text-xs mt-0.5">TV shows & episodes</p>
-                      </div>
-                      <motion.div
-                        className="opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                        initial={{ x: 10 }}
-                        animate={{ x: 0 }}
-                        transition={{ duration: 0.2 }}
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M9 18l6-6-6-6" />
-                        </svg>
-                      </motion.div>
-                    </Link>
-                  </motion.div>
-                  
-                  {/* Community Link */}
-                  <motion.div
-                    variants={animations.menuItem}
-                    transition={{ duration: 0.4, ease: "easeOut", delay: 0.25 }}
-                  >
-                    <Link 
-                      to="/community" 
-                      className="mx-6 px-4 py-4 text-white/90 hover:text-white hover:bg-gradient-to-r hover:from-white/10 hover:to-white/5 active:bg-white/15 transition-all duration-300 flex items-center gap-4 group rounded-xl border border-transparent hover:border-white/10" 
-                      onClick={() => {
-                        closeMenu();
-                        // Add haptic feedback
-                        triggerHaptic([15]);
-                      }} 
-                      aria-label="Community" 
-                      role="menuitem"
-                    >
-                      <motion.div 
-                        className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-white/15 to-white/5 flex items-center justify-center group-hover:from-white/25 group-hover:to-white/10 transition-all duration-300 shadow-lg"
-                        whileHover={{ scale: 1.1, rotate: 5 }}
-                        whileTap={{ scale: 0.95 }}
-                      >
-                        <motion.div
-                          className="absolute inset-0 rounded-xl bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-sm"
-                          animate={{
-                            scale: [1, 1.1, 1],
-                            opacity: [0, 0.3, 0],
-                          }}
-                          transition={{
-                            duration: 2,
-                            repeat: Infinity,
-                            ease: "easeInOut",
-                            delay: 0.8
-                          }}
-                        />
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform transition-transform duration-300 group-hover:scale-110 relative z-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10z"/>
-                        </svg>
-                      </motion.div>
-                      <div className="flex-1">
-                        <span className="font-semibold text-base">Community</span>
-                        <p className="text-white/50 text-xs mt-0.5">Discuss & share opinions</p>
-                      </div>
-                      <motion.div
-                        className="opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                        initial={{ x: 10 }}
-                        animate={{ x: 0 }}
-                        transition={{ duration: 0.2 }}
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M9 18l6-6-6-6" />
-                        </svg>
-                      </motion.div>
-                    </Link>
-                  </motion.div>
-                </div>
-
-                {/* Watchlist Link - Always Visible */}
-                <motion.div
-                  variants={animations.menuItem}
-                  transition={{ duration: 0.4, ease: "easeOut", delay: 0.25 }}
-                >
-                  <Link 
-                    to="/watchlist" 
-                    className="mx-6 px-4 py-4 text-white/90 hover:text-white hover:bg-gradient-to-r hover:from-white/10 hover:to-white/5 active:bg-white/15 transition-all duration-300 flex items-center gap-4 group rounded-xl border border-transparent hover:border-white/10" 
-                    onClick={() => {
-                      closeMenu();
-                      // Add haptic feedback
-                      triggerHaptic([15]);
-                    }} 
-                    aria-label="My List" 
-                    role="menuitem"
-                  >
-                    <motion.div 
-                      className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-white/15 to-white/5 flex items-center justify-center group-hover:from-white/25 group-hover:to-white/10 transition-all duration-300 shadow-lg"
-                      whileHover={{ scale: 1.1, rotate: 5 }}
-                      whileTap={{ scale: 0.95 }}
-                    >
-                      <motion.div
-                        className="absolute inset-0 rounded-xl bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-sm"
-                        animate={{
-                          scale: [1, 1.1, 1],
-                          opacity: [0, 0.3, 0],
-                        }}
-                        transition={{
-                          duration: 2,
-                          repeat: Infinity,
-                          ease: "easeInOut",
-                          delay: 0.9
-                        }}
-                      />
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform transition-transform duration-300 group-hover:scale-110 relative z-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-                      </svg>
-                    </motion.div>
-                    <div className="flex-1">
-                      <span className="font-semibold text-base">My List</span>
-                      <p className="text-white/50 text-xs mt-0.5">Your saved content</p>
-                    </div>
-                    <motion.div
-                      className="opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                      initial={{ x: 10 }}
-                      animate={{ x: 0 }}
-                      transition={{ duration: 0.2 }}
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M9 18l6-6-6-6" />
-                      </svg>
-                    </motion.div>
-                  </Link>
-                </motion.div>
-
-                {/* Enhanced User Section */}
-                {user ? (
-                  <>
-                    {/* Section: Account */}
-                    <motion.div
-                      variants={animations.menuItem}
-                      transition={{ duration: 0.4, ease: "easeOut", delay: 0.3 }}
-                      className="px-6 pt-6 pb-2"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-1 h-4 bg-gradient-to-b from-white/60 to-white/20 rounded-full"></div>
-                        <span className="text-xs font-bold uppercase tracking-widest text-white/50">My Account</span>
-                      </div>
-                    </motion.div>
-                    
-                    {/* Profile Link */}
-                    <motion.div
-                      variants={animations.menuItem}
-                      transition={{ duration: 0.4, ease: "easeOut", delay: 0.35 }}
-                    >
-                      <Link 
-                        to="/profile" 
-                        className="mx-6 px-4 py-4 text-white/90 hover:text-white hover:bg-gradient-to-r hover:from-white/10 hover:to-white/5 active:bg-white/15 transition-all duration-300 flex items-center gap-4 group rounded-xl border border-transparent hover:border-white/10" 
-                        onClick={() => {
-                          closeMenu();
-                          // Add haptic feedback
-                          triggerHaptic([15]);
-                        }} 
-                        aria-label="Profile" 
-                        role="menuitem"
-                      >
-                        <motion.div 
-                          className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-white/15 to-white/5 flex items-center justify-center group-hover:from-white/25 group-hover:to-white/10 transition-all duration-300 shadow-lg"
-                          whileHover={{ scale: 1.1, rotate: 5 }}
-                          whileTap={{ scale: 0.95 }}
-                        >
-                          <motion.div
-                            className="absolute inset-0 rounded-xl bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-sm"
-                            animate={{
-                              scale: [1, 1.1, 1],
-                              opacity: [0, 0.3, 0],
-                            }}
-                            transition={{
-                              duration: 2,
-                              repeat: Infinity,
-                              ease: "easeInOut",
-                              delay: 1
-                            }}
-                          />
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform transition-transform duration-300 group-hover:scale-110 relative z-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                            <circle cx="12" cy="7" r="4" />
-                          </svg>
-                        </motion.div>
-                        <div className="flex-1">
-                          <span className="font-semibold text-base">Profile</span>
-                          <p className="text-white/50 text-xs mt-0.5">Manage your account</p>
-                        </div>
-                        <motion.div
-                          className="opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                          initial={{ x: 10 }}
-                          animate={{ x: 0 }}
-                          transition={{ duration: 0.2 }}
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M9 18l6-6-6-6" />
-                          </svg>
-                        </motion.div>
-                      </Link>
-                    </motion.div>
-                  </>
-                ) : (
-                  <>
-                    {/* Section: Authentication */}
-                    <motion.div
-                      variants={animations.menuItem}
-                      transition={{ duration: 0.4, ease: "easeOut", delay: 0.3 }}
-                      className="px-6 pt-6 pb-2"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-1 h-4 bg-gradient-to-b from-white/60 to-white/20 rounded-full"></div>
-                        <span className="text-xs font-bold uppercase tracking-widest text-white/50">Account</span>
-                      </div>
-                    </motion.div>
-                    
-                    {/* Sign In Link */}
-                    <motion.div
-                      variants={animations.menuItem}
-                      transition={{ duration: 0.4, ease: "easeOut", delay: 0.35 }}
-                    >
-                      <Link 
-                        to="/login" 
-                        className="mx-6 px-4 py-4 text-white/90 hover:text-white hover:bg-gradient-to-r hover:from-white/10 hover:to-white/5 active:bg-white/15 transition-all duration-300 flex items-center gap-4 group rounded-xl border border-transparent hover:border-white/10" 
-                        onClick={() => {
-                          closeMenu();
-                          // Add haptic feedback
-                          triggerHaptic([15]);
-                        }} 
-                        aria-label="Sign In" 
-                        role="menuitem"
-                      >
-                        <motion.div 
-                          className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-white/15 to-white/5 flex items-center justify-center group-hover:from-white/25 group-hover:to-white/10 transition-all duration-300 shadow-lg"
-                          whileHover={{ scale: 1.1, rotate: 5 }}
-                          whileTap={{ scale: 0.95 }}
-                        >
-                          <motion.div
-                            className="absolute inset-0 rounded-xl bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-sm"
-                            animate={{
-                              scale: [1, 1.1, 1],
-                              opacity: [0, 0.3, 0],
-                            }}
-                            transition={{
-                              duration: 2,
-                              repeat: Infinity,
-                              ease: "easeInOut",
-                              delay: 1.1
-                            }}
-                          />
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform transition-transform duration-300 group-hover:scale-110 relative z-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
-                            <polyline points="10 17 15 12 10 7" />
-                            <line x1="15" y1="12" x2="3" y2="12" />
-                          </svg>
-                        </motion.div>
-                        <div className="flex-1">
-                          <span className="font-semibold text-base">Sign In</span>
-                          <p className="text-white/50 text-xs mt-0.5">Access your account</p>
-                        </div>
-                        <motion.div
-                          className="opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                          initial={{ x: 10 }}
-                          animate={{ x: 0 }}
-                          transition={{ duration: 0.2 }}
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M9 18l6-6-6-6" />
-                          </svg>
-                        </motion.div>
-                      </Link>
-                    </motion.div>
-                    
-                    {/* Sign Up Link */}
-                    <motion.div
-                      variants={animations.menuItem}
-                      transition={{ duration: 0.4, ease: "easeOut", delay: 0.4 }}
-                    >
-                      <Link 
-                        to="/signup" 
-                        className="mx-6 px-4 py-4 text-white/90 hover:text-white hover:bg-gradient-to-r hover:from-white/10 hover:to-white/5 active:bg-white/15 transition-all duration-300 flex items-center gap-4 group rounded-xl border border-transparent hover:border-white/10" 
-                        onClick={() => {
-                          closeMenu();
-                          // Add haptic feedback
-                          triggerHaptic([15]);
-                        }} 
-                        aria-label="Sign Up" 
-                        role="menuitem"
-                      >
-                        <motion.div 
-                          className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-white/15 to-white/5 flex items-center justify-center group-hover:from-white/25 group-hover:to-white/10 transition-all duration-300 shadow-lg"
-                          whileHover={{ scale: 1.1, rotate: 5 }}
-                          whileTap={{ scale: 0.95 }}
-                        >
-                          <motion.div
-                            className="absolute inset-0 rounded-xl bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-sm"
-                            animate={{
-                              scale: [1, 1.1, 1],
-                              opacity: [0, 0.3, 0],
-                            }}
-                            transition={{
-                              duration: 2,
-                              repeat: Infinity,
-                              ease: "easeInOut",
-                              delay: 1.2
-                            }}
-                          />
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform transition-transform duration-300 group-hover:scale-110 relative z-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                            <circle cx="8.5" cy="7" r="4" />
-                            <line x1="20" y1="8" x2="20" y2="14" />
-                            <line x1="23" y1="11" x2="17" y2="11" />
-                          </svg>
-                        </motion.div>
-                        <div className="flex-1">
-                          <span className="font-semibold text-base">Sign Up</span>
-                          <p className="text-white/50 text-xs mt-0.5">Create new account</p>
-                        </div>
-                        <motion.div
-                          className="opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                          initial={{ x: 10 }}
-                          animate={{ x: 0 }}
-                          transition={{ duration: 0.2 }}
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M9 18l6-6-6-6" />
-                          </svg>
-                        </motion.div>
-                      </Link>
-                    </motion.div>
-                  </>
-                )}
-
-                {/* Enhanced Divider */}
-                <motion.div
-                  variants={animations.menuItem}
-                  transition={{ duration: 0.5, ease: "easeOut", delay: 0.45 }}
-                  className="mx-6 my-4"
-                >
-                  <div className="h-px bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
-                </motion.div>
-
-                {/* Enhanced Footer Section */}
-                <div className="space-y-1 px-6 pb-4">
-                  <motion.div
-                    variants={animations.menuItem}
-                    transition={{ duration: 0.4, ease: "easeOut", delay: 0.5 }}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-white/15 to-white/5 flex items-center justify-center">
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <circle cx="12" cy="12" r="3" />
-                            <path d="M12 1v6m0 6v6m11-7h-6m-6 0H1" />
-                          </svg>
-                        </div>
-                        <div>
-                          <span className="text-white/80 text-sm font-medium">Settings</span>
-                          <p className="text-white/40 text-xs">App preferences</p>
-                        </div>
-                      </div>
-                      <motion.button
-                        className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all duration-200"
-                        whileHover={{ scale: 1.1, rotate: 90 }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={() => {
-                          // Add haptic feedback
-                          triggerHaptic([10]);
-                        }}
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M9 18l6-6-6-6" />
-                        </svg>
-                      </motion.button>
-                    </div>
-                  </motion.div>
-                  
-                  <motion.div
-                    variants={animations.menuItem}
-                    transition={{ duration: 0.4, ease: "easeOut", delay: 0.55 }}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-white/15 to-white/5 flex items-center justify-center">
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-                            <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-                          </svg>
-                        </div>
-                        <div>
-                          <span className="text-white/80 text-sm font-medium">Help & Support</span>
-                          <p className="text-white/40 text-xs">Get assistance</p>
-                        </div>
-                      </div>
-                      <motion.button
-                        className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all duration-200"
-                        whileHover={{ scale: 1.1, rotate: 90 }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={() => {
-                          // Add haptic feedback
-                          triggerHaptic([10]);
-                        }}
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M9 18l6-6-6-6" />
-                        </svg>
-                      </motion.button>
-                    </div>
-                  </motion.div>
-                </div>
-
-                {/* Enhanced Footer */}
-                <motion.div
-                  variants={animations.menuItem}
-                  transition={{ duration: 0.4, ease: "easeOut", delay: 0.6 }}
-                  className="px-6 pt-4 pb-6"
-                >
-                  <div className="text-center">
-                    <p className="text-white/40 text-xs">Streamr v1.0.0</p>
-                    <p className="text-white/30 text-xs mt-1">© 2025 Streamr. All rights reserved.</p>
-                  </div>
-                </motion.div>
-              </motion.div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
     </header>
   );
 };

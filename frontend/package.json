@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "preview:clean": "rm -rf dist && npm run build && vite preview",
-    "clear-cache": "rm -rf node_modules/.vite && rm -rf dist"
+    "clear-cache": "rm -rf node_modules/.vite && rm -rf dist",
+    "setup-api": "node setup-api-key.js"
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",

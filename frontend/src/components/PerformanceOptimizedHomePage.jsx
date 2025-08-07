@@ -39,6 +39,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import ReactPlayer from 'react-player';
 import { useState as useToastState } from 'react';
 import MinimalToast from './MinimalToast';
+import RatingBadge from './RatingBadge';
 import { debounce as lodashDebounce } from 'lodash';
 import { useSmoothScroll, useScrollAnimation, useScrollParallax } from '../hooks/useSmoothScroll';
 
@@ -585,6 +586,12 @@ const MovieCard = memo(({
       onMouseLeave={handleMouseLeave}
     >
       <div className={`relative ${isMobile ? 'aspect-[2/3]' : 'aspect-[16/10]'} rounded-lg overflow-hidden bg-gray-800 transform-gpu transition-all duration-300 md:group-hover:scale-[1.02] md:group-hover:shadow-2xl md:group-hover:shadow-black/20 w-full`}>
+        {/* Rating Badge */}
+        <RatingBadge 
+          rating={rating || vote_average} 
+          size="default"
+        />
+        
         {/* Prefetch shimmer/spinner overlay */}
         {prefetching && (
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/30 pointer-events-none">

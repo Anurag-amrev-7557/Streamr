@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect, useCallback, Suspense, lazy, useMemo } from 'react';
+import * as React from 'react';
+import { useState, useRef, useEffect, useCallback, Suspense, lazy, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import { getMovieDetails, getMovieCredits, getMovieVideos, getSimilarMovies, getTVSeason, getTVSeasons } from '../services/tmdbService';
@@ -97,10 +98,10 @@ const CustomDropdown = React.memo(({
 
 // 🚀 NEW: Advanced caching and real-time updates with memory leak prevention
 const DETAILS_CACHE = new Map();
-const CACHE_DURATION = 3 * 60 * 1000; // Reduced from 5 to 3 minutes
-const BACKGROUND_REFRESH_INTERVAL = 3 * 60 * 1000; // Increased from 2 to 3 minutes
-const REAL_TIME_UPDATE_INTERVAL = 45 * 1000; // Increased from 30 to 45 seconds
-const MAX_CACHE_SIZE = 20; // Reduced from 30 to 20 to prevent memory bloat
+const CACHE_DURATION = 5 * 60 * 1000; // Increased from 3 to 5 minutes for better performance
+const BACKGROUND_REFRESH_INTERVAL = 5 * 60 * 1000; // Increased from 3 to 5 minutes
+const REAL_TIME_UPDATE_INTERVAL = 60 * 1000; // Increased from 45 to 60 seconds
+const MAX_CACHE_SIZE = 25; // Increased from 20 to 25 for better caching
 
 // 🎯 NEW: Cache management utilities with enhanced memory optimization
 const getCachedDetails = (id, type) => {
@@ -119,23 +120,23 @@ const setCachedDetails = (id, type, data) => {
     timestamp: Date.now()
   });
   
-  // Enhanced cleanup: More aggressive cache size management
+  // Enhanced cleanup: Less aggressive cache size management
   if (DETAILS_CACHE.size > MAX_CACHE_SIZE) {
-    // Remove oldest entries more aggressively
+    // Remove oldest entries less aggressively
     const entries = Array.from(DETAILS_CACHE.entries());
     entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
     
-    // Remove oldest 50% of entries instead of 40%
-    const toRemove = Math.floor(MAX_CACHE_SIZE * 0.5);
+    // Remove oldest 30% of entries instead of 50%
+    const toRemove = Math.floor(MAX_CACHE_SIZE * 0.3);
     for (let i = 0; i < toRemove && i < entries.length; i++) {
       DETAILS_CACHE.delete(entries[i][0]);
     }
   }
   
-  // Clean up old cache entries more frequently
+  // Clean up old cache entries less frequently
   const now = Date.now();
   for (const [cacheKey, value] of DETAILS_CACHE.entries()) {
-    if (now - value.timestamp > CACHE_DURATION) {
+    if (now - value.timestamp > CACHE_DURATION * 2) { // Only clear entries older than 2x duration
       DETAILS_CACHE.delete(cacheKey);
     }
   }
@@ -147,26 +148,30 @@ const clearCache = () => {
   DETAILS_CACHE.clear();
   console.log(`[MovieDetailsOverlay] Cache cleared: ${beforeSize} entries removed`);
   
-  // Force garbage collection if available
-  if (window.gc) {
-    window.gc();
+  // Only force garbage collection if memory is critically high
+  if (performance.memory && performance.memory.usedJSHeapSize / 1024 / 1024 > 500) {
+    if (window.gc) {
+      window.gc();
+    }
   }
   
-  // Clear any additional memory sources
-  if (window.movieDetailsCache) {
+  // Clear any additional memory sources only if necessary
+  if (window.movieDetailsCache && performance.memory && performance.memory.usedJSHeapSize / 1024 / 1024 > 400) {
     delete window.movieDetailsCache;
   }
   
-  // Clear localStorage caches if they're too large
-  try {
-    const keys = Object.keys(localStorage);
-    keys.forEach(key => {
-      if (key.includes('movie') || key.includes('cache') || key.includes('temp')) {
-        localStorage.removeItem(key);
-      }
-    });
-  } catch (error) {
-    console.warn('[MovieDetailsOverlay] Failed to clear localStorage:', error);
+  // Clear localStorage caches only if memory is high
+  if (performance.memory && performance.memory.usedJSHeapSize / 1024 / 1024 > 450) {
+    try {
+      const keys = Object.keys(localStorage);
+      keys.forEach(key => {
+        if (key.includes('movie') || key.includes('cache') || key.includes('temp')) {
+          localStorage.removeItem(key);
+        }
+      });
+    } catch (error) {
+      console.warn('[MovieDetailsOverlay] Failed to clear localStorage:', error);
+    }
   }
 };
 
@@ -181,15 +186,17 @@ const trackPerformance = (operation, duration, success = true) => {
     });
   }
   
-  // Enhanced memory monitoring with automatic cleanup
+  // Enhanced memory monitoring with less aggressive cleanup
   if (performance.memory) {
     const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-    if (memoryMB > 400) { // Reduced threshold from 600 to 400
+    if (memoryMB > 600) { // Increased threshold from 400 to 600
       console.warn(`[MovieDetailsOverlay] High memory usage during ${operation}: ${memoryMB.toFixed(2)}MB`);
-      // Force cleanup if memory is too high
-      clearCache();
-      if (window.gc) {
-        window.gc();
+      // Only clear cache if memory is critically high
+      if (memoryMB > 700) {
+        clearCache();
+        if (window.gc) {
+          window.gc();
+        }
       }
     }
   }
@@ -203,7 +210,7 @@ class RealTimeUpdateManager {
     this.isActive = false;
     this.abortController = null;
     this.lastUpdateTime = 0;
-    this.maxSubscribers = 5; // Reduced from 10 to 5 to prevent memory bloat
+    this.maxSubscribers = 8; // Increased from 5 to 8 for better functionality
     this.updateQueue = []; // Queue for rate limiting updates
     this.memoryCheckInterval = null;
   }
@@ -213,7 +220,7 @@ class RealTimeUpdateManager {
     
     const key = `${type}_${movieId}`;
     
-    // More aggressive subscriber limit
+    // Less aggressive subscriber limit
     if (this.subscribers.size >= this.maxSubscribers) {
       console.warn('[RealTimeUpdateManager] Too many subscribers, removing oldest');
       const firstKey = this.subscribers.keys().next().value;
@@ -252,16 +259,16 @@ class RealTimeUpdateManager {
       this.performUpdates();
     }, REAL_TIME_UPDATE_INTERVAL);
     
-    // Add memory monitoring
+    // Add memory monitoring with less frequent checks
     this.memoryCheckInterval = setInterval(() => {
       if (performance.memory) {
         const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-        if (memoryMB > 350) { // Lower threshold for real-time updates
+        if (memoryMB > 500) { // Increased threshold from 350 to 500
           console.warn(`[RealTimeUpdateManager] High memory usage: ${memoryMB.toFixed(2)}MB, reducing update frequency`);
           this.cleanup();
         }
       }
-    }, 10000); // Check every 10 seconds
+    }, 30000); // Check every 30 seconds instead of 10
   }
 
   stopUpdates() {
@@ -293,13 +300,13 @@ class RealTimeUpdateManager {
     
     // Enhanced rate limiting: don't update too frequently
     const now = Date.now();
-    if (now - this.lastUpdateTime < 2000) return; // Increased from 1 second to 2 seconds
+    if (now - this.lastUpdateTime < 3000) return; // Increased from 2 seconds to 3 seconds
     this.lastUpdateTime = now;
     
     // Memory check before performing updates
     if (performance.memory) {
       const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-      if (memoryMB > 400) { // Reduced threshold from 800 to 400
+      if (memoryMB > 600) { // Increased threshold from 400 to 600
         console.warn(`[RealTimeUpdateManager] High memory usage: ${memoryMB.toFixed(2)}MB, skipping updates`);
         return;
       }
@@ -307,7 +314,7 @@ class RealTimeUpdateManager {
     
     // Process updates in batches to prevent overwhelming the system
     const updatePromises = [];
-    const batchSize = 3; // Process only 3 updates at a time
+    const batchSize = 4; // Increased from 3 to 4 for better performance
     
     for (const [key, callback] of this.subscribers.entries()) {
       if (this.abortController?.signal.aborted) break;
@@ -327,7 +334,7 @@ class RealTimeUpdateManager {
         
         // Add delay between updates to prevent overwhelming the API
         if (updatePromises.length % batchSize === 0) {
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise(resolve => setTimeout(resolve, 150)); // Increased delay from 100 to 150ms
         }
       } catch (error) {
         if (!this.abortController?.signal.aborted) {
@@ -663,6 +670,25 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   const handleShowMoreSimilar = useCallback(() => setSimilarLimit(lim => lim + 20), []);
   // Add state to control how many rows of cast are shown
   const [castRowsShown, setCastRowsShown] = useState(1);
+
+  // 🚀 NEW: Smooth close state and handler
+  const [isClosing, setIsClosing] = useState(false);
+  
+  const handleSmoothClose = useCallback(() => {
+    if (isClosing) return; // Prevent multiple close attempts
+    
+    setIsClosing(true);
+    
+    // Add a small delay to allow the exit animation to complete
+    setTimeout(() => {
+      onClose();
+    }, 300); // Match the exit animation duration
+  }, [onClose, isClosing]);
+  
+  // Reset closing state when movie changes
+  useEffect(() => {
+    setIsClosing(false);
+  }, [movie?.id]);
 
   // Enhanced motion variants with ultra-smooth spring physics and optimized performance
   const containerVariants = useMemo(() => ({
@@ -1367,15 +1393,15 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   // Memoize click outside and escape handlers
   const handleClickOutside = useCallback((event) => {
     if (overlayRef.current && !contentRef.current?.contains(event.target)) {
-      onClose();
+      handleSmoothClose();
     }
-  }, [onClose]);
+  }, [handleSmoothClose]);
 
   const handleEscape = useCallback((event) => {
     if (event.key === 'Escape') {
-      onClose();
+      handleSmoothClose();
     }
-  }, [onClose]);
+  }, [handleSmoothClose]);
 
   useEffect(() => {
     const clickOutsideHandler = handleClickOutside;
@@ -1928,19 +1954,19 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     // Clear cache if memory usage is high
     if (performance.memory) {
       const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-      if (memoryMB > 300) { // Reduced threshold from 500 to 300 for more aggressive cleanup
+      if (memoryMB > 500) { // Increased threshold from 300 to 500 for less aggressive cleanup
         console.warn(`[MovieDetailsOverlay] High memory usage during cleanup: ${memoryMB.toFixed(2)}MB`);
         clearCache();
       }
     }
     
-         // Force garbage collection if available
-     if (window.gc) {
+         // Force garbage collection if available and memory is critically high
+     if (window.gc && performance.memory && performance.memory.usedJSHeapSize / 1024 / 1024 > 600) {
        window.gc();
      }
      
-     // Clear any image caches
-     if ('caches' in window) {
+     // Clear any image caches only if memory is high
+     if ('caches' in window && performance.memory && performance.memory.usedJSHeapSize / 1024 / 1024 > 550) {
        caches.keys().then(cacheNames => {
          cacheNames.forEach(cacheName => {
            if (cacheName.includes('image') || cacheName.includes('movie')) {
@@ -1952,11 +1978,11 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         
         // Clear any remaining references with enhanced cleanup
         if (typeof window !== 'undefined') {
-          // Clear any global references that might be holding onto data
-          if (window.movieDetailsCache) {
+          // Clear any global references that might be holding onto data only if memory is high
+          if (window.movieDetailsCache && performance.memory && performance.memory.usedJSHeapSize / 1024 / 1024 > 450) {
             delete window.movieDetailsCache;
           }
-          if (window.movieDetailsOverlayRefs) {
+          if (window.movieDetailsOverlayRefs && performance.memory && performance.memory.usedJSHeapSize / 1024 / 1024 > 450) {
             delete window.movieDetailsOverlayRefs;
           }
         }
@@ -2779,7 +2805,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     // Memory check before setting up background refresh
     if (performance.memory) {
       const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-      if (memoryMB > 400) { // Reduced threshold from 600 to 400
+      if (memoryMB > 600) { // Increased threshold from 400 to 600
         console.warn(`[BackgroundRefresh] High memory usage: ${memoryMB.toFixed(2)}MB, skipping background refresh`);
         return;
       }
@@ -2791,7 +2817,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       // Check memory again before executing refresh
       if (performance.memory) {
         const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-        if (memoryMB > 500) { // Reduced threshold from 700 to 500
+        if (memoryMB > 700) { // Increased threshold from 500 to 700
           console.warn(`[BackgroundRefresh] High memory usage before refresh: ${memoryMB.toFixed(2)}MB, clearing cache`);
           clearCache();
         }
@@ -2815,10 +2841,12 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     if (movie?.id) {
       // Register with specialized memory optimizer
       unregisterCleanup = movieDetailsMemoryOptimizer.registerCleanupCallback(() => {
-        // Component-specific cleanup
-        clearCache();
-        if (window.gc) {
-          window.gc();
+        // Component-specific cleanup - only if memory is critically high
+        if (performance.memory && performance.memory.usedJSHeapSize / 1024 / 1024 > 600) {
+          clearCache();
+          if (window.gc) {
+            window.gc();
+          }
         }
       });
       
@@ -2982,7 +3010,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       <motion.div
         className="fixed inset-0 bg-black/85 flex items-center justify-center z-[999999999] p-2 sm:p-4 contain-paint transition-none sm:mt-0"
         initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
+        animate={{ opacity: isClosing ? 0 : 1 }}
         exit={{ opacity: 0 }}
         transition={{ 
           duration: 0.3, 
@@ -2997,7 +3025,11 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
           ref={contentRef}
           className="relative w-full max-w-6xl h-auto max-h-[calc(100vh-1rem)] z-[1000000000] sm:max-h-[95vh] bg-gradient-to-br from-[#1a1d24] to-[#121417] rounded-2xl shadow-2xl overflow-hidden flex flex-col pointer-events-auto overflow-y-auto mt-2 sm:mt-6"
           initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
+          animate={{ 
+            opacity: isClosing ? 0 : 1, 
+            y: isClosing ? 20 : 0,
+            scale: isClosing ? 0.95 : 1
+          }}
           exit={{ opacity: 0, y: 20 }}
           transition={{ 
             duration: 0.3, 
@@ -3022,8 +3054,9 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                 Retry
               </button>
               <button
-                onClick={onClose}
+                onClick={handleSmoothClose}
                 className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg transition-colors"
+                disabled={isClosing}
               >
                 Close
               </button>
@@ -4231,22 +4264,44 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
 
 
           <motion.button
-            onClick={onClose}
+            onClick={handleSmoothClose}
             className="absolute top-4 right-4 z-10 p-2 rounded-full text-white group overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-l-[1px] border-r-[1px] border-white/30 hover:bg-white/10 transform-gpu will-change-transform"
             variants={buttonVariants}
             initial="initial"
             whileHover="hover"
             whileTap="tap"
+            disabled={isClosing}
+            animate={{
+              scale: isClosing ? 0.9 : 1,
+              opacity: isClosing ? 0.7 : 1,
+              backgroundColor: isClosing ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.03)'
+            }}
+            transition={{
+              type: 'spring',
+              stiffness: 400,
+              damping: 25,
+              duration: 0.2
+            }}
           >
             <motion.svg 
               xmlns="http://www.w3.org/2000/svg" 
               className="h-6 w-6" 
               viewBox="0 0 24 24" 
               fill="currentColor"
+              animate={{ 
+                rotate: isClosing ? 90 : 0,
+                scale: isClosing ? 1.1 : 1
+              }}
               whileHover={{ 
                 rotate: 90,
                 scale: 1.1,
                 transition: { type: 'spring', stiffness: 400, damping: 25 }
+              }}
+              transition={{ 
+                type: 'spring', 
+                stiffness: 400, 
+                damping: 25,
+                duration: 0.2
               }}
             >
               <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>

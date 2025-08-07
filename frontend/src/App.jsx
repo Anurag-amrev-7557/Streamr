@@ -1,9 +1,11 @@
-import React, { Suspense, lazy, useState, useEffect, useRef } from 'react'
+import * as React from 'react';
+import { Suspense, lazy, useState, useEffect, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 // Lazy load all route-level pages/components
 const HomePage = lazy(() => import('./components/HomePage'));
 const Navbar = lazy(() => import('./components/Navbar'));
-const MoviesPage = lazy(() => import('./components/MoviesPage'));
+const BottomNavigation = lazy(() => import('./components/BottomNavigation'));
+const MoviesPage = lazy(() => import('./components/MoviesPageWrapper'));
 const SeriesPage = lazy(() => import('./components/SeriesPage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 const WatchlistPage = lazy(() => import('./pages/WatchlistPage'));
@@ -53,6 +55,7 @@ if ('serviceWorker' in navigator) {
 }
 
 const Layout = () => {
+  const { user } = useAuth(); // Add useAuth hook inside Layout component
   const [selectedMovie, setSelectedMovie] = React.useState(null);
   const [showPerformanceDashboard, setShowPerformanceDashboard] = useState(false);
   const isMountedRef = useRef(true); // FIXED: Add mounted ref for cleanup
@@ -132,86 +135,87 @@ const Layout = () => {
   }, []);
   
   return (
-    <div className="min-h-screen bg-[#121417] smooth-scroll performance-scroll">
-      {/* NetworkStatus component removed */}
-      {/* <Suspense fallback={null}>
-        <NetworkStatus />
-      </Suspense> */}
-      <Suspense>
-        <Navbar onMovieSelect={handleMovieSelect} />
-      </Suspense>
-      <main className="momentum-scroll">
-        <AppRoutes />
-      </main>
-      {selectedMovie && (
+    <>
+      <div className="min-h-screen bg-[#121417] smooth-scroll performance-scroll">
+        {/* NetworkStatus component removed */}
+        {/* <Suspense fallback={null}>
+          <NetworkStatus />
+        </Suspense> */}
+        <Suspense>
+          <Navbar onMovieSelect={handleMovieSelect} />
+        </Suspense>
+        <main className="momentum-scroll main-content-with-bottom-nav">
+          <Suspense>
+            <Routes>
+              {/* Public Routes */}
+              <Route path="/" element={<HomePage key="homepage" />} />
+              <Route path="/movies" element={<MoviesPage />} />
+              <Route path="/series" element={<SeriesPage />} />
+              <Route path="/community" element={<CommunityPage />} />
+              <Route path="/community/discussion/:id" element={<SingleDiscussion />} />
+              <Route path="/network-test" element={<NetworkTestPage />} />
+              <Route path="/test-auth" element={<TestAuthPage />} />
+              <Route path="/login" element={!user ? <LoginPage /> : <Navigate to="/" />} />
+              <Route path="/signup" element={!user ? <SignupPage /> : <Navigate to="/" />} />
+              <Route path="/forgot-password" element={!user ? <ForgotPasswordPage /> : <Navigate to="/" />} />
+              <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
+              <Route path="/verify-email/:token" element={<VerifyEmailPage />} />
+              <Route path="/oauth-success" element={<OAuthSuccessPage />} />
+
+              {/* Protected Routes */}
+              <Route path="/profile" element={
+                <ProtectedRoute>
+                  <ProfilePage />
+                </ProtectedRoute>
+              } />
+              <Route path="/watchlist" element={<WatchlistPage />} />
+
+              {/* Catch all route */}
+              <Route path="*" element={<Navigate to="/" />} />
+            </Routes>
+          </Suspense>
+        </main>
+        {selectedMovie && (
+          <Suspense fallback={null}>
+            <MovieDetailsOverlay
+              movie={selectedMovie}
+              onClose={handleCloseOverlay}
+              onMovieSelect={handleMovieSelect}
+            />
+          </Suspense>
+        )}
+        
+        {/* Performance Dashboard */}
         <Suspense fallback={null}>
-          <MovieDetailsOverlay
-            movie={selectedMovie}
-            onClose={handleCloseOverlay}
-            onMovieSelect={handleMovieSelect}
+          <PerformanceDashboard
+            isVisible={showPerformanceDashboard}
+            onClose={() => setShowPerformanceDashboard(false)}
           />
         </Suspense>
-      )}
+        
+        {/* Performance Dashboard Toggle Button (Development Only) */}
+        {process.env.NODE_ENV === 'development' && (
+          <button
+            onClick={togglePerformanceDashboard}
+            className="fixed bottom-4 left-4 z-50 p-2 bg-blue-600/80 hover:bg-blue-600 text-white rounded-full shadow-lg backdrop-blur-sm transition-all duration-200 md:bottom-4 md:left-4 performance-dashboard-button"
+            title="Toggle Performance Dashboard (Ctrl+Shift+P)"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+          </button>
+        )}
+      </div>
       
-      {/* Performance Dashboard */}
+      {/* Bottom Navigation - Outside main container */}
       <Suspense fallback={null}>
-        <PerformanceDashboard
-          isVisible={showPerformanceDashboard}
-          onClose={() => setShowPerformanceDashboard(false)}
-        />
+        <BottomNavigation />
       </Suspense>
-      
-      {/* Performance Dashboard Toggle Button (Development Only) */}
-      {process.env.NODE_ENV === 'development' && (
-        <button
-          onClick={togglePerformanceDashboard}
-          className="fixed bottom-4 left-4 z-50 p-2 bg-blue-600/80 hover:bg-blue-600 text-white rounded-full shadow-lg backdrop-blur-sm transition-all duration-200"
-          title="Toggle Performance Dashboard (Ctrl+Shift+P)"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-          </svg>
-        </button>
-      )}
-    </div>
+    </>
   )
 }
 
-const AppRoutes = () => {
-  const { user } = useAuth()
-
-  return (
-    <Suspense>
-      <Routes>
-        {/* Public Routes */}
-        <Route path="/" element={<HomePage key="homepage" />} />
-        <Route path="/movies" element={<MoviesPage />} />
-        <Route path="/series" element={<SeriesPage />} />
-        <Route path="/community" element={<CommunityPage />} />
-        <Route path="/community/discussion/:id" element={<SingleDiscussion />} />
-        <Route path="/network-test" element={<NetworkTestPage />} />
-        <Route path="/test-auth" element={<TestAuthPage />} />
-        <Route path="/login" element={!user ? <LoginPage /> : <Navigate to="/" />} />
-        <Route path="/signup" element={!user ? <SignupPage /> : <Navigate to="/" />} />
-        <Route path="/forgot-password" element={!user ? <ForgotPasswordPage /> : <Navigate to="/" />} />
-        <Route path="/reset-password/:token" element={!user ? <ResetPasswordPage /> : <Navigate to="/" />} />
-        <Route path="/verify-email/:token" element={<VerifyEmailPage />} />
-        <Route path="/oauth-success" element={<OAuthSuccessPage />} />
-
-        {/* Protected Routes */}
-        <Route path="/profile" element={
-          <ProtectedRoute>
-            <ProfilePage />
-          </ProtectedRoute>
-        } />
-        <Route path="/watchlist" element={<WatchlistPage />} />
-
-        {/* Catch all route */}
-        <Route path="*" element={<Navigate to="/" />} />
-      </Routes>
-    </Suspense>
-  )
-}
+// AppRoutes component moved inside Layout to ensure proper context access
 
 const App = () => {
   return (

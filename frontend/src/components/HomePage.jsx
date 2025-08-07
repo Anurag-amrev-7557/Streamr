@@ -1,4 +1,37 @@
-import React, { useState, useEffect, useRef, useCallback, memo, useMemo, lazy, Suspense } from 'react';
+/**
+ * 🚀 ULTRA-SMOOTH SCROLLING IMPROVEMENTS
+ * 
+ * This HomePage component has been enhanced with ultra-smooth scrolling capabilities:
+ * 
+ * 1. Enhanced Swiper Configuration:
+ *    - Optimized freeMode settings for better momentum and velocity tracking
+ *    - Improved resistance ratios for natural boundary feel
+ *    - Enhanced touch handling with requestAnimationFrame for 60fps performance
+ * 
+ * 2. Custom CSS Optimizations:
+ *    - Hardware acceleration with translate3d and backface-visibility
+ *    - Optimized transitions with cubic-bezier easing
+ *    - Mobile and desktop-specific optimizations
+ *    - High refresh rate display support
+ * 
+ * 3. Performance Monitoring:
+ *    - Real-time frame rate tracking
+ *    - Scroll velocity optimization
+ *    - Adaptive swiper parameters based on scroll speed
+ * 
+ * 4. Touch Handling:
+ *    - Enhanced touch start/move/end events
+ *    - Velocity-based momentum adjustments
+ *    - Smooth scrolling with requestAnimationFrame
+ * 
+ * 5. Accessibility:
+ *    - Reduced motion support
+ *    - Enhanced keyboard navigation
+ *    - Screen reader compatibility
+ */
+
+import * as React from 'react';
+import { useState, useEffect, useRef, useCallback, memo, useMemo, lazy, Suspense } from 'react';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Navigation, A11y } from 'swiper/modules';
 import { TMDB_BASE_URL, transformMovieData } from '../services/tmdbService';
@@ -33,11 +66,140 @@ import { PageLoader, SectionLoader, CardLoader } from './Loader';
 import { useLoading } from '../contexts/LoadingContext';
 import { useWatchlist } from '../contexts/WatchlistContext';
 import { motion, AnimatePresence } from 'framer-motion';
+import RatingBadge from './RatingBadge';
 // Lazy load heavy components
 const ReactPlayer = lazy(() => import('react-player'));
 const MinimalToast = lazy(() => import('./MinimalToast'));
 // Ultra-smooth scrolling imports
 import { useSmoothScroll, useScrollAnimation } from '../hooks/useSmoothScroll';
+
+// 🚀 ULTRA-SMOOTH SCROLLING: Custom hook for ultra-smooth swiper performance
+const useUltraSmoothSwiper = () => {
+  const [isScrolling, setIsScrolling] = useState(false);
+  const [scrollVelocity, setScrollVelocity] = useState(0);
+  const lastScrollTime = useRef(0);
+  const lastScrollPosition = useRef(0);
+  const velocityTimeoutRef = useRef(null);
+
+  const updateScrollVelocity = useCallback((currentPosition, currentTime) => {
+    if (lastScrollTime.current > 0) {
+      const timeDiff = currentTime - lastScrollTime.current;
+      const positionDiff = currentPosition - lastScrollPosition.current;
+      const velocity = Math.abs(positionDiff / timeDiff);
+      
+      setScrollVelocity(velocity);
+      
+      // Clear velocity after a short delay
+      if (velocityTimeoutRef.current) {
+        clearTimeout(velocityTimeoutRef.current);
+      }
+      velocityTimeoutRef.current = setTimeout(() => {
+        setScrollVelocity(0);
+      }, 100);
+    }
+    
+    lastScrollTime.current = currentTime;
+    lastScrollPosition.current = currentPosition;
+  }, []);
+
+  const optimizeSwiperForVelocity = useCallback((swiper, velocity) => {
+    if (!swiper) return;
+    
+    // Adjust swiper parameters based on scroll velocity
+    if (velocity > 2.0) {
+      // High velocity - optimize for smooth scrolling
+      swiper.params.freeMode.momentumRatio = 0.98;
+      swiper.params.freeMode.momentumVelocityRatio = 0.98;
+      swiper.params.freeMode.momentumFriction = 0.9;
+    } else if (velocity > 1.0) {
+      // Medium velocity - balanced optimization
+      swiper.params.freeMode.momentumRatio = 0.95;
+      swiper.params.freeMode.momentumVelocityRatio = 0.95;
+      swiper.params.freeMode.momentumFriction = 0.85;
+    } else {
+      // Low velocity - standard settings
+      swiper.params.freeMode.momentumRatio = 0.95;
+      swiper.params.freeMode.momentumVelocityRatio = 0.95;
+      swiper.params.freeMode.momentumFriction = 0.85;
+    }
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (velocityTimeoutRef.current) {
+        clearTimeout(velocityTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  return {
+    isScrolling,
+    scrollVelocity,
+    updateScrollVelocity,
+    optimizeSwiperForVelocity,
+    setIsScrolling
+  };
+};
+
+// 🚀 ULTRA-SMOOTH SCROLLING: Performance monitoring for ultra-smooth scrolling
+const useSwiperPerformanceMonitor = () => {
+  const [performanceMetrics, setPerformanceMetrics] = useState({
+    averageScrollTime: 0,
+    frameRate: 0,
+    scrollEvents: 0,
+    lastUpdate: Date.now()
+  });
+  
+  const frameCount = useRef(0);
+  const lastFrameTime = useRef(performance.now());
+  const scrollEventCount = useRef(0);
+  
+  const updatePerformanceMetrics = useCallback(() => {
+    const currentTime = performance.now();
+    const timeDiff = currentTime - lastFrameTime.current;
+    
+    if (timeDiff > 0) {
+      const currentFrameRate = 1000 / timeDiff;
+      frameCount.current++;
+      
+      setPerformanceMetrics(prev => ({
+        ...prev,
+        frameRate: currentFrameRate,
+        scrollEvents: scrollEventCount.current,
+        lastUpdate: Date.now()
+      }));
+    }
+    
+    lastFrameTime.current = currentTime;
+  }, []);
+  
+  const recordScrollEvent = useCallback(() => {
+    scrollEventCount.current++;
+    requestAnimationFrame(updatePerformanceMetrics);
+  }, [updatePerformanceMetrics]);
+  
+  // Log performance metrics periodically
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (performanceMetrics.frameRate > 0) {
+        console.log('🚀 Ultra-Smooth Scrolling Performance:', {
+          frameRate: performanceMetrics.frameRate.toFixed(1) + ' FPS',
+          scrollEvents: performanceMetrics.scrollEvents,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }, 5000); // Log every 5 seconds
+    
+    return () => clearInterval(interval);
+  }, [performanceMetrics]);
+  
+  return {
+    performanceMetrics,
+    recordScrollEvent,
+    updatePerformanceMetrics
+  };
+};
 import { trackPageLoad, trackApiCall } from '../utils/performanceMonitor';
 import memoryOptimizationService from '../utils/memoryOptimizationService';
 
@@ -54,8 +216,137 @@ const NetworkStatus = lazy(() => import('./NetworkStatus'), {
 
   // Preload critical components and images after initial render - MOVED INSIDE COMPONENT
 
-// Add custom styles for Swiper navigation
-// CSS styles moved to separate file or removed for performance
+// 🚀 ULTRA-SMOOTH SCROLLING: Enhanced CSS styles for ultra-smooth swiper experience
+const ultraSmoothSwiperStyles = `
+  .ultra-smooth-swiper {
+    /* 🚀 ULTRA-SMOOTH SCROLLING: Hardware acceleration and performance optimizations */
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    perspective: 1000px;
+    -webkit-backface-visibility: hidden;
+    -webkit-perspective: 1000px;
+    -webkit-transform: translate3d(0,0,0);
+    
+    /* 🚀 ULTRA-SMOOTH SCROLLING: Enhanced touch handling */
+    touch-action: pan-x pinch-zoom;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    
+    /* 🚀 ULTRA-SMOOTH SCROLLING: Smooth scrolling behavior */
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    
+    /* 🚀 ULTRA-SMOOTH SCROLLING: Optimized transitions */
+    transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+  
+  .ultra-smooth-swiper .swiper-wrapper {
+    /* 🚀 ULTRA-SMOOTH SCROLLING: Enhanced wrapper performance */
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    -webkit-transform: translate3d(0,0,0);
+    
+    /* 🚀 ULTRA-SMOOTH SCROLLING: Optimized transition timing */
+    transition-timing-function: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    transition-duration: 300ms;
+    
+    /* 🚀 ULTRA-SMOOTH SCROLLING: Enhanced momentum */
+    will-change: transform;
+  }
+  
+  .ultra-smooth-swiper .swiper-slide {
+    /* 🚀 ULTRA-SMOOTH SCROLLING: Individual slide optimizations */
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    -webkit-transform: translate3d(0,0,0);
+    
+    /* 🚀 ULTRA-SMOOTH SCROLLING: Smooth slide transitions */
+    transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    
+    /* 🚀 ULTRA-SMOOTH SCROLLING: Enhanced performance */
+    will-change: transform;
+    contain: layout style paint;
+    
+    /* 🚀 ULTRA-SMOOTH SCROLLING: Optimized rendering */
+    image-rendering: optimizeSpeed;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: optimize-contrast;
+  }
+  
+  .ultra-smooth-swiper .swiper-slide img {
+    /* 🚀 ULTRA-SMOOTH SCROLLING: Image optimizations for smooth scrolling */
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    -webkit-transform: translate3d(0,0,0);
+    
+    /* 🚀 ULTRA-SMOOTH SCROLLING: Optimized image rendering */
+    image-rendering: auto;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: optimize-contrast;
+    
+    /* 🚀 ULTRA-SMOOTH SCROLLING: Prevent image distortion during scroll */
+    object-fit: cover;
+    object-position: center;
+  }
+  
+  /* 🚀 ULTRA-SMOOTH SCROLLING: Mobile-specific optimizations */
+  @media (max-width: 768px) {
+    .ultra-smooth-swiper {
+      /* Enhanced mobile touch handling */
+      touch-action: pan-x;
+      -webkit-overflow-scrolling: touch;
+    }
+    
+    .ultra-smooth-swiper .swiper-wrapper {
+      /* Faster transitions on mobile for better responsiveness */
+      transition-duration: 250ms;
+    }
+  }
+  
+  /* 🚀 ULTRA-SMOOTH SCROLLING: Desktop-specific optimizations */
+  @media (min-width: 769px) {
+    .ultra-smooth-swiper {
+      /* Enhanced desktop performance */
+      cursor: grab;
+    }
+    
+    .ultra-smooth-swiper:active {
+      cursor: grabbing;
+    }
+  }
+  
+  /* 🚀 ULTRA-SMOOTH SCROLLING: High refresh rate optimizations */
+  @media (prefers-reduced-motion: no-preference) {
+    .ultra-smooth-swiper .swiper-wrapper {
+      /* Even smoother transitions for high refresh rate displays */
+      transition-duration: 200ms;
+    }
+  }
+  
+  /* 🚀 ULTRA-SMOOTH SCROLLING: Reduced motion accessibility */
+  @media (prefers-reduced-motion: reduce) {
+    .ultra-smooth-swiper .swiper-wrapper {
+      transition-duration: 0ms;
+    }
+  }
+`;
+
+// Inject the styles into the document head
+if (typeof document !== 'undefined') {
+  const styleId = 'ultra-smooth-swiper-styles';
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = ultraSmoothSwiperStyles;
+    document.head.appendChild(style);
+  }
+}
 
 // Ultra-optimized ProgressiveImage with advanced caching, preloading, and performance monitoring
 const ProgressiveImage = memo(
@@ -136,20 +427,13 @@ const ProgressiveImage = memo(
         fullImage.loading = 'lazy';
       }
       
-      // FIXED: Mobile-specific image loading optimization
-      // Use smaller image sizes for mobile to improve loading performance
-      const isMobile = window.innerWidth < 768;
+      // Use high-quality images for both mobile and desktop
       let optimizedSrc = src;
       
-      if (isMobile && src.includes('/w')) {
-        // For mobile, use smaller image sizes if available
-        if (src.includes('/w500')) {
-          optimizedSrc = src.replace('/w500', '/w300');
-        } else if (src.includes('/w780')) {
-          optimizedSrc = src.replace('/w780', '/w300');
-        } else if (src.includes('/w1280')) {
-          optimizedSrc = src.replace('/w1280', '/w300');
-        }
+      // Ensure we're using the highest quality available
+      if (src.includes('/w')) {
+        // Use the original size for best quality on all devices
+        optimizedSrc = src;
       }
       
       fullImage.src = optimizedSrc;
@@ -253,7 +537,7 @@ const ProgressiveImage = memo(
                 imageLoaded ? "opacity-100 scale-100" : "opacity-0 scale-105"
               }`}
               style={{
-                backgroundImage: currentSrc === src ? `url("${src}")` : "none",
+                backgroundImage: currentSrc ? `url("${currentSrc}")` : "none",
                 backgroundPosition: "center 20%",
                 imageRendering: "auto",
                 WebkitBackfaceVisibility: "hidden",
@@ -476,27 +760,31 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
   // Enhanced: smarter debouncing, touch support, and analytics
   // Handle mouse enter/touch start with debouncing and analytics
   const handleMouseEnter = useCallback((event) => {
-    // Clear any existing timeout
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current);
-    }
+    try {
+      // Clear any existing timeout
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+      }
 
-    // Optionally: Track hover analytics (only once per card per session)
-    if (window && window.gtag && !window.__cardHoverTracked?.[id]) {
-      window.gtag('event', 'card_hover', { movie_id: id, title });
-      window.__cardHoverTracked = window.__cardHoverTracked || {};
-      window.__cardHoverTracked[id] = true;
-    }
+      // Optionally: Track hover analytics (only once per card per session)
+      if (window && window.gtag && !window.__cardHoverTracked?.[id]) {
+        window.gtag('event', 'card_hover', { movie_id: id, title });
+        window.__cardHoverTracked = window.__cardHoverTracked || {};
+        window.__cardHoverTracked[id] = true;
+      }
 
-    // For touch devices, ignore mouseenter if touch event was just fired
-    if (event && event.type === 'mouseenter' && handleMouseEnter.lastTouch && Date.now() - handleMouseEnter.lastTouch < 400) {
-      return;
-    }
+      // For touch devices, ignore mouseenter if touch event was just fired
+      if (event && event.type === 'mouseenter' && handleMouseEnter.lastTouch && Date.now() - handleMouseEnter.lastTouch < 400) {
+        return;
+      }
 
-    // Start prefetching after a short delay to avoid unnecessary requests
-    hoverTimeoutRef.current = setTimeout(() => {
-      handlePrefetch();
-    }, 120); // Slightly faster (120ms) for more responsive feel
+      // Start prefetching after a short delay to avoid unnecessary requests
+      hoverTimeoutRef.current = setTimeout(() => {
+        handlePrefetch();
+      }, 120); // Slightly faster (120ms) for more responsive feel
+    } catch (error) {
+      console.debug('Mouse enter handling error:', error);
+    }
   }, [handlePrefetch, id, title]);
 
   // Track last touch time to avoid double-trigger on touch devices
@@ -504,34 +792,42 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
 
   // Touch support: call this onTouchStart
   const handleTouchStart = useCallback(() => {
-    handleMouseEnter.lastTouch = Date.now();
-    handleMouseEnter({ type: 'touchstart' });
+    try {
+      handleMouseEnter.lastTouch = Date.now();
+      handleMouseEnter({ type: 'touchstart' });
+    } catch (error) {
+      console.debug('Touch start handling error:', error);
+    }
   }, [handleMouseEnter]);
 
   // Enhanced: Handle mouse leave/touch end/cancel with analytics and optional callback
   const handleMouseLeave = useCallback((event) => {
-    // Clear the hover timeout
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current);
-      hoverTimeoutRef.current = null;
-    }
+    try {
+      // Clear the hover timeout
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+        hoverTimeoutRef.current = null;
+      }
 
-    // Clear any prefetch timeout
-    if (prefetchTimeoutRef.current) {
-      clearTimeout(prefetchTimeoutRef.current);
-      prefetchTimeoutRef.current = null;
-    }
+      // Clear any prefetch timeout
+      if (prefetchTimeoutRef.current) {
+        clearTimeout(prefetchTimeoutRef.current);
+        prefetchTimeoutRef.current = null;
+      }
 
-    // Optionally: Track leave analytics (only once per card per session)
-    if (window && window.gtag && !window.__cardLeaveTracked?.[id]) {
-      window.gtag('event', 'card_hover_leave', { movie_id: id, title });
-      window.__cardLeaveTracked = window.__cardLeaveTracked || {};
-      window.__cardLeaveTracked[id] = true;
-    }
+      // Optionally: Track leave analytics (only once per card per session)
+      if (window && window.gtag && !window.__cardLeaveTracked?.[id]) {
+        window.gtag('event', 'card_hover_leave', { movie_id: id, title });
+        window.__cardLeaveTracked = window.__cardLeaveTracked || {};
+        window.__cardLeaveTracked[id] = true;
+      }
 
-    // Optionally: If a callback is provided for leave, call it
-    if (typeof onMouseLeave === 'function') {
-      onMouseLeave(event);
+      // Optionally: If a callback is provided for leave, call it
+      if (typeof onMouseLeave === 'function') {
+        onMouseLeave(event);
+      }
+    } catch (error) {
+      console.debug('Mouse leave handling error:', error);
     }
   }, [id, title, onMouseLeave]);
 
@@ -647,7 +943,13 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onTouchStart={handleTouchStart}
-      onTouchEnd={handleMouseLeave}
+      onTouchEnd={(event) => {
+        try {
+          handleMouseLeave(event);
+        } catch (error) {
+          console.debug('Touch end handling error:', error);
+        }
+      }}
       style={{
         WebkitTapHighlightColor: 'transparent',
         WebkitTouchCallout: 'none',
@@ -657,6 +959,13 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
       }}
     >
       <div className={`relative ${isMobile ? 'aspect-[2/3]' : 'aspect-[16/10]'} rounded-lg overflow-hidden transform-gpu transition-all duration-300 md:group-hover:scale-[1.02] md:group-hover:shadow-2xl md:group-hover:shadow-black/20 w-full active:scale-[0.98] active:shadow-lg`}>
+        {/* Rating Badge - Always Visible */}
+        <RatingBadge 
+          rating={rating || vote_average} 
+          size="default"
+          className="z-30"
+        />
+        
         {/* Prefetch shimmer/spinner overlay */}
         {prefetching && (
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/30 pointer-events-none">
@@ -670,7 +979,13 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
           onTouchStart={handleTouchStart}
-          onTouchEnd={handleMouseLeave}
+          onTouchEnd={(event) => {
+            try {
+              handleMouseLeave(event);
+            } catch (error) {
+              console.debug('Touch end handling error:', error);
+            }
+          }}
           style={{
             WebkitTapHighlightColor: 'transparent',
             WebkitTouchCallout: 'none',
@@ -739,22 +1054,7 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
         </div>
       </div>
       
-      {/* Movie info below card for mobile portrait layout */}
-      {isMobile && (
-        <div className="px-1 touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
-          <h3 className="text-white font-medium text-sm truncate mb-1 leading-tight">{title}</h3>
-          <div className="flex items-center gap-2 text-white/60 text-xs">
-            <span className="flex-shrink-0">{year}</span>
-            <span className="flex-shrink-0">•</span>
-            <span className="flex items-center gap-1 flex-shrink-0">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-yellow-400 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
-              </svg>
-              <span className="flex-shrink-0">{rating}</span>
-            </span>
-          </div>
-        </div>
-      )}
+
     </div>
   );
 });
@@ -892,15 +1192,27 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
       currentPage
     });
   }, [sectionKey, title, movies, loading, hasMore, currentPage]);
+  
+  // 🚀 ULTRA-SMOOTH SCROLLING: Use the ultra-smooth swiper hook
+  const {
+    isScrolling: ultraSmoothScrolling,
+    scrollVelocity,
+    updateScrollVelocity,
+    optimizeSwiperForVelocity,
+    setIsScrolling: setUltraSmoothScrolling
+  } = useUltraSmoothSwiper();
+  
+  // 🚀 ULTRA-SMOOTH SCROLLING: Performance monitoring
+  const { recordScrollEvent } = useSwiperPerformanceMonitor();
+  
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [isViewAllMode, setIsViewAllMode] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const swiperRef = useRef(null);
   const holdTimerRef = useRef(null);
   const isHoldingRef = useRef(false);
-  const scrollContainerRef = useRef(null);
   const loadingRef = useRef(false);
   const preloadTriggeredRef = useRef(false);
   const preloadTimeoutRef = useRef(null);
@@ -921,10 +1233,20 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
       const isNowDesktop = window.innerWidth > 768 && 
                           !(window.navigator && window.navigator.userAgent && 
                             /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(window.navigator.userAgent));
+      const isNowMobile = !isNowDesktop;
+      
       setIsDesktop(prev => {
         if (prev !== isNowDesktop) {
           console.log('MovieSection Desktop detection changed:', isNowDesktop, 'Screen width:', window.innerWidth);
           return isNowDesktop;
+        }
+        return prev;
+      });
+      
+      setIsMobile(prev => {
+        if (prev !== isNowMobile) {
+          console.log('MovieSection Mobile detection changed:', isNowMobile, 'Screen width:', window.innerWidth);
+          return isNowMobile;
         }
         return prev;
       });
@@ -1018,19 +1340,27 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
   };
 
   const handlePrevButtonMouseDown = () => {
-    isHoldingRef.current = true;
-    holdTimerRef.current = setTimeout(() => {
-      if (isHoldingRef.current && swiperRef.current?.swiper) {
-        swiperRef.current.swiper.slideTo(0, 500);
-      }
-    }, 500); // Hold for 500ms to trigger
+    try {
+      isHoldingRef.current = true;
+      holdTimerRef.current = setTimeout(() => {
+        if (isHoldingRef.current && swiperRef.current?.swiper) {
+          swiperRef.current.swiper.slideTo(0, 500);
+        }
+      }, 500); // Hold for 500ms to trigger
+    } catch (error) {
+      console.debug('Navigation button mouse down error:', error);
+    }
   };
 
   const handlePrevButtonMouseUp = () => {
-    isHoldingRef.current = false;
-    if (holdTimerRef.current) {
-      clearTimeout(holdTimerRef.current);
-      holdTimerRef.current = null; // FIXED: Proper cleanup
+    try {
+      isHoldingRef.current = false;
+      if (holdTimerRef.current) {
+        clearTimeout(holdTimerRef.current);
+        holdTimerRef.current = null; // FIXED: Proper cleanup
+      }
+    } catch (error) {
+      console.debug('Navigation button mouse up error:', error);
     }
   };
 
@@ -1097,176 +1427,6 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
       setPrefetchingIds(prev => prev.filter(id => id !== `${sectionKey}-${nextPage}`));
     }
   }, [hasMore, isLoadingMore, currentPage, onLoadMore, sectionKey]);
-
-  // Enhanced scroll handler with progressive preloading - FIXED: Timeout leaks
-  const handleScroll = useCallback(() => {
-    if (!scrollContainerRef.current || loadingRef.current || !hasMore || isLoadingMore) return;
-
-    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
-    const scrollThreshold = 400;
-    const isNearBottom = scrollHeight - scrollTop - clientHeight < scrollThreshold;
-
-    // Update scroll state for visual feedback
-    setIsScrolling(true);
-    if (scrollTimeoutRef.current) {
-      clearTimeout(scrollTimeoutRef.current);
-    }
-    scrollTimeoutRef.current = setTimeout(() => {
-      setIsScrolling(false);
-    }, 150);
-
-    // Progressive preloading based on scroll position
-    if (isNearBottom) {
-      if (preloadTimeoutRef.current) {
-        clearTimeout(preloadTimeoutRef.current);
-      }
-      preloadTimeoutRef.current = setTimeout(() => {
-        preloadNextPages();
-      }, 100);
-    }
-  }, [hasMore, isLoadingMore, preloadNextPages]);
-
-  // Preload next page when entering view all mode
-  useEffect(() => {
-    if (isViewAllMode && hasMore && !isLoadingMore && !preloadedPagesRef.current.has(currentPage + 1)) {
-      preloadNextPages();
-    }
-  }, [isViewAllMode, hasMore, isLoadingMore, currentPage, preloadNextPages]);
-
-  // Enhanced cleanup function for view mode changes with comprehensive state management
-  const cleanupViewMode = useCallback(() => {
-    // Reset scroll position with smooth animation
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTo({
-        top: 0,
-        behavior: 'smooth'
-      });
-    }
-    
-    // Update Swiper instance and reset its state
-    if (swiperRef.current?.swiper) {
-      const swiper = swiperRef.current.swiper;
-      swiper.update();
-      swiper.slideTo(0, 0, false); // Reset to first slide without animation
-    }
-    
-    // Comprehensive preload state cleanup
-    preloadedPagesRef.current.clear(); // More explicit than new Set()
-    if (preloadTimeoutRef.current) {
-      clearTimeout(preloadTimeoutRef.current);
-      preloadTimeoutRef.current = null;
-    }
-    
-    // Reset scroll-related states
-    setIsScrolling(false);
-    if (scrollTimeoutRef.current) {
-      clearTimeout(scrollTimeoutRef.current);
-      scrollTimeoutRef.current = null;
-    }
-    
-    // Reset loading states to prevent stuck states
-    loadingRef.current = false;
-    setIsLoadingMore(false);
-    
-    // Clear any pending prefetch operations
-    setPrefetchingIds(prev => {
-      const filtered = prev.filter(id => !id.startsWith(sectionKey));
-      return filtered;
-    });
-  }, [sectionKey]);
-
-  // Enhanced view mode change handler with improved transitions and user feedback
-  const handleViewAll = useCallback(() => {
-    // Prevent rapid state changes during transition
-    if (isTransitioning) return;
-    
-    setIsTransitioning(true);
-    
-    if (!isViewAllMode) {
-      // Transition to grid view with enhanced UX
-      setIsViewAllMode(true);
-      
-      // Optimize preloading strategy
-      if (hasMore && !preloadedPagesRef.current.has(currentPage + 1)) {
-        // Use requestIdleCallback for better performance during transition
-        if (window.requestIdleCallback) {
-          requestIdleCallback(() => preloadNextPages(), { timeout: 1000 });
-        } else {
-          setTimeout(preloadNextPages, 100);
-        }
-      }
-      
-      // Enhanced scroll behavior with better timing - FIXED: Observer leaks
-      setTimeout(() => {
-        const sectionElement = document.getElementById(`section-${sectionKey}`);
-        if (sectionElement) {
-          // Use intersection observer for smoother scroll
-          const observer = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-              if (entry.isIntersecting) {
-                entry.target.scrollIntoView({ 
-                  behavior: 'smooth', 
-                  block: 'start',
-                  inline: 'nearest'
-                });
-                observer.disconnect();
-              }
-            });
-          }, { threshold: 0.1 });
-          
-          observer.observe(sectionElement);
-          
-          // Fallback scroll if observer doesn't trigger
-          const fallbackTimeout = setTimeout(() => {
-            if (observer) {
-              observer.disconnect();
-              sectionElement.scrollIntoView({ 
-                behavior: 'smooth', 
-                block: 'start' 
-              });
-            }
-          }, 300);
-          
-          // Clean up fallback timeout
-          return () => {
-            if (fallbackTimeout) {
-              clearTimeout(fallbackTimeout);
-            }
-            if (observer) {
-              observer.disconnect();
-            }
-          };
-        }
-      }, 150); // Slightly increased delay for better transition timing
-      
-    } else {
-      // Enhanced cleanup with better state management
-      cleanupViewMode();
-      setIsViewAllMode(false);
-      
-      // Add subtle feedback for mode change
-      if (scrollContainerRef.current) {
-        scrollContainerRef.current.style.transition = 'all 0.3s ease-out';
-        setTimeout(() => {
-          if (scrollContainerRef.current) {
-            scrollContainerRef.current.style.transition = '';
-          }
-        }, 300);
-      }
-    }
-    
-    // Optimized transition timing with better user feedback - FIXED: Timeout leaks
-    const transitionTimeout = setTimeout(() => {
-      setIsTransitioning(false);
-    }, 450); // Slightly longer for smoother transitions
-    
-    // Clean up transition timeout
-    return () => {
-      if (transitionTimeout) {
-        clearTimeout(transitionTimeout);
-      }
-    };
-  }, [isViewAllMode, isTransitioning, hasMore, currentPage, preloadNextPages, sectionKey, cleanupViewMode]);
 
   // Enhanced cleanup on unmount with comprehensive resource management - FIXED: Memory leaks
   useEffect(() => {
@@ -1365,14 +1525,6 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
     };
   }, []);
 
-
-  // Reset loading states when view mode changes
-  useEffect(() => {
-    loadingRef.current = false;
-    setIsLoadingMore(false);
-    preloadTriggeredRef.current = false;
-  }, [isViewAllMode]);
-
   if (loading && !movies.length) {
     return (
       <div className="mb-16">
@@ -1398,484 +1550,132 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
 
   return (
     <div id={`section-${sectionKey}`} className="mb-10 group/section">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-4 pb-6 pt-8 gap-2 sm:gap-0">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-4 pb-3  gap-2 sm:gap-0">
         <div className="flex flex-row items-center gap-2 sm:gap-4 w-full sm:w-auto">
           <h2 className="text-white/80 leading-relaxed pl-0 sm:pl-6 text-lg sm:text-2xl font-bold leading-tight tracking-[-0.02em] group-hover/section:text-[#a1abb5] transition-colors duration-300 whitespace-nowrap">{title}</h2>
           <span className="h-4 w-[1px] bg-white/10 group-hover/section:bg-white/20 transition-colors duration-300 hidden sm:inline-block"></span>
           <span className="text-white/50 text-xs sm:text-sm font-medium group-hover/section:text-white/70 transition-colors duration-300 truncate">
-            {isViewAllMode ? 'Scroll to explore' : (movies.length > 1 ? 'Swipe to explore' : 'Swipe to view')}
+            {movies.length > 1 ? 'Swipe to explore' : 'Swipe to view'}
           </span>
         </div>
-        <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto justify-end">
-          <button 
-            onClick={handleViewAll}
-            className="opacity-100 sm:opacity-0 sm:group-hover/section:opacity-100 transition-all duration-300 text-[#a1abb5] hover:text-white text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2 hover:gap-2 sm:hover:gap-3 relative overflow-hidden"
-          >
-            <span className="relative inline-block">
-              <span className={`block transition-transform duration-300 ${isViewAllMode ? 'translate-y-[-100%]' : 'translate-y-0'}`}>View All</span>
-              <span className={`block absolute top-0 left-0 transition-transform duration-300 ${isViewAllMode ? 'translate-y-0' : 'translate-y-[100%]'}`}>View Less</span>
-            </span>
-            <svg 
-              xmlns="http://www.w3.org/2000/svg" 
-              className={`h-4 w-4 transition-all duration-300 ${isViewAllMode ? 'rotate-180' : 'sm:group-hover/section:translate-x-1'}`} 
-              viewBox="0 0 24 24" 
-              fill="currentColor"
-            >
-              <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
-            </svg>
-          </button>
-        </div>
       </div>
-      <div className="relative px-8 pt-2">
+      <div className="relative px-4 pt-2">
         <div className="absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-[#121417] to-transparent z-10 pointer-events-none"></div>
         <div className="absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-[#121417] to-transparent z-10 pointer-events-none"></div>
         <div 
           className={`transition-all duration-400 ease-in-out transform ${isTransitioning ? 'opacity-0 scale-95' : 'opacity-100 scale-100'}`}
           style={{ willChange: 'transform, opacity' }}
         >
-          {isViewAllMode ? (
+          {/* 🚀 MOBILE OPTIMIZATION: Use simple overflow-x-auto for mobile, Swiper for desktop */}
+          {isMobile ? (
+            // Mobile: Simple horizontal scroll with overflow-x-auto
             <div 
-              ref={scrollContainerRef}
-                className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 sm:gap-6 max-h-[600px] overflow-y-auto overflow-x-hidden w-full sm:px-4 scrollbar-hide justify-items-center`}
+              className="flex gap-4 overflow-x-auto scrollbar-hide px-2 pb-4 touch-manipulation"
               style={{
-                scrollbarWidth: 'thin',
-                scrollbarColor: isScrolling ? 'rgba(255, 255, 255, 0.2) transparent' : 'rgba(255, 255, 255, 0.1) transparent',
-                scrollBehavior: 'smooth',
-                overscrollBehavior: 'contain',
+                WebkitTapHighlightColor: 'transparent',
                 WebkitOverflowScrolling: 'touch',
-                scrollSnapType: 'y proximity',
-                scrollPadding: '1rem',
-                maxWidth: '100vw',
+                overscrollBehavior: 'contain',
+                scrollSnapType: 'x mandatory',
+                scrollSnapAlign: 'start',
+                // 🚀 MOBILE OPTIMIZATION: Enhanced mobile scrolling
+                transform: 'translateZ(0)',
+                backfaceVisibility: 'hidden',
+                WebkitBackfaceVisibility: 'hidden',
+                WebkitTransform: 'translate3d(0,0,0)',
+                WebkitTouchCallout: 'none',
+                WebkitUserSelect: 'none',
+                userSelect: 'none',
+              }}
+              onScroll={(e) => {
+                // 🚀 MOBILE OPTIMIZATION: Load more content when reaching end
+                const { scrollLeft, scrollWidth, clientWidth } = e.target;
+                const scrollPosition = scrollLeft + clientWidth;
+                const scrollPercentage = scrollPosition / scrollWidth;
+                
+                if (scrollPercentage > 0.8 && !isLoadingMore && hasMore) {
+                  handleReachEnd(sectionKey);
+                }
               }}
             >
               {movies.map((movie, index) => (
                 <div 
-                  key={`${sectionKey}-${movie.id}-${index}`}
-                  id={`movie-card-${sectionKey}-${movie.id}`}
-                  className="scroll-snap-align-start w-full max-w-[160px] sm:max-w-[180px] md:max-w-[200px] lg:max-w-[320px] xl:max-w-[320px] 2xl:max-w-[320px] mx-auto flex-shrink-0"
-                  style={{ willChange: 'transform', maxWidth: '100vw' }}
+                  key={`${sectionKey}-${movie.id}-${index}`} 
+                  className="flex-shrink-0"
                   onMouseEnter={() => onMovieHover && onMovieHover(movie, index, movies)}
                 >
                   <MovieCard 
                     {...movie} 
                     onClick={() => onMovieSelect(movie)} 
-                    id={movie.id}
-                    priority={index < 10} // Prioritize loading for first 10 items
-                    prefetching={prefetchingIds.includes(movie.id)}
+                    id={movie.id} 
                     onPrefetch={() => onPrefetch && onPrefetch(movie.id)} 
-                    cardClassName="w-80"
                   />
                 </div>
               ))}
               {isLoadingMore && (
-                <div className="col-span-full flex justify-center py-4">
-                  <div className="w-8 h-8 border-4 border-white/20 border-t-white rounded-full animate-spin"></div>
-                </div>
-              )}
-              {!hasMore && movies.length > 0 && (
-                <div className="col-span-full text-center py-4 text-white/60">
-                  No more movies to load
+                <div className="flex-shrink-0">
+                  <div className="group flex flex-col gap-4 rounded-lg w-80">
+                    <div className="relative aspect-[16/10] rounded-lg overflow-hidden bg-black/20 w-full">
+                      <div className="w-8 h-8 border-4 border-white/20 border-t-white rounded-full animate-spin absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"></div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
           ) : (
-            <div className="swiper-container touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
+            // Desktop: Enhanced Swiper with all optimizations
+            <div className="swiper-container ultra-smooth-swiper touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
               <Swiper
-                key={`${sectionKey}-${isDesktop ? 'desktop' : 'mobile'}`}
+                key={`${sectionKey}-swiper`}
                 ref={swiperRef}
                 modules={[Navigation, A11y]}
-                spaceBetween={24}
+                spaceBetween={16}
                 slidesPerView="auto"
-                breakpoints={{
-                  0: {
-                    slidesPerView: 2.2, // Increased from 1.8 for better mobile experience
-                    spaceBetween: 8, // Reduced for better fit
-                    speed: 300, // Optimized for mobile responsiveness
-                    touchRatio: 1.5, // More responsive to touch
-                    touchAngle: 45, // More restrictive for better control
-                    freeMode: {
-                      enabled: true,
-                      momentum: true,
-                      sticky: false,
-                      momentumRatio: 0.8, // Smoother momentum
-                      momentumVelocityRatio: 0.8,
-                      momentumBounce: false,
-                      minimumVelocity: 0.02,
-                      momentumFriction: 0.8,
-                    },
-                    resistance: true,
-                    resistanceRatio: 0.6, // More resistance for better control
-                    grabCursor: true,
-                    navigation: false,
-                    allowTouchMove: true,
-                    touchStartPreventDefault: false, // Better touch handling
-                    touchMoveStopPropagation: true,
-                    preventInteractionOnTransition: false,
-                    style: {
-                      '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.25, 0.46, 0.45, 0.94)', // Optimized curve
-                      'scroll-behavior': 'smooth',
-                      'will-change': 'transform',
-                      'overscroll-behavior': 'contain',
-                      'touch-action': 'pan-x', // Restrict to horizontal only
-                      '-webkit-overflow-scrolling': 'touch', // iOS momentum
-                      'scroll-snap-type': 'x mandatory',
-                      'scroll-snap-align': 'start',
-                    },
-                    // Enhanced mobile-specific settings
-                    watchSlidesProgress: true,
-                    watchSlidesVisibility: true,
-                    observer: true,
-                    observeParents: true,
-                    updateOnWindowResize: true,
-                    // Better lazy loading for mobile
-                    lazy: {
-                      loadPrevNext: true,
-                      loadPrevNextAmount: 2,
-                      loadOnTransitionStart: true,
-                      elementClass: 'swiper-lazy',
-                      loadingClass: 'swiper-lazy-loading',
-                      loadedClass: 'swiper-lazy-loaded',
-                      preloaderClass: 'swiper-lazy-preloader',
-                    },
-                    // Improved accessibility
-                    a11y: {
-                      enabled: true,
-                      prevSlideMessage: 'Previous slide',
-                      nextSlideMessage: 'Next slide',
-                      firstSlideMessage: 'This is the first slide',
-                      lastSlideMessage: 'This is the last slide',
-                      paginationBulletMessage: 'Go to slide {{index}}',
-                    },
-                  },
-                  480: { 
-                    slidesPerView: 2.5, // Increased for better tablet experience
-                    spaceBetween: 12,
-                    speed: 350,
-                    touchRatio: 1.4,
-                    touchAngle: 50,
-                    freeMode: {
-                      enabled: true,
-                      momentum: true,
-                      sticky: false,
-                      momentumRatio: 0.85,
-                      momentumVelocityRatio: 0.85,
-                      momentumBounce: false,
-                      minimumVelocity: 0.02,
-                      momentumFriction: 0.85,
-                    },
-                    resistance: true,
-                    resistanceRatio: 0.55,
-                    grabCursor: true,
-                    navigation: false,
-                    allowTouchMove: true,
-                    touchStartPreventDefault: false,
-                    touchMoveStopPropagation: true,
-                    preventInteractionOnTransition: false,
-                    style: {
-                      '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.25, 0.46, 0.45, 0.94)',
-                      'will-change': 'transform',
-                      'overscroll-behavior': 'contain',
-                      'touch-action': 'pan-x',
-                      '-webkit-overflow-scrolling': 'touch',
-                      'scroll-snap-type': 'x mandatory',
-                      'scroll-snap-align': 'start',
-                    },
-                    watchSlidesProgress: true,
-                    watchSlidesVisibility: true,
-                    observer: true,
-                    observeParents: true,
-                    updateOnWindowResize: true,
-                    lazy: {
-                      loadPrevNext: true,
-                      loadPrevNextAmount: 2,
-                      loadOnTransitionStart: true,
-                      elementClass: 'swiper-lazy',
-                      loadingClass: 'swiper-lazy-loading',
-                      loadedClass: 'swiper-lazy-loaded',
-                      preloaderClass: 'swiper-lazy-preloader',
-                    },
-                    a11y: {
-                      enabled: true,
-                      prevSlideMessage: 'Previous slide',
-                      nextSlideMessage: 'Next slide',
-                      firstSlideMessage: 'This is the first slide',
-                      lastSlideMessage: 'This is the last slide',
-                      paginationBulletMessage: 'Go to slide {{index}}',
-                    },
-                  },
-                  640: {
-                    slidesPerView: 2.8, // Increased for better small tablet experience
-                    spaceBetween: 16,
-                    speed: 400,
-                    touchRatio: 1.3,
-                    touchAngle: 60,
-                    freeMode: true,
-                    resistance: true,
-                    resistanceRatio: 0.4,
-                    grabCursor: true,
-                    navigation: isDesktop ? {
-                      nextEl: '.swiper-button-next',
-                      prevEl: '.swiper-button-prev',
-                      disabledClass: 'swiper-button-disabled',
-                      lockClass: 'swiper-button-lock',
-                      hiddenClass: 'swiper-button-hidden',
-                    } : false,
-                    momentum: true,
-                    momentumRatio: 0.9,
-                    momentumVelocityRatio: 0.9,
-                    allowTouchMove: true,
-                    touchStartPreventDefault: false,
-                    touchMoveStopPropagation: true,
-                    preventInteractionOnTransition: false,
-                    style: {
-                      '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.16, 1, 0.3, 1)',
-                      'will-change': 'transform',
-                      'overscroll-behavior': 'contain',
-                      'touch-action': 'pan-x',
-                      '-webkit-overflow-scrolling': 'touch',
-                    },
-                    watchSlidesProgress: true,
-                    watchSlidesVisibility: true,
-                    observer: true,
-                    observeParents: true,
-                    updateOnWindowResize: true,
-                    lazy: {
-                      loadPrevNext: true,
-                      loadPrevNextAmount: 3,
-                      loadOnTransitionStart: true,
-                    },
-                    a11y: {
-                      enabled: true,
-                      prevSlideMessage: 'Previous slide',
-                      nextSlideMessage: 'Next slide',
-                      firstSlideMessage: 'This is the first slide',
-                      lastSlideMessage: 'This is the last slide',
-                      paginationBulletMessage: 'Go to slide {{index}}',
-                    },
-                  },
-                  768: {
-                    slidesPerView: 3,
-                    spaceBetween: 20,
-                    speed: 450,
-                    touchRatio: 1.2,
-                    touchAngle: 70,
-                    freeMode: true,
-                    resistance: true,
-                    resistanceRatio: 0.4,
-                    grabCursor: true,
-                    navigation: isDesktop ? {
-                      nextEl: '.swiper-button-next',
-                      prevEl: '.swiper-button-prev',
-                      disabledClass: 'swiper-button-disabled',
-                      lockClass: 'swiper-button-lock',
-                      hiddenClass: 'swiper-button-hidden',
-                    } : false,
-                    momentum: true,
-                    momentumRatio: 0.92,
-                    momentumVelocityRatio: 0.92,
-                    allowTouchMove: true,
-                    touchStartPreventDefault: false,
-                    touchMoveStopPropagation: true,
-                    preventInteractionOnTransition: false,
-                    style: {
-                      '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.16, 1, 0.3, 1)',
-                      'will-change': 'transform',
-                      'overscroll-behavior': 'contain',
-                      'touch-action': 'pan-x',
-                      '-webkit-overflow-scrolling': 'touch',
-                    },
-                    watchSlidesProgress: true,
-                    watchSlidesVisibility: true,
-                    observer: true,
-                    observeParents: true,
-                    updateOnWindowResize: true,
-                    lazy: {
-                      loadPrevNext: true,
-                      loadPrevNextAmount: 3,
-                      loadOnTransitionStart: true,
-                    },
-                    a11y: {
-                      enabled: true,
-                      prevSlideMessage: 'Previous slide',
-                      nextSlideMessage: 'Next slide',
-                      firstSlideMessage: 'This is the first slide',
-                      lastSlideMessage: 'This is the last slide',
-                      paginationBulletMessage: 'Go to slide {{index}}',
-                    },
-                  },
-                  1024: { 
-                    slidesPerView: 4, 
-                    spaceBetween: 24,
-                    speed: 500,
-                    touchRatio: 1.1,
-                    touchAngle: 65,
-                    freeMode: true,
-                    resistance: true,
-                    resistanceRatio: 0.5,
-                    grabCursor: true,
-                    navigation: isDesktop ? {
-                      nextEl: '.swiper-button-next',
-                      prevEl: '.swiper-button-prev',
-                      disabledClass: 'swiper-button-disabled',
-                      lockClass: 'swiper-button-lock',
-                      hiddenClass: 'swiper-button-hidden',
-                    } : false,
-                    momentum: true,
-                    momentumRatio: 0.95,
-                    momentumVelocityRatio: 0.95,
-                    allowTouchMove: true,
-                    touchStartPreventDefault: false,
-                    touchMoveStopPropagation: true,
-                    preventInteractionOnTransition: false,
-                    style: {
-                      '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.16, 1, 0.3, 1)',
-                      'will-change': 'transform',
-                      'overscroll-behavior': 'contain',
-                      'touch-action': 'pan-x',
-                      '-webkit-overflow-scrolling': 'touch',
-                    },
-                    watchSlidesProgress: true,
-                    watchSlidesVisibility: true,
-                    observer: true,
-                    observeParents: true,
-                    updateOnWindowResize: true,
-                    lazy: {
-                      loadPrevNext: true,
-                      loadPrevNextAmount: 3,
-                      loadOnTransitionStart: true,
-                    },
-                    a11y: {
-                      enabled: true,
-                      prevSlideMessage: 'Previous slide',
-                      nextSlideMessage: 'Next slide',
-                      firstSlideMessage: 'This is the first slide',
-                      lastSlideMessage: 'This is the last slide',
-                      paginationBulletMessage: 'Go to slide {{index}}',
-                    },
-                  },
-                  1280: { 
-                    slidesPerView: 5, 
-                    spaceBetween: 24,
-                    speed: 600,
-                    touchRatio: 1.0,
-                    touchAngle: 60,
-                    freeMode: true,
-                    resistance: true,
-                    resistanceRatio: 0.6,
-                    grabCursor: true,
-                    navigation: isDesktop ? {
-                      nextEl: '.swiper-button-next',
-                      prevEl: '.swiper-button-prev',
-                      disabledClass: 'swiper-button-disabled',
-                      lockClass: 'swiper-button-lock',
-                      hiddenClass: 'swiper-button-hidden',
-                    } : false,
-                    momentum: true,
-                    momentumRatio: 0.98,
-                    momentumVelocityRatio: 0.98,
-                    allowTouchMove: true,
-                    touchStartPreventDefault: false,
-                    touchMoveStopPropagation: true,
-                    preventInteractionOnTransition: false,
-                    style: {
-                      '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.16, 1, 0.3, 1)',
-                      'will-change': 'transform',
-                      'overscroll-behavior': 'contain',
-                      'touch-action': 'pan-x',
-                      '-webkit-overflow-scrolling': 'touch',
-                    },
-                    watchSlidesProgress: true,
-                    watchSlidesVisibility: true,
-                    observer: true,
-                    observeParents: true,
-                    updateOnWindowResize: true,
-                    lazy: {
-                      loadPrevNext: true,
-                      loadPrevNextAmount: 3,
-                      loadOnTransitionStart: true,
-                    },
-                    a11y: {
-                      enabled: true,
-                      prevSlideMessage: 'Previous slide',
-                      nextSlideMessage: 'Next slide',
-                      firstSlideMessage: 'This is the first slide',
-                      lastSlideMessage: 'This is the last slide',
-                      paginationBulletMessage: 'Go to slide {{index}}',
-                    },
-                  },
+                // 🚀 ULTRA-SMOOTH SCROLLING: Enhanced freeMode for ultra-smooth momentum
+                freeMode={{
+                  enabled: true,
+                  momentum: true,
+                  sticky: false,
+                  momentumRatio: 0.95, // Increased for smoother momentum
+                  momentumVelocityRatio: 0.95, // Increased for better velocity tracking
+                  momentumBounce: false,
+                  minimumVelocity: 0.01, // Reduced for more sensitive scrolling
+                  momentumFriction: 0.85, // Optimized friction for natural feel
+                  momentumBounceRatio: 0.1, // Minimal bounce for natural feel
+                  momentumVelocityMultiplier: 1.2, // Enhanced velocity multiplier
                 }}
-                speed={isDesktop ? 600 : 400}
+                // 🚀 ULTRA-SMOOTH SCROLLING: Enhanced resistance for natural boundaries
                 resistance={true}
-                resistanceRatio={isDesktop ? 0.6 : 0.6}
-                touchRatio={isDesktop ? 1.1 : 1.5}
-                touchAngle={isDesktop ? 60 : 45}
-                touchMoveStopPropagation={true}
-                watchSlidesProgress={true}
+                resistanceRatio={0.85} // Increased for smoother edge resistance
+                // 🚀 ULTRA-SMOOTH SCROLLING: Enhanced touch and interaction settings
                 grabCursor={true}
-                freeMode={
-                  isDesktop
-                    ? true
-                    : { 
-                        enabled: true, 
-                        momentum: true, 
-                        sticky: false,
-                        momentumRatio: 0.8,
-                        momentumVelocityRatio: 0.8,
-                        momentumBounce: false,
-                        minimumVelocity: 0.02,
-                        momentumFriction: 0.8,
-                      }
-                }
                 allowTouchMove={true}
                 touchStartPreventDefault={false}
+                touchMoveStopPropagation={false} // Changed to false for better touch handling
                 preventInteractionOnTransition={false}
-                onReachEnd={handleReachEnd}
-                onSlideChange={useCallback((swiper) => {
-                  // Enhanced prefetching with better mobile detection
-                  const remainingSlides = swiper.slides.length - (swiper.activeIndex + swiper.params.slidesPerView);
-                  if (remainingSlides <= 3 && !isLoadingMore && hasMore) {
-                    handleReachEnd();
-                  }
-                }, [isLoadingMore, hasMore, handleReachEnd])}
-                onProgress={useCallback((swiper, progress) => {
-                  // More aggressive prefetching for mobile
-                  if (progress > 0.7 && !isLoadingMore && hasMore) {
-                    handleReachEnd();
-                  }
-                }, [isLoadingMore, hasMore, handleReachEnd])}
-                onTouchStart={useCallback(() => {
-                  // Immediate prefetch on touch for better mobile experience
-                  if (!isLoadingMore && hasMore) {
-                    handleReachEnd();
-                  }
-                }, [isLoadingMore, hasMore, handleReachEnd])}
-                onTouchMove={useCallback((swiper, event) => {
-                  // Enhanced touch feedback
-                  if (event.touches && event.touches.length === 1) {
-                    // Single touch - normal behavior
-                    return;
-                  }
-                }, [])}
-                onTouchEnd={useCallback((swiper, event) => {
-                  // Enhanced touch end handling
-                  if (swiper.touches && swiper.touches.diff === 0) {
-                    // Touch ended without movement - could trigger tap
-                    return;
-                  }
-                }, [])}
-                className="px-2 sm:px-4"
+                // 🚀 ULTRA-SMOOTH SCROLLING: Enhanced performance settings
+                watchSlidesProgress={true}
                 observer={true}
                 observeParents={true}
                 updateOnWindowResize={true}
+                // 🚀 ULTRA-SMOOTH SCROLLING: Enhanced lazy loading
                 lazy={{
                   loadPrevNext: true,
-                  loadPrevNextAmount: isDesktop ? 3 : 2,
+                  loadPrevNextAmount: 3, // Increased for smoother loading
                   loadOnTransitionStart: true,
                   elementClass: 'swiper-lazy',
                   loadingClass: 'swiper-lazy-loading',
                   loadedClass: 'swiper-lazy-loaded',
                   preloaderClass: 'swiper-lazy-preloader',
                 }}
+                // 🚀 ULTRA-SMOOTH SCROLLING: Enhanced navigation
+                navigation={isDesktop ? {
+                  nextEl: '.swiper-button-next',
+                  prevEl: '.swiper-button-prev',
+                  disabledClass: 'swiper-button-disabled',
+                  lockClass: 'swiper-button-lock',
+                  hiddenClass: 'swiper-button-hidden',
+                } : false}
+                // 🚀 ULTRA-SMOOTH SCROLLING: Enhanced accessibility
                 a11y={{
                   enabled: true,
                   prevSlideMessage: 'Previous slide',
@@ -1884,7 +1684,127 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
                   lastSlideMessage: 'This is the last slide',
                   paginationBulletMessage: 'Go to slide {{index}}',
                 }}
-                onBeforeDestroy={useCallback((swiper) => {
+                // 🚀 ULTRA-SMOOTH SCROLLING: Ultra-optimized CSS properties
+                style={{
+                  '--swiper-wrapper-transition-timing-function': 'cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+                  '--swiper-wrapper-transition-duration': '300ms',
+                  willChange: 'transform',
+                  overscrollBehavior: 'contain',
+                  WebkitOverflowScrolling: 'touch',
+                  scrollSnapType: 'x mandatory',
+                  scrollSnapAlign: 'start',
+                  // 🚀 ULTRA-SMOOTH SCROLLING: Additional performance optimizations
+                  transform: 'translateZ(0)', // Hardware acceleration
+                  backfaceVisibility: 'hidden',
+                  perspective: '1000px',
+                  WebkitBackfaceVisibility: 'hidden',
+                  WebkitPerspective: '1000px',
+                  WebkitTransform: 'translate3d(0,0,0)',
+                  // 🚀 ULTRA-SMOOTH SCROLLING: Enhanced touch handling
+                  WebkitTapHighlightColor: 'transparent',
+                  WebkitTouchCallout: 'none',
+                  WebkitUserSelect: 'none',
+                  userSelect: 'none',
+                  touchAction: 'pan-x pinch-zoom',
+                }}
+                onReachEnd={() => handleReachEnd(sectionKey)}
+                // 🚀 ULTRA-SMOOTH SCROLLING: Enhanced event handlers for ultra-smooth experience
+                onSlideChange={(swiper) => {
+                  // Enhanced prefetching with better mobile detection
+                  const remainingSlides = swiper.slides.length - (swiper.activeIndex + swiper.params.slidesPerView);
+                  if (remainingSlides <= 3 && !isLoadingMore && hasMore) {
+                    handleReachEnd(sectionKey);
+                  }
+                }}
+                onProgress={(swiper, progress) => {
+                  // More aggressive prefetching for mobile
+                  if (progress > 0.7 && !isLoadingMore && hasMore) {
+                    handleReachEnd(sectionKey);
+                  }
+                }}
+                // 🚀 ULTRA-SMOOTH SCROLLING: Enhanced touch handling for ultra-smooth scrolling
+                onTouchStart={(swiper, event) => {
+                  // Enhanced touch start with performance optimizations
+                  try {
+                    setUltraSmoothScrolling(true);
+                    
+                    // Request animation frame for smooth touch handling
+                    requestAnimationFrame(() => {
+                      if (!isLoadingMore && hasMore) {
+                        handleReachEnd(sectionKey);
+                      }
+                    });
+                    
+                    // Enhanced touch feedback
+                    if (event && event.touches && event.touches.length === 1) {
+                      // Single touch - optimize for smooth scrolling
+                      swiper.allowTouchMove = true;
+                    }
+                  } catch (error) {
+                    console.debug('Touch start prefetch error:', error);
+                  }
+                }}
+                onTouchMove={(swiper, event) => {
+                  // 🚀 ULTRA-SMOOTH SCROLLING: Enhanced touch move for ultra-smooth scrolling
+                  try {
+                    if (event && event.touches && event.touches.length === 1) {
+                      // Record scroll event for performance monitoring
+                      recordScrollEvent();
+                      
+                      // Update scroll velocity for optimization
+                      const currentTime = performance.now();
+                      const currentPosition = swiper.translate;
+                      updateScrollVelocity(currentPosition, currentTime);
+                      
+                      // Single touch - optimize for smooth scrolling
+                      // Use requestAnimationFrame for smooth touch handling
+                      requestAnimationFrame(() => {
+                        // Enhanced momentum calculation
+                        if (swiper.touches && swiper.touches.diff) {
+                          const velocity = Math.abs(swiper.touches.diff);
+                          // Optimize swiper based on velocity
+                          optimizeSwiperForVelocity(swiper, velocity);
+                        }
+                      });
+                    }
+                  } catch (error) {
+                    console.debug('Touch move handling error:', error);
+                  }
+                }}
+                onTouchEnd={(swiper, event) => {
+                  // 🚀 ULTRA-SMOOTH SCROLLING: Enhanced touch end for ultra-smooth scrolling
+                  try {
+                    setUltraSmoothScrolling(false);
+                    
+                    if (swiper && swiper.touches && typeof swiper.touches.diff === 'number') {
+                      if (swiper.touches.diff === 0) {
+                        // Touch ended without movement - could trigger tap
+                        return;
+                      }
+                      
+                      // Enhanced momentum calculation on touch end
+                      requestAnimationFrame(() => {
+                        const velocity = Math.abs(swiper.touches.diff);
+                        // Optimize swiper based on final velocity
+                        optimizeSwiperForVelocity(swiper, velocity);
+                      });
+                    }
+                  } catch (error) {
+                    // Silently handle any touch-related errors to prevent crashes
+                    console.debug('Touch event handling error:', error);
+                  }
+                }}
+                // 🚀 ULTRA-SMOOTH SCROLLING: Additional event handlers for enhanced performance
+                onTransitionStart={(swiper) => {
+                  // Optimize during transitions
+                  swiper.wrapperEl.style.willChange = 'transform';
+                }}
+                onTransitionEnd={(swiper) => {
+                  // Reset will-change after transition
+                  swiper.wrapperEl.style.willChange = 'auto';
+                }}
+                className="px-2 sm:px-4"
+                onBeforeDestroy={(swiper) => {
                   // Enhanced cleanup for better memory management
                   if (swiper.navigation && swiper.navigation.nextEl) {
                     swiper.navigation.nextEl = null;
@@ -1896,15 +1816,6 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
                   if (swiper.autoplay && swiper.autoplay.running) {
                     swiper.autoplay.stop();
                   }
-                }, [])}
-                style={{
-                  WebkitOverflowScrolling: 'touch', // Enhanced iOS momentum scroll
-                  touchAction: 'pan-x', // Restrict to horizontal only
-                  overscrollBehavior: 'contain',
-                  scrollSnapType: 'x mandatory',
-                  scrollSnapAlign: 'start',
-                  willChange: 'transform',
-                  transform: 'translateZ(0)', // Force hardware acceleration
                 }}
               >
                 {movies.map((movie, index) => (
@@ -1928,9 +1839,15 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
                     className="swiper-button-prev !w-10 !h-10 !bg-white/5 hover:!bg-white/10 !rounded-full !border !border-white/10 !transition-all !duration-300 opacity-0 group-hover/section:opacity-100 !-left-0 !-translate-y-1/2 !top-[35%] !m-0 after:!text-white after:!text-sm after:!font-bold !z-10 hover:!scale-110 hover:!shadow-lg hover:!shadow-black/20"
                     onMouseDown={handlePrevButtonMouseDown}
                     onMouseUp={handlePrevButtonMouseUp}
-                    onMouseLeave={handlePrevButtonMouseUp}
+                    onMouseLeave={handlePrevButtonMouseDown}
                     onTouchStart={handlePrevButtonMouseDown}
-                    onTouchEnd={handlePrevButtonMouseUp}
+                    onTouchEnd={(event) => {
+                      try {
+                        handlePrevButtonMouseUp(event);
+                      } catch (error) {
+                        console.debug('Navigation button touch end error:', error);
+                      }
+                    }}
                   ></div>
                 )}
                 {isDesktop && (
@@ -2883,6 +2800,71 @@ const HomePage = () => {
   const [airingTodayTVShows, setAiringTodayTVShows] = useState([]);
   const [nowPlayingMovies, setNowPlayingMovies] = useState([]);
 
+  // Pagination states for all categories - MOVED FROM LATER IN COMPONENT
+  const [pageStates, setPageStates] = useState({
+    // High priority sections - load first
+    trending: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    popular: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    topRated: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    
+    // Medium priority sections
+    upcoming: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    action: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    comedy: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    drama: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    
+    // Low priority sections - load last
+    horror: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    sciFi: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    documentary: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    family: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    animation: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    awardWinning: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    latest: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    
+    // TV show sections
+    popularTV: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    topRatedTV: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    airingToday: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
+    nowPlaying: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null }
+  });
+
+  // Track unique movie IDs for all categories - MOVED FROM LATER IN COMPONENT
+  const [movieIds] = useState({
+    trending: new Set(),
+    popular: new Set(),
+    topRated: new Set(),
+    upcoming: new Set(),
+    action: new Set(),
+    comedy: new Set(),
+    drama: new Set(),
+    horror: new Set(),
+    sciFi: new Set(),
+    documentary: new Set(),
+    family: new Set(),
+    animation: new Set(),
+    awardWinning: new Set(),
+    latest: new Set(),
+    popularTV: new Set(),
+    topRatedTV: new Set(),
+    airingToday: new Set(),
+    nowPlaying: new Set()
+  });
+
+  // Enhanced prefetch state management - MOVED FROM LATER IN COMPONENT
+  const [prefetchedMovies, setPrefetchedMovies] = useState(new Set());
+  const [prefetchCache, setPrefetchCache] = useState(new Map());
+  const [prefetchStats, setPrefetchStats] = useState({
+    totalPrefetched: 0,
+    successfulPrefetches: 0,
+    failedPrefetches: 0,
+    cacheHits: 0
+  });
+  const prefetchQueueRef = useRef([]);
+  const isProcessingPrefetchRef = useRef(false);
+  const fetchInProgress = useRef(false);
+  const [visibleMovies, setVisibleMovies] = useState(new Set());
+
   // Advanced cache state with LRU eviction and memory optimization
   const [dataCache, setDataCache] = useState({});
   const [featuredContent, setFeaturedContent] = useState(null);
@@ -2997,6 +2979,20 @@ const HomePage = () => {
     // Register HomePage with centralized memory optimization service
     memoryOptimizationService.registerComponent('HomePage');
     
+    // Add global touch event error handler
+    const handleGlobalTouchError = (event) => {
+      if (event.error && event.error.message && 
+          (event.error.message.includes('onTouchEnd') || 
+           event.error.message.includes('onTouchStart') || 
+           event.error.message.includes('onTouchMove'))) {
+        console.debug('Global touch event error caught and handled:', event.error.message);
+        event.preventDefault();
+        return false;
+      }
+    };
+
+    window.addEventListener('error', handleGlobalTouchError);
+    
     const unregisterCleanup = memoryOptimizationService.registerCleanupCallback(() => {
       // Cleanup HomePage-specific caches and data
       if (cacheRef.current) {
@@ -3018,6 +3014,7 @@ const HomePage = () => {
 
     return () => {
       memoryOptimizationService.unregisterComponent('HomePage');
+      window.removeEventListener('error', handleGlobalTouchError);
       unregisterCleanup();
     };
   }, []);
@@ -4066,80 +4063,7 @@ const HomePage = () => {
     };
   }, []);
 
-  // FIXED: Add debugging for mobile content loading - moved before early returns
-  useEffect(() => {
-    console.log('HomePage Debug - Mobile:', isMobile);
-    console.log('HomePage Debug - Trending movies:', trendingMovies.length);
-    console.log('HomePage Debug - Popular movies:', popularMovies.length);
-    console.log('HomePage Debug - Top rated movies:', topRatedMovies.length);
-    console.log('HomePage Debug - Upcoming movies:', upcomingMovies.length);
-    console.log('HomePage Debug - Active category:', activeCategory);
-  }, [isMobile, trendingMovies.length, popularMovies.length, topRatedMovies.length, upcomingMovies.length, activeCategory]);
 
-  // Pagination states for all categories
-  const [pageStates, setPageStates] = useState({
-    // High priority sections - load first
-    trending: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
-    popular: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
-    topRated: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
-    
-    // Medium priority sections
-    upcoming: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
-    action: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
-    comedy: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
-    drama: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
-    
-    // Low priority sections - load last
-    horror: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
-    sciFi: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
-    documentary: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
-    family: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
-    animation: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
-    awardWinning: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
-    latest: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
-    
-    // TV show sections
-    popularTV: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
-    topRatedTV: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
-    airingToday: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null },
-    nowPlaying: { current: 1, total: 1, isLoading: false, hasMore: true, lastFetched: null }
-  });
-
-  // Track unique movie IDs for all categories
-  const [movieIds] = useState({
-    trending: new Set(),
-    popular: new Set(),
-    topRated: new Set(),
-    upcoming: new Set(),
-    action: new Set(),
-    comedy: new Set(),
-    drama: new Set(),
-    horror: new Set(),
-    sciFi: new Set(),
-    documentary: new Set(),
-    family: new Set(),
-    animation: new Set(),
-    awardWinning: new Set(),
-    latest: new Set(),
-    popularTV: new Set(),
-    topRatedTV: new Set(),
-    airingToday: new Set(),
-    nowPlaying: new Set()
-  });
-
-  // Enhanced prefetch state management
-  const [prefetchedMovies, setPrefetchedMovies] = useState(new Set());
-  const [prefetchCache, setPrefetchCache] = useState(new Map());
-  const [prefetchStats, setPrefetchStats] = useState({
-    totalPrefetched: 0,
-    successfulPrefetches: 0,
-    failedPrefetches: 0,
-    cacheHits: 0
-  });
-  const prefetchQueueRef = useRef([]);
-  const isProcessingPrefetchRef = useRef(false);
-  const fetchInProgress = useRef(false);
-  const [visibleMovies, setVisibleMovies] = useState(new Set());
 
   const addUniqueMovies = (currentMovies, newMovies, idSet) => {
     const uniqueNewMovies = newMovies.filter(movie => !idSet.has(movie.id));
@@ -4464,6 +4388,13 @@ const HomePage = () => {
     } catch (error) {
       const totalTime = performance.now() - startTime;
       trackApiCall(sectionKey, totalTime, false);
+      
+      // Check if this is an API key related error
+      if (error.message.includes('API key') || error.message.includes('Unauthorized') || error.status === 401) {
+        console.warn(`API key issue for ${sectionKey}:`, error.message);
+        setError('TMDB API key not configured. Please check API_SETUP.md for setup instructions.');
+        return;
+      }
       
       console.error(`Critical error fetching ${sectionKey}:`, {
         error: error.message,
@@ -5595,6 +5526,16 @@ const HomePage = () => {
     };
   }, []);
 
+  // Handle category changes and fetch data - MOVED BEFORE EARLY RETURNS
+  useEffect(() => {
+    console.log('useEffect triggered - activeCategory:', activeCategory);
+    if (activeCategory && activeCategory !== 'all') {
+      console.log('Calling handleCategoryChange for:', activeCategory);
+      // Call the existing handleCategoryChange function
+      handleCategoryChange(activeCategory);
+    }
+  }, [activeCategory, handleCategoryChange]);
+
   // Add this function to handle adding/removing from watchlist
   const _handleWatchlistToggle = (e) => {
     e.stopPropagation();
@@ -5698,15 +5639,21 @@ const HomePage = () => {
     }
   }, []);
 
-  // Handle category changes and fetch data - MOVED BEFORE EARLY RETURNS
+  // FIXED: Add debugging for mobile content loading - moved before early returns
   useEffect(() => {
-    console.log('useEffect triggered - activeCategory:', activeCategory);
-    if (activeCategory && activeCategory !== 'all') {
-      console.log('Calling handleCategoryChange for:', activeCategory);
-      // Call the existing handleCategoryChange function
-      handleCategoryChange(activeCategory);
-    }
-  }, [activeCategory, handleCategoryChange]);
+    console.log('HomePage Debug - Mobile:', isMobile);
+    console.log('HomePage Debug - Trending movies:', trendingMovies.length);
+    console.log('HomePage Debug - Popular movies:', popularMovies.length);
+    console.log('HomePage Debug - Top rated movies:', topRatedMovies.length);
+    console.log('HomePage Debug - Upcoming movies:', upcomingMovies.length);
+    console.log('HomePage Debug - Active category:', activeCategory);
+  }, [isMobile, trendingMovies.length, popularMovies.length, topRatedMovies.length, upcomingMovies.length, activeCategory]);
+
+
+
+
+
+
 
   // Early returns moved to the end after all hooks are called
   if (loadingStates.initial) {
@@ -5721,6 +5668,7 @@ const HomePage = () => {
       text="Loading your cinematic experience..." 
       showProgress={true}
       progress={progress}
+      variant="minimalist"
     />;
   }
 
@@ -5748,65 +5696,15 @@ const HomePage = () => {
             <div className="relative">
               <div className="absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-[#121417] to-transparent z-10 pointer-events-none"></div>
               <div className="absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-[#121417] to-transparent z-10 pointer-events-none"></div>
-              <Swiper
-                modules={[Navigation, A11y]}
-                spaceBetween={16}
-                slidesPerView="auto"
-                speed={500}
-                navigation={{
-                  nextEl: '.category-button-next',
-                  prevEl: '.category-button-prev',
-                }}
-                className="px-4 h-10 mt-6 pl-8"
-                grabCursor={true}
-                mousewheel={{
-                  forceToAxis: true,
-                  sensitivity: 1,
-                  releaseOnEdges: true
-                }}
-                keyboard={{
-                  enabled: true,
-                  onlyInViewport: true
-                }}
-                scrollbar={{
-                  draggable: true,
-                  snapOnRelease: true
-                }}
-                breakpoints={{
-                  320: {
-                    spaceBetween: 12,
-                    slidesPerView: 2.5
-                  },
-                  480: {
-                    spaceBetween: 14,
-                    slidesPerView: 3.5
-                  },
-                  768: {
-                    spaceBetween: 16,
-                    slidesPerView: "auto"
-                  },
-                  1024: {
-                    spaceBetween: 16,
-                    slidesPerView: "auto"
-                  }
-                }}
-                onSlideChange={(swiper) => {
-                  // Smooth scroll behavior when navigating
-                  const activeSlide = swiper.slides[swiper.activeIndex];
-                  if (activeSlide) {
-                    activeSlide.scrollIntoView({
-                      behavior: 'smooth',
-                      block: 'nearest',
-                      inline: 'center'
-                    });
-                  }
-                }}
-              >
-                {categories.map(category => (
-                  <SwiperSlide key={category.id} className="!w-auto">
+              
+              {/* Mobile: Simple overflow-x-auto div */}
+              <div className="md:hidden px-4 mt-6">
+                <div className="flex gap-4 overflow-x-auto scrollbar-hide pb-2">
+                  {categories.map(category => (
                     <button
+                      key={category.id}
                       onClick={() => handleCategoryButtonClick(category)}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all duration-300 whitespace-nowrap ${
+                      className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all duration-300 whitespace-nowrap flex-shrink-0 ${
                         activeCategory === category.id
                           ? 'bg-white text-black hover:bg-white/90'
                           : 'bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
@@ -5815,77 +5713,554 @@ const HomePage = () => {
                       <span className="flex-shrink-0">{category.icon}</span>
                       <span>{category.label}</span>
                     </button>
-                  </SwiperSlide>
-                ))}
-                <div className="category-button-prev !w-8 !h-8 !bg-white/5 hover:!bg-white/10 !rounded-full !border !border-white/10 !transition-all !duration-300 opacity-0 group-hover:opacity-100 !-left-0 !-translate-y-1/2 !top-[35%] !m-0 after:!text-white after:!text-sm after:!font-bold !z-10 hover:!scale-110 hover:!shadow-lg hover:!shadow-black/20"></div>
-                <div className="category-button-next !w-8 !h-8 !bg-white/5 hover:!bg-white/10 !rounded-full !border !border-white/10 !transition-all !duration-300 opacity-0 group-hover:opacity-100 !-right-0 !-translate-y-1/2 !top-[35%] !m-0 after:!text-white after:!text-sm after:!font-bold !z-10 hover:!scale-110 hover:!shadow-lg hover:!shadow-black/20"></div>
-              </Swiper>
+                  ))}
+                </div>
+              </div>
+
+              {/* Desktop: Swiper with navigation */}
+              <div className="hidden md:block">
+                <Swiper
+                  modules={[Navigation, A11y]}
+                  spaceBetween={16}
+                  slidesPerView="auto"
+                  speed={500}
+                  navigation={{
+                    nextEl: '.category-button-next',
+                    prevEl: '.category-button-prev',
+                  }}
+                  className="px-4 h-10 mt-6 pl-8"
+                  grabCursor={true}
+                  mousewheel={{
+                    forceToAxis: true,
+                    sensitivity: 1,
+                    releaseOnEdges: true
+                  }}
+                  keyboard={{
+                    enabled: true,
+                    onlyInViewport: true
+                  }}
+                  scrollbar={{
+                    draggable: true,
+                    snapOnRelease: true
+                  }}
+                  breakpoints={{
+                    768: {
+                      spaceBetween: 16,
+                      slidesPerView: "auto"
+                    },
+                    1024: {
+                      spaceBetween: 16,
+                      slidesPerView: "auto"
+                    }
+                  }}
+                  onSlideChange={(swiper) => {
+                    // Smooth scroll behavior when navigating
+                    const activeSlide = swiper.slides[swiper.activeIndex];
+                    if (activeSlide) {
+                      activeSlide.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'nearest',
+                        inline: 'center'
+                      });
+                    }
+                  }}
+                >
+                  {categories.map(category => (
+                    <SwiperSlide key={category.id} className="!w-auto">
+                      <button
+                        onClick={() => handleCategoryButtonClick(category)}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all duration-300 whitespace-nowrap ${
+                          activeCategory === category.id
+                            ? 'bg-white text-black hover:bg-white/90'
+                            : 'bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        <span className="flex-shrink-0">{category.icon}</span>
+                        <span>{category.label}</span>
+                      </button>
+                    </SwiperSlide>
+                  ))}
+                  <div className="category-button-prev !w-8 !h-8 !bg-white/5 hover:!bg-white/10 !rounded-full !border !border-white/10 !transition-all !duration-300 opacity-0 group-hover:opacity-100 !-left-0 !-translate-y-1/2 !top-[35%] !m-0 after:!text-white after:!text-sm after:!font-bold !z-10 hover:!scale-110 hover:!shadow-lg hover:!shadow-black/20"></div>
+                  <div className="category-button-next !w-8 !h-8 !bg-white/5 hover:!bg-white/10 !rounded-full !border !border-white/10 !transition-all !duration-300 opacity-0 group-hover:opacity-100 !-right-0 !-translate-y-1/2 !top-[35%] !m-0 after:!text-white after:!text-sm after:!font-bold !z-10 hover:!scale-110 hover:!shadow-lg hover:!shadow-black/20"></div>
+                </Swiper>
+              </div>
             </div>
-            {/* Movie Sections */}
-            {activeCategory === 'all' ? (
-              <>
-                <MemoizedMovieSection 
-                  title="Trending Now" 
-                  movies={trendingMovies} 
-                  loading={loadingStates.trending} 
-                  onLoadMore={() => loadMoreMovies('trending')}
-                  hasMore={pageStates.trending.current < pageStates.trending.total}
-                  currentPage={pageStates.trending.current}
-                  sectionKey="trending"
-                  onMovieSelect={handleMovieSelect}
-                  onMovieHover={handleMovieHover}
-                  onPrefetch={queuePrefetch}
-                />
-                <MemoizedMovieSection 
-                  title="Popular Movies" 
-                  movies={popularMovies} 
-                  loading={loadingStates.popular} 
-                  onLoadMore={() => loadMoreMovies('popular')}
-                  hasMore={pageStates.popular.current < pageStates.popular.total}
-                  currentPage={pageStates.popular.current}
-                  sectionKey="popular"
-                  onMovieSelect={handleMovieSelect}
-                  onMovieHover={handleMovieHover}
-                  onPrefetch={queuePrefetch}
-                />
-                <MemoizedMovieSection 
-                  title="Top Rated Movies" 
-                  movies={topRatedMovies} 
-                  loading={loadingStates.topRated} 
-                  onLoadMore={() => loadMoreMovies('topRated')}
-                  hasMore={pageStates.topRated.current < pageStates.topRated.total}
-                  currentPage={pageStates.topRated.current}
-                  sectionKey="topRated"
-                  onMovieSelect={handleMovieSelect}
-                  onMovieHover={handleMovieHover}
-                  onPrefetch={queuePrefetch}
-                />
-                <MemoizedMovieSection 
-                  title="Coming Soon" 
-                  movies={upcomingMovies} 
-                  loading={loadingStates.upcoming} 
-                  onLoadMore={() => loadMoreMovies('upcoming')}
-                  hasMore={pageStates.upcoming.current < pageStates.upcoming.total}
-                  currentPage={pageStates.upcoming.current}
-                  sectionKey="upcoming"
-                  onMovieSelect={handleMovieSelect}
-                  onMovieHover={handleMovieHover}
-                  onPrefetch={queuePrefetch}
-                />
-              </>
-            ) : (
-              <MemoizedMovieSection 
-                title={categories.find(c => c.id === activeCategory)?.label || ''}
-                movies={getMoviesForCategory(activeCategory)}
-                loading={loadingStates[activeCategory]}
-                onLoadMore={() => loadMoreMovies(activeCategory)}
-                hasMore={pageStates[activeCategory].current < pageStates[activeCategory].total}
-                currentPage={pageStates[activeCategory].current}
-                sectionKey={activeCategory}
-                onMovieSelect={handleMovieSelect}
-                onMovieHover={handleMovieHover}
-                onPrefetch={queuePrefetch}
-              />
+            
+            {/* Netflix-like Movie Sections for 'all' category */}
+            {activeCategory === 'all' && (
+              <div className="space-y-8 mt-8">
+                {/* Trending Now Section */}
+                {trendingMovies.length > 0 && (
+                  <MovieSection
+                    title="Trending Now"
+                    movies={trendingMovies}
+                    loading={loadingStates.trending}
+                    onLoadMore={() => loadMoreMovies('trending')}
+                    hasMore={pageStates.trending?.current < pageStates.trending?.total}
+                    currentPage={pageStates.trending?.current || 1}
+                    sectionKey="trending"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={(movie, index, movies) => {
+                      // Prefetch next movie details
+                      if (index < movies.length - 1) {
+                        const nextMovie = movies[index + 1];
+                        if (nextMovie && nextMovie.id) {
+                          recordPrefetch(nextMovie.id);
+                        }
+                      }
+                    }}
+                    onPrefetch={(movieId) => recordPrefetch(movieId)}
+                  />
+                )}
+
+                {/* Popular Movies Section */}
+                {popularMovies.length > 0 && (
+                  <MovieSection
+                    title="Popular Movies"
+                    movies={popularMovies}
+                    loading={loadingStates.popular}
+                    onLoadMore={() => loadMoreMovies('popular')}
+                    hasMore={pageStates.popular?.current < pageStates.popular?.total}
+                    currentPage={pageStates.popular?.current || 1}
+                    sectionKey="popular"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={(movie, index, movies) => {
+                      if (index < movies.length - 1) {
+                        const nextMovie = movies[index + 1];
+                        if (nextMovie && nextMovie.id) {
+                          recordPrefetch(nextMovie.id);
+                        }
+                      }
+                    }}
+                    onPrefetch={(movieId) => recordPrefetch(movieId)}
+                  />
+                )}
+
+                {/* Top Rated Movies Section */}
+                {topRatedMovies.length > 0 && (
+                  <MovieSection
+                    title="Top Rated Movies"
+                    movies={topRatedMovies}
+                    loading={loadingStates.topRated}
+                    onLoadMore={() => loadMoreMovies('topRated')}
+                    hasMore={pageStates.topRated?.current < pageStates.topRated?.total}
+                    currentPage={pageStates.topRated?.current || 1}
+                    sectionKey="topRated"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={(movie, index, movies) => {
+                      if (index < movies.length - 1) {
+                        const nextMovie = movies[index + 1];
+                        if (nextMovie && nextMovie.id) {
+                          recordPrefetch(nextMovie.id);
+                        }
+                      }
+                    }}
+                    onPrefetch={(movieId) => recordPrefetch(movieId)}
+                  />
+                )}
+
+                {/* Coming Soon Section */}
+                {upcomingMovies.length > 0 && (
+                  <MovieSection
+                    title="Coming Soon"
+                    movies={upcomingMovies}
+                    loading={loadingStates.upcoming}
+                    onLoadMore={() => loadMoreMovies('upcoming')}
+                    hasMore={pageStates.upcoming?.current < pageStates.upcoming?.total}
+                    currentPage={pageStates.upcoming?.current || 1}
+                    sectionKey="upcoming"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={(movie, index, movies) => {
+                      if (index < movies.length - 1) {
+                        const nextMovie = movies[index + 1];
+                        if (nextMovie && nextMovie.id) {
+                          recordPrefetch(nextMovie.id);
+                        }
+                      }
+                    }}
+                    onPrefetch={(movieId) => recordPrefetch(movieId)}
+                  />
+                )}
+
+                {/* Action Movies Section */}
+                {actionMovies.length > 0 && (
+                  <MovieSection
+                    title="Action Movies"
+                    movies={actionMovies}
+                    loading={loadingStates.action}
+                    onLoadMore={() => loadMoreMovies('action')}
+                    hasMore={pageStates.action?.current < pageStates.action?.total}
+                    currentPage={pageStates.action?.current || 1}
+                    sectionKey="action"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={(movie, index, movies) => {
+                      if (index < movies.length - 1) {
+                        const nextMovie = movies[index + 1];
+                        if (nextMovie && nextMovie.id) {
+                          recordPrefetch(nextMovie.id);
+                        }
+                      }
+                    }}
+                    onPrefetch={(movieId) => recordPrefetch(movieId)}
+                  />
+                )}
+
+                {/* Comedy Movies Section */}
+                {comedyMovies.length > 0 && (
+                  <MovieSection
+                    title="Comedy Movies"
+                    movies={comedyMovies}
+                    loading={loadingStates.comedy}
+                    onLoadMore={() => loadMoreMovies('comedy')}
+                    hasMore={pageStates.comedy?.current < pageStates.comedy?.total}
+                    currentPage={pageStates.comedy?.current || 1}
+                    sectionKey="comedy"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={(movie, index, movies) => {
+                      if (index < movies.length - 1) {
+                        const nextMovie = movies[index + 1];
+                        if (nextMovie && nextMovie.id) {
+                          recordPrefetch(nextMovie.id);
+                        }
+                      }
+                    }}
+                    onPrefetch={(movieId) => recordPrefetch(movieId)}
+                  />
+                )}
+
+                {/* Drama Movies Section */}
+                {dramaMovies.length > 0 && (
+                  <MovieSection
+                    title="Drama Movies"
+                    movies={dramaMovies}
+                    loading={loadingStates.drama}
+                    onLoadMore={() => loadMoreMovies('drama')}
+                    hasMore={pageStates.drama?.current < pageStates.drama?.total}
+                    currentPage={pageStates.drama?.current || 1}
+                    sectionKey="drama"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={(movie, index, movies) => {
+                      if (index < movies.length - 1) {
+                        const nextMovie = movies[index + 1];
+                        if (nextMovie && nextMovie.id) {
+                          recordPrefetch(nextMovie.id);
+                        }
+                      }
+                    }}
+                    onPrefetch={(movieId) => recordPrefetch(movieId)}
+                  />
+                )}
+
+                {/* Horror Movies Section */}
+                {horrorMovies.length > 0 && (
+                  <MovieSection
+                    title="Horror Movies"
+                    movies={horrorMovies}
+                    loading={loadingStates.horror}
+                    onLoadMore={() => loadMoreMovies('horror')}
+                    hasMore={pageStates.horror?.current < pageStates.horror?.total}
+                    currentPage={pageStates.horror?.current || 1}
+                    sectionKey="horror"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={(movie, index, movies) => {
+                      if (index < movies.length - 1) {
+                        const nextMovie = movies[index + 1];
+                        if (nextMovie && nextMovie.id) {
+                          recordPrefetch(nextMovie.id);
+                        }
+                      }
+                    }}
+                    onPrefetch={(movieId) => recordPrefetch(movieId)}
+                  />
+                )}
+
+                {/* Sci-Fi Movies Section */}
+                {sciFiMovies.length > 0 && (
+                  <MovieSection
+                    title="Sci-Fi Movies"
+                    movies={sciFiMovies}
+                    loading={loadingStates.sciFi}
+                    onLoadMore={() => loadMoreMovies('sciFi')}
+                    hasMore={pageStates.sciFi?.current < pageStates.sciFi?.total}
+                    currentPage={pageStates.sciFi?.current || 1}
+                    sectionKey="sciFi"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={(movie, index, movies) => {
+                      if (index < movies.length - 1) {
+                        const nextMovie = movies[index + 1];
+                        if (nextMovie && nextMovie.id) {
+                          recordPrefetch(nextMovie.id);
+                        }
+                      }
+                    }}
+                    onPrefetch={(movieId) => recordPrefetch(movieId)}
+                  />
+                )}
+
+                {/* Documentary Movies Section */}
+                {documentaryMovies.length > 0 && (
+                  <MovieSection
+                    title="Documentary Movies"
+                    movies={documentaryMovies}
+                    loading={loadingStates.documentary}
+                    onLoadMore={() => loadMoreMovies('documentary')}
+                    hasMore={pageStates.documentary?.current < pageStates.documentary?.total}
+                    currentPage={pageStates.documentary?.current || 1}
+                    sectionKey="documentary"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={(movie, index, movies) => {
+                      if (index < movies.length - 1) {
+                        const nextMovie = movies[index + 1];
+                        if (nextMovie && nextMovie.id) {
+                          recordPrefetch(nextMovie.id);
+                        }
+                      }
+                    }}
+                    onPrefetch={(movieId) => recordPrefetch(movieId)}
+                  />
+                )}
+
+                {/* Family Movies Section */}
+                {familyMovies.length > 0 && (
+                  <MovieSection
+                    title="Family Movies"
+                    movies={familyMovies}
+                    loading={loadingStates.family}
+                    onLoadMore={() => loadMoreMovies('family')}
+                    hasMore={pageStates.family?.current < pageStates.family?.total}
+                    currentPage={pageStates.family?.current || 1}
+                    sectionKey="family"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={(movie, index, movies) => {
+                      if (index < movies.length - 1) {
+                        const nextMovie = movies[index + 1];
+                        if (nextMovie && nextMovie.id) {
+                          recordPrefetch(nextMovie.id);
+                        }
+                      }
+                    }}
+                    onPrefetch={(movieId) => recordPrefetch(movieId)}
+                  />
+                )}
+
+                {/* Animation Movies Section */}
+                {animationMovies.length > 0 && (
+                  <MovieSection
+                    title="Animation Movies"
+                    movies={animationMovies}
+                    loading={loadingStates.animation}
+                    onLoadMore={() => loadMoreMovies('animation')}
+                    hasMore={pageStates.animation?.current < pageStates.animation?.total}
+                    currentPage={pageStates.animation?.current || 1}
+                    sectionKey="animation"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={(movie, index, movies) => {
+                      if (index < movies.length - 1) {
+                        const nextMovie = movies[index + 1];
+                        if (nextMovie && nextMovie.id) {
+                          recordPrefetch(nextMovie.id);
+                        }
+                      }
+                    }}
+                    onPrefetch={(movieId) => recordPrefetch(movieId)}
+                  />
+                )}
+
+                {/* Award Winning Movies Section */}
+                {awardWinningMovies.length > 0 && (
+                  <MovieSection
+                    title="Award Winning Movies"
+                    movies={awardWinningMovies}
+                    loading={loadingStates.awardWinning}
+                    onLoadMore={() => loadMoreMovies('awardWinning')}
+                    hasMore={pageStates.awardWinning?.current < pageStates.awardWinning?.total}
+                    currentPage={pageStates.awardWinning?.current || 1}
+                    sectionKey="awardWinning"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={(movie, index, movies) => {
+                      if (index < movies.length - 1) {
+                        const nextMovie = movies[index + 1];
+                        if (nextMovie && nextMovie.id) {
+                          recordPrefetch(nextMovie.id);
+                        }
+                      }
+                    }}
+                    onPrefetch={(movieId) => recordPrefetch(movieId)}
+                  />
+                )}
+
+                {/* Latest Movies Section */}
+                {latestMovies.length > 0 && (
+                  <MovieSection
+                    title="Latest Movies"
+                    movies={latestMovies}
+                    loading={loadingStates.latest}
+                    onLoadMore={() => loadMoreMovies('latest')}
+                    hasMore={pageStates.latest?.current < pageStates.latest?.total}
+                    currentPage={pageStates.latest?.current || 1}
+                    sectionKey="latest"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={(movie, index, movies) => {
+                      if (index < movies.length - 1) {
+                        const nextMovie = movies[index + 1];
+                        if (nextMovie && nextMovie.id) {
+                          recordPrefetch(nextMovie.id);
+                        }
+                      }
+                    }}
+                    onPrefetch={(movieId) => recordPrefetch(movieId)}
+                  />
+                )}
+
+                {/* Popular TV Shows Section */}
+                {popularTVShows.length > 0 && (
+                  <MovieSection
+                    title="Popular TV Shows"
+                    movies={popularTVShows}
+                    loading={loadingStates.popularTV}
+                    onLoadMore={() => loadMoreMovies('popularTV')}
+                    hasMore={pageStates.popularTV?.current < pageStates.popularTV?.total}
+                    currentPage={pageStates.popularTV?.current || 1}
+                    sectionKey="popularTV"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={(movie, index, movies) => {
+                      if (index < movies.length - 1) {
+                        const nextMovie = movies[index + 1];
+                        if (nextMovie && nextMovie.id) {
+                          recordPrefetch(nextMovie.id);
+                        }
+                      }
+                    }}
+                    onPrefetch={(movieId) => recordPrefetch(movieId)}
+                  />
+                )}
+
+                {/* Top Rated TV Shows Section */}
+                {topRatedTVShows.length > 0 && (
+                  <MovieSection
+                    title="Top Rated TV Shows"
+                    movies={topRatedTVShows}
+                    loading={loadingStates.topRatedTV}
+                    onLoadMore={() => loadMoreMovies('topRatedTV')}
+                    hasMore={pageStates.topRatedTV?.current < pageStates.topRatedTV?.total}
+                    currentPage={pageStates.topRatedTV?.current || 1}
+                    sectionKey="topRatedTV"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={(movie, index, movies) => {
+                      if (index < movies.length - 1) {
+                        const nextMovie = movies[index + 1];
+                        if (nextMovie && nextMovie.id) {
+                          recordPrefetch(nextMovie.id);
+                        }
+                      }
+                    }}
+                    onPrefetch={(movieId) => recordPrefetch(movieId)}
+                  />
+                )}
+
+                {/* Airing Today TV Shows Section */}
+                {airingTodayTVShows.length > 0 && (
+                  <MovieSection
+                    title="Airing Today TV Shows"
+                    movies={airingTodayTVShows}
+                    loading={loadingStates.airingToday}
+                    onLoadMore={() => loadMoreMovies('airingToday')}
+                    hasMore={pageStates.airingToday?.current < pageStates.airingToday?.total}
+                    currentPage={pageStates.airingToday?.current || 1}
+                    sectionKey="airingToday"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={(movie, index, movies) => {
+                      if (index < movies.length - 1) {
+                        const nextMovie = movies[index + 1];
+                        if (nextMovie && nextMovie.id) {
+                          recordPrefetch(nextMovie.id);
+                        }
+                      }
+                    }}
+                    onPrefetch={(movieId) => recordPrefetch(movieId)}
+                  />
+                )}
+
+                {/* Now Playing Movies Section */}
+                {nowPlayingMovies.length > 0 && (
+                  <MovieSection
+                    title="Now Playing Movies"
+                    movies={nowPlayingMovies}
+                    loading={loadingStates.nowPlaying}
+                    onLoadMore={() => loadMoreMovies('nowPlaying')}
+                    hasMore={pageStates.nowPlaying?.current < pageStates.nowPlaying?.total}
+                    currentPage={pageStates.nowPlaying?.current || 1}
+                    sectionKey="nowPlaying"
+                    onMovieSelect={handleMovieSelect}
+                    onMovieHover={(movie, index, movies) => {
+                      if (index < movies.length - 1) {
+                        const nextMovie = movies[index + 1];
+                        if (nextMovie && nextMovie.id) {
+                          recordPrefetch(nextMovie.id);
+                        }
+                      }
+                    }}
+                    onPrefetch={(movieId) => recordPrefetch(movieId)}
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Category-specific content with swiper section */}
+            {activeCategory !== 'all' && (
+              <div className="space-y-8 mt-8">
+                {/* Get the selected category data */}
+                {(() => {
+                  const categoryData = {
+                    trending: { movies: trendingMovies, loading: loadingStates.trending, title: 'Trending Now' },
+                    popular: { movies: popularMovies, loading: loadingStates.popular, title: 'Popular Movies' },
+                    topRated: { movies: topRatedMovies, loading: loadingStates.topRated, title: 'Top Rated Movies' },
+                    upcoming: { movies: upcomingMovies, loading: loadingStates.upcoming, title: 'Upcoming Movies' },
+                    action: { movies: actionMovies, loading: loadingStates.action, title: 'Action Movies' },
+                    comedy: { movies: comedyMovies, loading: loadingStates.comedy, title: 'Comedy Movies' },
+                    drama: { movies: dramaMovies, loading: loadingStates.drama, title: 'Drama Movies' },
+                    horror: { movies: horrorMovies, loading: loadingStates.horror, title: 'Horror Movies' },
+                    sciFi: { movies: sciFiMovies, loading: loadingStates.sciFi, title: 'Sci-Fi Movies' },
+                    documentary: { movies: documentaryMovies, loading: loadingStates.documentary, title: 'Documentary Movies' },
+                    family: { movies: familyMovies, loading: loadingStates.family, title: 'Family Movies' },
+                    animation: { movies: animationMovies, loading: loadingStates.animation, title: 'Animation Movies' },
+                    awardWinning: { movies: awardWinningMovies, loading: loadingStates.awardWinning, title: 'Award Winning Movies' },
+                    latest: { movies: latestMovies, loading: loadingStates.latest, title: 'Latest Movies' },
+                    popularTV: { movies: popularTVShows, loading: loadingStates.popularTV, title: 'Popular TV Shows' },
+                    topRatedTV: { movies: topRatedTVShows, loading: loadingStates.topRatedTV, title: 'Top Rated TV Shows' },
+                    airingToday: { movies: airingTodayTVShows, loading: loadingStates.airingToday, title: 'Airing Today TV Shows' },
+                    nowPlaying: { movies: nowPlayingMovies, loading: loadingStates.nowPlaying, title: 'Now Playing Movies' }
+                  };
+
+                  const selectedCategory = categoryData[activeCategory];
+                  
+                  if (selectedCategory && selectedCategory.movies.length > 0) {
+                    return (
+                      <MovieSection
+                        title={selectedCategory.title}
+                        movies={selectedCategory.movies}
+                        loading={selectedCategory.loading}
+                        onLoadMore={() => loadMoreMovies(activeCategory)}
+                        hasMore={pageStates[activeCategory]?.current < pageStates[activeCategory]?.total}
+                        currentPage={pageStates[activeCategory]?.current || 1}
+                        sectionKey={activeCategory}
+                        onMovieSelect={handleMovieSelect}
+                        onMovieHover={(movie, index, movies) => {
+                          if (index < movies.length - 1) {
+                            const nextMovie = movies[index + 1];
+                            if (nextMovie && nextMovie.id) {
+                              recordPrefetch(nextMovie.id);
+                            }
+                          }
+                        }}
+                        onPrefetch={(movieId) => recordPrefetch(movieId)}
+                      />
+                    );
+                  }
+                  
+                  return null;
+                })()}
+              </div>
             )}
           </div>
         </div>
