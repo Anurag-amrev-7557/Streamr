@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import { getMovieDetails, getMovieCredits, getMovieVideos, getSimilarMovies, getTVSeason, getTVSeasons } from '../services/tmdbService';
 import { useWatchlist } from '../contexts/WatchlistContext';
+import { useViewingProgress } from '../contexts/ViewingProgressContext';
 import { Loader, PageLoader, SectionLoader, CardLoader } from './Loader';
 import { getStreamingUrl, isStreamingAvailable, needsEpisodeSelection } from '../services/streamingService';
 import StreamingPlayer from './StreamingPlayer';
@@ -737,6 +738,7 @@ const useIsMobile = () => {
 
 const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) => {
   const { addToWatchlist, removeFromWatchlist, isInWatchlist } = useWatchlist();
+  const { startWatchingMovie, startWatchingEpisode } = useViewingProgress();
   const [movieDetails, setMovieDetails] = useState(null);
   const [credits, setCredits] = useState(null);
   const [videos, setVideos] = useState(null);
@@ -1063,11 +1065,19 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     return () => {
       try {
         const existingStyle = document.getElementById('movie-details-overlay-scrollbar-style');
-        if (existingStyle && existingStyle.parentNode && existingStyle.parentNode.contains(existingStyle)) {
+        if (existingStyle && existingStyle.parentNode && document.head.contains(existingStyle)) {
           existingStyle.parentNode.removeChild(existingStyle);
         }
       } catch (error) {
         console.warn('[MovieDetailsOverlay] Failed to remove scrollbar style:', error);
+        // Fallback: try to remove even if contains check failed
+        try {
+          if (existingStyle && existingStyle.parentNode) {
+            existingStyle.parentNode.removeChild(existingStyle);
+          }
+        } catch (fallbackError) {
+          console.warn('[MovieDetailsOverlay] Fallback scrollbar style removal also failed:', fallbackError);
+        }
       }
     };
   }, []);
@@ -2308,6 +2318,11 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       return;
     }
     
+    // Track that user started watching this movie
+    if ((movie.media_type || movie.type || 'movie') === 'movie') {
+      startWatchingMovie(movie);
+    }
+    
     // Directly open streaming player with default service
     const url = getStreamingUrl(movie, currentService);
     if (url) {
@@ -2323,7 +2338,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         });
       }
     }
-  }, [movie, currentService]);
+  }, [movie, currentService, startWatchingMovie]);
 
   const handleCloseStreaming = useCallback(() => {
     setShowStreamingPlayer(false);
@@ -2358,7 +2373,29 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   const handleEpisodeSelect = useCallback((season, episode, episodeData = null) => {
     if (!movie) return;
     
-    console.log('handleEpisodeSelect called with:', { season, episode, episodeData });
+    console.log('🎬 MovieDetailsOverlay: handleEpisodeSelect called with:', { 
+      season, 
+      episode, 
+      episodeData,
+      movieTitle: movie?.title || movie?.name,
+      movieId: movie?.id
+    });
+    
+    // Enhanced debugging for TV show data structure
+    console.log('🎬 MovieDetailsOverlay: TV show data structure:', {
+      id: movie?.id,
+      name: movie?.name,
+      title: movie?.title,
+      poster_path: movie?.poster_path,
+      backdrop_path: movie?.backdrop_path,
+      poster: movie?.poster,
+      backdrop: movie?.backdrop,
+      type: movie?.type,
+      media_type: movie?.media_type
+    });
+    
+    // Track that user started watching this episode
+    startWatchingEpisode(movie, season, episode, episodeData);
     
     // Update the movie object with season and episode information
     const tvShow = {
@@ -2860,7 +2897,23 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   const handleEpisodeClick = useCallback((episode) => {
     if (!movie) return;
     
-    console.log('handleEpisodeClick called with episode:', episode);
+    console.log('🎬 MovieDetailsOverlay: handleEpisodeClick called with episode:', episode);
+    
+    // Enhanced debugging for TV show data structure
+    console.log('🎬 MovieDetailsOverlay: TV show data structure in handleEpisodeClick:', {
+      id: movie?.id,
+      name: movie?.name,
+      title: movie?.title,
+      poster_path: movie?.poster_path,
+      backdrop_path: movie?.backdrop_path,
+      poster: movie?.poster,
+      backdrop: movie?.backdrop,
+      type: movie?.type,
+      media_type: movie?.media_type
+    });
+    
+    // Track that user started watching this episode
+    startWatchingEpisode(movie, episode.season_number, episode.episode_number, episode);
     
     // Update the movie object with season and episode information
     const tvShow = {
@@ -3143,35 +3196,34 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     // Enhanced cleanup: Remove portal only if it was created by this instance
     return () => {
       // Only remove if this instance created the container
-      if (isNewContainer && container && container.parentNode) {
+      if (isNewContainer && container) {
         try {
-          // Check if container is still in the DOM before removing
-          if (container.parentNode.contains(container)) {
-            // Safely remove all child nodes first to prevent memory leaks
-            while (container.firstChild) {
-              try {
-                container.removeChild(container.firstChild);
-              } catch (childError) {
-                // If child removal fails, break to prevent infinite loop
-                console.warn('[MovieDetailsOverlay] Failed to remove child node:', childError);
-                break;
-              }
-            }
+          // Check if container is still in the DOM and has a parent
+          if (container.parentNode && document.body.contains(container)) {
+            // Clear all child nodes safely without removing them individually
+            // This prevents the "removeChild" error by letting React handle the cleanup
+            container.innerHTML = '';
             
-            // Safely remove the container
-            try {
-              if (container.parentNode && container.parentNode.contains(container)) {
-                container.parentNode.removeChild(container);
-                if (process.env.NODE_ENV === "development") {
-                  console.debug('[MovieDetailsOverlay] Portal container removed');
-                }
+            // Safely remove the container only if it's still in the DOM
+            if (container.parentNode && container.parentNode.contains(container)) {
+              container.parentNode.removeChild(container);
+              if (process.env.NODE_ENV === "development") {
+                console.debug('[MovieDetailsOverlay] Portal container removed');
               }
-            } catch (removeError) {
-              console.warn('[MovieDetailsOverlay] Failed to remove portal container:', removeError);
             }
           }
         } catch (error) {
+          // Log error but don't throw to prevent app crashes
           console.warn('[MovieDetailsOverlay] Failed to cleanup portal container:', error);
+          
+          // Fallback: try to remove container even if child removal failed
+          try {
+            if (container.parentNode && container.parentNode.contains(container)) {
+              container.parentNode.removeChild(container);
+            }
+          } catch (fallbackError) {
+            console.warn('[MovieDetailsOverlay] Fallback cleanup also failed:', fallbackError);
+          }
         }
       }
       // Clear portal container reference to prevent memory leaks

@@ -121,6 +121,7 @@ export default defineConfig({
     port: 5173,
     strictPort: false,
     open: false,
+    force: true,
     proxy: {
       '/api': {
         target: 'https://streamr-jjj9.onrender.com',
@@ -166,12 +167,14 @@ export default defineConfig({
       '@headlessui/react',
       '@heroicons/react'
     ],
-    force: true
+    force: false
   },
   esbuild: {
     logOverride: { 'this-is-undefined-in-esm': 'silent' },
     target: 'esnext'
   },
+  clearScreen: false,
+  logLevel: 'info',
   json: {
     namedExports: true,
     stringify: false

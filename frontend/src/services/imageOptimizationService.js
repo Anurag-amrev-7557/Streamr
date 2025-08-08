@@ -33,12 +33,18 @@ export const getDirectImageUrl = (path, size = IMAGE_SIZES.MEDIUM) => {
     return '/placeholder-image.jpg';
   }
   
+  // If it's already a full URL, return it as-is
+  if (path.startsWith('http')) {
+    return path;
+  }
+  
   // Ensure path starts with /
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
   
   // Always use direct TMDB URLs - CORS issues will be handled by the img element
   // with crossOrigin attribute and error handling
-  return `${TMDB_IMAGE_BASE_URL}/${size}${cleanPath}`;
+  const url = `${TMDB_IMAGE_BASE_URL}/${size}${cleanPath}`;
+  return url;
 };
 
 // Function to get proxied image URL (fallback method)

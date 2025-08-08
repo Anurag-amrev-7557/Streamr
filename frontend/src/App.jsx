@@ -37,6 +37,7 @@ import './App.css'
 import { LoadingProvider } from './contexts/LoadingContext'
 import { WatchlistProvider } from './contexts/WatchlistContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { ViewingProgressProvider } from './contexts/ViewingProgressContext'
 const ProtectedRoute = lazy(() => import('./components/ProtectedRoute').catch(err => {
   console.error('Failed to load ProtectedRoute:', err);
   return { default: () => <div>Failed to load ProtectedRoute</div> };
@@ -72,6 +73,14 @@ const NetworkTestPage = lazy(() => import('./components/NetworkTestPage').catch(
 const TestAuthPage = lazy(() => import('./pages/TestAuthPage').catch(err => {
   console.error('Failed to load TestAuthPage:', err);
   return { default: () => <div>Failed to load TestAuthPage</div> };
+}));
+const TestProgressPage = lazy(() => import('./pages/TestProgressPage').catch(err => {
+  console.error('Failed to load TestProgressPage:', err);
+  return { default: () => <div>Failed to load TestProgressPage</div> };
+}));
+const ProgressTestComponent = lazy(() => import('./components/ProgressTestComponent').catch(err => {
+  console.error('Failed to load ProgressTestComponent:', err);
+  return { default: () => <div>Failed to load ProgressTestComponent</div> };
 }));
 import { SocketProvider } from './contexts/SocketContext'
 // Lazy load components that are not immediately needed
@@ -262,6 +271,7 @@ const AppRoutes = () => {
         <Route path="/community/discussion/:id" element={<SingleDiscussion />} />
         <Route path="/network-test" element={<NetworkTestPage />} />
         <Route path="/test-auth" element={<TestAuthPage />} />
+        <Route path="/test-progress" element={<TestProgressPage />} />
         <Route path="/verify-email/:token" element={<VerifyEmailPage />} />
         <Route path="/oauth-success" element={<OAuthSuccessPage />} />
 
@@ -304,9 +314,11 @@ const App = () => {
         <SocketProvider>
           <LoadingProvider>
             <WatchlistProvider>
-              <AuthProvider>
-                <Layout />
-              </AuthProvider>
+              <ViewingProgressProvider>
+                <AuthProvider>
+                  <Layout />
+                </AuthProvider>
+              </ViewingProgressProvider>
             </WatchlistProvider>
           </LoadingProvider>
         </SocketProvider>

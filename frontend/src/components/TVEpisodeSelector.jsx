@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import { getTVSeason } from '../services/tmdbService';
 import EnhancedLoadMoreButton from './enhanced/EnhancedLoadMoreButton';
+import { useViewingProgress } from '../contexts/ViewingProgressContext';
 
 // Virtualized episode list component for performance
 const VirtualizedEpisodeList = React.memo(({ 
@@ -109,6 +110,7 @@ const TVEpisodeSelector = ({
   currentService = null,
   onServiceChange = null
 }) => {
+  const { startWatchingEpisode } = useViewingProgress();
   const [selectedSeason, setSelectedSeason] = useState(1);
   const [selectedEpisode, setSelectedEpisode] = useState(1);
   const [portalContainer, setPortalContainer] = useState(null);
@@ -142,14 +144,24 @@ const TVEpisodeSelector = ({
     setPortalContainer(container);
 
     return () => {
-      if (container && container.parentNode && container.children.length === 0) {
+      if (container && container.parentNode) {
         try {
           // Check if container is still in the DOM before removing
           if (container.parentNode.contains(container)) {
+            // Clear content first to prevent React cleanup issues
+            container.innerHTML = '';
             container.parentNode.removeChild(container);
           }
         } catch (error) {
           console.warn('[TVEpisodeSelector] Failed to remove portal container:', error);
+          // Fallback: try to remove even if contains check failed
+          try {
+            if (container && container.parentNode) {
+              container.parentNode.removeChild(container);
+            }
+          } catch (fallbackError) {
+            console.warn('[TVEpisodeSelector] Fallback portal removal also failed:', fallbackError);
+          }
         }
       }
     };
@@ -273,6 +285,23 @@ const TVEpisodeSelector = ({
 
   const handleEpisodeSelect = (episode) => {
     setSelectedEpisode(episode.episode_number);
+    
+    console.log('🎬 TVEpisodeSelector: Starting episode tracking...', {
+      show: show?.name || show?.title,
+      showId: show?.id,
+      season: selectedSeason,
+      episode: episode.episode_number,
+      episodeName: episode.name,
+      showData: {
+        id: show?.id,
+        name: show?.name || show?.title,
+        poster_path: show?.poster_path,
+        backdrop_path: show?.backdrop_path
+      }
+    });
+    
+    // Track that user started watching this episode
+    startWatchingEpisode(show, selectedSeason, episode.episode_number, episode);
     
     // Create episode data with streaming service information
     const episodeData = {

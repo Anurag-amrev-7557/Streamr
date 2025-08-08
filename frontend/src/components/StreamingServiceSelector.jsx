@@ -26,14 +26,24 @@ const StreamingServiceSelector = ({
     setPortalContainer(container);
 
     return () => {
-      if (container && container.parentNode && container.children.length === 0) {
+      if (container && container.parentNode) {
         try {
           // Check if container is still in the DOM before removing
           if (container.parentNode.contains(container)) {
+            // Clear content first to prevent React cleanup issues
+            container.innerHTML = '';
             container.parentNode.removeChild(container);
           }
         } catch (error) {
           console.warn('[StreamingServiceSelector] Failed to remove portal container:', error);
+          // Fallback: try to remove even if contains check failed
+          try {
+            if (container && container.parentNode) {
+              container.parentNode.removeChild(container);
+            }
+          } catch (fallbackError) {
+            console.warn('[StreamingServiceSelector] Fallback portal removal also failed:', fallbackError);
+          }
         }
       }
     };

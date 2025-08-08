@@ -25,8 +25,10 @@ import {
   getNowPlayingMovies
 } from '../services/tmdbService';
 import { PageLoader, SectionLoader, CardLoader } from './Loader';
+import ContinueWatching from './ContinueWatching';
 import { useLoading } from '../contexts/LoadingContext';
 import { useWatchlist } from '../contexts/WatchlistContext';
+import { useViewingProgress } from '../contexts/ViewingProgressContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import ScrollDebug from './ScrollDebug';
 import memoryOptimizationService from '../utils/memoryOptimizationService';
@@ -137,7 +139,6 @@ const swiperStyles = `
   .movie-swiper-next-upcoming:hover,
   .movie-swiper-prev-upcoming:hover {
     background: rgba(255, 255, 255, 0.2) !important;
-    transform: scale(1.1) !important;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3) !important;
   }
   
@@ -308,11 +309,11 @@ const MovieSectionSwiper = memo(({ title, movies, loading, onLoadMore, hasMore, 
   }
 
   return (
-    <div className="mt-8 group">
+    <div className="mt-8">
       <div className="flex items-center justify-between mb-4 px-4">
         <h2 className="text-xl font-semibold text-white">{title}</h2>
       </div>
-      <div className="relative">
+      <div className="relative group">
         <div className="absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-[#121417] to-transparent z-10 pointer-events-none"></div>
         <div className="absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-[#121417] to-transparent z-10 pointer-events-none"></div>
         <Swiper
@@ -375,7 +376,7 @@ const MovieSectionSwiper = memo(({ title, movies, loading, onLoadMore, hasMore, 
           ))}
           {loading && (
             <SwiperSlide className="!w-auto">
-              <div className="group flex flex-col gap-4 rounded-lg w-80 flex-shrink-0">
+              <div className="flex flex-col gap-4 rounded-lg w-80 flex-shrink-0">
                 <div className="relative aspect-[16/10] rounded-lg overflow-hidden bg-black/20 w-full">
                   <div className="w-8 h-8 border-4 border-white/20 border-t-white rounded-full animate-spin absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"></div>
                 </div>
@@ -384,8 +385,16 @@ const MovieSectionSwiper = memo(({ title, movies, loading, onLoadMore, hasMore, 
           )}
         </Swiper>
         {/* Navigation buttons - only visible on desktop */}
-        <div className={`movie-swiper-prev-${sectionKey} !w-10 !h-10 !bg-white/5 hover:!bg-white/10 !rounded-full !border !border-white/10 !transition-all !duration-300 opacity-0 group-hover:opacity-100 !absolute !left-0 !-translate-y-1/2 !top-[50%] !m-0 after:!text-white after:!text-sm after:!font-bold !z-20 hover:!scale-110 hover:!shadow-lg hover:!shadow-black/20`}></div>
-        <div className={`movie-swiper-next-${sectionKey} !w-10 !h-10 !bg-white/5 hover:!bg-white/10 !rounded-full !border !border-white/10 !transition-all !duration-300 opacity-0 group-hover:opacity-100 !absolute !right-0 !-translate-y-1/2 !top-[50%] !m-0 after:!text-white after:!text-sm after:!font-bold !z-20 hover:!scale-110 hover:!shadow-lg hover:!shadow-black/20`}></div>
+        <div className={`movie-swiper-prev-${sectionKey} !w-10 !h-10 !bg-white/5 hover:!bg-white/10 !rounded-full !border !border-white/10 !transition-all !duration-300 opacity-0 group-hover:opacity-100 !absolute !left-0 !-translate-y-1/2 !top-[50%] !m-0 !z-20 hover:!shadow-lg hover:!shadow-black/20 flex items-center justify-center`}>
+          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </div>
+        <div className={`movie-swiper-next-${sectionKey} !w-10 !h-10 !bg-white/5 hover:!bg-white/10 !rounded-full !border !border-white/10 !transition-all !duration-300 opacity-0 group-hover:opacity-100 !absolute !right-0 !-translate-y-1/2 !top-[50%] !m-0 !z-20 hover:!shadow-lg hover:!shadow-black/20 flex items-center justify-center`}>
+          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </div>
       </div>
     </div>
   );
@@ -980,12 +989,8 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
 
   return (
     <div 
-      className={`group flex flex-col gap-4 rounded-lg ${cardWidth} flex-shrink-0 ${cardClassName} touch-manipulation`}
+      className={`flex flex-col gap-4 rounded-lg ${cardWidth} flex-shrink-0 ${cardClassName} touch-manipulation`}
       data-movie-id={id}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleMouseLeave}
       style={{
         WebkitTapHighlightColor: 'transparent',
         WebkitTouchCallout: 'none',
@@ -994,7 +999,7 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
         touchAction: 'manipulation',
       }}
     >
-      <div className={`relative ${isMobile ? 'aspect-[2/3]' : 'aspect-[16/10]'} rounded-lg overflow-hidden transform-gpu transition-all duration-300 md:group-hover:scale-[1.02] md:group-hover:shadow-2xl md:group-hover:shadow-black/20 w-full active:scale-[0.98] active:shadow-lg`}>
+      <div className={`relative ${isMobile ? 'aspect-[2/3]' : 'aspect-[16/10]'} rounded-lg overflow-hidden transform-gpu transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl hover:shadow-black/20 w-full active:scale-[0.98] active:shadow-lg`}>
         {/* Prefetch shimmer/spinner overlay */}
         {prefetching && (
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/30 pointer-events-none">
@@ -1003,7 +1008,7 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
         )}
         {/* Clickable area for movie details */}
         <div 
-          className="w-full h-full cursor-pointer touch-manipulation"
+          className="w-full h-full cursor-pointer touch-manipulation group"
           onClick={onClick}
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
@@ -1020,13 +1025,13 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
           <ProgressiveImage
             src={imageSource}
             alt={title}
-            className="w-full h-full object-cover transition-transform duration-700 md:group-hover:scale-110"
+            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
             aspectRatio={aspectRatio}
           />
           {/* Movie info overlay - only show on desktop for landscape cards */}
           {!isMobile && (
-            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent opacity-0 md:group-hover:opacity-100 transition-all duration-500">
-              <div className="absolute bottom-0 left-0 right-0 p-4 transform translate-y-2 md:group-hover:translate-y-0 transition-transform duration-500">
+            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-500">
+              <div className="absolute bottom-0 left-0 right-0 p-4 transform translate-y-2 group-hover:translate-y-0 transition-transform duration-500">
                 <h3 className="text-white font-medium text-lg truncate mb-1">{title}</h3>
                 <div className="flex items-center gap-2 text-white/80 text-sm">
                   <span className="flex items-center gap-1">
@@ -1055,7 +1060,7 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
         {/* Watchlist button - outside the clickable area */}
         <div className="absolute top-3 right-3 z-10">
           <button 
-            className="p-2 bg-black/40 backdrop-blur-sm rounded-full opacity-0 md:group-hover:opacity-100 sm:opacity-100 transition-all duration-300 hover:bg-black/60 md:hover:scale-110 transform-gpu active:scale-95 touch-manipulation"
+            className="p-2 bg-black/40 backdrop-blur-sm rounded-full opacity-0 group-hover:opacity-100 sm:opacity-100 transition-all duration-300 hover:bg-black/60 hover:scale-110 transform-gpu active:scale-95 touch-manipulation"
             onClick={handleWatchlistClick}
             type="button"
             style={{
@@ -2196,7 +2201,7 @@ const HeroSection = memo(({ featuredContent, onMovieSelect }) => {
               onClick={handleWatchlistClick}
               className={`group relative flex-1 sm:w-auto px-3 sm:px-4 md:px-6 py-2.5 sm:py-3 rounded-full transition-all duration-300 flex items-center justify-center gap-2 font-medium hover:scale-105 hover:shadow-lg overflow-hidden flex-shrink-0 transform-gpu ${
                 isMovieInWatchlist 
-                  ? 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30' 
+                  ? 'bg-white-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30' 
                   : 'bg-white/10 text-white/90 border border-white/10 hover:bg-white/20'
               }`}
               style={{ whiteSpace: 'nowrap' }}
@@ -2833,6 +2838,11 @@ const HomePage = () => {
 
   // Add watchlist hook
   const { addToWatchlist, isInWatchlist, removeFromWatchlist } = useWatchlist();
+  
+  // Add viewing progress hook
+  const { refreshFromStorage } = useViewingProgress();
+  
+
   const [isInWatchlistState, setIsInWatchlistState] = useState(false);
 
   // Add mobile detection state
@@ -2955,6 +2965,36 @@ const HomePage = () => {
       window.removeEventListener('resize', resizeHandler);
     };
   }, []);
+
+  // 🎬 FIXED: Auto-refresh viewing progress when user returns to page
+  useEffect(() => {
+    // Refresh viewing progress to ensure continue watching section is up to date
+    refreshFromStorage();
+    
+    // Also refresh when the page becomes visible again (user returns from watching content)
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        console.log('🔄 Page became visible, refreshing viewing progress...');
+        refreshFromStorage();
+      }
+    };
+
+    // Listen for page visibility changes
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    // Also refresh when the window gains focus (alternative approach)
+    const handleFocus = () => {
+      console.log('🔄 Window gained focus, refreshing viewing progress...');
+      refreshFromStorage();
+    };
+    
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [refreshFromStorage]);
 
   // 🧹 FIXED: Memory optimization registration with proper cleanup
   useEffect(() => {
@@ -3473,8 +3513,12 @@ const HomePage = () => {
           link.onerror = () => {
             console.warn('Preload failed for image:', image);
             // Remove failed preload link
-            if (link.parentNode) {
-              link.parentNode.removeChild(link);
+            try {
+              if (link.parentNode && document.head.contains(link)) {
+                link.parentNode.removeChild(link);
+              }
+            } catch (error) {
+              console.warn('Failed to remove failed preload link:', error);
             }
           };
           
@@ -3488,8 +3532,12 @@ const HomePage = () => {
       // Clean up preload links after a delay
       setTimeout(() => {
         preloadLinks.forEach(link => {
-          if (link && link.parentNode) {
-            link.parentNode.removeChild(link);
+          try {
+            if (link && link.parentNode && document.head.contains(link)) {
+              link.parentNode.removeChild(link);
+            }
+          } catch (error) {
+            console.warn('Failed to remove preload link during cleanup:', error);
           }
         });
       }, 15000); // Reduced from 30 seconds to 15 seconds
@@ -5952,6 +6000,12 @@ const HomePage = () => {
             {/* Movie Sections with Swiper for Desktop */}
             {activeCategory === 'all' ? (
               <>
+                {/* Continue Watching Section */}
+                <ContinueWatching 
+                  onMovieSelect={handleMovieSelect}
+                  isMobile={isMobile}
+                />
+                
                 {/* Netflix-style Hero Section with Trending */}
                 <MovieSectionSwiper 
                   title="Trending Now" 
