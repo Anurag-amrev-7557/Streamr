@@ -2,6 +2,29 @@ import axios from 'axios';
 import { getNetworkAwareConfig, fetchWithRetry } from './api.js';
 import { getApiUrl } from '../config/api.js';
 
+// Simple cache for community data
+const communityCache = new Map();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+const getCachedData = (key) => {
+  const cached = communityCache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    return cached.data;
+  }
+  return null;
+};
+
+const setCachedData = (key, data) => {
+  communityCache.set(key, {
+    data,
+    timestamp: Date.now()
+  });
+};
+
+const clearCache = () => {
+  communityCache.clear();
+};
+
 // Lazy initialization to avoid hoisting issues
 let API_URL = null;
 const getApiUrlLazy = () => {
@@ -204,35 +227,80 @@ export const communityService = {
   },
 
   getCategories: async () => {
+    const cacheKey = 'categories';
+    const cached = getCachedData(cacheKey);
+    if (cached) {
+      console.log('📦 Using cached categories');
+      return cached;
+    }
+
     const { timeout } = getNetworkAwareConfig();
-    return fetchWithRetry(() =>
+    const result = await fetchWithRetry(() =>
       api.get('/community/categories', { timeout })
         .then(response => response.data)
     );
+    
+    setCachedData(cacheKey, result);
+    return result;
   },
 
   getTopTags: async () => {
+    const cacheKey = 'tags';
+    const cached = getCachedData(cacheKey);
+    if (cached) {
+      console.log('📦 Using cached tags');
+      return cached;
+    }
+
     const { timeout } = getNetworkAwareConfig();
-    return fetchWithRetry(() =>
+    const result = await fetchWithRetry(() =>
       api.get('/community/tags', { timeout })
         .then(response => response.data)
     );
+    
+    setCachedData(cacheKey, result);
+    return result;
   },
 
   // Community Stats
   getTrendingTopics: async () => {
+    const cacheKey = 'trending';
+    const cached = getCachedData(cacheKey);
+    if (cached) {
+      console.log('📦 Using cached trending topics');
+      return cached;
+    }
+
     const { timeout } = getNetworkAwareConfig();
-    return fetchWithRetry(() =>
+    const result = await fetchWithRetry(() =>
       api.get('/community/trending', { timeout })
         .then(response => response.data)
     );
+    
+    setCachedData(cacheKey, result);
+    return result;
   },
 
   getCommunityStats: async () => {
+    const cacheKey = 'stats';
+    const cached = getCachedData(cacheKey);
+    if (cached) {
+      console.log('📦 Using cached community stats');
+      return cached;
+    }
+
     const { timeout } = getNetworkAwareConfig();
-    return fetchWithRetry(() =>
+    const result = await fetchWithRetry(() =>
       api.get('/community/stats', { timeout })
         .then(response => response.data)
     );
-  }
+    
+    setCachedData(cacheKey, result);
+    return result;
+  },
+
+  // Cache management
+  clearCache,
+  getCachedData,
+  setCachedData
 }; 

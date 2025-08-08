@@ -1,5 +1,4 @@
-import * as React from 'react';
-import { createContext, useContext, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useCallback, useRef } from 'react';
 import { socketService } from '../services/socketService';
 
 const SocketContext = createContext(null);

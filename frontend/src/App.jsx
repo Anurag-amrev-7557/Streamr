@@ -1,39 +1,94 @@
-import * as React from 'react';
-import { Suspense, lazy, useState, useEffect, useRef } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useRef } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
-// Lazy load all route-level pages/components
-const HomePage = lazy(() => import('./components/HomePage'));
-const Navbar = lazy(() => import('./components/Navbar'));
-const BottomNavigation = lazy(() => import('./components/BottomNavigation'));
-const MoviesPage = lazy(() => import('./components/MoviesPageWrapper'));
-const SeriesPage = lazy(() => import('./components/SeriesPage'));
-const ProfilePage = lazy(() => import('./pages/ProfilePage'));
-const WatchlistPage = lazy(() => import('./pages/WatchlistPage'));
-const CommunityPage = lazy(() => import('./components/CommunityPage'));
-const SingleDiscussion = lazy(() => import('./components/community/SingleDiscussion'));
+// Lazy load all route-level pages/components with error handling
+const HomePage = lazy(() => import('./components/HomePage').catch(err => {
+  console.error('Failed to load HomePage:', err);
+  return { default: () => <div>Failed to load HomePage</div> };
+}));
+const Navbar = lazy(() => import('./components/Navbar').catch(err => {
+  console.error('Failed to load Navbar:', err);
+  return { default: () => <div>Failed to load Navbar</div> };
+}));
+const MoviesPage = lazy(() => import('./components/MoviesPage').catch(err => {
+  console.error('Failed to load MoviesPage:', err);
+  return { default: () => <div>Failed to load MoviesPage</div> };
+}));
+const SeriesPage = lazy(() => import('./components/SeriesPage').catch(err => {
+  console.error('Failed to load SeriesPage:', err);
+  return { default: () => <div>Failed to load SeriesPage</div> };
+}));
+const ProfilePage = lazy(() => import('./pages/ProfilePage').catch(err => {
+  console.error('Failed to load ProfilePage:', err);
+  return { default: () => <div>Failed to load ProfilePage</div> };
+}));
+const WatchlistPage = lazy(() => import('./pages/WatchlistPage').catch(err => {
+  console.error('Failed to load WatchlistPage:', err);
+  return { default: () => <div>Failed to load WatchlistPage</div> };
+}));
+const CommunityPage = lazy(() => import('./components/CommunityPage').catch(err => {
+  console.error('Failed to load CommunityPage:', err);
+  return { default: () => <div>Failed to load CommunityPage</div> };
+}));
+const SingleDiscussion = lazy(() => import('./components/community/SingleDiscussion').catch(err => {
+  console.error('Failed to load SingleDiscussion:', err);
+  return { default: () => <div>Failed to load SingleDiscussion</div> };
+}));
 import './App.css'
 import { LoadingProvider } from './contexts/LoadingContext'
 import { WatchlistProvider } from './contexts/WatchlistContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
-const ProtectedRoute = lazy(() => import('./components/ProtectedRoute'));
-const LoginPage = lazy(() => import('./pages/LoginPage'));
-const SignupPage = lazy(() => import('./pages/SignupPage'));
-const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'));
-const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'));
-const OAuthSuccessPage = lazy(() => import('./pages/OAuthSuccessPage'));
-const VerifyEmailPage = lazy(() => import('./pages/VerifyEmailPage'));
-const NetworkTestPage = lazy(() => import('./components/NetworkTestPage'));
-const TestAuthPage = lazy(() => import('./pages/TestAuthPage'));
+const ProtectedRoute = lazy(() => import('./components/ProtectedRoute').catch(err => {
+  console.error('Failed to load ProtectedRoute:', err);
+  return { default: () => <div>Failed to load ProtectedRoute</div> };
+}));
+const LoginPage = lazy(() => import('./pages/LoginPage').catch(err => {
+  console.error('Failed to load LoginPage:', err);
+  return { default: () => <div>Failed to load LoginPage</div> };
+}));
+const SignupPage = lazy(() => import('./pages/SignupPage').catch(err => {
+  console.error('Failed to load SignupPage:', err);
+  return { default: () => <div>Failed to load SignupPage</div> };
+}));
+const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage').catch(err => {
+  console.error('Failed to load ForgotPasswordPage:', err);
+  return { default: () => <div>Failed to load ForgotPasswordPage</div> };
+}));
+const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage').catch(err => {
+  console.error('Failed to load ResetPasswordPage:', err);
+  return { default: () => <div>Failed to load ResetPasswordPage</div> };
+}));
+const OAuthSuccessPage = lazy(() => import('./pages/OAuthSuccessPage').catch(err => {
+  console.error('Failed to load OAuthSuccessPage:', err);
+  return { default: () => <div>Failed to load OAuthSuccessPage</div> };
+}));
+const VerifyEmailPage = lazy(() => import('./pages/VerifyEmailPage').catch(err => {
+  console.error('Failed to load VerifyEmailPage:', err);
+  return { default: () => <div>Failed to load VerifyEmailPage</div> };
+}));
+const NetworkTestPage = lazy(() => import('./components/NetworkTestPage').catch(err => {
+  console.error('Failed to load NetworkTestPage:', err);
+  return { default: () => <div>Failed to load NetworkTestPage</div> };
+}));
+const TestAuthPage = lazy(() => import('./pages/TestAuthPage').catch(err => {
+  console.error('Failed to load TestAuthPage:', err);
+  return { default: () => <div>Failed to load TestAuthPage</div> };
+}));
 import { SocketProvider } from './contexts/SocketContext'
 // Lazy load components that are not immediately needed
-const MovieDetailsOverlay = lazy(() => import('./components/MovieDetailsOverlay'));
+const MovieDetailsOverlay = lazy(() => import('./components/MovieDetailsOverlay').catch(err => {
+  console.error('Failed to load MovieDetailsOverlay:', err);
+  return { default: () => <div>Failed to load MovieDetailsOverlay</div> };
+}));
 // const NetworkStatus = lazy(() => import('./components/NetworkStatus'));
-const PerformanceDashboard = lazy(() => import('./components/PerformanceDashboard'));
+const PerformanceDashboard = lazy(() => import('./components/PerformanceDashboard').catch(err => {
+  console.error('Failed to load PerformanceDashboard:', err);
+  return { default: () => <div>Failed to load PerformanceDashboard</div> };
+}));
 import { useSmoothScroll } from './hooks/useSmoothScroll'
 // Import performance service to initialize it
 import './services/performanceOptimizationService'
 // Import error boundary
-import { ErrorBoundary } from './utils/errorBoundary'
+import { ErrorBoundary } from './utils/errorBoundary.jsx'
 // Import test utility (remove in production)
 import { testErrorBoundary } from './utils/testErrorHandling'
 // FIXED: Import memory cleanup utility
@@ -55,7 +110,6 @@ if ('serviceWorker' in navigator) {
 }
 
 const Layout = () => {
-  const { user } = useAuth(); // Add useAuth hook inside Layout component
   const [selectedMovie, setSelectedMovie] = React.useState(null);
   const [showPerformanceDashboard, setShowPerformanceDashboard] = useState(false);
   const isMountedRef = useRef(true); // FIXED: Add mounted ref for cleanup
@@ -120,7 +174,7 @@ const Layout = () => {
         setSelectedMovie(null);
         setShowPerformanceDashboard(false);
       }
-    });
+    }, 'App');
     
     return () => {
       unregisterCleanup();
@@ -135,87 +189,97 @@ const Layout = () => {
   }, []);
   
   return (
-    <>
-      <div className="min-h-screen bg-[#121417] smooth-scroll performance-scroll">
-        {/* NetworkStatus component removed */}
-        {/* <Suspense fallback={null}>
-          <NetworkStatus />
-        </Suspense> */}
-        <Suspense>
-          <Navbar onMovieSelect={handleMovieSelect} />
-        </Suspense>
-        <main className="momentum-scroll main-content-with-bottom-nav">
-          <Suspense>
-            <Routes>
-              {/* Public Routes */}
-              <Route path="/" element={<HomePage key="homepage" />} />
-              <Route path="/movies" element={<MoviesPage />} />
-              <Route path="/series" element={<SeriesPage />} />
-              <Route path="/community" element={<CommunityPage />} />
-              <Route path="/community/discussion/:id" element={<SingleDiscussion />} />
-              <Route path="/network-test" element={<NetworkTestPage />} />
-              <Route path="/test-auth" element={<TestAuthPage />} />
-              <Route path="/login" element={!user ? <LoginPage /> : <Navigate to="/" />} />
-              <Route path="/signup" element={!user ? <SignupPage /> : <Navigate to="/" />} />
-              <Route path="/forgot-password" element={!user ? <ForgotPasswordPage /> : <Navigate to="/" />} />
-              <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
-              <Route path="/verify-email/:token" element={<VerifyEmailPage />} />
-              <Route path="/oauth-success" element={<OAuthSuccessPage />} />
-
-              {/* Protected Routes */}
-              <Route path="/profile" element={
-                <ProtectedRoute>
-                  <ProfilePage />
-                </ProtectedRoute>
-              } />
-              <Route path="/watchlist" element={<WatchlistPage />} />
-
-              {/* Catch all route */}
-              <Route path="*" element={<Navigate to="/" />} />
-            </Routes>
-          </Suspense>
-        </main>
-        {selectedMovie && (
-          <Suspense fallback={null}>
-            <MovieDetailsOverlay
-              movie={selectedMovie}
-              onClose={handleCloseOverlay}
-              onMovieSelect={handleMovieSelect}
-            />
-          </Suspense>
-        )}
-        
-        {/* Performance Dashboard */}
+    <div className="min-h-screen bg-[#121417] smooth-scroll performance-scroll">
+      {/* NetworkStatus component removed */}
+      {/* <Suspense fallback={null}>
+        <NetworkStatus />
+      </Suspense> */}
+      <Suspense>
+        <Navbar onMovieSelect={handleMovieSelect} />
+      </Suspense>
+      <main className="momentum-scroll">
+        <AppRoutes />
+      </main>
+      {selectedMovie && (
         <Suspense fallback={null}>
-          <PerformanceDashboard
-            isVisible={showPerformanceDashboard}
-            onClose={() => setShowPerformanceDashboard(false)}
+          <MovieDetailsOverlay
+            movie={selectedMovie}
+            onClose={handleCloseOverlay}
+            onMovieSelect={handleMovieSelect}
           />
         </Suspense>
-        
-        {/* Performance Dashboard Toggle Button (Development Only) */}
-        {process.env.NODE_ENV === 'development' && (
-          <button
-            onClick={togglePerformanceDashboard}
-            className="fixed bottom-4 left-4 z-50 p-2 bg-blue-600/80 hover:bg-blue-600 text-white rounded-full shadow-lg backdrop-blur-sm transition-all duration-200 md:bottom-4 md:left-4 performance-dashboard-button"
-            title="Toggle Performance Dashboard (Ctrl+Shift+P)"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
-          </button>
-        )}
-      </div>
+      )}
       
-      {/* Bottom Navigation - Outside main container */}
+      {/* Performance Dashboard */}
       <Suspense fallback={null}>
-        <BottomNavigation />
+        <PerformanceDashboard
+          isVisible={showPerformanceDashboard}
+          onClose={() => setShowPerformanceDashboard(false)}
+        />
       </Suspense>
-    </>
+      
+      {/* Performance Dashboard Toggle Button (Development Only) */}
+      {process.env.NODE_ENV === 'development' && (
+        <button
+          onClick={togglePerformanceDashboard}
+          className="fixed bottom-4 left-4 z-50 p-2 bg-blue-600/80 hover:bg-blue-600 text-white rounded-full shadow-lg backdrop-blur-sm transition-all duration-200"
+          title="Toggle Performance Dashboard (Ctrl+Shift+P)"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+          </svg>
+        </button>
+      )}
+    </div>
   )
 }
 
-// AppRoutes component moved inside Layout to ensure proper context access
+const AppRoutes = () => {
+  return (
+    <Suspense>
+      <Routes>
+        {/* Public Routes */}
+        <Route path="/" element={<HomePage key="homepage" />} />
+        <Route path="/movies" element={<MoviesPage />} />
+        <Route path="/series" element={<SeriesPage />} />
+        <Route path="/community" element={<CommunityPage />} />
+        <Route path="/community/discussion/:id" element={<SingleDiscussion />} />
+        <Route path="/network-test" element={<NetworkTestPage />} />
+        <Route path="/test-auth" element={<TestAuthPage />} />
+        <Route path="/verify-email/:token" element={<VerifyEmailPage />} />
+        <Route path="/oauth-success" element={<OAuthSuccessPage />} />
+
+        {/* Auth-aware Routes */}
+        <Route path="/login" element={<AuthAwareRoute><LoginPage /></AuthAwareRoute>} />
+        <Route path="/signup" element={<AuthAwareRoute><SignupPage /></AuthAwareRoute>} />
+        <Route path="/forgot-password" element={<AuthAwareRoute><ForgotPasswordPage /></AuthAwareRoute>} />
+        <Route path="/reset-password/:token" element={<AuthAwareRoute><ResetPasswordPage /></AuthAwareRoute>} />
+
+        {/* Protected Routes */}
+        <Route path="/profile" element={
+          <ProtectedRoute>
+            <ProfilePage />
+          </ProtectedRoute>
+        } />
+        <Route path="/watchlist" element={<WatchlistPage />} />
+
+        {/* Catch all route */}
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
+    </Suspense>
+  )
+}
+
+// Component to handle auth-aware routing
+const AuthAwareRoute = ({ children }) => {
+  const { user } = useAuth();
+  
+  if (user) {
+    return <Navigate to="/" />;
+  }
+  
+  return children;
+};
 
 const App = () => {
   return (

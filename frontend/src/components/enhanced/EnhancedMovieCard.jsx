@@ -2,7 +2,6 @@ import React, { useState, useRef, useCallback, useEffect, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { performanceUtils } from '../../services/performanceMonitor.js';
 import advancedCache from '../../services/advancedCacheService.js';
-import RatingBadge from '../RatingBadge';
 
 // Enhanced Progressive Image Component
 const ProgressiveImage = memo(({ 
@@ -299,10 +298,14 @@ const EnhancedMovieCard = memo(({
         </AnimatePresence>
 
         {/* Rating Badge */}
-        <RatingBadge 
-          rating={movie.rating || movie.vote_average} 
-          size="default"
-        />
+        {movie.rating && movie.rating !== '0.0' && (
+          <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-1">
+            <svg className="w-3 h-3 text-yellow-400" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
+            </svg>
+            <span className="text-xs text-white font-medium">{movie.rating}</span>
+          </div>
+        )}
 
         {/* Type Badge */}
         <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm rounded-full px-2 py-1">

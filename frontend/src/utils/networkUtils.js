@@ -8,8 +8,8 @@ export const checkApiConnectivity = async () => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
     
-    // Try to connect to TMDB API directly
-    const response = await fetch('https://api.themoviedb.org/3/configuration', {
+    // Try to connect to a reliable endpoint that doesn't require authentication
+    const response = await fetch('https://jsonplaceholder.typicode.com/posts/1', {
       method: 'HEAD',
       signal: controller.signal,
       cache: 'no-cache'

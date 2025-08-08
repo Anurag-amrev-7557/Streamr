@@ -194,34 +194,75 @@ const CommunityPage = () => {
       setLoading(true);
       console.log('🔄 Loading initial community data...');
       
-      const [discussionsData, trendingData, statsData, categoriesData, tagsData] = await Promise.all([
-        communityService.getDiscussions(1, 10, sortBy, selectedCategory, selectedTag),
-        communityService.getTrendingTopics(),
-        communityService.getCommunityStats(),
-        communityService.getCategories(),
-        communityService.getTopTags()
-      ]);
+      // Stagger requests to avoid rate limiting
+      const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
       
-      console.log('✅ Initial data loaded:', {
-        discussions: discussionsData,
-        trending: trendingData,
-        stats: statsData,
-        categories: categoriesData,
-        tags: tagsData
-      });
-
-      setDiscussions(discussionsData.discussions || []);
-      setTrendingTopics(trendingData || []);
-      setStats(statsData || {});
-      setCategories(categoriesData || []);
-      setTopTags(tagsData || []);
-      // Calculate hasMore based on currentPage and totalPages
-      setHasMore(discussionsData.currentPage < discussionsData.totalPages);
+      // Load discussions first (most important)
+      let discussionsData;
+      try {
+        discussionsData = await communityService.getDiscussions(1, 10, sortBy, selectedCategory, selectedTag);
+        setDiscussions(discussionsData.discussions || []);
+        setHasMore(discussionsData.currentPage < discussionsData.totalPages);
+        console.log('✅ Discussions loaded successfully');
+      } catch (err) {
+        console.warn('⚠️ Failed to load discussions:', err.message);
+        setDiscussions([]);
+        setHasMore(false);
+      }
+      
+      // Wait a bit before next request
+      await delay(500);
+      
+      // Load other data in parallel but with staggered start
+      const loadSecondaryData = async () => {
+        try {
+          const [trendingData, statsData] = await Promise.all([
+            communityService.getTrendingTopics(),
+            communityService.getCommunityStats()
+          ]);
+          
+          setTrendingTopics(trendingData || []);
+          setStats(statsData || {});
+          console.log('✅ Trending and stats loaded successfully');
+        } catch (err) {
+          console.warn('⚠️ Failed to load trending/stats:', err.message);
+          setTrendingTopics([]);
+          setStats({});
+        }
+      };
+      
+      const loadFilterData = async () => {
+        try {
+          const [categoriesData, tagsData] = await Promise.all([
+            communityService.getCategories(),
+            communityService.getTopTags()
+          ]);
+          
+          setCategories(categoriesData || []);
+          setTopTags(tagsData || []);
+          console.log('✅ Categories and tags loaded successfully');
+        } catch (err) {
+          console.warn('⚠️ Failed to load categories/tags:', err.message);
+          setCategories([]);
+          setTopTags([]);
+        }
+      };
+      
+      // Start secondary data loading with delays
+      setTimeout(loadSecondaryData, 1000);
+      setTimeout(loadFilterData, 1500);
+      
       setError(null);
     } catch (err) {
       console.error('❌ Error loading initial data:', err);
       const errorMessage = err.message || err.error || 'Failed to load community data';
-      setError(`Error: ${errorMessage}. Please check the console for more details.`);
+      
+      // Check if it's a rate limiting error
+      if (err.response?.status === 429) {
+        setError('Rate limit exceeded. Please wait a moment and refresh the page.');
+      } else {
+        setError(`Error: ${errorMessage}. Please check the console for more details.`);
+      }
       
       // Log additional error details
       if (err.response) {

@@ -1,5 +1,4 @@
-import * as React from 'react';
-import { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { toNumericRating } from '../utils/ratingUtils';
 
 const WatchlistContext = createContext();

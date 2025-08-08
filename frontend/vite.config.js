@@ -76,19 +76,9 @@ export default defineConfig({
   build: {
     target: 'esnext',
     minify: 'terser',
-    minifyIdentifiers: true,
-    minifySyntax: true,
-    minifyWhitespace: true,
     outDir: 'dist',
     rollupOptions: {
       output: {
-        // Enhanced chunk splitting for better performance
-        manualChunks: (id) => {
-          // Keep everything in vendor chunk to avoid import issues
-          if (id.includes('node_modules') || id.includes('src/')) {
-            return 'vendor';
-          }
-        },
         chunkFileNames: 'assets/js/[name]-[hash].js',
         entryFileNames: 'assets/js/[name]-[hash].js',
         assetFileNames: ({ name }) => {
@@ -102,11 +92,9 @@ export default defineConfig({
         }
       }
     },
-    chunkSizeWarningLimit: 500, // Reduced from 700
+    chunkSizeWarningLimit: 1000,
     cssCodeSplit: true,
     sourcemap: process.env.NODE_ENV !== 'production',
-    brotliSize: true,
-    reportCompressedSize: true,
     emptyOutDir: true
   },
   css: {
@@ -124,15 +112,15 @@ export default defineConfig({
   server: {
     hmr: {
       overlay: false,
-      timeout: 20000
+      timeout: 30000
     },
     watch: {
       usePolling: false,
       interval: 100
     },
     port: 5173,
-    strictPort: true,
-    open: true,
+    strictPort: false,
+    open: false,
     proxy: {
       '/api': {
         target: 'https://streamr-jjj9.onrender.com',
@@ -165,18 +153,24 @@ export default defineConfig({
       'framer-motion',
       'swiper',
       'lodash',
-      'axios'
+      'axios',
+      'react-hot-toast',
+      'react-icons',
+      'react-intersection-observer',
+      'react-player',
+      'react-window',
+      'react-youtube',
+      'socket.io-client'
     ],
     exclude: [
       '@headlessui/react',
       '@heroicons/react'
-    ]
+    ],
+    force: true
   },
   esbuild: {
     logOverride: { 'this-is-undefined-in-esm': 'silent' },
-    target: 'esnext',
-    minify: true,
-    legalComments: 'none'
+    target: 'esnext'
   },
   json: {
     namedExports: true,

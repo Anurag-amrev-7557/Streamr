@@ -30,7 +30,6 @@ import { useWatchlist } from '../contexts/WatchlistContext';
 const EnhancedSearchBar = lazy(() => import('./EnhancedSearchBar'));
 import searchHistoryService from '../services/searchHistoryService';
 import { getPosterProps, getBackdropProps } from '../utils/imageUtils';
-import RatingBadge from './RatingBadge';
 
 const fadeInAnimation = {
   '@keyframes fadeIn': {
@@ -319,12 +318,6 @@ const MovieCard = ({ movie, index, onClick, onPrefetch }) => {
         layout
         className="aspect-[2/3] rounded-lg overflow-hidden bg-gray-800 relative w-full"
       >
-        {/* Rating Badge */}
-        <RatingBadge 
-          rating={movie.vote_average || movie.rating} 
-          size="default"
-        />
-        
         <AnimatePresence>
           <motion.button
             onClick={handleBookmarkClick}
@@ -525,15 +518,45 @@ const MoviesPage = () => {
 
       // Check if we have filters applied (year or genre)
       if (selectedYear || selectedGenre) {
-        console.log('🎬 Fetching filtered movies:', { selectedYear, selectedGenre: selectedGenre?.name });
+        console.log('🎬 Fetching filtered movies:', { category, selectedYear, selectedGenre: selectedGenre?.name });
         
-        // Use discoverMovies for filtered results
+        // Use discoverMovies for filtered results with category-specific sorting
         const discoverParams = {
           page: pageNum,
-          sort_by: 'popularity.desc',
           vote_count_gte: 10,
           include_adult: false
         };
+
+        // Apply category-specific sorting and constraints
+        switch (category) {
+          case 'popular':
+            discoverParams.sort_by = 'popularity.desc';
+            break;
+          case 'top_rated':
+            discoverParams.sort_by = 'vote_average.desc';
+            discoverParams.vote_count_gte = 50; // Higher threshold for top rated
+            break;
+          case 'upcoming':
+            discoverParams.sort_by = 'release_date.asc';
+            // Don't override year filter if user selected one
+            if (!selectedYear) {
+              const today = new Date();
+              discoverParams.primary_release_date_gte = today.toISOString().split('T')[0];
+            }
+            break;
+          case 'now_playing':
+            discoverParams.sort_by = 'popularity.desc';
+            // Don't override year filter if user selected one
+            if (!selectedYear) {
+              const today = new Date();
+              const thirtyDaysAgo = new Date(today.getTime() - (30 * 24 * 60 * 60 * 1000));
+              discoverParams.primary_release_date_gte = thirtyDaysAgo.toISOString().split('T')[0];
+              discoverParams.primary_release_date_lte = today.toISOString().split('T')[0];
+            }
+            break;
+          default:
+            discoverParams.sort_by = 'popularity.desc';
+        }
 
         if (selectedYear) {
           discoverParams.primary_release_year = selectedYear;
@@ -548,7 +571,7 @@ const MoviesPage = () => {
         results = response.movies || [];
         totalPages = response.totalPages || 1;
         
-        console.log('✅ Filtered results:', { count: results.length, totalPages });
+        console.log('✅ Filtered results:', { count: results.length, totalPages, category });
       } else {
         // Use category-based service functions for unfiltered results
         switch (category) {
@@ -1399,13 +1422,43 @@ const MoviesPage = () => {
       
       // Use the same logic as fetchMovies for consistency
       if (selectedYear || selectedGenre) {
-        // Use discoverMovies for filtered results
+        // Use discoverMovies for filtered results with category-specific sorting
         const discoverParams = {
           page: nextPage,
-          sort_by: 'popularity.desc',
           vote_count_gte: 10,
           include_adult: false
         };
+
+        // Apply category-specific sorting and constraints
+        switch (activeCategory) {
+          case 'popular':
+            discoverParams.sort_by = 'popularity.desc';
+            break;
+          case 'top_rated':
+            discoverParams.sort_by = 'vote_average.desc';
+            discoverParams.vote_count_gte = 50; // Higher threshold for top rated
+            break;
+          case 'upcoming':
+            discoverParams.sort_by = 'release_date.asc';
+            // Don't override year filter if user selected one
+            if (!selectedYear) {
+              const today = new Date();
+              discoverParams.primary_release_date_gte = today.toISOString().split('T')[0];
+            }
+            break;
+          case 'now_playing':
+            discoverParams.sort_by = 'popularity.desc';
+            // Don't override year filter if user selected one
+            if (!selectedYear) {
+              const today = new Date();
+              const thirtyDaysAgo = new Date(today.getTime() - (30 * 24 * 60 * 60 * 1000));
+              discoverParams.primary_release_date_gte = thirtyDaysAgo.toISOString().split('T')[0];
+              discoverParams.primary_release_date_lte = today.toISOString().split('T')[0];
+            }
+            break;
+          default:
+            discoverParams.sort_by = 'popularity.desc';
+        }
 
         if (selectedYear) {
           discoverParams.primary_release_year = selectedYear;
@@ -1417,7 +1470,7 @@ const MoviesPage = () => {
 
         const response = await discoverMovies(discoverParams);
         newMovies = response.movies || [];
-        console.log('🎬 Discover response:', { nextPage, totalPages: response.totalPages, hasMore: nextPage < response.totalPages });
+        console.log('🎬 Discover response:', { nextPage, totalPages: response.totalPages, hasMore: nextPage < response.totalPages, category: activeCategory });
         setHasMore(nextPage < response.totalPages);
       } else {
         // Load more movies for current category
@@ -1454,16 +1507,15 @@ const MoviesPage = () => {
             return updatedMovies.slice(-MAX_MOVIES);
           }
           
-          console.log('🎬 Added', uniqueNewMovies.length, 'new movies, total:', updatedMovies.length);
           return updatedMovies;
         });
-        setCurrentPage(nextPage);
       } else {
-        console.log('🎬 No new movies returned, setting hasMore to false');
+        console.log('🎬 No new movies found, setting hasMore to false');
         setHasMore(false);
       }
     } catch (error) {
-      console.error('Error loading more movies:', error);
+      console.error('🎬 Error loading more movies:', error);
+      setError('Failed to load more movies: ' + (error.message || 'Unknown error'));
     } finally {
       setIsLoadingMore(false);
       fetchInProgress.current = false;
@@ -1956,7 +2008,7 @@ const MoviesPage = () => {
                 </svg>
               </button>
               {yearDropdownOpen && (
-                <div className="absolute z-30 mt-2 w-48 bg-[#1a1a1a] rounded-lg shadow-lg py-1">
+                <div className="absolute z-10 mt-2 w-48 bg-[#1a1a1a] rounded-lg shadow-lg py-1">
                   <button
                     onClick={() => handleYearSelect(null)}
                     className="w-full px-4 py-2 text-left text-sm text-gray-400 hover:text-white hover:bg-[#2b3036]"
@@ -2006,7 +2058,7 @@ const MoviesPage = () => {
                 </svg>
               </button>
               {genreDropdownOpen && (
-                <div className="absolute z-30 mt-2 w-48 bg-[#1a1a1a] rounded-lg shadow-lg py-1 max-h-60 overflow-y-auto">
+                <div className="absolute z-10 mt-2 w-48 bg-[#1a1a1a] rounded-lg shadow-lg py-1 max-h-60 overflow-y-auto">
                   <button
                     onClick={() => handleGenreSelect(null)}
                     className="w-full px-4 py-2 text-left text-sm text-gray-400 hover:text-white hover:bg-[#2b3036]"

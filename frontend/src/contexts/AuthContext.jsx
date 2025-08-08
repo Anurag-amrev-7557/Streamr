@@ -1,26 +1,55 @@
-import * as React from 'react';
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { getApiUrl, switchBackendMode, getCurrentBackendMode } from '../config/api';
 
 // Authentication API functions
 const authAPI = {
   refreshToken: async () => {
     try {
+      console.log('🔄 Frontend: Attempting token refresh...');
+      console.log('🌐 Frontend: API URL:', getApiUrl());
+      console.log('🍪 Frontend: Cookies available:', document.cookie ? 'Yes' : 'No');
+      
+      // Check if we have a refresh token in localStorage as fallback
+      const storedRefreshToken = localStorage.getItem('refreshToken');
+      console.log('💾 Frontend: Stored refresh token:', storedRefreshToken ? 'Available' : 'Not found');
+      
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      
+      // Add Authorization header if we have a stored refresh token
+      if (storedRefreshToken) {
+        headers['Authorization'] = `Bearer ${storedRefreshToken}`;
+        console.log('🔑 Frontend: Using stored refresh token in Authorization header');
+      }
+      
       const response = await fetch(`${getApiUrl()}/auth/refresh-token`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         credentials: 'include', // This is crucial for sending cookies
       });
       
+      console.log('📡 Frontend: Response status:', response.status);
+      console.log('📡 Frontend: Response headers:', response.headers);
+      
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Frontend: Response error:', errorText);
         throw new Error('Token refresh failed');
       }
       
-      return await response.json();
+      const data = await response.json();
+      console.log('✅ Frontend: Refresh successful:', data);
+      
+      // Store new refresh token in localStorage if provided
+      if (data.data && data.data.refreshToken) {
+        localStorage.setItem('refreshToken', data.data.refreshToken);
+        console.log('💾 Frontend: Stored new refresh token in localStorage');
+      }
+      
+      return data;
     } catch (error) {
-      console.error('Token refresh error:', error);
+      console.error('❌ Frontend: Token refresh error:', error);
       throw error;
     }
   },
@@ -40,7 +69,15 @@ const authAPI = {
         throw new Error('Login failed');
       }
       
-      return await response.json();
+      const data = await response.json();
+      
+      // Store refresh token in localStorage for fallback
+      if (data.data && data.data.refreshToken) {
+        localStorage.setItem('refreshToken', data.data.refreshToken);
+        console.log('💾 Frontend: Stored refresh token in localStorage during login');
+      }
+      
+      return data;
     } catch (error) {
       console.error('Login error:', error);
       throw error;
@@ -56,6 +93,10 @@ const authAPI = {
         },
         credentials: 'include', // This is crucial for clearing cookies
       });
+      
+      // Clear refresh token from localStorage
+      localStorage.removeItem('refreshToken');
+      console.log('💾 Frontend: Cleared refresh token from localStorage during logout');
       
       return await response.json();
     } catch (error) {
@@ -207,7 +248,7 @@ const userAPI = {
   }
 };
 
-const AuthContext = createContext();
+const AuthContext = createContext(null);
 
 // Token refresh interval (14 minutes - refresh before 15-minute expiration)
 const TOKEN_REFRESH_INTERVAL = 14 * 60 * 1000;
@@ -327,10 +368,18 @@ export const AuthProvider = ({ children }) => {
       return true;
     } catch (err) {
       console.error('❌ Token refresh failed:', err);
-      localStorage.removeItem('accessToken');
-      if (isMountedRef.current) {
-        setUser(null);
+      
+      // If refresh token is expired or invalid, clear everything
+      if (err.message.includes('401') || err.message.includes('Unauthorized') || err.message.includes('No refresh token provided')) {
+        console.log('🔄 Refresh token expired or invalid, clearing auth state...');
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('refreshToken'); // Also clear refresh token
+        if (isMountedRef.current) {
+          setUser(null);
+          setSessionWarning(false);
+        }
       }
+      
       return false;
     }
   }, []);
@@ -384,11 +433,29 @@ export const AuthProvider = ({ children }) => {
       try {
         console.log('🔍 Checking authentication on mount...');
         const token = localStorage.getItem('accessToken');
+        
         if (!token) {
-          // No token in localStorage, but check if we have a refresh token cookie
-          console.log('No access token in localStorage, attempting token refresh...');
+          // No token in localStorage, check if we have a refresh token
+          console.log('No access token in localStorage, checking for refresh token...');
+          
+          // Check if we have any cookies or localStorage refresh token
+          const hasCookies = document.cookie.length > 0;
+          const hasStoredRefreshToken = localStorage.getItem('refreshToken');
+          console.log('🍪 Cookies available:', hasCookies ? 'Yes' : 'No');
+          console.log('💾 Stored refresh token:', hasStoredRefreshToken ? 'Available' : 'Not found');
+          
+          if (!hasCookies && !hasStoredRefreshToken) {
+            console.log('🔄 No refresh tokens found, user not authenticated');
+            setLoading(false);
+            setUser(null);
+            return;
+          }
+          
+          // Try to refresh token
+          console.log('🔄 Attempting token refresh...');
           const refreshSuccess = await refreshTokenAndUserData();
           if (!refreshSuccess && isMountedRef.current) {
+            console.log('🔄 Token refresh failed, user not authenticated');
             setLoading(false);
             setUser(null);
           }
@@ -415,8 +482,10 @@ export const AuthProvider = ({ children }) => {
           // If profile fetch fails, try to refresh token once
           const refreshSuccess = await refreshTokenAndUserData();
           if (!refreshSuccess && isMountedRef.current) {
-            // If refresh also fails, logout
-            throw new Error('Token refresh failed');
+            // If refresh also fails, clear auth state
+            console.log('🔄 Token refresh failed, clearing auth state');
+            localStorage.removeItem('accessToken');
+            setUser(null);
           }
         }
       } catch (err) {

@@ -33,7 +33,14 @@ const StreamingPlayer = ({
 
     return () => {
       if (container && container.parentNode && container.children.length === 0) {
-        container.parentNode.removeChild(container);
+        try {
+          // Check if container is still in the DOM before removing
+          if (container.parentNode.contains(container)) {
+            container.parentNode.removeChild(container);
+          }
+        } catch (error) {
+          console.warn('[StreamingPlayer] Failed to remove portal container:', error);
+        }
       }
     };
   }, []);
@@ -114,8 +121,29 @@ const StreamingPlayer = ({
             transition={{ duration: 0.3, ease: 'easeOut' }}
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Close Button - Moved to top of modal */}
+            <button
+              onClick={handleClose}
+              className="absolute top-4 right-4 z-[99999999999] p-2 bg-black/50 hover:bg-black/70 rounded-full transition-colors duration-200"
+              aria-label="Close streaming player"
+            >
+              <svg
+                className="w-6 h-6 text-white"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+
             {/* Top Controls Bar */}
-            <div className="absolute top-4 left-4 right-4 z-[99999999999] flex items-center justify-between">
+            <div className="absolute top-4 left-4 right-16 z-[99999999999] flex items-center justify-start">
               {/* Service Toggler */}
               <StreamingServiceToggler
                 content={content}
@@ -123,27 +151,6 @@ const StreamingPlayer = ({
                 onServiceChange={onServiceChange}
                 className="flex-shrink-0"
               />
-              
-              {/* Close Button */}
-              <button
-                onClick={handleClose}
-                className="p-2 bg-black/50 hover:bg-black/70 rounded-full transition-colors duration-200 -mr-2"
-                aria-label="Close streaming player"
-              >
-                <svg
-                  className="w-6 h-6 text-white"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
             </div>
 
             {/* Player Container */}

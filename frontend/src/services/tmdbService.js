@@ -81,10 +81,9 @@ const sharedFetchWithRetry = async (url, attempt = 1, customTimeout = RETRY_CONF
 
 // Validate API key configuration
 if (!TMDB_API_KEY || TMDB_API_KEY === 'undefined' || TMDB_API_KEY === '') {
-  console.warn('⚠️ TMDB API Key is missing or invalid!');
-  console.warn('Please set the VITE_TMDB_API_KEY environment variable in your .env file');
-  console.warn('You can get a free API key from: https://www.themoviedb.org/settings/api');
-  console.warn('The app will continue to work but movie data will not be available');
+  console.error('❌ TMDB API Key is missing or invalid!');
+  console.error('Please set the VITE_TMDB_API_KEY environment variable in your .env file');
+  console.error('You can get a free API key from: https://www.themoviedb.org/settings/api');
 } else {
   console.debug('✅ TMDB API Key is configured');
 }
@@ -238,9 +237,9 @@ export const checkNetworkConnectivity = async () => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
     
-    // Use a CORS-friendly endpoint for network checks - avoid httpbin.org due to CORS issues
-    const response = await fetch('https://jsonplaceholder.typicode.com/posts/1', {
-      method: 'GET',
+    // Use a CORS-friendly endpoint for network checks
+    const response = await fetch('https://httpbin.org/status/200', {
+      method: 'HEAD',
       signal: controller.signal,
       cache: 'no-cache'
     });
@@ -248,15 +247,15 @@ export const checkNetworkConnectivity = async () => {
     clearTimeout(timeoutId);
     return response.ok;
   } catch (error) {
-    // If the first endpoint fails, try a fallback approach
+    // If httpbin.org fails, try a fallback approach
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 2000);
       
       // Use navigator.onLine as a fallback
       if (navigator.onLine) {
-        // Try a simple fetch to a reliable endpoint that doesn't require API keys
-        const response = await fetch('https://httpstat.us/200', {
+        // Try a simple fetch to a reliable endpoint
+        const response = await fetch('https://api.themoviedb.org/3/configuration', {
           method: 'HEAD',
           signal: controller.signal,
           cache: 'no-cache'
@@ -266,8 +265,7 @@ export const checkNetworkConnectivity = async () => {
       }
       return false;
     } catch (fallbackError) {
-      // Final fallback to browser's online status
-      return navigator.onLine;
+      return navigator.onLine; // Fallback to browser's online status
     }
   }
 };
@@ -508,8 +506,7 @@ export const fetchWithCache = async (url, options = {}, type = 'LIST') => {
     try {
       // Enhanced API key validation
       if (!TMDB_API_KEY || TMDB_API_KEY === 'undefined') {
-        console.warn('⚠️ TMDB API key is not configured - returning empty data');
-        return { results: [], page: 1, total_pages: 0, total_results: 0 };
+        throw new Error('TMDB API key is not configured');
       }
 
       // Enhanced URL construction with proper parameter handling
@@ -2977,6 +2974,8 @@ export const getMoviesByCategory = async (category, page = 1) => {
 export const discoverMovies = async ({ 
   with_genres, 
   primary_release_year, 
+  primary_release_date_gte,
+  primary_release_date_lte,
   sort_by = 'popularity.desc',
   page = 1,
   vote_count_gte = 10,
@@ -3067,6 +3066,14 @@ export const discoverMovies = async ({
       params.append('primary_release_year', primary_release_year.toString());
     }
 
+    if (primary_release_date_gte) {
+      params.append('primary_release_date_gte', primary_release_date_gte.toString());
+    }
+
+    if (primary_release_date_lte) {
+      params.append('primary_release_date_lte', primary_release_date_lte.toString());
+    }
+
     if (with_keywords) {
       params.append('with_keywords', with_keywords);
     }
@@ -3146,6 +3153,8 @@ export const discoverMovies = async ({
         filterCriteria: {
           with_genres,
           primary_release_year,
+          primary_release_date_gte,
+          primary_release_date_lte,
           sort_by,
           vote_count_gte,
           vote_average_gte,
@@ -3174,6 +3183,8 @@ export const discoverMovies = async ({
         filterCriteria: {
           with_genres,
           primary_release_year,
+          primary_release_date_gte,
+          primary_release_date_lte,
           sort_by,
           vote_count_gte,
           vote_average_gte,

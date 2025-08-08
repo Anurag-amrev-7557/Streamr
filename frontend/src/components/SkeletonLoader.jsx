@@ -1,4 +1,4 @@
-import * as React from 'react';
+import React from 'react';
 import { motion } from 'framer-motion';
 
 // Skeleton loader for better perceived performance

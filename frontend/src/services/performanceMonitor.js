@@ -128,7 +128,18 @@ class PerformanceMonitor {
       this.metrics[name] = this.metrics[name].slice(-100);
     }
     
-    // Log slow metrics
+    // FIXED: Don't log memory metrics as "slow" since they're not timing values
+    // Memory usage values are in bytes, not milliseconds
+    if (name === 'memoryUsage' || name === 'memoryLimit') {
+      // For memory metrics, only log if they're extremely high
+      const memoryMB = value / 1024 / 1024;
+      if (memoryMB > 800) {
+        console.warn(`High ${name}: ${memoryMB.toFixed(2)}MB`);
+      }
+      return;
+    }
+    
+    // Log slow metrics (only for actual timing values)
     if (value > this.thresholds.slowRequest) {
       console.warn(`Slow ${name}: ${value}ms`);
       this.metrics.slowRequests++;

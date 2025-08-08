@@ -16,14 +16,16 @@ Modified the `fetchMovies` function to properly combine category-based filtering
 
 ### Key Changes:
 1. **Category-Aware Filtering**: When genre or year filters are active, the system now applies category-specific sorting and date constraints:
-   - **Popular**: Sorts by popularity
-   - **Top Rated**: Sorts by vote average with higher vote count threshold
-   - **Upcoming**: Sorts by release date with future date constraints
-   - **Now Playing**: Sorts by popularity with current release date constraints
+   - **Popular**: Sorts by popularity (`popularity.desc`)
+   - **Top Rated**: Sorts by vote average (`vote_average.desc`) with higher vote count threshold (50)
+   - **Upcoming**: Sorts by release date (`release_date.asc`) with future date constraints
+   - **Now Playing**: Sorts by popularity (`popularity.desc`) with current release date constraints (last 30 days)
 
 2. **Smart Date Handling**: User-selected year filters override category-specific date constraints to prevent conflicts.
 
 3. **Enhanced Logging**: Added category information to console logs for better debugging.
+
+4. **Updated discoverMovies Function**: Added support for `primary_release_date_gte` and `primary_release_date_lte` parameters to handle date-based filtering.
 
 ## How to Test
 
@@ -48,16 +50,32 @@ Open browser console and look for logs like:
 ```
 🎬 Fetching filtered movies: {category: "top_rated", selectedYear: 2023, selectedGenre: {id: 28, name: "Action"}}
 🔍 Discover params: {page: 1, vote_count_gte: 50, include_adult: false, sort_by: "vote_average.desc", primary_release_year: 2023, with_genres: 28}
-✅ Filtered results: {count: 20, totalPages: 5}
+✅ Filtered results: {count: 20, totalPages: 5, category: "top_rated"}
 ```
 
 ## Files Modified:
 - `frontend/src/components/MoviesPage.jsx`
   - Enhanced `fetchMovies` function to respect category when filters are active
+  - Updated `loadMoreMovies` function to use the same category-aware logic
   - Updated `handleCategoryChange` function comments for clarity
+- `frontend/src/services/tmdbService.js`
+  - Added support for `primary_release_date_gte` and `primary_release_date_lte` parameters in `discoverMovies` function
 
 ## Technical Details:
 - Uses TMDB's `discoverMovies` API with combined parameters
 - Maintains backward compatibility with existing filtering
 - Applies appropriate sorting and constraints for each category
 - Handles edge cases like year filter overriding category date constraints
+- Enhanced error handling and logging for better debugging
+
+## Category-Specific Sorting:
+- **Popular**: `sort_by: 'popularity.desc'` - Shows most popular movies
+- **Top Rated**: `sort_by: 'vote_average.desc'` with `vote_count_gte: 50` - Shows highest rated movies with sufficient votes
+- **Upcoming**: `sort_by: 'release_date.asc'` with future date constraints - Shows upcoming movies sorted by release date
+- **Now Playing**: `sort_by: 'popularity.desc'` with current date constraints - Shows currently playing movies
+
+## Date Handling:
+- When no year filter is selected:
+  - **Upcoming**: Only shows movies with release dates from today onwards
+  - **Now Playing**: Only shows movies released in the last 30 days
+- When year filter is selected: Overrides category-specific date constraints to respect user selection

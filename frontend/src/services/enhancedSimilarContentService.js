@@ -2644,7 +2644,7 @@ class EnhancedSimilarContentService {
       }
 
       const response = await fetch(
-        `https://api.themoviedb.org/3/discover/${contentType}?${queryParams.toString()}`
+        `https://api.themoviedb.org/3/discover/${contentType}?api_key=${import.meta.env.VITE_TMDB_API_KEY}&${queryParams.toString()}`
       );
       
       if (!response.ok) {
@@ -2913,7 +2913,7 @@ class EnhancedSimilarContentService {
 
     try {
       const response = await fetch(
-        `https://api.themoviedb.org/3/discover/${contentType}?${queryParams.toString()}`
+        `https://api.themoviedb.org/3/discover/${contentType}?api_key=${import.meta.env.VITE_TMDB_API_KEY}&${queryParams.toString()}`
       );
       const data = await response.json();
       

@@ -1,5 +1,4 @@
-import * as React from 'react';
-import { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
 
 // Types for loading states
 const LOADING_STATES = {

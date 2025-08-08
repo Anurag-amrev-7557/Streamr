@@ -7,12 +7,12 @@ class MemoryOptimizationService {
     this.intervalId = null;
     this.memoryHistory = [];
     this.maxHistorySize = 20;
-    this.threshold = 700; // MB - Increased threshold for all components
-    this.criticalThreshold = 1000; // MB - Increased critical threshold
+    this.threshold = 500; // MB - Single threshold for all components
+    this.criticalThreshold = 800; // MB
     this.cleanupCallbacks = new Set();
     this.lastCleanup = 0;
-    this.cleanupCooldown = 120000; // 120 seconds - Less frequent cleanup
-    this.monitoringInterval = 90000; // 90 seconds - Less frequent monitoring
+    this.cleanupCooldown = 60000; // 60 seconds - Less frequent cleanup
+    this.monitoringInterval = 45000; // 45 seconds - Less frequent monitoring
     this.registeredComponents = new Set();
   }
 
@@ -56,13 +56,13 @@ class MemoryOptimizationService {
     }
     
     // Check for memory leaks (continuous increase)
-    if (this.memoryHistory.length >= 4) { // Check over 6+ minutes
-      const recent = this.memoryHistory.slice(-4);
+    if (this.memoryHistory.length >= 3) { // Check over 2+ minutes
+      const recent = this.memoryHistory.slice(-3);
       const first = recent[0].memoryMB;
       const last = recent[recent.length - 1].memoryMB;
       const increase = last - first;
       
-      if (increase > 500) { // 500MB increase over 6+ minutes
+      if (increase > 300) { // 300MB increase over 2+ minutes
         console.warn(`[MemoryOptimizationService] Potential memory leak detected: ${increase.toFixed(2)}MB increase`);
         this.performCleanup();
       }
@@ -182,13 +182,19 @@ class MemoryOptimizationService {
     this.cleanupCallbacks.add(callback);
     this.registeredComponents.add(componentName);
     
-    console.log(`[MemoryOptimizationService] Registered cleanup callback for ${componentName}`);
+    // Only log in development
+    if (import.meta.env.DEV) {
+      console.log(`[MemoryOptimizationService] Registered cleanup callback for ${componentName}`);
+    }
     
     // Return unregister function
     return () => {
       this.cleanupCallbacks.delete(callback);
       this.registeredComponents.delete(componentName);
-      console.log(`[MemoryOptimizationService] Unregistered cleanup callback for ${componentName}`);
+      // Only log in development
+      if (import.meta.env.DEV) {
+        console.log(`[MemoryOptimizationService] Unregistered cleanup callback for ${componentName}`);
+      }
     };
   }
 
@@ -227,13 +233,19 @@ class MemoryOptimizationService {
   // Method to register a component for monitoring
   registerComponent(componentName) {
     this.registeredComponents.add(componentName);
-    console.log(`[MemoryOptimizationService] Registered component: ${componentName}`);
+    // Only log in development
+    if (import.meta.env.DEV) {
+      console.log(`[MemoryOptimizationService] Registered component: ${componentName}`);
+    }
   }
 
   // Method to unregister a component
   unregisterComponent(componentName) {
     this.registeredComponents.delete(componentName);
-    console.log(`[MemoryOptimizationService] Unregistered component: ${componentName}`);
+    // Only log in development
+    if (import.meta.env.DEV) {
+      console.log(`[MemoryOptimizationService] Unregistered component: ${componentName}`);
+    }
   }
 }
 

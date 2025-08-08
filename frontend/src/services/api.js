@@ -39,6 +39,42 @@ const CACHE_DURATIONS = {
 const batchRequests = new Map();
 const BATCH_TIMEOUT = 100; // 100ms batch window
 
+// Request queue for rate limiting
+const requestQueue = [];
+let isProcessingQueue = false;
+const REQUEST_DELAY = 200; // 200ms between requests
+
+const processQueue = async () => {
+  if (isProcessingQueue || requestQueue.length === 0) return;
+  
+  isProcessingQueue = true;
+  
+  while (requestQueue.length > 0) {
+    const { requestFn, resolve, reject } = requestQueue.shift();
+    
+    try {
+      const result = await requestFn();
+      resolve(result);
+    } catch (error) {
+      reject(error);
+    }
+    
+    // Wait before processing next request
+    if (requestQueue.length > 0) {
+      await new Promise(resolve => setTimeout(resolve, REQUEST_DELAY));
+    }
+  }
+  
+  isProcessingQueue = false;
+};
+
+const queueRequest = (requestFn) => {
+  return new Promise((resolve, reject) => {
+    requestQueue.push({ requestFn, resolve, reject });
+    processQueue();
+  });
+};
+
 // Network-aware configuration
 export const getNetworkAwareConfig = () => {
   // Check if we're online
@@ -62,7 +98,14 @@ export const getNetworkAwareConfig = () => {
 // Wrapper for fetchWithRetry that matches the expected usage in communityService
 export const fetchWithRetry = async (requestFn, retryConfig = {}) => {
   const { timeout, retryConfig: networkRetryConfig } = getNetworkAwareConfig();
-  const config = { ...networkRetryConfig, ...retryConfig };
+  const config = { 
+    ...networkRetryConfig, 
+    maxDelay: 10000, // Increased max delay for rate limiting
+    ...retryConfig 
+  };
+  
+  // Queue the request to prevent rate limiting
+  const queuedRequest = () => queueRequest(requestFn);
   
   let lastError;
   
@@ -73,9 +116,9 @@ export const fetchWithRetry = async (requestFn, retryConfig = {}) => {
         setTimeout(() => reject(new Error('Request timeout')), timeout);
       });
       
-      // Execute the request function with timeout
+      // Execute the queued request function with timeout
       const result = await Promise.race([
-        requestFn(),
+        queuedRequest(),
         timeoutPromise
       ]);
       
@@ -83,13 +126,32 @@ export const fetchWithRetry = async (requestFn, retryConfig = {}) => {
     } catch (error) {
       lastError = error;
       
+      // Check if it's a rate limiting error
+      if (error.response?.status === 429) {
+        console.warn(`Rate limit hit (attempt ${attempt}/${config.maxRetries})`);
+        
+        // For rate limiting, use longer delays
+        const rateLimitDelay = Math.min(
+          config.baseDelay * Math.pow(3, attempt - 1), // More aggressive backoff
+          config.maxDelay
+        );
+        
+        console.log(`Rate limit - waiting ${rateLimitDelay}ms before retry...`);
+        await new Promise(resolve => setTimeout(resolve, rateLimitDelay));
+        
+        if (attempt === config.maxRetries) {
+          throw new Error('Rate limit exceeded. Please try again later.');
+        }
+        continue;
+      }
+      
       console.warn(`Request failed (attempt ${attempt}/${config.maxRetries}):`, error.message);
       
       if (attempt === config.maxRetries) {
         break;
       }
       
-      // Calculate delay with exponential backoff
+      // Calculate delay with exponential backoff for other errors
       const delay = Math.min(
         config.baseDelay * Math.pow(2, attempt - 1),
         config.maxDelay

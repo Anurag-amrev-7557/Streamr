@@ -7,13 +7,13 @@ class MovieDetailsMemoryOptimizer {
     this.intervalId = null;
     this.memoryHistory = [];
     this.maxHistorySize = 20;
-    this.threshold = 600; // MB - Increased threshold for MovieDetailsOverlay
-    this.criticalThreshold = 800; // MB - Increased critical threshold
+    this.threshold = 400; // MB - Lower threshold for MovieDetailsOverlay
+    this.criticalThreshold = 600; // MB
     this.cleanupCallbacks = new Set();
     this.lastCleanup = 0;
-    this.cleanupCooldown = 60000; // 60 seconds - Less frequent cleanup
+    this.cleanupCooldown = 20000; // 20 seconds - More frequent cleanup
     this.cacheSize = 0;
-    this.maxCacheSize = 20; // Increased cache size
+    this.maxCacheSize = 15; // Reduced cache size
   }
 
   start() {
@@ -22,7 +22,7 @@ class MovieDetailsMemoryOptimizer {
     this.isMonitoring = true;
     this.intervalId = setInterval(() => {
       this.checkMemory();
-    }, 60000); // Check every 60 seconds - reduced frequency to prevent performance impact
+    }, 20000); // Check every 20 seconds - reduced frequency to prevent performance impact
     
     console.log('[MovieDetailsMemoryOptimizer] Started monitoring memory usage');
   }
@@ -53,14 +53,14 @@ class MovieDetailsMemoryOptimizer {
     }
     
     // Check for memory leaks (continuous increase)
-    if (this.memoryHistory.length >= 6) { // Check over 5 minutes
-      const recent = this.memoryHistory.slice(-6);
+    if (this.memoryHistory.length >= 4) { // Check over 40 seconds
+      const recent = this.memoryHistory.slice(-4);
       const first = recent[0].memoryMB;
       const last = recent[recent.length - 1].memoryMB;
       const increase = last - first;
       
-      if (increase > 400) { // 400MB increase over 5 minutes
-        console.warn(`[MovieDetailsMemoryOptimizer] Potential memory leak detected: ${increase.toFixed(2)}MB increase over 5m`);
+      if (increase > 200) { // 200MB increase over 40 seconds
+        console.warn(`[MovieDetailsMemoryOptimizer] Potential memory leak detected: ${increase.toFixed(2)}MB increase over 40s`);
         this.performCleanup();
       }
     }

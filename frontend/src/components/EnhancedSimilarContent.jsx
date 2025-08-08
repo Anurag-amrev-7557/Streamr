@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { similarContentUtils } from '../services/enhancedSimilarContentService';
 import { formatRating } from '../utils/ratingUtils';
 import memoryOptimizationService from '../utils/memoryOptimizationService';
-import RatingBadge from './RatingBadge';
 
 // FIXED: Memory leak detection utility
 const memoryLeakDetector = {
@@ -210,6 +209,9 @@ const CustomDropdown = React.memo(({
 const EnhancedSimilarCard = React.memo(({ item, onClick, isMobile, showRelevanceScore = false }) => {
   const isMountedRef = useRef(true); // FIXED: Add mounted ref for cleanup
   const imageRef = useRef(null); // FIXED: Add image ref for cleanup
+  const correctSrcRef = useRef(null); // Track the correct src
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
   // FIXED: Enhanced cleanup on unmount
   useEffect(() => {
@@ -223,6 +225,13 @@ const EnhancedSimilarCard = React.memo(({ item, onClick, isMobile, showRelevance
       }
     };
   }, []);
+
+  // Set the correct src reference
+  useEffect(() => {
+    if (item.poster_path && typeof item.poster_path === 'string' && item.poster_path.startsWith('/')) {
+      correctSrcRef.current = `https://image.tmdb.org/t/p/w500${item.poster_path}`;
+    }
+  }, [item.poster_path]);
 
   // FIXED: Memoize computed values to prevent unnecessary recalculations
   const displayTitle = useMemo(() => item.title || item.name || 'Untitled', [item.title, item.name]);
@@ -269,25 +278,70 @@ const EnhancedSimilarCard = React.memo(({ item, onClick, isMobile, showRelevance
   // FIXED: Enhanced image error handler with cleanup
   const handleImageError = useCallback((e) => {
     if (isMountedRef.current && e.target) {
+      // Only log in development and if it's not a localhost issue
+      if (import.meta.env.DEV && !e.target.src.includes('localhost')) {
+        console.warn('Similar content image failed to load:', {
+          src: e.target.src,
+          poster_path: item.poster_path,
+          title: displayTitle,
+          expectedSrc: `https://image.tmdb.org/t/p/w500${item.poster_path}`
+        });
+      }
+      
+      // Don't try fallback if src has been changed to localhost (likely by another component)
+      if (e.target.src.includes('localhost')) {
+        if (import.meta.env.DEV) {
+          console.warn('Image src was changed to localhost, resetting to correct URL');
+        }
+        if (correctSrcRef.current) {
+          e.target.src = correctSrcRef.current;
+        }
+        return;
+      }
+      
+      // Try fallback URL if this was a CORS error
+      if (e.target.src.includes('image.tmdb.org') && !e.target.dataset.fallbackTried && correctSrcRef.current) {
+        console.log('Trying fallback URL:', correctSrcRef.current);
+        e.target.dataset.fallbackTried = 'true';
+        e.target.src = correctSrcRef.current;
+        return;
+      }
+      
+      setImageError(true);
+      setImageLoaded(false);
       e.target.style.display = 'none';
       // Show fallback content
       const fallback = e.target.parentNode.querySelector('.image-fallback');
       if (fallback) {
         fallback.style.display = 'flex';
+        fallback.classList.remove('hidden');
       }
     }
-  }, []);
+  }, [item.poster_path, displayTitle]);
 
   // FIXED: Enhanced image load handler with cleanup
   const handleImageLoad = useCallback((e) => {
     if (isMountedRef.current && e.target) {
+      // Only log in development
+      if (import.meta.env.DEV) {
+        console.log('Similar content image loaded successfully:', {
+          src: e.target.src,
+          poster_path: item.poster_path,
+          title: displayTitle
+        });
+      }
+      setImageLoaded(true);
+      setImageError(false);
       // Hide fallback when image loads successfully
       const fallback = e.target.parentNode.querySelector('.image-fallback');
       if (fallback) {
         fallback.style.display = 'none';
+        fallback.classList.add('hidden');
       }
     }
-  }, []);
+  }, [item.poster_path, displayTitle]);
+
+
 
   return (
     <motion.div 
@@ -308,20 +362,31 @@ const EnhancedSimilarCard = React.memo(({ item, onClick, isMobile, showRelevance
       layout
     >
       <div className="aspect-[2/3] rounded-xl overflow-hidden bg-gradient-to-br from-gray-800 to-gray-900 relative shadow-lg border border-white/5 hover:border-white/10 transition-all duration-300">
-        {item.poster_path ? (
+        {item.poster_path && typeof item.poster_path === 'string' && item.poster_path.startsWith('/') ? (
           <img 
+            key={`${item.id}-${item.poster_path}`}
             ref={imageRef}
-            src={`https://image.tmdb.org/t/p/w500${item.poster_path}`} 
+            src={correctSrcRef.current || `https://image.tmdb.org/t/p/w500${item.poster_path}`} 
             alt={displayTitle} 
             className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110" 
             loading="lazy"
             onError={handleImageError}
             onLoad={handleImageLoad}
+            onLoadStart={() => {
+              // Only log in development
+              if (import.meta.env.DEV) {
+                console.log('Similar content image loading started:', {
+                  src: correctSrcRef.current || `https://image.tmdb.org/t/p/w500${item.poster_path}`,
+                  poster_path: item.poster_path,
+                  title: displayTitle
+                });
+              }
+            }}
           />
         ) : null}
         
         {/* FIXED: Always show fallback, but hide when image loads */}
-        <div className={`w-full h-full flex items-center justify-center text-gray-400 bg-gradient-to-br from-gray-700 to-gray-800 ${item.poster_path ? 'image-fallback hidden' : ''}`}>
+        <div className={`w-full h-full flex items-center justify-center text-gray-400 bg-gradient-to-br from-gray-700 to-gray-800 image-fallback ${(item.poster_path && typeof item.poster_path === 'string' && item.poster_path.startsWith('/') && imageLoaded && !imageError) ? 'hidden' : ''}`}>
           <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
           </svg>
@@ -335,11 +400,16 @@ const EnhancedSimilarCard = React.memo(({ item, onClick, isMobile, showRelevance
         )}
         
         {/* Rating Badge */}
-        <RatingBadge 
-          rating={item.vote_average} 
-          size="default"
-          position="top-2 right-2"
-        />
+        {item.vote_average && (
+          <div className="absolute top-2 right-2 px-2 py-1 rounded-full text-xs font-semibold bg-black/80 backdrop-blur-sm text-white border border-white/20">
+            <div className="flex items-center gap-1">
+              <svg className="w-3 h-3 text-yellow-400" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
+              </svg>
+              {formatRating(item.vote_average)}
+            </div>
+          </div>
+        )}
         
         {/* Hover Overlay - Desktop Only */}
         {!isMobile && (
@@ -1078,7 +1148,7 @@ const EnhancedSimilarContent = React.memo(({
       if (isMountedRef.current) {
         memoryOptimizer.cleanup();
       }
-    });
+    }, 'EnhancedSimilarContent');
     
     return () => {
       if (import.meta.env.DEV) {

@@ -18,7 +18,7 @@ const generateTokens = (user, res) => {
   res.cookie('refreshToken', refreshToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+    sameSite: 'none', // Allow cross-origin cookies
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     path: '/'
   });
@@ -146,7 +146,7 @@ exports.logout = async (req, res) => {
   res.clearCookie('refreshToken', {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+    sameSite: 'none', // Match the sameSite setting from generateTokens
     path: '/'
   });
   
@@ -159,6 +159,10 @@ exports.logout = async (req, res) => {
 // Refresh Token
 exports.refreshToken = async (req, res) => {
   try {
+    console.log('🔄 Refresh token request received');
+    console.log('🍪 Cookies:', req.cookies);
+    console.log('📋 Headers:', req.headers);
+    
     // Try to get refresh token from cookie first
     let refreshToken = req.cookies.refreshToken;
     
@@ -171,14 +175,19 @@ exports.refreshToken = async (req, res) => {
     }
 
     if (!refreshToken) {
+      console.log('❌ No refresh token found in cookies or headers');
       return res.status(401).json({ 
         success: false,
         message: 'No refresh token provided' 
       });
     }
 
+    console.log('🔍 Attempting to verify refresh token...');
     const payload = verifyRefreshToken(refreshToken);
-    const user = await User.findById(payload.id || payload.userId);
+    console.log('✅ Token verified, payload:', payload);
+    
+    const user = await User.findById(payload.userId);
+    console.log('👤 User found:', user ? user._id : 'Not found');
 
     if (!user) {
       return res.status(401).json({ 
@@ -188,6 +197,8 @@ exports.refreshToken = async (req, res) => {
     }
 
     const { accessToken, refreshToken: newRefreshToken } = generateTokens(user, res);
+    console.log('✅ New tokens generated successfully');
+    
     res.json({
       success: true,
       data: {
@@ -196,6 +207,7 @@ exports.refreshToken = async (req, res) => {
       }
     });
   } catch (error) {
+    console.error('❌ Refresh token error:', error);
     handleError(res, error, 401);
   }
 };

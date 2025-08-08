@@ -81,6 +81,7 @@ app.use(session({
   cookie: {
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
+    sameSite: 'none', // Match the sameSite setting for cross-origin
     maxAge: 24 * 60 * 60 * 1000 // 24 hours
   }
 }));
@@ -123,6 +124,16 @@ if (process.env.NODE_ENV === 'production') {
 
 app.use(express.json());
 app.use(cookieParser(process.env.COOKIE_SECRET || 'your-cookie-secret'));
+
+// Debug middleware to log cookies
+app.use((req, res, next) => {
+  if (req.path === '/api/auth/refresh-token') {
+    console.log('🍪 Debug: Request cookies:', req.cookies);
+    console.log('🍪 Debug: Request headers:', req.headers);
+  }
+  next();
+});
+
 app.use(express.urlencoded({ extended: true }));
 
 // Sanitize data against NoSQL injection

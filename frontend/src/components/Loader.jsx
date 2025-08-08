@@ -1,5 +1,6 @@
-import * as React from 'react';
+import React from 'react';
 import PropTypes from 'prop-types';
+import { motion } from 'framer-motion';
 
 /**
  * @typedef {Object} LoaderProps
@@ -289,7 +290,7 @@ const Loader = ({
             className={`w-2 h-2 rounded-full ${colorClasses[color]} shadow-md relative`}
             style={{
               animation: `dotBounce 0.7s cubic-bezier(0.68,-0.55,0.27,1.55) ${i * 0.18}s infinite both, dotGlow 1.2s ${i * 0.18}s infinite alternate`,
-              filter: 'brightness(1) drop-shadow(0 0 2px rgba(255,255,255,0.18))',
+              filter: 'brightness(1.1) drop-shadow(0 0 2px rgba(255,255,255,0.18))',
               boxShadow: `0 0 8px 2px ${glowColors[color] || glowColors.white}`,
             }}
           >
@@ -367,17 +368,33 @@ const Loader = ({
 };
 
 /**
- * Full Page Loader Component
+ * Full Page Loader Component - Redesigned for Minimalist, Modern, Professional Look
+ * 
+ * Features:
+ * - Minimalist variant: Clean, modern design with subtle animations
+ * - Classic variant: Enhanced original design with aurora effects
+ * - Progress indicator support
+ * - Rotating tips and fun facts
+ * - Accessibility features
  * 
  * Usage Examples:
- * 1. Initial App Loading:
- *    {isAppLoading && <PageLoader text="Loading your cinematic experience..." />}
+ * 1. Minimalist Loading:
+ *    {isAppLoading && <PageLoader variant="minimalist" text="Loading your cinematic experience..." />}
  * 
- * 2. Page Transition:
- *    {isPageTransitioning && <PageLoader text="Preparing your next adventure..." />}
+ * 2. Classic Loading:
+ *    {isPageTransitioning && <PageLoader variant="classic" text="Preparing your next adventure..." />}
  * 
- * 3. Data Fetching:
- *    {isFetchingData && <PageLoader text="Loading your content..." />}
+ * 3. With Progress:
+ *    {isFetchingData && <PageLoader showProgress progress={75} text="Loading your content..." />}
+ * 
+ * Props:
+ * - variant: 'minimalist' | 'classic' (default: 'minimalist')
+ * - text: string (loading message)
+ * - showProgress: boolean (show progress bar)
+ * - progress: number (0-100, progress percentage)
+ * - tips: array of strings (rotating tips)
+ * - showTips: boolean (show tips)
+ * - tipInterval: number (tip rotation interval in ms)
  */
 import { useEffect, useRef } from "react";
 
@@ -395,7 +412,7 @@ const PageLoader = ({
   ],
   showTips = true,
   tipInterval = 3000,
-  variant = "minimalist", // "minimalist" or "ultra-minimalist"
+  variant = 'minimalist', // 'minimalist' | 'classic'
 }) => {
   const [currentTip, setCurrentTip] = React.useState(
     tips && tips.length > 0 ? Math.floor(Math.random() * tips.length) : 0
@@ -410,7 +427,7 @@ const PageLoader = ({
     return () => clearInterval(tipTimeout.current);
   }, [showTips, tips, tipInterval]);
 
-  // Focus trap for accessibility
+  // Subtle accessibility improvement: focus trap
   const containerRef = useRef();
   useEffect(() => {
     if (containerRef.current) {
@@ -423,89 +440,240 @@ const PageLoader = ({
       ref={containerRef}
       tabIndex={-1}
       aria-live="polite"
-      className="fixed inset-0 flex items-center justify-center bg-black z-50"
+      className="fixed inset-0 flex items-center justify-center bg-[#121417] z-50"
       role="dialog"
       aria-modal="true"
     >
-      {/* Background based on variant */}
-      {variant === "ultra-minimalist" ? (
-        <div className="absolute inset-0 bg-black"></div>
-      ) : (
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.02)_0%,transparent_70%)]"></div>
-      )}
-      
-      {/* Main content container */}
-      <div className="flex flex-col items-center gap-8 relative z-10">
-        {/* Loader based on variant */}
-        <div className="relative">
-          {variant === "ultra-minimalist" ? (
-            // Ultra-minimalist: Just a simple dot
-            <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-          ) : (
-            // Minimalist: Spinner with center dot
-            <>
-              <div className="w-16 h-16 border-2 border-white/20 rounded-full relative">
-                <div className="absolute inset-0 w-16 h-16 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              </div>
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-1 bg-white rounded-full animate-pulse"></div>
-            </>
-          )}
-        </div>
-
-        {/* Loading text */}
-        <div className={`text-white/80 tracking-wide text-center px-6 max-w-md ${
-          variant === "ultra-minimalist" ? "text-base font-light" : "text-lg font-light"
-        }`}>
-          {text}
-        </div>
-
-        {/* Progress indicator */}
-        {showProgress && (
-          <div className={`relative ${
-            variant === "ultra-minimalist" ? "w-32 h-px" : "w-48 h-px"
-          } bg-white/10`}>
-            <div 
-              className="h-full bg-white transition-[width] duration-700 ease-out"
-              style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
-            ></div>
-          </div>
-        )}
-
-        {/* Tips section */}
-        {showTips && tips && tips.length > 0 && variant !== "ultra-minimalist" && (
-          <div className="text-xs text-white/40 font-light text-center max-w-sm mt-4 transition-opacity duration-500">
-            <span className="inline-flex items-center gap-2">
-              <svg
-                className="w-3 h-3 text-white/30"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={1.5}
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-              {tips[currentTip]}
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* Corner accents based on variant */}
-      {variant !== "ultra-minimalist" && (
+      {variant === 'minimalist' ? (
+        // Minimalist variant
         <>
-          <div className="absolute top-8 left-8 w-16 h-px bg-white/5"></div>
-          <div className="absolute top-8 left-8 w-px h-16 bg-white/5"></div>
-          <div className="absolute top-8 right-8 w-16 h-px bg-white/5"></div>
-          <div className="absolute top-8 right-8 w-px h-16 bg-white/5"></div>
-          <div className="absolute bottom-8 left-8 w-16 h-px bg-white/5"></div>
-          <div className="absolute bottom-8 left-8 w-px h-16 bg-white/5"></div>
-          <div className="absolute bottom-8 right-8 w-16 h-px bg-white/5"></div>
-          <div className="absolute bottom-8 right-8 w-px h-16 bg-white/5"></div>
+          {/* Subtle gradient overlay for depth */}
+          <div className="absolute inset-0 bg-gradient-to-br from-[#121417] via-[#1a1d24] to-[#121417] opacity-80"></div>
+          
+          {/* Minimal animated background pattern */}
+          <div className="absolute inset-0 opacity-5">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(255,255,255,0.1)_1px,transparent_1px)] bg-[length:20px_20px]"></div>
+          </div>
+
+          {/* Main content container */}
+          <div className="relative z-10 flex flex-col items-center justify-center gap-8 px-6">
+            {/* Minimalist loader */}
+            <div className="relative">
+              {/* Main spinner ring */}
+              <div className="w-16 h-16 border-2 border-white/10 rounded-full relative">
+                <div className="absolute inset-0 border-2 border-transparent border-t-white/60 rounded-full animate-spin"></div>
+                <div className="absolute inset-0 border-2 border-transparent border-t-white/30 rounded-full animate-spin" style={{ animationDuration: '2s', animationDirection: 'reverse' }}></div>
+              </div>
+              
+                        {/* Center logo */}
+          <div className="absolute top-1/2 left-1/2 w-6 h-6 -translate-x-1/2 -translate-y-1/2">
+            <motion.svg 
+              viewBox="0 0 48 48" 
+              fill="none" 
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-full w-full text-white/60"
+              animate={{
+                scale: [1, 1.05, 1],
+                rotate: [0, 2, -2, 0],
+              }}
+              transition={{
+                duration: 3,
+                repeat: Infinity,
+                ease: "easeInOut",
+                delay: 1
+              }}
+            >
+              <path 
+                fillRule="evenodd" 
+                clipRule="evenodd" 
+                d="M24 4H42V17.3333V30.6667H24V44H6V30.6667V17.3333H24V4Z" 
+                fill="currentColor"
+              />
+            </motion.svg>
+          </div>
+              
+              {/* Progress indicator */}
+              {showProgress && (
+                <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 w-20 h-1 bg-white/10 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-white/60 transition-all duration-500 ease-out rounded-full"
+                    style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
+                  ></div>
+                </div>
+              )}
+            </div>
+
+            {/* Loading text */}
+            <div className="text-center space-y-2">
+              <h2 className="text-white/90 text-lg font-medium tracking-wide">
+                {text}
+              </h2>
+              
+              {/* Subtle loading dots */}
+              <div className="flex items-center justify-center gap-1">
+                {[...Array(3)].map((_, i) => (
+                  <div
+                    key={i}
+                    className="w-1.5 h-1.5 bg-white/40 rounded-full animate-pulse"
+                    style={{ 
+                      animationDelay: `${i * 0.2}s`,
+                      animationDuration: '1.4s'
+                    }}
+                  ></div>
+                ))}
+              </div>
+            </div>
+
+            {/* Tips section */}
+            {showTips && tips && tips.length > 0 && (
+              <div className="text-center max-w-md">
+                <div className="text-white/40 text-sm font-medium transition-opacity duration-500">
+                  <span className="inline-flex items-center gap-2">
+                    <svg
+                      className="w-4 h-4 text-white/30"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={1.5}
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                    >
+                      <circle cx="12" cy="12" r="10" />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 8v4m0 4h.01"
+                      />
+                    </svg>
+                    {tips[currentTip]}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Subtle corner accent */}
+          <div className="absolute top-8 right-8 w-16 h-16 border border-white/5 rounded-full opacity-30"></div>
+          <div className="absolute bottom-8 left-8 w-12 h-12 border border-white/5 rounded-full opacity-20"></div>
+        </>
+      ) : (
+        // Classic variant (enhanced original design)
+        <>
+          {/* Noise overlay */}
+          <div className="absolute inset-0 bg-[url('/noise.png')] opacity-20 mix-blend-overlay pointer-events-none"></div>
+          {/* Subtle vertical gradient */}
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#121417]/50 to-transparent pointer-events-none"></div>
+          {/* Animated aurora effect */}
+          <div className="absolute inset-0 pointer-events-none">
+            <svg
+              width="100%"
+              height="100%"
+              className="w-full h-full"
+              style={{ filter: "blur(32px)" }}
+            >
+              <defs>
+                <radialGradient id="aurora1" cx="60%" cy="30%" r="60%">
+                  <stop offset="0%" stopColor="#6ee7b7" stopOpacity="0.18" />
+                  <stop offset="100%" stopColor="#0f0f0f" stopOpacity="0" />
+                </radialGradient>
+                <radialGradient id="aurora2" cx="30%" cy="70%" r="60%">
+                  <stop offset="0%" stopColor="#818cf8" stopOpacity="0.14" />
+                  <stop offset="100%" stopColor="#0f0f0f" stopOpacity="0" />
+                </radialGradient>
+              </defs>
+              <circle cx="60%" cy="30%" r="320" fill="url(#aurora1)" />
+              <circle cx="30%" cy="70%" r="260" fill="url(#aurora2)" />
+            </svg>
+          </div>
+          <div className="flex flex-col items-center gap-6 relative z-10">
+            {/* Main Loader */}
+            <div className="relative">
+              <Loader size="large" />
+              {/* Orbiting Elements - now with more orbs and color */}
+              <div className="absolute inset-0 animate-[spin_3s_linear_infinite]">
+                {[...Array(5)].map((_, i) => (
+                  <div
+                    key={i}
+                    className={`absolute w-3 h-3 rounded-full backdrop-blur-sm`}
+                    style={{
+                      top: "50%",
+                      left: "50%",
+                      background:
+                        i % 2 === 0
+                          ? "rgba(129,140,248,0.25)"
+                          : "rgba(110,231,183,0.22)",
+                      boxShadow:
+                        i % 2 === 0
+                          ? "0 0 8px 2px #818cf8aa"
+                          : "0 0 8px 2px #6ee7b7aa",
+                      transform: `rotate(${i * 72}deg) translateX(44px) translateY(-50%)`,
+                    }}
+                  />
+                ))}
+              </div>
+              {/* Pulsing center logo */}
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6">
+                <motion.svg 
+                  viewBox="0 0 48 48" 
+                  fill="none" 
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-full w-full text-white/40"
+                  animate={{
+                    scale: [1, 1.05, 1],
+                    rotate: [0, 2, -2, 0],
+                  }}
+                  transition={{
+                    duration: 3,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                    delay: 1
+                  }}
+                >
+                  <path 
+                    fillRule="evenodd" 
+                    clipRule="evenodd" 
+                    d="M24 4H42V17.3333V30.6667H24V44H6V30.6667V17.3333H24V4Z" 
+                    fill="currentColor"
+                  />
+                </motion.svg>
+              </div>
+              {/* Progress bar (optional) */}
+              {showProgress && (
+                <div className="absolute left-1/2 -translate-x-1/2 bottom-[-18px] w-24 h-2 bg-white/10 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-[#818cf8] to-[#6ee7b7] transition-all duration-500"
+                    style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
+                  ></div>
+                </div>
+              )}
+            </div>
+            {/* Main loading text */}
+            <div className="text-white/70 text-base font-semibold tracking-wide animate-[pulse_2s_ease-in-out_infinite] text-center px-4">
+              {text}
+            </div>
+            {/* Rotating tip or fun fact */}
+            {showTips && tips && tips.length > 0 && (
+              <div className="text-xs text-white/40 font-medium text-center max-w-xs mt-2 transition-opacity duration-500 animate-fade-in">
+                <span className="inline-flex items-center gap-1">
+                  <svg
+                    className="w-4 h-4 text-white/30"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity="0.3" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M12 8v4m0 4h.01"
+                    />
+                  </svg>
+                  {tips[currentTip]}
+                </span>
+              </div>
+            )}
+          </div>
         </>
       )}
     </div>
@@ -586,8 +754,8 @@ const SectionLoader = ({
         {/* Optional progress bar below text */}
         {showProgress && (
           <div className="w-40 h-2 bg-white/10 rounded-full overflow-hidden mt-2 shadow-inner">
-                        <div 
-              className="h-full bg-gradient-to-r from-[#818cf8] to-[#6ee7b7] transition-[width] duration-700"
+            <div
+              className="h-full bg-gradient-to-r from-[#818cf8] to-[#6ee7b7] transition-all duration-700"
               style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
             ></div>
           </div>

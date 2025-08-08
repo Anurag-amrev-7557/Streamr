@@ -4,7 +4,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import OptimizedImage from './OptimizedImage';
 import { formatRating } from '../utils/ratingUtils';
 import { getPosterProps } from '../utils/imageUtils';
-import RatingBadge from './RatingBadge';
 
 const VirtualizedMovieGrid = ({
   movies = [],
@@ -89,12 +88,6 @@ const VirtualizedMovieGrid = ({
         >
           {/* Movie Poster */}
           <div className="relative aspect-[2/3]">
-            {/* Rating Badge */}
-            <RatingBadge 
-              rating={movie.vote_average} 
-              size="default"
-            />
-            
             <OptimizedImage
               src={movie.poster_path ? getPosterProps(movie, 'w500').src : null}
               alt={movie.title || movie.name}
@@ -221,12 +214,6 @@ export const OptimizedMovieCard = React.memo(({ movie, onClick, className = '' }
     >
       {/* Movie Poster */}
       <div className="relative aspect-[2/3]">
-        {/* Rating Badge */}
-        <RatingBadge 
-          rating={movie.vote_average} 
-          size="default"
-        />
-        
         <OptimizedImage
           src={movie.poster_path ? getPosterProps(movie, 'w500').src : null}
           alt={movie.title || movie.name}

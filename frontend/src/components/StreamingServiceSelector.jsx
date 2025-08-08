@@ -27,7 +27,14 @@ const StreamingServiceSelector = ({
 
     return () => {
       if (container && container.parentNode && container.children.length === 0) {
-        container.parentNode.removeChild(container);
+        try {
+          // Check if container is still in the DOM before removing
+          if (container.parentNode.contains(container)) {
+            container.parentNode.removeChild(container);
+          }
+        } catch (error) {
+          console.warn('[StreamingServiceSelector] Failed to remove portal container:', error);
+        }
       }
     };
   }, []);

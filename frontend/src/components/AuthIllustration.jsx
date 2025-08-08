@@ -1,4 +1,4 @@
-import * as React from 'react';
+import React from 'react';
 import { motion, useAnimation } from 'framer-motion';
 
 const bars = [0.7, 1, 0.5, 1, 0.8];

@@ -35,6 +35,9 @@ export const getDirectImageUrl = (path, size = IMAGE_SIZES.MEDIUM) => {
   
   // Ensure path starts with /
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  
+  // Always use direct TMDB URLs - CORS issues will be handled by the img element
+  // with crossOrigin attribute and error handling
   return `${TMDB_IMAGE_BASE_URL}/${size}${cleanPath}`;
 };
 
@@ -63,7 +66,7 @@ export const getOptimizedImageUrl = (path, size = IMAGE_SIZES.MEDIUM, fallback =
     return cached.url;
   }
   
-  // Always use direct TMDB URLs - CORS will be handled by the img element
+  // Use CORS-safe URL generation
   const url = getDirectImageUrl(path, size);
     
   imageCache.set(cacheKey, {

@@ -1,5 +1,4 @@
-import * as React from 'react';
-import { useState, useRef, useEffect, useCallback, Suspense, lazy, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useCallback, Suspense, lazy, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import { getMovieDetails, getMovieCredits, getMovieVideos, getSimilarMovies, getTVSeason, getTVSeasons } from '../services/tmdbService';
@@ -13,6 +12,7 @@ import { getOptimizedImageUrl } from '../services/imageOptimizationService';
 import memoryOptimizationService from '../utils/memoryOptimizationService';
 import movieDetailsMemoryOptimizer from '../utils/movieDetailsMemoryOptimizer';
 import EnhancedLoadMoreButton from './enhanced/EnhancedLoadMoreButton';
+import { handleYouTubeError } from '../utils/youtubeErrorHandler';
 
 // Custom Modern Minimalist Dropdown Component
 const CustomDropdown = React.memo(({ 
@@ -98,10 +98,10 @@ const CustomDropdown = React.memo(({
 
 // 🚀 NEW: Advanced caching and real-time updates with memory leak prevention
 const DETAILS_CACHE = new Map();
-const CACHE_DURATION = 5 * 60 * 1000; // Increased from 3 to 5 minutes for better performance
-const BACKGROUND_REFRESH_INTERVAL = 5 * 60 * 1000; // Increased from 3 to 5 minutes
-const REAL_TIME_UPDATE_INTERVAL = 60 * 1000; // Increased from 45 to 60 seconds
-const MAX_CACHE_SIZE = 25; // Increased from 20 to 25 for better caching
+const CACHE_DURATION = 3 * 60 * 1000; // Reduced from 5 to 3 minutes
+const BACKGROUND_REFRESH_INTERVAL = 3 * 60 * 1000; // Increased from 2 to 3 minutes
+const REAL_TIME_UPDATE_INTERVAL = 45 * 1000; // Increased from 30 to 45 seconds
+const MAX_CACHE_SIZE = 20; // Reduced from 30 to 20 to prevent memory bloat
 
 // 🎯 NEW: Cache management utilities with enhanced memory optimization
 const getCachedDetails = (id, type) => {
@@ -120,23 +120,23 @@ const setCachedDetails = (id, type, data) => {
     timestamp: Date.now()
   });
   
-  // Enhanced cleanup: Less aggressive cache size management
+  // Enhanced cleanup: More aggressive cache size management
   if (DETAILS_CACHE.size > MAX_CACHE_SIZE) {
-    // Remove oldest entries less aggressively
+    // Remove oldest entries more aggressively
     const entries = Array.from(DETAILS_CACHE.entries());
     entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
     
-    // Remove oldest 30% of entries instead of 50%
-    const toRemove = Math.floor(MAX_CACHE_SIZE * 0.3);
+    // Remove oldest 50% of entries instead of 40%
+    const toRemove = Math.floor(MAX_CACHE_SIZE * 0.5);
     for (let i = 0; i < toRemove && i < entries.length; i++) {
       DETAILS_CACHE.delete(entries[i][0]);
     }
   }
   
-  // Clean up old cache entries less frequently
+  // Clean up old cache entries more frequently
   const now = Date.now();
   for (const [cacheKey, value] of DETAILS_CACHE.entries()) {
-    if (now - value.timestamp > CACHE_DURATION * 2) { // Only clear entries older than 2x duration
+    if (now - value.timestamp > CACHE_DURATION) {
       DETAILS_CACHE.delete(cacheKey);
     }
   }
@@ -148,30 +148,31 @@ const clearCache = () => {
   DETAILS_CACHE.clear();
   console.log(`[MovieDetailsOverlay] Cache cleared: ${beforeSize} entries removed`);
   
-  // Only force garbage collection if memory is critically high
-  if (performance.memory && performance.memory.usedJSHeapSize / 1024 / 1024 > 500) {
-    if (window.gc) {
-      window.gc();
-    }
+  // Clear trailer cache
+  const trailerCacheSize = trailerCache.size;
+  trailerCache.clear();
+  console.log(`[MovieDetailsOverlay] Trailer cache cleared: ${trailerCacheSize} entries removed`);
+  
+  // Force garbage collection if available
+  if (window.gc) {
+    window.gc();
   }
   
-  // Clear any additional memory sources only if necessary
-  if (window.movieDetailsCache && performance.memory && performance.memory.usedJSHeapSize / 1024 / 1024 > 400) {
+  // Clear any additional memory sources
+  if (window.movieDetailsCache) {
     delete window.movieDetailsCache;
   }
   
-  // Clear localStorage caches only if memory is high
-  if (performance.memory && performance.memory.usedJSHeapSize / 1024 / 1024 > 450) {
-    try {
-      const keys = Object.keys(localStorage);
-      keys.forEach(key => {
-        if (key.includes('movie') || key.includes('cache') || key.includes('temp')) {
-          localStorage.removeItem(key);
-        }
-      });
-    } catch (error) {
-      console.warn('[MovieDetailsOverlay] Failed to clear localStorage:', error);
-    }
+  // Clear localStorage caches if they're too large
+  try {
+    const keys = Object.keys(localStorage);
+    keys.forEach(key => {
+      if (key.includes('movie') || key.includes('cache') || key.includes('temp')) {
+        localStorage.removeItem(key);
+      }
+    });
+  } catch (error) {
+    console.warn('[MovieDetailsOverlay] Failed to clear localStorage:', error);
   }
 };
 
@@ -186,17 +187,15 @@ const trackPerformance = (operation, duration, success = true) => {
     });
   }
   
-  // Enhanced memory monitoring with less aggressive cleanup
+  // Enhanced memory monitoring with automatic cleanup
   if (performance.memory) {
     const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-    if (memoryMB > 600) { // Increased threshold from 400 to 600
+    if (memoryMB > 400) { // Reduced threshold from 600 to 400
       console.warn(`[MovieDetailsOverlay] High memory usage during ${operation}: ${memoryMB.toFixed(2)}MB`);
-      // Only clear cache if memory is critically high
-      if (memoryMB > 700) {
-        clearCache();
-        if (window.gc) {
-          window.gc();
-        }
+      // Force cleanup if memory is too high
+      clearCache();
+      if (window.gc) {
+        window.gc();
       }
     }
   }
@@ -210,7 +209,7 @@ class RealTimeUpdateManager {
     this.isActive = false;
     this.abortController = null;
     this.lastUpdateTime = 0;
-    this.maxSubscribers = 8; // Increased from 5 to 8 for better functionality
+    this.maxSubscribers = 5; // Reduced from 10 to 5 to prevent memory bloat
     this.updateQueue = []; // Queue for rate limiting updates
     this.memoryCheckInterval = null;
   }
@@ -220,7 +219,7 @@ class RealTimeUpdateManager {
     
     const key = `${type}_${movieId}`;
     
-    // Less aggressive subscriber limit
+    // More aggressive subscriber limit
     if (this.subscribers.size >= this.maxSubscribers) {
       console.warn('[RealTimeUpdateManager] Too many subscribers, removing oldest');
       const firstKey = this.subscribers.keys().next().value;
@@ -259,16 +258,16 @@ class RealTimeUpdateManager {
       this.performUpdates();
     }, REAL_TIME_UPDATE_INTERVAL);
     
-    // Add memory monitoring with less frequent checks
+    // Add memory monitoring
     this.memoryCheckInterval = setInterval(() => {
       if (performance.memory) {
         const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-        if (memoryMB > 500) { // Increased threshold from 350 to 500
+        if (memoryMB > 350) { // Lower threshold for real-time updates
           console.warn(`[RealTimeUpdateManager] High memory usage: ${memoryMB.toFixed(2)}MB, reducing update frequency`);
           this.cleanup();
         }
       }
-    }, 30000); // Check every 30 seconds instead of 10
+    }, 10000); // Check every 10 seconds
   }
 
   stopUpdates() {
@@ -300,13 +299,13 @@ class RealTimeUpdateManager {
     
     // Enhanced rate limiting: don't update too frequently
     const now = Date.now();
-    if (now - this.lastUpdateTime < 3000) return; // Increased from 2 seconds to 3 seconds
+    if (now - this.lastUpdateTime < 2000) return; // Increased from 1 second to 2 seconds
     this.lastUpdateTime = now;
     
     // Memory check before performing updates
     if (performance.memory) {
       const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-      if (memoryMB > 600) { // Increased threshold from 400 to 600
+      if (memoryMB > 400) { // Reduced threshold from 800 to 400
         console.warn(`[RealTimeUpdateManager] High memory usage: ${memoryMB.toFixed(2)}MB, skipping updates`);
         return;
       }
@@ -314,7 +313,7 @@ class RealTimeUpdateManager {
     
     // Process updates in batches to prevent overwhelming the system
     const updatePromises = [];
-    const batchSize = 4; // Increased from 3 to 4 for better performance
+    const batchSize = 3; // Process only 3 updates at a time
     
     for (const [key, callback] of this.subscribers.entries()) {
       if (this.abortController?.signal.aborted) break;
@@ -334,7 +333,7 @@ class RealTimeUpdateManager {
         
         // Add delay between updates to prevent overwhelming the API
         if (updatePromises.length % batchSize === 0) {
-          await new Promise(resolve => setTimeout(resolve, 150)); // Increased delay from 100 to 150ms
+          await new Promise(resolve => setTimeout(resolve, 100));
         }
       } catch (error) {
         if (!this.abortController?.signal.aborted) {
@@ -407,8 +406,65 @@ const NetworkDisplay = ({ networks, network }) => {
 
 
 
-// Lazy load YouTube player for trailer modal
-const LazyYouTube = lazy(() => import('react-youtube'));
+// Lazy load YouTube player for trailer modal with preloading
+const LazyYouTube = lazy(() => import('react-youtube'), {
+  suspense: true
+});
+
+// Preload YouTube player component for faster trailer loading
+const preloadYouTubePlayer = () => {
+  import('react-youtube').catch(() => {
+    // Silently handle preload failure
+  });
+};
+
+// Enhanced trailer caching
+const trailerCache = new Map();
+const TRAILER_CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
+
+const getCachedTrailer = (movieId, movieType) => {
+  const key = `${movieType}_${movieId}`;
+  const cached = trailerCache.get(key);
+  if (cached && Date.now() - cached.timestamp < TRAILER_CACHE_DURATION) {
+    return cached.trailer;
+  }
+  return null;
+};
+
+const setCachedTrailer = (movieId, movieType, trailer) => {
+  const key = `${movieType}_${movieId}`;
+  trailerCache.set(key, {
+    trailer,
+    timestamp: Date.now()
+  });
+};
+
+// Preload trailer data when movie details are fetched
+const preloadTrailerData = async (movieId, movieType) => {
+  try {
+    const cachedTrailer = getCachedTrailer(movieId, movieType);
+    if (cachedTrailer) {
+      return cachedTrailer;
+    }
+
+    // Fetch trailer data in background
+    const videos = await getMovieVideos(movieId, movieType);
+    const trailer = videos?.results?.find(video => 
+      video.type === 'Trailer' && video.site === 'YouTube'
+    )?.key;
+    
+    if (trailer) {
+      setCachedTrailer(movieId, movieType, trailer);
+      // Preload YouTube player component
+      preloadYouTubePlayer();
+    }
+    
+    return trailer;
+  } catch (error) {
+    console.warn('Failed to preload trailer:', error);
+    return null;
+  }
+};
 
 // 🚀 Ultra-optimized Cast Card with enhanced image loading and memory management
 const CastCard = React.memo(function CastCard({ person }) {
@@ -462,7 +518,7 @@ const CastCard = React.memo(function CastCard({ person }) {
                 }`}
                 loading="lazy" 
                 decoding="async"
-                fetchPriority="low"
+                fetchpriority="low"
                 style={{ 
                   backfaceVisibility: 'hidden',
                   contain: 'layout style paint'
@@ -493,6 +549,16 @@ const SimilarMovieCard = React.memo(function SimilarMovieCard({ similar, onClick
   const [imageError, setImageError] = useState(false);
   const imageRef = useRef(null);
   
+  // Debug logging
+  useEffect(() => {
+    console.log('SimilarMovieCard Debug:', {
+      similar,
+      poster_path: similar?.poster_path,
+      title: similar?.title || similar?.name,
+      hasImage: !!similar?.poster_path
+    });
+  }, [similar]);
+  
   const displayTitle = similar.title || similar.name || 'Untitled';
   let displayYear = 'N/A';
   if (similar.year) {
@@ -505,19 +571,40 @@ const SimilarMovieCard = React.memo(function SimilarMovieCard({ similar, onClick
 
   // Enhanced image loading with memory optimization
   const handleImageLoad = useCallback(() => {
+    console.log('Similar movie image loaded successfully:', {
+      poster_path: similar?.poster_path,
+      title: displayTitle
+    });
     setImageLoaded(true);
     setImageError(false);
-  }, []);
+  }, [similar?.poster_path, displayTitle]);
 
   const handleImageError = useCallback((e) => {
-    console.warn('Failed to load similar movie poster:', e.target.src);
+    console.warn('Failed to load similar movie poster:', {
+      src: e.target.src,
+      poster_path: similar?.poster_path,
+      title: displayTitle
+    });
+    
+    // Try fallback URL if this was a CORS error and we haven't tried the fallback yet
+    if (e.target && similar?.poster_path && !e.target.dataset.fallbackTried) {
+      e.target.dataset.fallbackTried = 'true';
+      const fallbackUrl = `https://image.tmdb.org/t/p/w500${similar.poster_path}`;
+      console.log('Trying fallback URL:', fallbackUrl);
+      e.target.crossOrigin = null; // Remove crossOrigin for fallback
+      e.target.src = fallbackUrl;
+      return;
+    }
+    
+    // If fallback also failed or no fallback available, show error state
     setImageError(true);
     setImageLoaded(false);
+    
     // Clear the src to prevent memory leaks
     if (e.target) {
       e.target.src = '';
     }
-  }, []);
+  }, [similar?.poster_path, displayTitle]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -552,9 +639,17 @@ const SimilarMovieCard = React.memo(function SimilarMovieCard({ similar, onClick
               }} 
               loading="lazy"
               decoding="async"
-              fetchPriority="low"
+              fetchpriority="low"
+              crossOrigin="anonymous"
               onLoad={handleImageLoad}
               onError={handleImageError}
+              onLoadStart={() => {
+                console.log('Similar movie image loading started:', {
+                  src: getOptimizedImageUrl(similar.poster_path, 'w500'),
+                  poster_path: similar.poster_path,
+                  title: displayTitle
+                });
+              }}
             />
           </>
         ) : (
@@ -670,25 +765,6 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   const handleShowMoreSimilar = useCallback(() => setSimilarLimit(lim => lim + 20), []);
   // Add state to control how many rows of cast are shown
   const [castRowsShown, setCastRowsShown] = useState(1);
-
-  // 🚀 NEW: Smooth close state and handler
-  const [isClosing, setIsClosing] = useState(false);
-  
-  const handleSmoothClose = useCallback(() => {
-    if (isClosing) return; // Prevent multiple close attempts
-    
-    setIsClosing(true);
-    
-    // Add a small delay to allow the exit animation to complete
-    setTimeout(() => {
-      onClose();
-    }, 300); // Match the exit animation duration
-  }, [onClose, isClosing]);
-  
-  // Reset closing state when movie changes
-  useEffect(() => {
-    setIsClosing(false);
-  }, [movie?.id]);
 
   // Enhanced motion variants with ultra-smooth spring physics and optimized performance
   const containerVariants = useMemo(() => ({
@@ -985,9 +1061,13 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     
     // Cleanup function to remove style when component unmounts
     return () => {
-      const existingStyle = document.getElementById('movie-details-overlay-scrollbar-style');
-      if (existingStyle && existingStyle.parentNode) {
-        existingStyle.parentNode.removeChild(existingStyle);
+      try {
+        const existingStyle = document.getElementById('movie-details-overlay-scrollbar-style');
+        if (existingStyle && existingStyle.parentNode && existingStyle.parentNode.contains(existingStyle)) {
+          existingStyle.parentNode.removeChild(existingStyle);
+        }
+      } catch (error) {
+        console.warn('[MovieDetailsOverlay] Failed to remove scrollbar style:', error);
       }
     };
   }, []);
@@ -1393,15 +1473,15 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   // Memoize click outside and escape handlers
   const handleClickOutside = useCallback((event) => {
     if (overlayRef.current && !contentRef.current?.contains(event.target)) {
-      handleSmoothClose();
+      onClose();
     }
-  }, [handleSmoothClose]);
+  }, [onClose]);
 
   const handleEscape = useCallback((event) => {
     if (event.key === 'Escape') {
-      handleSmoothClose();
+      onClose();
     }
-  }, [handleSmoothClose]);
+  }, [onClose]);
 
   useEffect(() => {
     const clickOutsideHandler = handleClickOutside;
@@ -1498,6 +1578,21 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
 
       const [movieDetails, movieCredits, movieVideos, similar] = await Promise.allSettled(apiPromises);
 
+      // Preload trailer data and YouTube player component in background
+      if (movieDetails.status === 'fulfilled' && movieDetails.value) {
+        // Start preloading trailer data immediately
+        preloadTrailerData(movie.id, movieType).then(trailer => {
+          if (trailer && movieDetails.value) {
+            // Update movie details with trailer if not already present
+            if (!movieDetails.value.trailer) {
+              setMovieDetails(prev => prev ? { ...prev, trailer } : prev);
+            }
+          }
+        }).catch(() => {
+          // Silently handle preload failure
+        });
+      }
+
       // Clear timeout immediately after API calls complete
       if (timeoutId) {
         clearTimeout(timeoutId);
@@ -1518,10 +1613,27 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       // 🎯 Enhanced caching with memory monitoring
       setCachedDetails(movie.id, movieType, details);
       
+      // Extract and cache trailer data immediately if available
+      const trailer = videos?.results?.find(video => 
+        video.type === 'Trailer' && video.site === 'YouTube'
+      )?.key;
+      
+      if (trailer) {
+        setCachedTrailer(movie.id, movieType, trailer);
+        // Preload YouTube player component when trailer is found
+        preloadYouTubePlayer();
+      }
+      
       // Set data with fallbacks for failed requests and memory optimization
-      setMovieDetails(details);
+      setMovieDetails(trailer ? { ...details, trailer } : details);
       setCredits(credits || { cast: [], crew: [] });
       setVideos(videos || { results: [] });
+      console.log('Similar movies data received:', {
+        similarData,
+        results: similarData?.results,
+        count: similarData?.results?.length || 0,
+        hasPosterPaths: similarData?.results?.some(m => m.poster_path) || false
+      });
       setSimilarMovies(similarData?.results || []);
       setHasMoreSimilar(similarData ? (similarData.page < similarData.total_pages) : false);
       
@@ -1609,7 +1721,10 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     // Register cache cleanup with memory manager
     const unregisterCleanup = memoryOptimizationService.registerCleanupCallback(() => {
       clearCache();
-    });
+    }, 'MovieDetailsOverlay');
+
+    // Preload YouTube player component when component mounts
+    preloadYouTubePlayer();
 
     // Prevent unnecessary fetches with comprehensive validation
     if (!movie?.id || loading) {
@@ -1954,19 +2069,19 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     // Clear cache if memory usage is high
     if (performance.memory) {
       const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-      if (memoryMB > 500) { // Increased threshold from 300 to 500 for less aggressive cleanup
+      if (memoryMB > 300) { // Reduced threshold from 500 to 300 for more aggressive cleanup
         console.warn(`[MovieDetailsOverlay] High memory usage during cleanup: ${memoryMB.toFixed(2)}MB`);
         clearCache();
       }
     }
     
-         // Force garbage collection if available and memory is critically high
-     if (window.gc && performance.memory && performance.memory.usedJSHeapSize / 1024 / 1024 > 600) {
+         // Force garbage collection if available
+     if (window.gc) {
        window.gc();
      }
      
-     // Clear any image caches only if memory is high
-     if ('caches' in window && performance.memory && performance.memory.usedJSHeapSize / 1024 / 1024 > 550) {
+     // Clear any image caches
+     if ('caches' in window) {
        caches.keys().then(cacheNames => {
          cacheNames.forEach(cacheName => {
            if (cacheName.includes('image') || cacheName.includes('movie')) {
@@ -1978,11 +2093,11 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         
         // Clear any remaining references with enhanced cleanup
         if (typeof window !== 'undefined') {
-          // Clear any global references that might be holding onto data only if memory is high
-          if (window.movieDetailsCache && performance.memory && performance.memory.usedJSHeapSize / 1024 / 1024 > 450) {
+          // Clear any global references that might be holding onto data
+          if (window.movieDetailsCache) {
             delete window.movieDetailsCache;
           }
-          if (window.movieDetailsOverlayRefs && performance.memory && performance.memory.usedJSHeapSize / 1024 / 1024 > 450) {
+          if (window.movieDetailsOverlayRefs) {
             delete window.movieDetailsOverlayRefs;
           }
         }
@@ -2047,12 +2162,16 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
 
     // Enhanced cleanup with comprehensive state restoration
     return () => {
-      // Restore all original styles
-      Object.entries(originalStyles).forEach(([property, value]) => {
-        if (document.body.style[property] !== undefined) {
-          document.body.style[property] = value;
-        }
-      });
+      try {
+        // Restore all original styles
+        Object.entries(originalStyles).forEach(([property, value]) => {
+          if (document.body && document.body.style && document.body.style[property] !== undefined) {
+            document.body.style[property] = value;
+          }
+        });
+      } catch (error) {
+        console.warn('[MovieDetailsOverlay] Failed to restore body styles:', error);
+      }
     };
   }, []); // Empty dependency array ensures this runs only on mount/unmount
 
@@ -2060,6 +2179,20 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   const handleTrailerClick = useCallback(() => {
     setIsTrailerLoading(true);
     setShowTrailer(true);
+
+    // Preload YouTube player component immediately when trailer is clicked
+    preloadYouTubePlayer();
+
+    // Check for cached trailer data first
+    if (movie?.id) {
+      const movieType = movie.media_type || movie.type || 'movie';
+      const cachedTrailer = getCachedTrailer(movie.id, movieType);
+      
+      if (cachedTrailer && movieDetails && !movieDetails.trailer) {
+        // Update movie details with cached trailer
+        setMovieDetails(prev => prev ? { ...prev, trailer: cachedTrailer } : prev);
+      }
+    }
 
     // Accessibility: Move focus to trailer player after opening
     setTimeout(() => {
@@ -2076,7 +2209,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         value: movie?.id,
       });
     }
-  }, [movie, playerRef]);
+  }, [movie, playerRef, movieDetails]);
 
   const handleCloseTrailer = useCallback((e) => {
     console.log('handleCloseTrailer called', { showTrailer }); // Debug log
@@ -2091,19 +2224,32 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
 
     // Pause and reset trailer video if possible
     if (playerRef.current) {
-      if (typeof playerRef.current.pauseVideo === "function") {
-        playerRef.current.pauseVideo();
-      }
-      // Optionally reset to start
-      if (typeof playerRef.current.seekTo === "function") {
-        playerRef.current.seekTo(0);
+      try {
+        if (typeof playerRef.current.pauseVideo === "function") {
+          playerRef.current.pauseVideo();
+        }
+        // Optionally reset to start
+        if (typeof playerRef.current.seekTo === "function") {
+          playerRef.current.seekTo(0);
+        }
+      } catch (error) {
+        // Handle AbortError silently - this is expected when component unmounts
+        if (error.name !== 'AbortError') {
+          console.warn('[MovieDetailsOverlay] Error pausing video:', error);
+        }
       }
     }
 
     // Accessibility: Return focus to trailer button
     setTimeout(() => {
-      const trailerBtn = document.querySelector('[data-trailer-button]');
-      if (trailerBtn) trailerBtn.focus();
+      try {
+        const trailerBtn = document.querySelector('[data-trailer-button]');
+        if (trailerBtn && typeof trailerBtn.focus === 'function') {
+          trailerBtn.focus();
+        }
+      } catch (error) {
+        console.warn('[MovieDetailsOverlay] Failed to focus trailer button:', error);
+      }
     }, 200);
 
     // Analytics: Log trailer close event
@@ -2129,6 +2275,28 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [showTrailer, handleCloseTrailer]);
+
+  // Cleanup YouTube player on unmount
+  useEffect(() => {
+    return () => {
+      if (playerRef.current) {
+        try {
+          if (typeof playerRef.current.pauseVideo === "function") {
+            playerRef.current.pauseVideo();
+          }
+          if (typeof playerRef.current.destroy === "function") {
+            playerRef.current.destroy();
+          }
+        } catch (error) {
+          // Handle AbortError silently - this is expected when component unmounts
+          if (error.name !== 'AbortError') {
+            console.warn('[MovieDetailsOverlay] Error cleaning up YouTube player:', error);
+          }
+        }
+        playerRef.current = null;
+      }
+    };
+  }, []);
 
   // Streaming handlers
   const handleStreamingClick = useCallback(() => {
@@ -2805,7 +2973,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     // Memory check before setting up background refresh
     if (performance.memory) {
       const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-      if (memoryMB > 600) { // Increased threshold from 400 to 600
+      if (memoryMB > 400) { // Reduced threshold from 600 to 400
         console.warn(`[BackgroundRefresh] High memory usage: ${memoryMB.toFixed(2)}MB, skipping background refresh`);
         return;
       }
@@ -2817,7 +2985,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       // Check memory again before executing refresh
       if (performance.memory) {
         const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-        if (memoryMB > 700) { // Increased threshold from 500 to 700
+        if (memoryMB > 500) { // Reduced threshold from 700 to 500
           console.warn(`[BackgroundRefresh] High memory usage before refresh: ${memoryMB.toFixed(2)}MB, clearing cache`);
           clearCache();
         }
@@ -2841,14 +3009,12 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     if (movie?.id) {
       // Register with specialized memory optimizer
       unregisterCleanup = movieDetailsMemoryOptimizer.registerCleanupCallback(() => {
-        // Component-specific cleanup - only if memory is critically high
-        if (performance.memory && performance.memory.usedJSHeapSize / 1024 / 1024 > 600) {
-          clearCache();
-          if (window.gc) {
-            window.gc();
-          }
+        // Component-specific cleanup
+        clearCache();
+        if (window.gc) {
+          window.gc();
         }
-      });
+      }, 'MovieDetailsOverlay');
       
       // Start monitoring if not already started
       movieDetailsMemoryOptimizer.start();
@@ -2956,7 +3122,6 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       isNewContainer = true;
 
       if (process.env.NODE_ENV === "development") {
-         
         console.debug('[MovieDetailsOverlay] Portal container created');
       }
     } else {
@@ -2980,17 +3145,33 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       // Only remove if this instance created the container
       if (isNewContainer && container && container.parentNode) {
         try {
-          // Remove all child nodes first to prevent memory leaks
-          while (container.firstChild) {
-            container.removeChild(container.firstChild);
-          }
-          container.parentNode.removeChild(container);
-          if (process.env.NODE_ENV === "development") {
-             
-            console.debug('[MovieDetailsOverlay] Portal container removed');
+          // Check if container is still in the DOM before removing
+          if (container.parentNode.contains(container)) {
+            // Safely remove all child nodes first to prevent memory leaks
+            while (container.firstChild) {
+              try {
+                container.removeChild(container.firstChild);
+              } catch (childError) {
+                // If child removal fails, break to prevent infinite loop
+                console.warn('[MovieDetailsOverlay] Failed to remove child node:', childError);
+                break;
+              }
+            }
+            
+            // Safely remove the container
+            try {
+              if (container.parentNode && container.parentNode.contains(container)) {
+                container.parentNode.removeChild(container);
+                if (process.env.NODE_ENV === "development") {
+                  console.debug('[MovieDetailsOverlay] Portal container removed');
+                }
+              }
+            } catch (removeError) {
+              console.warn('[MovieDetailsOverlay] Failed to remove portal container:', removeError);
+            }
           }
         } catch (error) {
-          console.warn('[MovieDetailsOverlay] Failed to remove portal container:', error);
+          console.warn('[MovieDetailsOverlay] Failed to cleanup portal container:', error);
         }
       }
       // Clear portal container reference to prevent memory leaks
@@ -3010,7 +3191,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       <motion.div
         className="fixed inset-0 bg-black/85 flex items-center justify-center z-[999999999] p-2 sm:p-4 contain-paint transition-none sm:mt-0"
         initial={{ opacity: 0 }}
-        animate={{ opacity: isClosing ? 0 : 1 }}
+        animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ 
           duration: 0.3, 
@@ -3025,11 +3206,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
           ref={contentRef}
           className="relative w-full max-w-6xl h-auto max-h-[calc(100vh-1rem)] z-[1000000000] sm:max-h-[95vh] bg-gradient-to-br from-[#1a1d24] to-[#121417] rounded-2xl shadow-2xl overflow-hidden flex flex-col pointer-events-auto overflow-y-auto mt-2 sm:mt-6"
           initial={{ opacity: 0, y: 20 }}
-          animate={{ 
-            opacity: isClosing ? 0 : 1, 
-            y: isClosing ? 20 : 0,
-            scale: isClosing ? 0.95 : 1
-          }}
+          animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 20 }}
           transition={{ 
             duration: 0.3, 
@@ -3054,9 +3231,8 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                 Retry
               </button>
               <button
-                onClick={handleSmoothClose}
+                onClick={onClose}
                 className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg transition-colors"
-                disabled={isClosing}
               >
                 Close
               </button>
@@ -3090,7 +3266,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                         className="w-full h-full object-cover"
                         loading="eager"
                         decoding="async"
-                        fetchPriority="high"
+                        fetchpriority="high"
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         transition={{ duration: 0.4 }}
@@ -3138,7 +3314,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                             className="w-full h-full object-cover"
                             loading="eager"
                             decoding="async"
-                            fetchPriority="high"
+                            fetchpriority="high"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             transition={{ duration: 0.3 }}
@@ -3323,13 +3499,6 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                             whileHover="hover"
                             whileTap="tap"
                           >
-                            {/* Animated background effect */}
-                            <motion.div 
-                              className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full"
-                              initial={{ x: '-100%' }}
-                              whileHover={{ x: '100%' }}
-                              transition={{ duration: 0.6, ease: "easeInOut" }}
-                            />
                             
                             {/* Button content */}
                             <div className="relative flex items-center gap-2 min-w-0">
@@ -4264,44 +4433,22 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
 
 
           <motion.button
-            onClick={handleSmoothClose}
+            onClick={onClose}
             className="absolute top-4 right-4 z-10 p-2 rounded-full text-white group overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-l-[1px] border-r-[1px] border-white/30 hover:bg-white/10 transform-gpu will-change-transform"
             variants={buttonVariants}
             initial="initial"
             whileHover="hover"
             whileTap="tap"
-            disabled={isClosing}
-            animate={{
-              scale: isClosing ? 0.9 : 1,
-              opacity: isClosing ? 0.7 : 1,
-              backgroundColor: isClosing ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.03)'
-            }}
-            transition={{
-              type: 'spring',
-              stiffness: 400,
-              damping: 25,
-              duration: 0.2
-            }}
           >
             <motion.svg 
               xmlns="http://www.w3.org/2000/svg" 
               className="h-6 w-6" 
               viewBox="0 0 24 24" 
               fill="currentColor"
-              animate={{ 
-                rotate: isClosing ? 90 : 0,
-                scale: isClosing ? 1.1 : 1
-              }}
               whileHover={{ 
                 rotate: 90,
                 scale: 1.1,
                 transition: { type: 'spring', stiffness: 400, damping: 25 }
-              }}
-              transition={{ 
-                type: 'spring', 
-                stiffness: 400, 
-                damping: 25,
-                duration: 0.2
               }}
             >
               <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
@@ -4390,43 +4537,60 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                     )}
                     {movieDetails.trailer ? (
                       <div className="w-full h-full" style={{ pointerEvents: 'auto' }}>
-                        <LazyYouTube
-                          videoId={movieDetails.trailer}
-                          opts={{
-                            width: '100%',
-                            height: '100%',
-                            playerVars: {
-                              autoplay: 1,
-                              controls: 1,
-                              modestbranding: 1,
-                              rel: 0,
-                              showinfo: 0,
-                              iv_load_policy: 3,
-                              origin: window.location.origin,
-                              enablejsapi: 1,
-                              widget_referrer: window.location.origin,
-                            },
-                          }}
-                          onReady={(event) => {
-                            playerRef.current = event.target;
-                            setIsTrailerLoading(false);
-                            console.log('YouTube player ready');
-                          }}
-                          onError={(error) => {
-                            console.warn('YouTube player error:', error);
-                            setIsTrailerLoading(false);
-                          }}
-                          onStateChange={(event) => {
-                            // Handle player state changes
-                            console.log('YouTube player state changed:', event.data);
-                          }}
-                          className="w-full h-full"
-                          style={{ 
-                            pointerEvents: 'auto',
-                            position: 'relative',
-                            zIndex: 1
-                          }}
-                        />
+                        <Suspense fallback={
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-10">
+                            <Loader size="large" color="white" variant="circular" />
+                          </div>
+                        }>
+                          <LazyYouTube
+                            videoId={movieDetails.trailer}
+                            opts={{
+                              width: '100%',
+                              height: '100%',
+                              playerVars: {
+                                autoplay: 0, // Changed from 1 to 0 to prevent autoplay issues
+                                controls: 1,
+                                modestbranding: 1,
+                                rel: 0,
+                                showinfo: 0,
+                                iv_load_policy: 3,
+                                origin: window.location.origin,
+                                enablejsapi: 1,
+                                widget_referrer: window.location.origin,
+                                // Optimize for faster loading
+                                preload: 'metadata',
+                                playsinline: 1,
+                              },
+                            }}
+                            onReady={(event) => {
+                              playerRef.current = event.target;
+                              setIsTrailerLoading(false);
+                              if (import.meta.env.DEV) {
+                                console.log('YouTube player ready');
+                              }
+                            }}
+                            onError={(error) => {
+                              // Use the YouTube error handler utility
+                              const wasHandled = handleYouTubeError(error, import.meta.env.DEV);
+                              if (!wasHandled) {
+                                console.warn('YouTube player error:', error);
+                              }
+                              setIsTrailerLoading(false);
+                            }}
+                            onStateChange={(event) => {
+                              // Handle player state changes (only log in development)
+                              if (import.meta.env.DEV && event.data !== -1) {
+                                console.log('YouTube player state changed:', event.data);
+                              }
+                            }}
+                            className="w-full h-full"
+                            style={{ 
+                              pointerEvents: 'auto',
+                              position: 'relative',
+                              zIndex: 1
+                            }}
+                          />
+                        </Suspense>
                         {/* Fallback link in case iframe is blocked */}
                         <div className="absolute bottom-4 left-4 opacity-0 hover:opacity-100 transition-opacity">
                           <a 
