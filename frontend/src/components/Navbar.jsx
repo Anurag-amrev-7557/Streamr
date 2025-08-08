@@ -595,6 +595,7 @@ const Navbar = ({ onMovieSelect }) => {
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
+  const [isMobileSearchActive, setIsMobileSearchActive] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [searchHistory, setSearchHistory] = useState(() => {
     const saved = localStorage.getItem('searchHistory');
@@ -1497,7 +1498,10 @@ const Navbar = ({ onMovieSelect }) => {
 
   // Clear search history
   const clearHistory = useCallback((e) => {
-    e.stopPropagation();
+    // Handle case where no event is passed (programmatic call)
+    if (e && typeof e.stopPropagation === 'function') {
+      e.stopPropagation();
+    }
     setSearchHistory([]);
   }, []);
 
@@ -2641,7 +2645,7 @@ const Navbar = ({ onMovieSelect }) => {
                     <div className="flex items-center justify-between mb-3">
                       <h4 className="text-white/90 font-medium">Recent Searches</h4>
                       <button
-                        onClick={clearHistory}
+                        onClick={(e) => clearHistory(e)}
                         className="text-white/50 hover:text-white/70 text-xs transition-colors"
                       >
                         Clear
@@ -3354,6 +3358,8 @@ const Navbar = ({ onMovieSelect }) => {
               // Only close search when clicking on the overlay background, not on search content
               if (e.target === e.currentTarget) {
                 setIsMobileSearchOpen(false);
+                setIsMobileSearchActive(false);
+                setShowResults(false);
               }
             }}
           >
@@ -3429,6 +3435,23 @@ const Navbar = ({ onMovieSelect }) => {
                       onFocus={() => {
                         setIsSearchFocused(true);
                         setShowResults(true);
+                        setIsMobileSearchActive(true);
+                      }}
+                      onBlur={(e) => {
+                        // For mobile search, keep results visible even on blur
+                        if (isMobileSearchOpen) {
+                          setIsSearchFocused(false);
+                          // Keep results visible in mobile search
+                          setShowResults(true);
+                        } else {
+                          // For desktop search, hide results on blur
+                          setTimeout(() => {
+                            if (!e.relatedTarget || !e.relatedTarget.closest('.search-results-container')) {
+                              setIsSearchFocused(false);
+                              setShowResults(false);
+                            }
+                          }, 100);
+                        }
                       }}
                       className="w-full bg-white/10 border border-white/30 rounded-xl px-4 py-3 pr-12 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-white/40 transition-all duration-300 search-input"
                       data-search-element="true"
@@ -3448,20 +3471,25 @@ const Navbar = ({ onMovieSelect }) => {
                         <motion.div
                           onClick={(e) => {
                             e.preventDefault();
-                    e.stopPropagation();
-                    setSearchQuery('');
+                            e.stopPropagation();
+                            setSearchQuery('');
                             // Ensure input stays focused
                             if (inputRef.current) {
                               inputRef.current.focus();
                             }
                           }}
                           onMouseDown={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
+                            if (e && typeof e.preventDefault === 'function') {
+                              e.preventDefault();
+                            }
+                            if (e && typeof e.stopPropagation === 'function') {
+                              e.stopPropagation();
+                            }
                           }}
                           onTouchStart={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
+                            if (e && typeof e.stopPropagation === 'function') {
+                              e.stopPropagation();
+                            }
                           }}
                           className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center hover:bg-white/30 transition-colors duration-200 cursor-pointer select-none search-clear-button"
                           data-search-element="true"
@@ -3478,21 +3506,21 @@ const Navbar = ({ onMovieSelect }) => {
                   </motion.div>
                   
                   {/* Search Results */}
-                  <AnimatePresence mode="wait">
-                    {showResults && (
+                  <AnimatePresence mode="sync">
+                    {(showResults || isMobileSearchActive) && (
                       <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
                         transition={{ 
                           duration: 0.2,
                           ease: "easeInOut"
                         }}
                         className="mt-4 search-results-container"
                         data-search-element="true"
-              >
+                      >
                         {/* Search History */}
-                {!searchQuery && searchHistory.length > 0 && (
+                        {!searchQuery && searchHistory.length > 0 && (
                           <motion.div
                             initial={{ opacity: 0, y: 3 }}
                             animate={{ opacity: 1, y: 0 }}
@@ -3503,38 +3531,60 @@ const Navbar = ({ onMovieSelect }) => {
                             }}
                             className="mb-4 search-history"
                             data-search-element="true"
-                          >
-                    <div 
-                      className="flex items-center justify-between mb-3"
-                    >
-                              <h4 className="text-white/90 font-medium text-sm">Recent Searches</h4>
-                      <button
-                        onClick={(e) => {
-                          if (e) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                          }
-                          clearHistory();
-                        }}
-                                className="text-white/50 hover:text-white/70 text-xs transition-colors search-clear-history"
-                                data-search-element="true"
-                      >
-                                Clear
-                      </button>
-                    </div>
-                    <div 
-                      className="flex flex-wrap gap-2"
-                    >
-                      {searchHistory.map((query, index) => (
-                                <motion.button
-                          key={index}
-                                                      onClick={(e) => {
-                              if (e) {
-                                e.preventDefault();
+                            onClick={(e) => {
+                              // Prevent closing when clicking inside search history
+                              if (e && typeof e.stopPropagation === 'function') {
                                 e.stopPropagation();
                               }
-                              handleHistoryItemClick(query);
                             }}
+                          >
+                            <div className="flex items-center justify-between mb-3">
+                              <h4 className="text-white/90 font-medium text-sm">Recent Searches</h4>
+                              <button
+                                onClick={(e) => {
+                                  if (e) {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                  }
+                                  clearHistory(e);
+                                }}
+                                onMouseDown={(e) => {
+                                  if (e && typeof e.stopPropagation === 'function') {
+                                    e.stopPropagation();
+                                  }
+                                }}
+                                onTouchStart={(e) => {
+                                  if (e && typeof e.stopPropagation === 'function') {
+                                    e.stopPropagation();
+                                  }
+                                }}
+                                className="text-white/50 hover:text-white/70 text-xs transition-colors search-clear-history"
+                                data-search-element="true"
+                              >
+                                Clear
+                              </button>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {searchHistory.map((query, index) => (
+                                <motion.button
+                                  key={index}
+                                  onClick={(e) => {
+                                    if (e) {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                    }
+                                    handleHistoryItemClick(query);
+                                  }}
+                                  onMouseDown={(e) => {
+                                    if (e && typeof e.stopPropagation === 'function') {
+                                      e.stopPropagation();
+                                    }
+                                  }}
+                                  onTouchStart={(e) => {
+                                    if (e && typeof e.stopPropagation === 'function') {
+                                      e.stopPropagation();
+                                    }
+                                  }}
                                   className="px-3 py-1.5 bg-white/15 hover:bg-white/25 rounded-full text-white/80 hover:text-white text-xs transition-colors flex items-center gap-2 border border-white/20 search-history-item"
                                   data-search-element="true"
                                   initial={{ opacity: 0, scale: 0.95 }}
@@ -3546,16 +3596,16 @@ const Navbar = ({ onMovieSelect }) => {
                                   }}
                                   whileHover={{ scale: 1.01 }}
                                   whileTap={{ scale: 0.99 }}
-                        >
+                                >
                                   <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                          </svg>
-                          {query}
+                                    <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                  </svg>
+                                  {query}
                                 </motion.button>
-                      ))}
-                    </div>
+                              ))}
+                            </div>
                           </motion.div>
-                )}
+                        )}
 
                         {/* Initial State - When mobile search is focused but empty */}
                         {!searchQuery && searchHistory.length === 0 && (
@@ -3568,6 +3618,12 @@ const Navbar = ({ onMovieSelect }) => {
                               ease: "easeOut"
                             }}
                             className="text-center py-8"
+                            onClick={(e) => {
+                              // Prevent closing when clicking inside initial state
+                              if (e && typeof e.stopPropagation === 'function') {
+                                e.stopPropagation();
+                              }
+                            }}
                           >
                             <motion.svg 
                               width="48" height="48" fill="none" viewBox="0 0 48 48" className="mx-auto mb-4"
@@ -3609,6 +3665,12 @@ const Navbar = ({ onMovieSelect }) => {
                               ease: "easeOut"
                             }}
                             className="flex justify-center items-center py-8"
+                            onClick={(e) => {
+                              // Prevent closing when clicking inside loading state
+                              if (e && typeof e.stopPropagation === 'function') {
+                                e.stopPropagation();
+                              }
+                            }}
                           >
                             <div className="w-8 h-8 border-4 border-white/20 border-t-white rounded-full animate-spin"></div>
                           </motion.div>
@@ -3626,12 +3688,19 @@ const Navbar = ({ onMovieSelect }) => {
                             }}
                             className="max-h-96 overflow-y-auto search-results-list"
                             data-search-element="true"
+                            onClick={(e) => {
+                              // Prevent closing when clicking inside search results
+                              if (e && typeof e.stopPropagation === 'function') {
+                                e.stopPropagation();
+                              }
+                            }}
                           >
                             {searchResults.length > 0 ? (
-                              <div className="space-y-2">
-                      {searchResults.map((movie, index) => (
+                              <div className="divide-y divide-white/10" role="listbox">
+                                {searchResults.map((movie, index) => (
                                   <motion.button
-                          key={movie.id}
+                                    key={movie.id}
+                                    data-index={index}
                                     onClick={(e) => {
                                       if (e) {
                                         e.preventDefault();
@@ -3639,55 +3708,196 @@ const Navbar = ({ onMovieSelect }) => {
                                       }
                                       handleMovieSelect(movie);
                                       setIsMobileSearchOpen(false);
+                                      setIsMobileSearchActive(false);
+                                      setShowResults(false);
                                     }}
-                                    className="w-full p-3 flex items-center gap-3 transition-all duration-200 group hover:bg-white/8 rounded-xl search-result-item"
-                                    data-search-element="true"
-                                    initial={{ opacity: 0, y: 5, scale: 0.99 }}
-                                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                                    exit={{ opacity: 0, y: 5, scale: 0.99 }}
-                                    transition={{ 
-                                      duration: 0.2, 
-                                      delay: index * 0.015,
-                                      ease: "easeOut"
+                                    onMouseDown={(e) => {
+                                      // Prevent any mouse events from bubbling
+                                      if (e && typeof e.stopPropagation === 'function') {
+                                        e.stopPropagation();
+                                      }
                                     }}
-                                    whileHover={{ scale: 1.005, y: -0.5 }}
-                                    whileTap={{ scale: 0.995 }}
-                        >
-                                    <div className="w-20 h-28 flex-shrink-0 relative overflow-hidden rounded-xl bg-white/8 border border-white/15 shadow-lg">
-                            <MovieImage
-                              src={movie.image || movie.poster_path ? `https://image.tmdb.org/t/p/w185${movie.poster_path || movie.image}` : ''}
-                              alt={movie.title}
-                              className="w-full h-full"
-                            />
-                          </div>
-                                    <div className="flex-1 min-w-0 text-left">
-                                      <h3 className="text-white font-medium truncate text-sm">{movie.title}</h3>
-                                      <div className="flex items-center gap-2 mt-1 text-xs text-white/60">
-                                  <span>{movie.year}</span>
-                                  <span>•</span>
-                                  <span>{movie.type === 'tv' ? 'TV Show' : 'Movie'}</span>
-                                        {movie.rating > 0 && (
-                                          <>
+                                    onTouchStart={(e) => {
+                                      // Prevent any touch events from bubbling
+                                      if (e && typeof e.stopPropagation === 'function') {
+                                        e.stopPropagation();
+                                      }
+                                    }}
+                                    initial={{ opacity: 0, y: 16 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: 8 }}
+                                    transition={{ delay: index * 0.025, duration: 0.18, type: 'spring', stiffness: 180, damping: 22 }}
+                                    className={`w-full p-4 flex items-start gap-4 transition-all duration-200 rounded-xl group/item focus:outline-none relative ${
+                                      index === selectedIndex 
+                                        ? 'border-l-4 border-white/40 bg-gradient-to-r from-white/15 to-white/5 shadow-lg shadow-black/30'
+                                        : 'hover:bg-white/8'
+                                    }`}
+                                    tabIndex={0}
+                                    aria-selected={index === selectedIndex}
+                                    role="option"
+                                    style={{
+                                      zIndex: index === selectedIndex ? 2 : 1
+                                    }}
+                                  >
+                                    {/* Selection indicator (for accessibility, visually subtle) */}
+                                    {index === selectedIndex && (
+                                      <motion.div
+                                        className="absolute left-0 top-0 bottom-0 w-1.5 bg-white/80 rounded-r-lg"
+                                        initial={{ scaleY: 0 }}
+                                        animate={{ scaleY: 1 }}
+                                        exit={{ scaleY: 0 }}
+                                        transition={{ duration: 0.18 }}
+                                        style={{ zIndex: 3 }}
+                                      />
+                                    )}
+                                    <div className="w-20 h-28 flex-shrink-0 relative group/image overflow-hidden rounded-xl bg-white/8 border border-white/15 shadow-lg">
+                                      <MovieImage
+                                        src={movie.image || movie.poster_path ? `https://image.tmdb.org/t/p/w185${movie.poster_path || movie.image}` : ''}
+                                        alt={movie.title}
+                                        className="w-full h-full"
+                                      />
+                                    </div>
+                                    <div className="flex-1 min-w-0 relative z-10">
+                                      <div className="flex items-start justify-between gap-4">
+                                        <div className='flex flex-col flex-1 items-start gap-2.5'>
+                                          <h3 className="text-white font-semibold truncate text-base md:text-lg leading-tight">{movie.title}</h3>
+                                          <div className="flex items-center gap-2 text-white/70 text-xs md:text-sm">
+                                            <span>{movie.year}</span>
                                             <span>•</span>
-                                            <span className="text-yellow-400 flex items-center gap-1">
-                                              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                                                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.967a1 1 0 00.95.69h4.178c.969 0 1.371 1.24.588 1.81l-3.385 2.46a1 1 0 00-.364 1.118l1.287 3.966c.3.922-.755 1.688-1.54 1.118l-3.385-2.46a1 1 0 00-1.175 0l-3.385 2.46c-.784.57-1.838-.196-1.54-1.118l1.287-3.966a1 1 0 00-.364-1.118l-3.385-2.46c-.783-.57-.38-1.81.588-1.81h4.178a1 1 0 00.95-.69l1.286-3.967z"/>
+                                            <span>{movie.type === 'tv' ? 'TV Show' : 'Movie'}</span>
+                                            {movie.rating > 0 && (
+                                              <>
+                                                <span>•</span>
+                                                <span className="inline-flex items-center gap-1">
+                                                  <svg className="w-3 h-3 text-yellow-400 inline" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.967a1 1 0 00.95.69h4.178c.969 0 1.371 1.24.588 1.81l-3.385 2.46a1 1 0 00-.364 1.118l1.287 3.966c.3.922-.755 1.688-1.54 1.118l-3.385-2.46a1 1 0 00-1.175 0l-3.385 2.46c-.784.57-1.838-.196-1.54-1.118l1.287-3.966a1 1 0 00-.364-1.118l-3.385-2.46c-.783-.57-.38-1.81.588-1.81h4.178a1 1 0 00.95-.69l1.286-3.967z"/>
+                                                  </svg>
+                                                  {formatRating(movie.rating)}
+                                                </span>
+                                              </>
+                                            )}
+                                          </div>
+                                        </div>
+                                        {/* Action buttons */}
+                                        <div className="flex items-center gap-1.5 opacity-0 group-hover/item:opacity-100 transition-all duration-300 transform translate-x-2 group-hover/item:translate-x-0">
+                                          {/* Minimal Add to Watchlist Button */}
+                                          <motion.div
+                                            onClick={(e) => {
+                                              if (e && typeof e.stopPropagation === 'function') {
+                                                e.stopPropagation();
+                                              }
+                                              if (isInWatchlist(movie.id)) {
+                                                // Remove from watchlist using context
+                                                removeFromWatchlist(movie.id);
+                                              } else {
+                                                // Add to watchlist
+                                                handleAddToWatchlist(e, movie);
+                                              }
+                                            }}
+                                            onMouseDown={(e) => {
+                                              if (e && typeof e.stopPropagation === 'function') {
+                                                e.stopPropagation();
+                                              }
+                                            }}
+                                            onTouchStart={(e) => {
+                                              if (e && typeof e.stopPropagation === 'function') {
+                                                e.stopPropagation();
+                                              }
+                                            }}
+                                            className={`relative w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-200 cursor-pointer group/btn
+                                              ${isInWatchlist(movie.id)
+                                                ? 'bg-white/20 text-white'
+                                                : 'bg-white/10 text-white/70 hover:bg-white/15 hover:text-white'
+                                              }
+                                            `}
+                                            title={isInWatchlist(movie.id) ? 'Remove from watchlist' : 'Add to watchlist'}
+                                            whileHover={{ scale: 1.1 }}
+                                            whileTap={{ scale: 0.95 }}
+                                          >
+                                            {/* Icon */}
+                                            <div className="relative z-10">
+                                              {isInWatchlist(movie.id) ? (
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
+                                                  <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                                                </svg>
+                                              ) : (
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                  <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                                                </svg>
+                                              )}
+                                            </div>
+                                            
+                                            {/* Subtle success indicator */}
+                                            {isInWatchlist(movie.id) && (
+                                              <motion.div
+                                                className="absolute inset-0 rounded-lg bg-white/10"
+                                                initial={{ scale: 0, opacity: 0 }}
+                                                animate={{ scale: 1, opacity: 1 }}
+                                                transition={{ duration: 0.2 }}
+                                              />
+                                            )}
+                                          </motion.div>
+
+                                          {/* Minimal Share Button */}
+                                          <motion.div
+                                            onClick={(e) => {
+                                              if (e && typeof e.stopPropagation === 'function') {
+                                                e.stopPropagation();
+                                              }
+                                              if (navigator.share) {
+                                                navigator.share({
+                                                  title: movie.title,
+                                                  text: `Check out ${movie.title} (${movie.year})`,
+                                                  url: window.location.href
+                                                });
+                                              } else {
+                                                navigator.clipboard.writeText(`${movie.title} (${movie.year}) - ${window.location.href}`);
+                                              }
+                                            }}
+                                            onMouseDown={(e) => {
+                                              if (e && typeof e.stopPropagation === 'function') {
+                                                e.stopPropagation();
+                                              }
+                                            }}
+                                            onTouchStart={(e) => {
+                                              if (e && typeof e.stopPropagation === 'function') {
+                                                e.stopPropagation();
+                                              }
+                                            }}
+                                            className="relative w-7 h-7 rounded-lg bg-white/10 hover:bg-white/15 flex items-center justify-center transition-all duration-200 text-white/70 hover:text-white cursor-pointer group/share"
+                                            title="Share"
+                                            whileHover={{ scale: 1.1 }}
+                                            whileTap={{ scale: 0.95 }}
+                                          >
+                                            {/* Icon */}
+                                            <div className="relative z-10">
+                                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+                                                <polyline points="16 6 12 2 8 6" />
+                                                <line x1="12" y1="2" x2="12" y2="15" />
                                               </svg>
-                                              {typeof movie.rating === 'number' && !isNaN(movie.rating) 
-                                                ? movie.rating.toFixed(1) 
-                                                : movie.rating || 'N/A'}
-                                            </span>
-                                          </>
-                                        )}
-                            </div>
-                            {movie.overview && (
-                                        <div className="mt-1 text-xs text-white/50 line-clamp-2">{movie.overview}</div>
-                            )}
-                          </div>
+                                            </div>
+                                          </motion.div>
+                                        </div>
+                                      </div>
+                                      <div className="mt-3 flex flex-wrap gap-2">
+                                        {movie.genres?.slice(0, 3).map((genre, idx) => (
+                                          <span key={idx} className="px-2 py-1 rounded-full text-xs bg-white/10 text-white/80 border border-white/10">
+                                            {genre}
+                                          </span>
+                                        ))}
+                                      </div>
+                                      {/* Short overview/excerpt */}
+                                      {movie.overview && (
+                                        <div className="mt-3 text-xs text-white/60 line-clamp-2 leading-relaxed">
+                                          {movie.overview}
+                                        </div>
+                                      )}
+                                    </div>
                                   </motion.button>
-                      ))}
-                    </div>
-                  ) : (
+                                ))}
+                              </div>
+                            ) : (
                               <motion.div
                                 initial={{ opacity: 0, scale: 0.98 }}
                                 animate={{ opacity: 1, scale: 1 }}

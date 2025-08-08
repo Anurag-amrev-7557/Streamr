@@ -141,6 +141,21 @@ const Layout = () => {
       setSelectedMovie(null);
     }
   }, []);
+
+  // Handle genre navigation from MovieDetailsOverlay
+  const handleGenreNavigation = React.useCallback((genre) => {
+    if (genre && genre.id) {
+      console.log('Genre navigation clicked:', genre.name, 'ID:', genre.id);
+      
+      // Navigate to MoviesPage with the selected genre
+      const searchParams = new URLSearchParams();
+      searchParams.set('genre', genre.name.toLowerCase());
+      searchParams.set('category', 'popular'); // Default to popular category
+      
+      // Use window.location for navigation to ensure proper page reload
+      window.location.href = `/movies?${searchParams.toString()}`;
+    }
+  }, []);
   
   // Performance dashboard toggle
   const togglePerformanceDashboard = React.useCallback(() => {
@@ -206,6 +221,7 @@ const Layout = () => {
             movie={selectedMovie}
             onClose={handleCloseOverlay}
             onMovieSelect={handleMovieSelect}
+            onGenreClick={handleGenreNavigation}
           />
         </Suspense>
       )}

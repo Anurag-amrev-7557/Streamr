@@ -888,6 +888,21 @@ const PerformanceOptimizedHomePage = () => {
     setSelectedMovie(movie);
   }, []);
 
+  // Handle genre navigation from MovieDetailsOverlay
+  const handleGenreNavigation = useCallback((genre) => {
+    if (genre && genre.id) {
+      console.log('Genre navigation clicked:', genre.name, 'ID:', genre.id);
+      
+      // Navigate to MoviesPage with the selected genre
+      const searchParams = new URLSearchParams();
+      searchParams.set('genre', genre.name.toLowerCase());
+      searchParams.set('category', 'popular'); // Default to popular category
+      
+      // Use window.location for navigation to ensure proper page reload
+      window.location.href = `/movies?${searchParams.toString()}`;
+    }
+  }, []);
+
   // Handle category change
   const handleCategoryChange = useCallback((category) => {
     if (activeCategory === category || isTransitioning) return;
@@ -986,6 +1001,7 @@ const PerformanceOptimizedHomePage = () => {
               movie={selectedMovie}
               onClose={() => setSelectedMovie(null)}
               onMovieSelect={handleMovieSelect}
+              onGenreClick={handleGenreNavigation}
             />
           </Suspense>
         )}

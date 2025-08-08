@@ -29,6 +29,7 @@ import { useLoading } from '../contexts/LoadingContext';
 import { useWatchlist } from '../contexts/WatchlistContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import ScrollDebug from './ScrollDebug';
+import memoryOptimizationService from '../utils/memoryOptimizationService';
 // Swiper imports for desktop category and movie sections
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Navigation, A11y, Mousewheel, Keyboard } from 'swiper/modules';
@@ -162,7 +163,6 @@ const MinimalToast = lazy(() => import('./MinimalToast'));
 // Ultra-smooth scrolling imports
 import { useSmoothScroll, useScrollAnimation } from '../hooks/useSmoothScroll';
 import { trackPageLoad, trackApiCall } from '../utils/performanceMonitor';
-import memoryOptimizationService from '../utils/memoryOptimizationService';
 
 // Lazy load non-critical components with preloading hints
 const MovieDetailsOverlay = lazy(() => import('./MovieDetailsOverlay'), {
@@ -495,21 +495,24 @@ const ProgressiveImage = memo(
       preloadRef.current = fullImage;
       
       fullImage.onload = () => {
-        setCurrentSrc(optimizedSrc);
-        setImageLoaded(true);
-        if (onLoad) onLoad();
+        if (preloadRef.current === fullImage) { // Check if still the same image
+          setCurrentSrc(optimizedSrc);
+          setImageLoaded(true);
+          if (onLoad) onLoad();
+        }
       };
       
       fullImage.onerror = (e) => {
-        // FIXED: Better error handling for mobile
-        console.warn('Image failed to load:', optimizedSrc, 'Error:', e);
-        setImageError(true);
-        if (onError) onError(e);
+        if (preloadRef.current === fullImage) { // Check if still the same image
+          console.warn('Image failed to load:', optimizedSrc, 'Error:', e);
+          setImageError(true);
+          if (onError) onError(e);
+        }
       };
       
       // Cleanup function - FIXED: Proper image cleanup
       return () => {
-        if (preloadRef.current) {
+        if (preloadRef.current === fullImage) {
           preloadRef.current.onload = null;
           preloadRef.current.onerror = null;
           preloadRef.current.src = '';
@@ -2671,6 +2674,106 @@ const categoriesList = [
     description: 'Fresh releases and newest additions',
     color: 'from-green-500 to-emerald-600',
     gradient: 'bg-gradient-to-r from-green-500/20 to-emerald-600/20'
+  },
+  { 
+    id: 'popularTV', 
+    label: 'Popular TV', 
+    icon: (
+      <svg 
+        xmlns="http://www.w3.org/2000/svg" 
+        className="h-4 w-4 transition-transform duration-200 hover:scale-110" 
+        viewBox="0 0 24 24" 
+        fill="currentColor"
+        aria-hidden="true"
+        role="img"
+      >
+        <path 
+          d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5l-1 3v1h8v-1l-1-3h5c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 12H3V5h18v10z"
+          stroke="currentColor"
+          strokeWidth="0.5"
+          fillRule="evenodd"
+          clipRule="evenodd"
+        />
+      </svg>
+    ),
+    description: 'Most popular TV shows and series',
+    color: 'from-purple-500 to-pink-600',
+    gradient: 'bg-gradient-to-r from-purple-500/20 to-pink-600/20'
+  },
+  { 
+    id: 'topRatedTV', 
+    label: 'Top Rated TV', 
+    icon: (
+      <svg 
+        xmlns="http://www.w3.org/2000/svg" 
+        className="h-4 w-4 transition-transform duration-200 hover:scale-110" 
+        viewBox="0 0 24 24" 
+        fill="currentColor"
+        aria-hidden="true"
+        role="img"
+      >
+        <path 
+          d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5l-1 3v1h8v-1l-1-3h5c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 12H3V5h18v10zM12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"
+          stroke="currentColor"
+          strokeWidth="0.5"
+          fillRule="evenodd"
+          clipRule="evenodd"
+        />
+      </svg>
+    ),
+    description: 'Highest rated TV shows and series',
+    color: 'from-amber-500 to-orange-600',
+    gradient: 'bg-gradient-to-r from-amber-500/20 to-orange-600/20'
+  },
+  { 
+    id: 'airingToday', 
+    label: 'Airing Today', 
+    icon: (
+      <svg 
+        xmlns="http://www.w3.org/2000/svg" 
+        className="h-4 w-4 transition-transform duration-200 hover:scale-110" 
+        viewBox="0 0 24 24" 
+        fill="currentColor"
+        aria-hidden="true"
+        role="img"
+      >
+        <path 
+          d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"
+          stroke="currentColor"
+          strokeWidth="0.5"
+          fillRule="evenodd"
+          clipRule="evenodd"
+        />
+      </svg>
+    ),
+    description: 'TV shows airing today',
+    color: 'from-blue-500 to-cyan-600',
+    gradient: 'bg-gradient-to-r from-blue-500/20 to-cyan-600/20'
+  },
+  { 
+    id: 'nowPlaying', 
+    label: 'Now Playing', 
+    icon: (
+      <svg 
+        xmlns="http://www.w3.org/2000/svg" 
+        className="h-4 w-4 transition-transform duration-200 hover:scale-110" 
+        viewBox="0 0 24 24" 
+        fill="currentColor"
+        aria-hidden="true"
+        role="img"
+      >
+        <path 
+          d="M8 5v14l11-7z"
+          stroke="currentColor"
+          strokeWidth="0.5"
+          fillRule="evenodd"
+          clipRule="evenodd"
+        />
+      </svg>
+    ),
+    description: 'Movies currently in theaters',
+    color: 'from-red-500 to-pink-600',
+    gradient: 'bg-gradient-to-r from-red-500/20 to-pink-600/20'
   }
 ];
 
@@ -2823,6 +2926,9 @@ const HomePage = () => {
         sectionObserverRef.current.disconnect();
         sectionObserverRef.current = null;
       }
+      // Clear state on cleanup
+      setVisibleSections(new Set());
+      setLazyLoadQueue(new Set());
     };
   }, []); // Removed visibleSections from dependencies to prevent infinite loop
 
@@ -2850,7 +2956,7 @@ const HomePage = () => {
     };
   }, []);
 
-  // 🧹 NEW: Memory optimization registration
+  // 🧹 FIXED: Memory optimization registration with proper cleanup
   useEffect(() => {
     // Register HomePage with centralized memory optimization service
     memoryOptimizationService.registerComponent('HomePage');
@@ -2868,15 +2974,48 @@ const HomePage = () => {
         pendingRequests.current.clear();
       }
       // Clear timeouts and intervals
-      timeoutRefs.current.forEach(timeoutId => clearTimeout(timeoutId));
-      intervalRefs.current.forEach(intervalId => clearInterval(intervalId));
+      timeoutRefs.current.forEach(timeoutId => {
+        clearTimeout(timeoutId);
+      });
+      intervalRefs.current.forEach(intervalId => {
+        clearInterval(intervalId);
+      });
       timeoutRefs.current.clear();
       intervalRefs.current.clear();
+      
+      // Clear movie details cache
+      cleanMovieDetailsCache();
+      
+      // Clear intersection observer
+      if (sectionObserverRef.current) {
+        sectionObserverRef.current.disconnect();
+        sectionObserverRef.current = null;
+      }
+      
+      // Clear lazy load queue
+      setLazyLoadQueue(new Set());
+      setVisibleSections(new Set());
     }, 'HomePage');
 
     return () => {
       memoryOptimizationService.unregisterComponent('HomePage');
       unregisterCleanup();
+      
+      // Additional cleanup on unmount
+      if (sectionObserverRef.current) {
+        sectionObserverRef.current.disconnect();
+        sectionObserverRef.current = null;
+      }
+      
+      // Clear all timeouts and intervals
+      timeoutRefs.current.forEach(timeoutId => {
+        clearTimeout(timeoutId);
+      });
+      intervalRefs.current.forEach(intervalId => {
+        clearInterval(intervalId);
+      });
+      timeoutRefs.current.clear();
+      intervalRefs.current.clear();
     };
   }, []);
 
@@ -3865,6 +4004,15 @@ const HomePage = () => {
         clearInterval(interval);
         intervalRefs.current.delete(interval);
       }
+      
+      // Additional cleanup
+      cleanMovieDetailsCache();
+      if (cacheRef.current) {
+        cacheRef.current.clear();
+      }
+      if (lruQueue.current) {
+        lruQueue.current.length = 0;
+      }
     };
   }, []); // Empty dependency array means this runs once on mount
 
@@ -3907,7 +4055,7 @@ const HomePage = () => {
     };
   }, [error]);
 
-  // Add cleanup effect with memory optimization
+  // FIXED: Add cleanup effect with memory optimization and proper cleanup
   useEffect(() => {
     // Memory optimization interval
     const memoryInterval = setInterval(() => {
@@ -3923,17 +4071,22 @@ const HomePage = () => {
       }
     }, 30000); // Check every 30 seconds
     
+    // Store interval for cleanup
+    intervalRefs.current.add(memoryInterval);
+    
     return () => {
-      // document.body.style.overflow = 'unset'; // REMOVED: This was causing scroll issues
       clearInterval(memoryInterval);
+      intervalRefs.current.delete(memoryInterval);
       
       // Clear intersection observer
       if (sectionObserverRef.current) {
         sectionObserverRef.current.disconnect();
+        sectionObserverRef.current = null;
       }
       
       // Clear lazy load queue
       setLazyLoadQueue(new Set());
+      setVisibleSections(new Set());
     };
   }, []);
 
@@ -3947,7 +4100,7 @@ const HomePage = () => {
     console.log('HomePage Debug - Active category:', activeCategory);
   }, [isMobile, trendingMovies.length, popularMovies.length, topRatedMovies.length, upcomingMovies.length, activeCategory]);
 
-  // FIXED: Ensure proper scroll behavior
+  // FIXED: Ensure proper scroll behavior with proper cleanup
   useEffect(() => {
     // Ensure body can always scroll
     const ensureScrollEnabled = () => {
@@ -3962,9 +4115,13 @@ const HomePage = () => {
 
     // Set up periodic check to ensure scroll is never locked
     const scrollCheckInterval = setInterval(ensureScrollEnabled, 5000);
+    
+    // Store interval for cleanup
+    intervalRefs.current.add(scrollCheckInterval);
 
     return () => {
       clearInterval(scrollCheckInterval);
+      intervalRefs.current.delete(scrollCheckInterval);
       // Final cleanup - ensure scroll is enabled
       document.body.style.overflow = 'auto';
     };
@@ -4003,7 +4160,7 @@ const HomePage = () => {
     };
   }, [loadingStates.initial]);
 
-  // FIXED: Focus management to prevent scroll blocking
+  // FIXED: Focus management to prevent scroll blocking with proper cleanup
   useEffect(() => {
     const handleFocusIn = (event) => {
       // When focus is inside a scroll container, ensure scroll events can still bubble up
@@ -4015,11 +4172,14 @@ const HomePage = () => {
         scrollContainer.style.overscrollBehavior = 'auto';
         
         // Remove the class after a short delay
-        setTimeout(() => {
+        const timeoutId = setTimeout(() => {
           if (scrollContainer && scrollContainer.style) {
             scrollContainer.style.overscrollBehavior = 'auto';
           }
         }, 100);
+        
+        // Store timeout for cleanup
+        timeoutRefs.current.add(timeoutId);
       }
     };
 
@@ -4046,6 +4206,12 @@ const HomePage = () => {
     return () => {
       document.removeEventListener('focusin', handleFocusIn);
       document.removeEventListener('wheel', handleWheel);
+      
+      // Clear any remaining timeouts
+      timeoutRefs.current.forEach(timeoutId => {
+        clearTimeout(timeoutId);
+      });
+      timeoutRefs.current.clear();
     };
   }, []);
 
@@ -4164,7 +4330,7 @@ const HomePage = () => {
       
       // Phase 3: Medium priority content - load only essential sections for faster initial load
       const mediumPriorityStart = performance.now();
-      const mediumPriorityCategories = ['upcoming', 'action', 'comedy', 'drama']; // Added comedy and drama back
+      const mediumPriorityCategories = ['upcoming', 'action', 'comedy', 'drama', 'popularTV', 'topRatedTV', 'airingToday', 'nowPlaying']; // Added TV categories
       
       // Load medium priority in parallel for faster loading
       const mediumPriorityPromises = mediumPriorityCategories.map(category => 
@@ -5671,6 +5837,21 @@ const HomePage = () => {
     }
   }, []);
 
+  // Handle genre navigation from MovieDetailsOverlay
+  const handleGenreNavigation = useCallback((genre) => {
+    if (genre && genre.id) {
+      console.log('Genre navigation clicked:', genre.name, 'ID:', genre.id);
+      
+      // Navigate to MoviesPage with the selected genre
+      const searchParams = new URLSearchParams();
+      searchParams.set('genre', genre.name.toLowerCase());
+      searchParams.set('category', 'popular'); // Default to popular category
+      
+      // Use window.location for navigation to ensure proper page reload
+      window.location.href = `/movies?${searchParams.toString()}`;
+    }
+  }, []);
+
   // Handle category changes and fetch data - MOVED BEFORE EARLY RETURNS
   useEffect(() => {
     console.log('useEffect triggered - activeCategory:', activeCategory);
@@ -5680,6 +5861,50 @@ const HomePage = () => {
       handleCategoryChange(activeCategory);
     }
   }, [activeCategory, handleCategoryChange]);
+
+  // FIXED: Comprehensive cleanup on unmount
+  useEffect(() => {
+    return () => {
+      // Cleanup all timeouts
+      timeoutRefs.current.forEach(timeoutId => {
+        clearTimeout(timeoutId);
+      });
+      timeoutRefs.current.clear();
+      
+      // Cleanup all intervals
+      intervalRefs.current.forEach(intervalId => {
+        clearInterval(intervalId);
+      });
+      intervalRefs.current.clear();
+      
+      // Cleanup intersection observer
+      if (sectionObserverRef.current) {
+        sectionObserverRef.current.disconnect();
+        sectionObserverRef.current = null;
+      }
+      
+      // Cleanup caches
+      cleanMovieDetailsCache();
+      if (cacheRef.current) {
+        cacheRef.current.clear();
+      }
+      if (lruQueue.current) {
+        lruQueue.current.length = 0;
+      }
+      
+      // Clear state
+      setLazyLoadQueue(new Set());
+      setVisibleSections(new Set());
+      
+      // Clear pending requests
+      if (pendingRequests.current) {
+        pendingRequests.current.clear();
+      }
+      
+      // Ensure scroll is enabled
+      document.body.style.overflow = 'auto';
+    };
+  }, []);
 
   // Early returns moved to the end after all hooks are called
   if (loadingStates.initial) {
@@ -5727,6 +5952,7 @@ const HomePage = () => {
             {/* Movie Sections with Swiper for Desktop */}
             {activeCategory === 'all' ? (
               <>
+                {/* Netflix-style Hero Section with Trending */}
                 <MovieSectionSwiper 
                   title="Trending Now" 
                   movies={trendingMovies} 
@@ -5740,6 +5966,23 @@ const HomePage = () => {
                   onPrefetch={queuePrefetch}
                   isMobile={isMobile}
                 />
+                
+                {/* Popular TV Shows - Netflix-style */}
+                <MovieSectionSwiper 
+                  title="Popular TV Shows" 
+                  movies={popularTVShows} 
+                  loading={loadingStates.popularTV} 
+                  onLoadMore={() => loadMoreMovies('popularTV')}
+                  hasMore={pageStates.popularTV.current < pageStates.popularTV.total}
+                  currentPage={pageStates.popularTV.current}
+                  sectionKey="popularTV"
+                  onMovieSelect={handleMovieSelect}
+                  onMovieHover={handleMovieHover}
+                  onPrefetch={queuePrefetch}
+                  isMobile={isMobile}
+                />
+                
+                {/* Popular Movies */}
                 <MovieSectionSwiper 
                   title="Popular Movies" 
                   movies={popularMovies} 
@@ -5753,6 +5996,23 @@ const HomePage = () => {
                   onPrefetch={queuePrefetch}
                   isMobile={isMobile}
                 />
+                
+                {/* Top Rated TV Shows */}
+                <MovieSectionSwiper 
+                  title="Top Rated TV Shows" 
+                  movies={topRatedTVShows} 
+                  loading={loadingStates.topRatedTV} 
+                  onLoadMore={() => loadMoreMovies('topRatedTV')}
+                  hasMore={pageStates.topRatedTV.current < pageStates.topRatedTV.total}
+                  currentPage={pageStates.topRatedTV.current}
+                  sectionKey="topRatedTV"
+                  onMovieSelect={handleMovieSelect}
+                  onMovieHover={handleMovieHover}
+                  onPrefetch={queuePrefetch}
+                  isMobile={isMobile}
+                />
+                
+                {/* Top Rated Movies */}
                 <MovieSectionSwiper 
                   title="Top Rated Movies" 
                   movies={topRatedMovies} 
@@ -5766,6 +6026,23 @@ const HomePage = () => {
                   onPrefetch={queuePrefetch}
                   isMobile={isMobile}
                 />
+                
+                {/* Now Playing Movies */}
+                <MovieSectionSwiper 
+                  title="Now Playing" 
+                  movies={nowPlayingMovies} 
+                  loading={loadingStates.nowPlaying} 
+                  onLoadMore={() => loadMoreMovies('nowPlaying')}
+                  hasMore={pageStates.nowPlaying.current < pageStates.nowPlaying.total}
+                  currentPage={pageStates.nowPlaying.current}
+                  sectionKey="nowPlaying"
+                  onMovieSelect={handleMovieSelect}
+                  onMovieHover={handleMovieHover}
+                  onPrefetch={queuePrefetch}
+                  isMobile={isMobile}
+                />
+                
+                {/* Coming Soon */}
                 <MovieSectionSwiper 
                   title="Coming Soon" 
                   movies={upcomingMovies} 
@@ -5774,6 +6051,51 @@ const HomePage = () => {
                   hasMore={pageStates.upcoming.current < pageStates.upcoming.total}
                   currentPage={pageStates.upcoming.current}
                   sectionKey="upcoming"
+                  onMovieSelect={handleMovieSelect}
+                  onMovieHover={handleMovieHover}
+                  onPrefetch={queuePrefetch}
+                  isMobile={isMobile}
+                />
+                
+                {/* Airing Today TV Shows */}
+                <MovieSectionSwiper 
+                  title="Airing Today" 
+                  movies={airingTodayTVShows} 
+                  loading={loadingStates.airingToday} 
+                  onLoadMore={() => loadMoreMovies('airingToday')}
+                  hasMore={pageStates.airingToday.current < pageStates.airingToday.total}
+                  currentPage={pageStates.airingToday.current}
+                  sectionKey="airingToday"
+                  onMovieSelect={handleMovieSelect}
+                  onMovieHover={handleMovieHover}
+                  onPrefetch={queuePrefetch}
+                  isMobile={isMobile}
+                />
+                
+                {/* Award Winning Movies */}
+                <MovieSectionSwiper 
+                  title="Award Winning" 
+                  movies={awardWinningMovies} 
+                  loading={loadingStates.awardWinning} 
+                  onLoadMore={() => loadMoreMovies('awardWinning')}
+                  hasMore={pageStates.awardWinning.current < pageStates.awardWinning.total}
+                  currentPage={pageStates.awardWinning.current}
+                  sectionKey="awardWinning"
+                  onMovieSelect={handleMovieSelect}
+                  onMovieHover={handleMovieHover}
+                  onPrefetch={queuePrefetch}
+                  isMobile={isMobile}
+                />
+                
+                {/* Latest Releases */}
+                <MovieSectionSwiper 
+                  title="Latest Releases" 
+                  movies={latestMovies} 
+                  loading={loadingStates.latest} 
+                  onLoadMore={() => loadMoreMovies('latest')}
+                  hasMore={pageStates.latest.current < pageStates.latest.total}
+                  currentPage={pageStates.latest.current}
+                  sectionKey="latest"
                   onMovieSelect={handleMovieSelect}
                   onMovieHover={handleMovieHover}
                   onPrefetch={queuePrefetch}
@@ -5857,6 +6179,7 @@ const HomePage = () => {
               setOverlayLoading(false);
             }}
             onMovieSelect={handleMovieSelect}
+            onGenreClick={handleGenreNavigation}
             onError={(error) => {
               console.error('Movie details overlay error:', error);
               setError('Failed to load movie details. Please try again.');
