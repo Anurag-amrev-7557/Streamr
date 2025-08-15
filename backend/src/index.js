@@ -48,165 +48,45 @@ const io = socketIo(server, {
 // Create community namespace
 const communityNamespace = io.of('/community');
 
-// Active users tracking with enhanced precision and accuracy
-let activeUsers = new Map(); // Changed from Set to Map for better tracking
+// Active users tracking
+let activeUsers = new Set();
 let activeUsersCount = 0;
-let activeUsersHistory = []; // Track historical data for analytics
-let connectionStats = {
-  totalConnections: 0,
-  totalDisconnections: 0,
-  peakUsers: 0,
-  averageUsers: 0,
-  lastUpdated: new Date()
-};
 
 // Debug logging for active users
 const DEBUG_ACTIVE_USERS = process.env.DEBUG_ACTIVE_USERS === 'true' || process.env.NODE_ENV === 'development';
 
-// Enhanced user identification with fingerprinting
-const generateUserId = (socket, req) => {
-  // For authenticated users, use their ID
-  if (socket.user && socket.user._id) {
-    return `user_${socket.user._id.toString()}`;
-  }
-  
-  // For anonymous users, use socket.id for better accuracy
-  // This ensures each connection is counted separately
-  return `anon_${socket.id}`;
-};
-
-// Enhanced function to update active users count with analytics
+// Function to update active users count
 const updateActiveUsersCount = () => {
   const newCount = activeUsers.size;
   if (newCount !== activeUsersCount) {
-    const oldCount = activeUsersCount;
     activeUsersCount = newCount;
-    
-    // Update peak users
-    if (activeUsersCount > connectionStats.peakUsers) {
-      connectionStats.peakUsers = activeUsersCount;
-    }
-    
-    // Update average users (simple moving average)
-    if (activeUsersHistory.length >= 10) {
-      activeUsersHistory.shift();
-    }
-    activeUsersHistory.push(activeUsersCount);
-    connectionStats.averageUsers = Math.round(
-      activeUsersHistory.reduce((sum, count) => sum + count, 0) / activeUsersHistory.length
-    );
-    
-    connectionStats.lastUpdated = new Date();
-    
     if (DEBUG_ACTIVE_USERS) {
-      console.log(`📊 Active users updated: ${oldCount} → ${activeUsersCount} (${Array.from(activeUsers.keys()).slice(0, 5).join(', ')}${activeUsers.size > 5 ? '...' : ''})`);
-      console.log(`📈 Peak: ${connectionStats.peakUsers}, Avg: ${connectionStats.averageUsers}`);
+      console.log(`📊 Active users updated: ${activeUsersCount} (${Array.from(activeUsers).slice(0, 5).join(', ')}${activeUsers.size > 5 ? '...' : ''})`);
     }
-    
-    // Broadcast to all connected clients with enhanced data
+    // Broadcast to all connected clients
     io.emit('activeUsers:update', { 
       count: activeUsersCount,
-      timestamp: new Date().toISOString(),
-      stats: {
-        peak: connectionStats.peakUsers,
-        average: connectionStats.averageUsers,
-        totalConnections: connectionStats.totalConnections
-      }
+      timestamp: new Date().toISOString()
     });
   }
 };
 
-// Enhanced function to add active user with connection tracking
-const addActiveUser = (userId, socket, connectionInfo = {}) => {
-  const now = new Date();
-  const userData = {
-    id: userId,
-    connectedAt: now,
-    lastSeen: now,
-    socketId: socket.id,
-    userAgent: connectionInfo.userAgent || '',
-    ip: connectionInfo.ip || '',
-    isAuthenticated: !!socket.user,
-    connectionCount: 1
-  };
-  
-  // Check if user already exists (reconnection)
-  if (activeUsers.has(userId)) {
-    const existingUser = activeUsers.get(userId);
-    userData.connectionCount = existingUser.connectionCount + 1;
-    userData.firstConnectedAt = existingUser.firstConnectedAt || existingUser.connectedAt;
-  } else {
-    userData.firstConnectedAt = now;
+// Function to add active user
+const addActiveUser = (userId) => {
+  const wasAdded = activeUsers.add(userId);
+  if (wasAdded && DEBUG_ACTIVE_USERS) {
+    console.log(`👤 User connected: ${userId}`);
   }
-  
-  activeUsers.set(userId, userData);
-  connectionStats.totalConnections++;
-  
-  if (DEBUG_ACTIVE_USERS) {
-    console.log(`👤 User connected: ${userId} (${userData.isAuthenticated ? 'authenticated' : 'anonymous'})`);
-    console.log(`📊 Total connections: ${connectionStats.totalConnections}`);
-  }
-  
   updateActiveUsersCount();
-  return userData;
 };
 
-// Enhanced function to remove active user with better cleanup
-const removeActiveUser = (userId, reason = 'disconnect') => {
-  if (activeUsers.has(userId)) {
-    const userData = activeUsers.get(userId);
-    const sessionDuration = new Date() - userData.connectedAt;
-    
-    if (DEBUG_ACTIVE_USERS) {
-      console.log(`👋 User disconnected: ${userId} (${reason}) - Session: ${Math.round(sessionDuration / 1000)}s`);
-    }
-    
-    activeUsers.delete(userId);
-    connectionStats.totalDisconnections++;
-    updateActiveUsersCount();
-    
-    return userData;
+// Function to remove active user
+const removeActiveUser = (userId) => {
+  const wasRemoved = activeUsers.delete(userId);
+  if (wasRemoved && DEBUG_ACTIVE_USERS) {
+    console.log(`👋 User disconnected: ${userId}`);
   }
-  return null;
-};
-
-// Enhanced cleanup with better stale connection detection
-const cleanupStaleConnections = () => {
-  const now = new Date();
-  const staleTimeout = 5 * 60 * 1000; // 5 minutes (increased for better accuracy)
-  const staleUsers = [];
-  
-  activeUsers.forEach((userData, userId) => {
-    const timeSinceLastSeen = now - userData.lastSeen;
-    
-    // Check if socket is still connected
-    const socket = io.sockets.sockets.get(userData.socketId);
-    if (!socket || !socket.connected) {
-      staleUsers.push(userId);
-    } else if (timeSinceLastSeen > staleTimeout) {
-      // Only mark as stale if no heartbeat for extended period
-      staleUsers.push(userId);
-    }
-  });
-  
-  if (staleUsers.length > 0) {
-    if (DEBUG_ACTIVE_USERS) {
-      console.log(`🧹 Cleaning up ${staleUsers.length} stale connections`);
-    }
-    
-    staleUsers.forEach(userId => {
-      removeActiveUser(userId, 'stale_cleanup');
-    });
-  }
-};
-
-// Enhanced heartbeat mechanism
-const updateUserHeartbeat = (userId) => {
-  if (activeUsers.has(userId)) {
-    const userData = activeUsers.get(userId);
-    userData.lastSeen = new Date();
-    activeUsers.set(userId, userData);
-  }
+  updateActiveUsersCount();
 };
 
 // Middleware
@@ -388,48 +268,25 @@ io.use(async (socket, next) => {
 io.on('connection', (socket) => {
   console.log('User connected to global namespace:', socket.id);
   
-  // Generate user ID based on socket and request
-  const userId = generateUserId(socket, socket.request);
-  const connectionInfo = {
-    userAgent: socket.request?.headers['user-agent'] || '',
-    ip: socket.request?.ip || socket.request?.connection?.remoteAddress || '',
-    acceptLanguage: socket.request?.headers['accept-language'] || ''
-  };
-  
-  addActiveUser(userId, socket, connectionInfo);
+  // Add to active users count (anonymous or authenticated)
+  const userId = socket.user ? socket.user._id.toString() : `anon_${socket.id}`;
+  addActiveUser(userId);
   
   // Send immediate update to the newly connected user
   socket.emit('activeUsers:update', { 
     count: activeUsersCount,
-    timestamp: new Date().toISOString(),
-    stats: {
-      peak: connectionStats.peakUsers,
-      average: connectionStats.averageUsers,
-      totalConnections: connectionStats.totalConnections
-    }
+    timestamp: new Date().toISOString()
   });
-  
-  // Set up heartbeat for this user
-  const heartbeatInterval = setInterval(() => {
-    updateUserHeartbeat(userId);
-  }, 60000); // 60 second heartbeat (increased for better reliability)
   
   socket.on('disconnect', (reason) => {
     console.log('User disconnected from global namespace:', socket.id, 'Reason:', reason);
-    clearInterval(heartbeatInterval);
-    removeActiveUser(userId, reason);
+    removeActiveUser(userId);
   });
   
   // Handle reconnection attempts
   socket.on('reconnect', () => {
     console.log('User reconnected to global namespace:', socket.id);
-    updateUserHeartbeat(userId); // Update heartbeat on reconnection
-    addActiveUser(userId, socket, connectionInfo); // Re-add user with updated connection info
-  });
-  
-  // Handle heartbeat events from client
-  socket.on('heartbeat', () => {
-    updateUserHeartbeat(userId);
+    addActiveUser(userId);
   });
 });
 
@@ -439,8 +296,7 @@ communityNamespace.on('connection', (socket) => {
 
   // Add user to active users if authenticated
   if (socket.user && socket.user._id) {
-    const userId = generateUserId(socket, socket.request);
-    addActiveUser(userId, socket);
+    addActiveUser(socket.user._id.toString());
   }
 
   // Join community room
@@ -470,8 +326,7 @@ communityNamespace.on('connection', (socket) => {
     console.log('User disconnected from community namespace:', socket.id);
     // Remove user from active users
     if (socket.user && socket.user._id) {
-      const userId = generateUserId(socket, socket.request);
-      removeActiveUser(userId, 'community_disconnect');
+      removeActiveUser(socket.user._id.toString());
     }
   });
 });
@@ -497,60 +352,41 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Enhanced active users endpoint with detailed analytics
+// Active users endpoint
 app.get('/api/active-users', (req, res) => {
-  const now = new Date();
-  const response = {
+  res.status(200).json({
     count: activeUsersCount,
-    timestamp: now.toISOString(),
-    stats: {
-      peak: connectionStats.peakUsers,
-      average: connectionStats.averageUsers,
-      totalConnections: connectionStats.totalConnections,
-      totalDisconnections: connectionStats.totalDisconnections,
-      lastUpdated: connectionStats.lastUpdated.toISOString()
-    },
-    analytics: {
-      authenticatedUsers: Array.from(activeUsers.values()).filter(user => user.isAuthenticated).length,
-      anonymousUsers: Array.from(activeUsers.values()).filter(user => !user.isAuthenticated).length,
-      averageSessionDuration: 0, // Will be calculated below
-      recentActivity: activeUsersHistory.slice(-5) // Last 5 updates
-    }
-  };
-  
-  // Calculate average session duration
-  const activeSessions = Array.from(activeUsers.values());
-  if (activeSessions.length > 0) {
-    const totalDuration = activeSessions.reduce((sum, user) => {
-      return sum + (now - user.connectedAt);
-    }, 0);
-    response.analytics.averageSessionDuration = Math.round(totalDuration / activeSessions.length / 1000); // in seconds
-  }
-  
-  // Add debug information in development
-  if (DEBUG_ACTIVE_USERS) {
-    response.debug = {
+    timestamp: new Date().toISOString(),
+    debug: DEBUG_ACTIVE_USERS ? {
       totalConnections: io.engine.clientsCount,
-      activeUsersMap: activeUsers.size,
-      sampleUsers: Array.from(activeUsers.entries()).slice(0, 3).map(([id, data]) => ({
-        id: id.substring(0, 20) + '...',
-        isAuthenticated: data.isAuthenticated,
-        connectedAt: data.connectedAt.toISOString(),
-        connectionCount: data.connectionCount
-      })),
-      cleanupStats: {
-        lastCleanup: new Date().toISOString(),
-        staleTimeout: '2 minutes'
-      }
-    };
-  }
-  
-  res.status(200).json(response);
+      activeUsersSet: activeUsers.size,
+      sampleUsers: Array.from(activeUsers).slice(0, 5)
+    } : undefined
+  });
 });
 
 // Periodic cleanup of stale connections (every 5 minutes)
 setInterval(() => {
-  cleanupStaleConnections(); // Use the enhanced cleanup function
+  const currentConnections = new Set();
+  
+  // Get all current socket IDs
+  io.sockets.sockets.forEach((socket) => {
+    const userId = socket.user ? socket.user._id.toString() : `anon_${socket.id}`;
+    currentConnections.add(userId);
+  });
+  
+  // Remove users that are no longer connected
+  const staleUsers = Array.from(activeUsers).filter(userId => !currentConnections.has(userId));
+  staleUsers.forEach(userId => {
+    if (DEBUG_ACTIVE_USERS) {
+      console.log(`🧹 Cleaning up stale user: ${userId}`);
+    }
+    activeUsers.delete(userId);
+  });
+  
+  if (staleUsers.length > 0) {
+    updateActiveUsersCount();
+  }
 }, 5 * 60 * 1000); // Every 5 minutes
 
 // Serve uploaded files
