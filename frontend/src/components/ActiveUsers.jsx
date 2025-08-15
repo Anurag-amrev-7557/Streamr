@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UsersIcon } from '@heroicons/react/24/outline';
 import { socketService } from '../services/socketService';
@@ -8,6 +8,9 @@ const ActiveUsers = ({ className = '' }) => {
   const [activeUsers, setActiveUsers] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [lastUpdate, setLastUpdate] = useState(null);
+  const socketRef = useRef(null);
+  const reconnectTimeoutRef = useRef(null);
 
   useEffect(() => {
     const fetchActiveUsers = async () => {
@@ -16,7 +19,8 @@ const ActiveUsers = ({ className = '' }) => {
         setError(null);
         
         const response = await fetch(`${getApiUrl()}/active-users`, {
-          credentials: 'include'
+          credentials: 'include',
+          cache: 'no-cache' // Prevent caching for real-time data
         });
         
         if (!response.ok) {
@@ -26,6 +30,7 @@ const ActiveUsers = ({ className = '' }) => {
         const data = await response.json();
         if (typeof data.count === 'number') {
           setActiveUsers(data.count);
+          setLastUpdate(new Date());
         } else {
           throw new Error('Invalid response format');
         }
@@ -45,43 +50,92 @@ const ActiveUsers = ({ className = '' }) => {
     fetchActiveUsers();
 
     // Set up socket connection for real-time updates
-    const socket = socketService.connect('/');
-    
-    const handleActiveUsersUpdate = (data) => {
-      if (typeof data.count === 'number') {
-        setActiveUsers(data.count);
-        setError(null); // Clear any previous errors
+    const setupSocket = () => {
+      try {
+        socketRef.current = socketService.connect('/');
+        
+        const handleActiveUsersUpdate = (data) => {
+          if (typeof data.count === 'number') {
+            setActiveUsers(data.count);
+            setLastUpdate(new Date());
+            setError(null); // Clear any previous errors
+          }
+        };
+
+        const handleSocketError = (error) => {
+          console.error('WebSocket error:', error);
+          setError('WebSocket connection failed');
+          // Attempt to reconnect after a short delay
+          if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+          }
+          reconnectTimeoutRef.current = setTimeout(() => {
+            console.log('Attempting to reconnect WebSocket...');
+            setupSocket();
+          }, 3000); // Reconnect after 3 seconds
+        };
+
+        const handleSocketConnect = () => {
+          console.log('WebSocket connected for active users');
+          setError(null); // Clear errors on successful connection
+          // Fetch fresh data immediately after connection
+          fetchActiveUsers();
+        };
+
+        const handleSocketDisconnect = () => {
+          console.log('WebSocket disconnected for active users');
+          setError('WebSocket disconnected');
+          // Attempt to reconnect
+          if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+          }
+          reconnectTimeoutRef.current = setTimeout(() => {
+            console.log('Attempting to reconnect WebSocket after disconnect...');
+            setupSocket();
+          }, 2000); // Reconnect after 2 seconds
+        };
+
+        // Listen for active users updates and connection events
+        socketRef.current.on('activeUsers:update', handleActiveUsersUpdate);
+        socketRef.current.on('connect', handleSocketConnect);
+        socketRef.current.on('disconnect', handleSocketDisconnect);
+        socketRef.current.on('connect_error', handleSocketError);
+
+        // Store cleanup function
+        socketRef.current.cleanup = () => {
+          socketRef.current.off('activeUsers:update', handleActiveUsersUpdate);
+          socketRef.current.off('connect', handleSocketConnect);
+          socketRef.current.off('disconnect', handleSocketDisconnect);
+          socketRef.current.off('connect_error', handleSocketError);
+        };
+      } catch (err) {
+        console.error('Error setting up WebSocket:', err);
+        setError('Failed to setup WebSocket connection');
       }
     };
 
-    const handleSocketError = (error) => {
-      console.error('WebSocket error:', error);
-      setError('WebSocket connection failed');
-    };
+    setupSocket();
 
-    const handleSocketConnect = () => {
-      setError(null); // Clear errors on successful connection
-    };
+    // Set up interval to refresh data every 15 seconds as fallback (reduced from 60)
+    const interval = setInterval(fetchActiveUsers, 15000);
 
-    const handleSocketDisconnect = () => {
-      setError('WebSocket disconnected');
-    };
-
-    // Listen for active users updates and connection events
-    socket.on('activeUsers:update', handleActiveUsersUpdate);
-    socket.on('connect', handleSocketConnect);
-    socket.on('disconnect', handleSocketDisconnect);
-    socket.on('connect_error', handleSocketError);
-
-    // Set up interval to refresh data every 60 seconds as fallback
-    const interval = setInterval(fetchActiveUsers, 60000);
+    // Set up heartbeat to check connection every 10 seconds
+    const heartbeat = setInterval(() => {
+      if (socketRef.current && !socketRef.current.connected) {
+        console.log('WebSocket not connected, attempting to reconnect...');
+        setupSocket();
+      }
+    }, 10000);
 
     return () => {
       clearInterval(interval);
-      socket.off('activeUsers:update', handleActiveUsersUpdate);
-      socket.off('connect', handleSocketConnect);
-      socket.off('disconnect', handleSocketDisconnect);
-      socket.off('connect_error', handleSocketError);
+      clearInterval(heartbeat);
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+      if (socketRef.current && socketRef.current.cleanup) {
+        socketRef.current.cleanup();
+      }
     };
   }, []);
 
@@ -89,6 +143,17 @@ const ActiveUsers = ({ className = '' }) => {
   if (error && activeUsers === null) {
     return null;
   }
+
+  // Calculate time since last update
+  const getTimeSinceUpdate = () => {
+    if (!lastUpdate) return null;
+    const now = new Date();
+    const diffMs = now - lastUpdate;
+    const diffSeconds = Math.floor(diffMs / 1000);
+    if (diffSeconds < 60) return `${diffSeconds}s ago`;
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    return `${diffMinutes}m ago`;
+  };
 
   return (
     <motion.div
@@ -156,7 +221,7 @@ const ActiveUsers = ({ className = '' }) => {
 
       {/* Tooltip on hover */}
       <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-black/90 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-50">
-        {error ? 'Connection error - showing last known count' : 'Active users online'}
+        {error ? 'Connection error - showing last known count' : `Active users online${lastUpdate ? ` • Updated ${getTimeSinceUpdate()}` : ''}`}
         <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-black/90" />
       </div>
     </motion.div>
