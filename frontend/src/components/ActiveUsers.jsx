@@ -10,8 +10,10 @@ const ActiveUsers = ({ className = '' }) => {
   const [error, setError] = useState(null);
   const [lastUpdate, setLastUpdate] = useState(null);
   const [hasInitialized, setHasInitialized] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState('connecting'); // 'connecting', 'connected', 'error'
   const socketRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
+  const fallbackIntervalRef = useRef(null);
 
   useEffect(() => {
     const fetchActiveUsers = async () => {
@@ -34,14 +36,22 @@ const ActiveUsers = ({ className = '' }) => {
           setLastUpdate(new Date());
           setError(null); // Clear any previous errors
           setHasInitialized(true);
+          setConnectionStatus('connected');
+          
+          // Log additional stats if available
+          if (data.stats && process.env.NODE_ENV === 'development') {
+            console.log('📊 Active Users Stats:', data.stats);
+          }
         } else {
           throw new Error('Invalid response format');
         }
       } catch (err) {
         console.error('Error fetching active users:', err);
+        setError(err.message);
+        setConnectionStatus('error');
+        
         // Only set error if this isn't the initial load or if we've been loading for a while
         if (activeUsers !== 0 || !isLoading) {
-          setError(err.message);
           if (activeUsers === 0) {
             setActiveUsers(null); // Indicate error state
           }
@@ -57,6 +67,10 @@ const ActiveUsers = ({ className = '' }) => {
     // Set up socket connection for real-time updates
     const setupSocket = () => {
       try {
+        if (socketRef.current) {
+          socketRef.current.disconnect();
+        }
+        
         socketRef.current = socketService.connect('/');
         
         const handleActiveUsersUpdate = (data) => {
@@ -64,17 +78,21 @@ const ActiveUsers = ({ className = '' }) => {
             setActiveUsers(data.count);
             setLastUpdate(new Date());
             setError(null); // Clear any previous errors
+            setConnectionStatus('connected');
           }
         };
 
         const handleSocketError = (error) => {
           console.error('WebSocket error:', error);
+          setConnectionStatus('error');
+          
           // Only set error if we've been loading for more than 2 seconds
           setTimeout(() => {
             if (isLoading) {
               setError('WebSocket connection failed');
             }
           }, 2000);
+          
           // Attempt to reconnect after a short delay
           if (reconnectTimeoutRef.current) {
             clearTimeout(reconnectTimeoutRef.current);
@@ -88,13 +106,16 @@ const ActiveUsers = ({ className = '' }) => {
         const handleSocketConnect = () => {
           console.log('WebSocket connected for active users');
           setError(null); // Clear errors on successful connection
+          setConnectionStatus('connected');
           // Fetch fresh data immediately after connection
           fetchActiveUsers();
         };
 
         const handleSocketDisconnect = () => {
           console.log('WebSocket disconnected for active users');
+          setConnectionStatus('error');
           setError('WebSocket disconnected');
+          
           // Attempt to reconnect
           if (reconnectTimeoutRef.current) {
             clearTimeout(reconnectTimeoutRef.current);
@@ -121,13 +142,14 @@ const ActiveUsers = ({ className = '' }) => {
       } catch (err) {
         console.error('Error setting up WebSocket:', err);
         setError('Failed to setup WebSocket connection');
+        setConnectionStatus('error');
       }
     };
 
     setupSocket();
 
     // Set up interval to refresh data every 15 seconds as fallback (reduced from 60)
-    const interval = setInterval(fetchActiveUsers, 15000);
+    fallbackIntervalRef.current = setInterval(fetchActiveUsers, 15000);
 
     // Set up heartbeat to check connection every 10 seconds
     const heartbeat = setInterval(() => {
@@ -138,7 +160,9 @@ const ActiveUsers = ({ className = '' }) => {
     }, 10000);
 
     return () => {
-      clearInterval(interval);
+      if (fallbackIntervalRef.current) {
+        clearInterval(fallbackIntervalRef.current);
+      }
       clearInterval(heartbeat);
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
@@ -167,6 +191,22 @@ const ActiveUsers = ({ className = '' }) => {
 
   const [showTooltip, setShowTooltip] = useState(false);
 
+  // Get connection status color and text
+  const getConnectionStatusInfo = () => {
+    switch (connectionStatus) {
+      case 'connected':
+        return { color: 'from-green-400 to-emerald-500', text: 'Connected' };
+      case 'connecting':
+        return { color: 'from-yellow-400 to-orange-500', text: 'Connecting' };
+      case 'error':
+        return { color: 'from-red-400 to-red-500', text: 'Connection Error' };
+      default:
+        return { color: 'from-gray-400 to-gray-500', text: 'Unknown' };
+    }
+  };
+
+  const statusInfo = getConnectionStatusInfo();
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.9 }}
@@ -180,9 +220,7 @@ const ActiveUsers = ({ className = '' }) => {
       {/* Enhanced animated pulse indicator */}
       <div className="relative">
         <motion.div
-          className={`w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full ${
-            error ? 'bg-gradient-to-r from-red-400 to-red-500' : 'bg-gradient-to-r from-green-400 to-emerald-500'
-          } shadow-lg`}
+          className={`w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-gradient-to-r ${statusInfo.color} shadow-lg`}
           animate={{
             scale: [1, 1.3, 1],
             opacity: [0.8, 1, 0.8]
@@ -194,9 +232,7 @@ const ActiveUsers = ({ className = '' }) => {
           }}
         />
         <motion.div 
-          className={`absolute inset-0 w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full opacity-40 ${
-            error ? 'bg-red-400' : 'bg-green-400'
-          }`}
+          className={`absolute inset-0 w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full opacity-40 bg-gradient-to-r ${statusInfo.color}`}
           animate={{
             scale: [1, 2, 1],
             opacity: [0.4, 0, 0.4]
@@ -271,13 +307,37 @@ const ActiveUsers = ({ className = '' }) => {
             exit={{ opacity: 0, y: -5, scale: 0.9 }}
             transition={{ duration: 0.2 }}
           >
-        <div className="flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${error ? 'bg-red-400' : 'bg-green-400'}`} />
-          <span className="font-medium">
-            {error ? 'Connection error - showing last known count' : `Active users online${lastUpdate ? ` • Updated ${getTimeSinceUpdate()}` : ''}`}
-          </span>
-        </div>
-        <div className="absolute bottom-full left-4 w-0 h-0 border-l-4 border-r-4 border-b-4 border-transparent border-b-black/95" />
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full bg-gradient-to-r ${statusInfo.color}`} />
+                <span className="font-medium">Active users online</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                  connectionStatus === 'connected' ? 'bg-green-500/20 text-green-300' :
+                  connectionStatus === 'connecting' ? 'bg-yellow-500/20 text-yellow-300' :
+                  'bg-red-500/20 text-red-300'
+                }`}>
+                  {statusInfo.text}
+                </span>
+              </div>
+              {lastUpdate && (
+                <span className="text-white/70 text-xs">
+                  Updated {getTimeSinceUpdate()}
+                </span>
+              )}
+              {error && (
+                <span className="text-red-400 text-xs">
+                  Connection error - showing last known count
+                </span>
+              )}
+              {activeUsers !== null && (
+                <span className="text-white/80 text-xs">
+                  Real-time count from server
+                </span>
+              )}
+            </div>
+            <div className="absolute bottom-full left-4 w-0 h-0 border-l-4 border-r-4 border-b-4 border-transparent border-b-black/95" />
           </motion.div>
         )}
       </AnimatePresence>

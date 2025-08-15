@@ -49,7 +49,7 @@ const io = socketIo(server, {
 const communityNamespace = io.of('/community');
 
 // Active users tracking
-let activeUsers = new Set();
+let activeUsers = new Map(); // Changed from Set to Map to track connection details
 let activeUsersCount = 0;
 
 // Debug logging for active users
@@ -61,7 +61,8 @@ const updateActiveUsersCount = () => {
   if (newCount !== activeUsersCount) {
     activeUsersCount = newCount;
     if (DEBUG_ACTIVE_USERS) {
-      console.log(`📊 Active users updated: ${activeUsersCount} (${Array.from(activeUsers).slice(0, 5).join(', ')}${activeUsers.size > 5 ? '...' : ''})`);
+      console.log(`📊 Active users updated: ${activeUsersCount}`);
+      console.log(`   Users: ${Array.from(activeUsers.keys()).slice(0, 10).join(', ')}${activeUsers.size > 10 ? '...' : ''}`);
     }
     // Broadcast to all connected clients
     io.emit('activeUsers:update', { 
@@ -72,21 +73,84 @@ const updateActiveUsersCount = () => {
 };
 
 // Function to add active user
-const addActiveUser = (userId) => {
-  const wasAdded = activeUsers.add(userId);
-  if (wasAdded && DEBUG_ACTIVE_USERS) {
-    console.log(`👤 User connected: ${userId}`);
+const addActiveUser = (userId, socketId, namespace = 'global') => {
+  const existingUser = activeUsers.get(userId);
+  
+  if (existingUser) {
+    // User already exists, update their connection info
+    existingUser.connections.add(socketId);
+    existingUser.lastSeen = new Date();
+    existingUser.namespaces.add(namespace);
+    if (DEBUG_ACTIVE_USERS) {
+      console.log(`🔄 User reconnected: ${userId} (${existingUser.connections.size} connections)`);
+    }
+  } else {
+    // New user
+    activeUsers.set(userId, {
+      connections: new Set([socketId]),
+      lastSeen: new Date(),
+      namespaces: new Set([namespace]),
+      isAuthenticated: userId.startsWith('anon_') ? false : true
+    });
+    if (DEBUG_ACTIVE_USERS) {
+      console.log(`👤 New user connected: ${userId} (${namespace})`);
+    }
   }
+  
   updateActiveUsersCount();
 };
 
 // Function to remove active user
-const removeActiveUser = (userId) => {
-  const wasRemoved = activeUsers.delete(userId);
-  if (wasRemoved && DEBUG_ACTIVE_USERS) {
-    console.log(`👋 User disconnected: ${userId}`);
+const removeActiveUser = (userId, socketId, namespace = 'global') => {
+  const user = activeUsers.get(userId);
+  
+  if (user) {
+    user.connections.delete(socketId);
+    user.namespaces.delete(namespace);
+    
+    // If user has no more connections, remove them completely
+    if (user.connections.size === 0) {
+      activeUsers.delete(userId);
+      if (DEBUG_ACTIVE_USERS) {
+        console.log(`👋 User completely disconnected: ${userId}`);
+      }
+    } else {
+      if (DEBUG_ACTIVE_USERS) {
+        console.log(`🔌 User partial disconnect: ${userId} (${user.connections.size} connections remaining)`);
+      }
+    }
+    
+    updateActiveUsersCount();
   }
-  updateActiveUsersCount();
+};
+
+// Function to get accurate active users count
+const getAccurateActiveUsersCount = () => {
+  return activeUsers.size;
+};
+
+// Function to get active users statistics
+const getActiveUsersStats = () => {
+  const stats = {
+    total: activeUsers.size,
+    authenticated: 0,
+    anonymous: 0,
+    byNamespace: {}
+  };
+  
+  for (const [userId, userData] of activeUsers) {
+    if (userData.isAuthenticated) {
+      stats.authenticated++;
+    } else {
+      stats.anonymous++;
+    }
+    
+    for (const namespace of userData.namespaces) {
+      stats.byNamespace[namespace] = (stats.byNamespace[namespace] || 0) + 1;
+    }
+  }
+  
+  return stats;
 };
 
 // Middleware
@@ -270,7 +334,7 @@ io.on('connection', (socket) => {
   
   // Add to active users count (anonymous or authenticated)
   const userId = socket.user ? socket.user._id.toString() : `anon_${socket.id}`;
-  addActiveUser(userId);
+  addActiveUser(userId, socket.id, 'global');
   
   // Send immediate update to the newly connected user
   socket.emit('activeUsers:update', { 
@@ -280,13 +344,19 @@ io.on('connection', (socket) => {
   
   socket.on('disconnect', (reason) => {
     console.log('User disconnected from global namespace:', socket.id, 'Reason:', reason);
-    removeActiveUser(userId);
+    removeActiveUser(userId, socket.id, 'global');
   });
   
   // Handle reconnection attempts
   socket.on('reconnect', () => {
     console.log('User reconnected to global namespace:', socket.id);
-    addActiveUser(userId);
+    addActiveUser(userId, socket.id, 'global');
+  });
+  
+  // Handle manual disconnect
+  socket.on('manual_disconnect', () => {
+    console.log('User manually disconnected from global namespace:', socket.id);
+    removeActiveUser(userId, socket.id, 'global');
   });
 });
 
@@ -296,7 +366,7 @@ communityNamespace.on('connection', (socket) => {
 
   // Add user to active users if authenticated
   if (socket.user && socket.user._id) {
-    addActiveUser(socket.user._id.toString());
+    addActiveUser(socket.user._id.toString(), socket.id, 'community');
   }
 
   // Join community room
@@ -326,7 +396,15 @@ communityNamespace.on('connection', (socket) => {
     console.log('User disconnected from community namespace:', socket.id);
     // Remove user from active users
     if (socket.user && socket.user._id) {
-      removeActiveUser(socket.user._id.toString());
+      removeActiveUser(socket.user._id.toString(), socket.id, 'community');
+    }
+  });
+  
+  // Handle manual disconnect
+  socket.on('manual_disconnect', () => {
+    console.log('User manually disconnected from community namespace:', socket.id);
+    if (socket.user && socket.user._id) {
+      removeActiveUser(socket.user._id.toString(), socket.id, 'community');
     }
   });
 });
@@ -354,37 +432,95 @@ app.get('/api/health', (req, res) => {
 
 // Active users endpoint
 app.get('/api/active-users', (req, res) => {
+  const stats = getActiveUsersStats();
+  
   res.status(200).json({
     count: activeUsersCount,
     timestamp: new Date().toISOString(),
+    stats: {
+      total: stats.total,
+      authenticated: stats.authenticated,
+      anonymous: stats.anonymous,
+      byNamespace: stats.byNamespace
+    },
     debug: DEBUG_ACTIVE_USERS ? {
       totalConnections: io.engine.clientsCount,
       activeUsersSet: activeUsers.size,
-      sampleUsers: Array.from(activeUsers).slice(0, 5)
+      sampleUsers: Array.from(activeUsers.keys()).slice(0, 5),
+      connectionDetails: Array.from(activeUsers.entries()).slice(0, 3).map(([userId, data]) => ({
+        userId,
+        connections: data.connections.size,
+        namespaces: Array.from(data.namespaces),
+        lastSeen: data.lastSeen,
+        isAuthenticated: data.isAuthenticated
+      }))
     } : undefined
   });
 });
 
+// Detailed active users endpoint for debugging (only in development)
+if (DEBUG_ACTIVE_USERS) {
+  app.get('/api/active-users/debug', (req, res) => {
+    const stats = getActiveUsersStats();
+    const allUsers = Array.from(activeUsers.entries()).map(([userId, data]) => ({
+      userId,
+      connections: Array.from(data.connections),
+      namespaces: Array.from(data.namespaces),
+      lastSeen: data.lastSeen,
+      isAuthenticated: data.isAuthenticated,
+      connectionCount: data.connections.size
+    }));
+    
+    res.status(200).json({
+      count: activeUsersCount,
+      timestamp: new Date().toISOString(),
+      stats,
+      allUsers,
+      totalConnections: io.engine.clientsCount
+    });
+  });
+}
+
 // Periodic cleanup of stale connections (every 5 minutes)
 setInterval(() => {
-  const currentConnections = new Set();
+  if (DEBUG_ACTIVE_USERS) {
+    console.log('🧹 Running periodic cleanup of stale connections...');
+  }
   
-  // Get all current socket IDs
+  const currentConnections = new Map(); // socketId -> userId mapping
+  
+  // Get all current socket IDs and their associated users
   io.sockets.sockets.forEach((socket) => {
     const userId = socket.user ? socket.user._id.toString() : `anon_${socket.id}`;
-    currentConnections.add(userId);
+    currentConnections.set(socket.id, userId);
   });
   
-  // Remove users that are no longer connected
-  const staleUsers = Array.from(activeUsers).filter(userId => !currentConnections.has(userId));
-  staleUsers.forEach(userId => {
-    if (DEBUG_ACTIVE_USERS) {
-      console.log(`🧹 Cleaning up stale user: ${userId}`);
+  // Clean up stale connections from activeUsers
+  let cleanedCount = 0;
+  for (const [userId, userData] of activeUsers) {
+    const staleConnections = Array.from(userData.connections).filter(socketId => !currentConnections.has(socketId));
+    
+    staleConnections.forEach(socketId => {
+      userData.connections.delete(socketId);
+      if (DEBUG_ACTIVE_USERS) {
+        console.log(`🧹 Cleaned up stale connection: ${socketId} for user ${userId}`);
+      }
+      cleanedCount++;
+    });
+    
+    // If user has no more connections, remove them completely
+    if (userData.connections.size === 0) {
+      activeUsers.delete(userId);
+      if (DEBUG_ACTIVE_USERS) {
+        console.log(`🧹 Removed user with no connections: ${userId}`);
+      }
     }
-    activeUsers.delete(userId);
-  });
+  }
   
-  if (staleUsers.length > 0) {
+  if (cleanedCount > 0 || activeUsers.size !== activeUsersCount) {
+    if (DEBUG_ACTIVE_USERS) {
+      console.log(`🧹 Cleanup completed: ${cleanedCount} stale connections removed`);
+    }
     updateActiveUsersCount();
   }
 }, 5 * 60 * 1000); // Every 5 minutes
