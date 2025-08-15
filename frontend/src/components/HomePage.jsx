@@ -13,6 +13,7 @@ import React, { useState, useEffect, useRef, useCallback, memo, useMemo, lazy, S
 import { TMDB_BASE_URL, transformMovieData } from '../services/tmdbService';
 import { getApiUrl } from '../config/api';
 import { getPosterProps, getBackdropProps } from '../utils/imageUtils';
+import ErrorBoundary from './ErrorBoundary';
 import { 
   getTrendingMovies, 
   getPopularMovies, 
@@ -221,8 +222,11 @@ const CategorySwiper = memo(({ categories, activeCategory, onCategoryClick, isMo
         if (categorySwiperRef.current && typeof categorySwiperRef.current.destroy === 'function') {
           categorySwiperRef.current.destroy(true, true);
         }
-      } catch (_) {}
-      categorySwiperRef.current = null;
+      } catch (error) {
+        console.warn('Error destroying category swiper:', error);
+      } finally {
+        categorySwiperRef.current = null;
+      }
     };
   }, []);
   if (isMobile) {
@@ -341,8 +345,11 @@ const MovieSectionSwiper = memo(({ title, movies, loading, onLoadMore, hasMore, 
         if (swiperRef.current && typeof swiperRef.current.destroy === 'function') {
           swiperRef.current.destroy(true, true);
         }
-      } catch (_) {}
-      swiperRef.current = null;
+      } catch (error) {
+        console.warn('Error destroying movie section swiper:', error);
+      } finally {
+        swiperRef.current = null;
+      }
     };
   }, []);
 
@@ -685,11 +692,16 @@ const ProgressiveImage = memo(
       // Cleanup function - FIXED: Proper image cleanup
       return () => {
         if (preloadRef.current === fullImage) {
-          preloadRef.current.onload = null;
-          preloadRef.current.onerror = null;
-          preloadRef.current.src = '';
-          preloadRef.current.srcset = '';
-          preloadRef.current = null;
+          try {
+            preloadRef.current.onload = null;
+            preloadRef.current.onerror = null;
+            preloadRef.current.src = '';
+            preloadRef.current.srcset = '';
+          } catch (error) {
+            console.warn('Error cleaning up image:', error);
+          } finally {
+            preloadRef.current = null;
+          }
         }
       };
     }, [src, srcSet, getTinySrc, retry, priority, onLoad, onError]);
@@ -1055,12 +1067,22 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
     // If you add any event listeners or observers, clean them up here
     return () => {
       if (hoverTimeoutRef.current) {
-        clearTimeout(hoverTimeoutRef.current);
-        hoverTimeoutRef.current = null;
+        try {
+          clearTimeout(hoverTimeoutRef.current);
+        } catch (error) {
+          console.warn('Error clearing hover timeout:', error);
+        } finally {
+          hoverTimeoutRef.current = null;
+        }
       }
       if (prefetchTimeoutRef.current) {
-        clearTimeout(prefetchTimeoutRef.current);
-        prefetchTimeoutRef.current = null;
+        try {
+          clearTimeout(prefetchTimeoutRef.current);
+        } catch (error) {
+          console.warn('Error clearing prefetch timeout:', error);
+        } finally {
+          prefetchTimeoutRef.current = null;
+        }
       }
     };
   }, []);
@@ -1788,8 +1810,6 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
         }
       }
 
-
-
       // Reset refs to prevent memory leaks
       preloadTimeoutRef.current = null;
       scrollTimeoutRef.current = null;
@@ -1968,7 +1988,7 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
 
 
 
-const HeroSection = memo(({ featuredContent, onMovieSelect, onGenreClick, onCastMemberClick }) => {
+const HeroSection = memo(({ featuredContent, trendingMovies, onMovieSelect, onGenreClick, onCastMemberClick }) => {
   const { addToWatchlist, removeFromWatchlist, isInWatchlist } = useWatchlist();
   const { viewingProgress } = useViewingProgress();
   const [isExpanded, setIsExpanded] = useState(false);
@@ -2001,6 +2021,24 @@ const HeroSection = memo(({ featuredContent, onMovieSelect, onGenreClick, onCast
       key.startsWith(tvKeyPrefix) && typeof data?.progress === 'number' && data.progress > 0
     );
   }, [featuredContent, viewingProgress]);
+
+  // Check if the featured content is trending
+  const isTrending = useMemo(() => {
+    if (!featuredContent || !featuredContent.id) return false;
+    
+    // Check if it's in the trending movies list
+    const isInTrending = trendingMovies.some(movie => movie.id === featuredContent.id);
+    
+    // Check if it has high popularity (trending indicator)
+    const popularity = featuredContent.popularity || 0;
+    const isHighPopularity = popularity > 5000;
+    
+    // Check if it's recent (within last year)
+    const releaseDate = featuredContent.release_date || featuredContent.first_air_date;
+    const isRecent = releaseDate ? new Date(releaseDate).getFullYear() >= new Date().getFullYear() - 1 : false;
+    
+    return isInTrending || isHighPopularity || isRecent;
+  }, [featuredContent, trendingMovies]);
 
   // Optimized parallax effect with reduced frequency and stop-on-stable behavior
   useEffect(() => {
@@ -3078,10 +3116,10 @@ const HomePage = () => {
   const MAX_PAGES_PER_CATEGORY = 5; // Reduced to 5 pages for faster loading
   const MAX_TOTAL_CACHE_ITEMS = 25; // Reduced to 25 items for better performance
 
-  // Per-section TTL overrides - Increased for better user experience
+  // Per-section TTL overrides - Optimized for trend-based updates
   const SECTION_TTLS = useMemo(() => ({
-    featured: 60 * 60 * 1000,      // 1 hour (was 20 minutes)
-    trending: 45 * 60 * 1000,      // 45 minutes (was 15 minutes)
+    featured: 15 * 60 * 1000,      // 15 minutes (reduced for trend updates)
+    trending: 20 * 60 * 1000,      // 20 minutes (reduced for trend updates)
     nowPlaying: 30 * 60 * 1000,    // 30 minutes (was 10 minutes)
     popular: 90 * 60 * 1000,       // 1.5 hours (was 45 minutes)
     topRated: 90 * 60 * 1000,      // 1.5 hours (was 45 minutes)
@@ -4030,10 +4068,14 @@ const HomePage = () => {
     
     return () => {
       if (preloadTimeout) {
-        if (typeof window !== 'undefined' && window.cancelIdleCallback) {
-          cancelIdleCallback(preloadTimeout);
-        } else {
-          clearTimeout(preloadTimeout);
+        try {
+          if (typeof window !== 'undefined' && window.cancelIdleCallback) {
+            cancelIdleCallback(preloadTimeout);
+          } else {
+            clearTimeout(preloadTimeout);
+          }
+        } catch (error) {
+          console.warn('Error clearing preload timeout:', error);
         }
       }
     };
@@ -4043,20 +4085,29 @@ const HomePage = () => {
   useEffect(() => {
     // Set up performance observer
     if ('PerformanceObserver' in window) {
-      performanceObserver.current = new PerformanceObserver((list) => {
-        list.getEntries().forEach(entry => {
-          if (entry.entryType === 'measure') {
-            // Performance monitoring logic
-          }
+      try {
+        performanceObserver.current = new PerformanceObserver((list) => {
+          list.getEntries().forEach(entry => {
+            if (entry.entryType === 'measure') {
+              // Performance monitoring logic
+            }
+          });
         });
-      });
-      performanceObserver.current.observe({ entryTypes: ['measure'] });
+        performanceObserver.current.observe({ entryTypes: ['measure'] });
+      } catch (error) {
+        console.warn('Failed to set up performance observer:', error);
+      }
     }
     
     return () => {
       if (performanceObserver.current) {
-        performanceObserver.current.disconnect();
-        performanceObserver.current = null;
+        try {
+          performanceObserver.current.disconnect();
+        } catch (error) {
+          console.warn('Error disconnecting performance observer:', error);
+        } finally {
+          performanceObserver.current = null;
+        }
       }
     };
   }, []);
@@ -5415,7 +5466,66 @@ const HomePage = () => {
     }
   }, [setActiveCategory, setLoadingState, prefetchAdjacentCategories, dataCache, CACHE_DURATION, fetchMoviesForCategory, updateCategoryState, setError]);
 
-  // Advanced content prioritization considering multiple factors for movies vs series
+  // Enhanced trend score calculation for dynamic hero content selection
+  const calculateTrendScore = (item) => {
+    if (!item) return 0;
+    
+    let score = 0;
+    const rating = item.vote_average || item.rating || 0;
+    const popularity = typeof item.popularity === 'number' ? item.popularity : 0;
+    const voteCount = item.vote_count || item.voteCount || 0;
+    const isTV = item.type === 'tv';
+    
+    // Base popularity score (highest weight for trending)
+    score += popularity * 0.4;
+    
+    // Rating quality score
+    score += rating * 100 * 0.2;
+    
+    // Vote count credibility score
+    score += Math.min(voteCount / 100, 100) * 0.15;
+    
+    // Content type bonus
+    if (isTV) {
+      score += 500; // TV shows get bonus for variety
+      if (item.status === 'Returning Series') score += 200;
+      if (item.number_of_seasons > 1) score += 100;
+    } else {
+      score += 300; // Movies get base bonus
+    }
+    
+    // Recency bonus (higher for very recent content)
+    if (item.release_date || item.first_air_date) {
+      const releaseDate = item.release_date || item.first_air_date;
+      if (releaseDate) {
+        const year = new Date(releaseDate).getFullYear();
+        const currentYear = new Date().getFullYear();
+        const yearsDiff = currentYear - year;
+        
+        if (yearsDiff === 0) score += 800;      // This year
+        else if (yearsDiff === 1) score += 600;  // Last year
+        else if (yearsDiff <= 3) score += 400;   // Recent (2-3 years)
+        else if (yearsDiff > 10) score -= 200;   // Penalty for old content
+      }
+    }
+    
+    // Trending genre bonus
+    if (item.genre_ids && Array.isArray(item.genre_ids)) {
+      const trendingGenres = [16, 35, 10751, 10765, 10759]; // Animation, Comedy, Family, Sci-Fi & Fantasy, Action & Adventure
+      const hasTrendingGenre = item.genre_ids.some(id => trendingGenres.includes(id));
+      if (hasTrendingGenre) score += 300;
+    }
+    
+    // Freshness bonus (for recently updated content)
+    const now = Date.now();
+    const lastUpdated = item.last_updated || item.updated_at || now;
+    const hoursSinceUpdate = (now - lastUpdated) / (1000 * 60 * 60);
+    if (hoursSinceUpdate < 24) score += 400; // Boost for content updated in last 24 hours
+    
+    return score;
+  };
+
+  // Enhanced content prioritization with trend-based selection for dynamic hero updates
   const getContentPriority = (item) => {
     if (!item) return 1.0;
     
@@ -5432,11 +5542,12 @@ const HomePage = () => {
     else if (rating >= 7.0) priority *= 1.1;   // Above average
     else if (rating < 6.0) priority *= 0.8;    // Penalize low ratings
     
-    // Factor 2: Popularity (Current trending status)
-    if (popularity > 8000) priority *= 1.3;    // Viral/trending
-    else if (popularity > 5000) priority *= 1.2; // Very popular
-    else if (popularity > 2000) priority *= 1.1; // Popular
-    else if (popularity < 500) priority *= 0.9;  // Less popular
+    // Factor 2: Enhanced Popularity (Trend-based with higher weight for trending content)
+    if (popularity > 10000) priority *= 1.5;   // Viral/trending (increased boost)
+    else if (popularity > 8000) priority *= 1.4; // Very viral/trending
+    else if (popularity > 5000) priority *= 1.3; // Very popular
+    else if (popularity > 2000) priority *= 1.2; // Popular
+    else if (popularity < 500) priority *= 0.8;  // Less popular (increased penalty)
     
     // Factor 3: Vote Count (Credibility of rating)
     if (voteCount > 15000) priority *= 1.2;    // Highly credible
@@ -5459,7 +5570,7 @@ const HomePage = () => {
       if (item.runtime && item.runtime > 120) priority *= 1.05; // Feature-length movies
     }
     
-    // Factor 5: Recency (Favor newer content but not too heavily)
+    // Factor 5: Enhanced Recency (Higher weight for very recent content)
     if (item.release_date || item.first_air_date) {
       const releaseDate = item.release_date || item.first_air_date;
       if (releaseDate) {
@@ -5467,18 +5578,18 @@ const HomePage = () => {
         const currentYear = new Date().getFullYear();
         const yearsDiff = currentYear - year;
         
-        if (yearsDiff === 0) priority *= 1.15;      // This year
-        else if (yearsDiff === 1) priority *= 1.1;  // Last year
-        else if (yearsDiff <= 3) priority *= 1.05;  // Recent (2-3 years)
-        else if (yearsDiff > 10) priority *= 0.95;  // Older content
+        if (yearsDiff === 0) priority *= 1.25;      // This year (increased boost)
+        else if (yearsDiff === 1) priority *= 1.15;  // Last year (increased boost)
+        else if (yearsDiff <= 3) priority *= 1.1;   // Recent (2-3 years)
+        else if (yearsDiff > 10) priority *= 0.9;   // Older content (increased penalty)
       }
     }
     
-    // Factor 6: Genre Intelligence (Boost certain genres that are trending)
+    // Factor 6: Enhanced Genre Intelligence (Boost trending genres more aggressively)
     if (item.genre_ids && Array.isArray(item.genre_ids)) {
       const trendingGenres = [16, 35, 10751, 10765, 10759]; // Animation, Comedy, Family, Sci-Fi & Fantasy, Action & Adventure
       const hasTrendingGenre = item.genre_ids.some(id => trendingGenres.includes(id));
-      if (hasTrendingGenre) priority *= 1.05;
+      if (hasTrendingGenre) priority *= 1.1; // Increased boost for trending genres
     }
     
     // Factor 7: Content Quality Score (Combined metric)
@@ -5486,6 +5597,17 @@ const HomePage = () => {
     if (qualityScore > 8) priority *= 1.2;      // High quality
     else if (qualityScore > 6) priority *= 1.1; // Good quality
     else if (qualityScore < 4) priority *= 0.9; // Lower quality
+    
+    // Factor 8: Trend Detection (New factor for dynamic updates)
+    // Check if this content is in the trending list (higher priority)
+    const isTrending = trendingMovies.some(trending => trending.id === item.id);
+    if (isTrending) priority *= 1.3; // Significant boost for trending content
+    
+    // Factor 9: Freshness Boost (New factor for recently added content)
+    const now = Date.now();
+    const lastUpdated = item.last_updated || item.updated_at || now;
+    const hoursSinceUpdate = (now - lastUpdated) / (1000 * 60 * 60);
+    if (hoursSinceUpdate < 24) priority *= 1.2; // Boost for content updated in last 24 hours
     
     return priority;
   };
@@ -5548,10 +5670,11 @@ const HomePage = () => {
         setTimeout(() => reject(new Error('Trending content request timeout')), 6000); // Reduced to 6 seconds
       });
       
-      // Fetch both trending all content and popular TV shows for better variety
-      const [trendingPromise, popularTVPromise] = await Promise.allSettled([
+      // Fetch trending content with enhanced variety for better trend detection
+      const [trendingPromise, popularTVPromise, nowPlayingPromise] = await Promise.allSettled([
         Promise.race([getTrendingMovies(1), timeoutPromise]),
-        Promise.race([getPopularTVShows(1), timeoutPromise])
+        Promise.race([getPopularTVShows(1), timeoutPromise]),
+        Promise.race([getNowPlayingMovies(1), timeoutPromise])
       ]);
       
       metrics.trendingFetchTime = performance.now() - trendingStart;
@@ -5568,36 +5691,32 @@ const HomePage = () => {
       if (popularTVPromise.status === 'fulfilled' && popularTVPromise.value?.shows?.length) {
         allCandidates.push(...popularTVPromise.value.shows);
       }
+      
+      // Add now playing movies (often trending)
+      if (nowPlayingPromise.status === 'fulfilled' && nowPlayingPromise.value?.movies?.length) {
+        allCandidates.push(...nowPlayingPromise.value.movies);
+      }
 
       // Enhanced result validation
       if (!allCandidates.length) {
         throw new Error('No trending content available from API');
       }
 
-      // Enhanced item selection: prioritize popular TV shows and trending content
+      // Enhanced item selection: prioritize trending content with trend detection
       const candidates = allCandidates.filter(item => item?.id && item?.title && typeof item.id === 'number');
       if (!candidates.length) {
         throw new Error('No valid trending items found');
       }
       
-      // Sort by smart content priority based on actual metrics
+      // Enhanced trend-based selection with multiple scoring factors
       const bestItem = candidates
         .slice()
         .sort((a, b) => {
-          // Use smart priority calculation instead of hardcoded boosts
-          const priorityA = getContentPriority(a);
-          const priorityB = getContentPriority(b);
+          // Calculate comprehensive trend score
+          const scoreA = calculateTrendScore(a);
+          const scoreB = calculateTrendScore(b);
           
-          // Calculate weighted score based on priority and popularity
-          const scoreA = (typeof a.popularity === 'number' ? a.popularity : 0) * priorityA;
-          const scoreB = (typeof b.popularity === 'number' ? b.popularity : 0) * priorityB;
-          
-          if (Math.abs(scoreB - scoreA) > 0.1) return scoreB - scoreA;
-          
-          // Fallback to vote count if popularity scores are close
-          const votesA = typeof a.voteCount === 'number' ? a.voteCount : (a.vote_count || 0);
-          const votesB = typeof b.voteCount === 'number' ? b.voteCount : (b.vote_count || 0);
-          return votesB - votesA;
+          return scoreB - scoreA;
         })[0];
 
       // Enhanced details fetching with retry logic
@@ -5632,6 +5751,17 @@ const HomePage = () => {
       metrics.dataSize = 1;
       metrics.processingTime = performance.now() - processingStart;
       metrics.totalTime = performance.now() - startTime;
+
+      // Log hero content update for trend tracking
+      console.log('🎬 Hero content updated:', {
+        title: details.title,
+        id: details.id,
+        type: details.type,
+        popularity: details.popularity,
+        rating: details.vote_average,
+        isTrending: trendingMovies.some(movie => movie.id === details.id),
+        updateTime: new Date().toISOString()
+      });
 
     } catch (error) {
       console.error(`💥 Critical error fetching featured content:`, {
@@ -5692,6 +5822,44 @@ const HomePage = () => {
       isMounted = false;
     };
   }, []); // FIXED: Empty dependency array since fetchFeaturedContent has no dependencies
+
+  // Enhanced: Automatic hero content refresh for trend updates
+  useEffect(() => {
+    let refreshInterval;
+    
+    const setupRefresh = () => {
+      // Clear any existing interval
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+      }
+      
+      // Set up automatic refresh every 15 minutes (matching cache TTL)
+      refreshInterval = trackedSetInterval(async () => {
+        if (isMountedRef.current) {
+          console.log('🔄 Auto-refreshing hero content for trend updates...');
+          
+          // Clear the featured content cache to force fresh data
+          try {
+            const storageKey = 'movieCache_featured';
+            localStorage.removeItem(storageKey);
+          } catch (error) {
+            console.warn('Failed to clear featured cache:', error);
+          }
+          
+          // Fetch fresh featured content
+          await fetchFeaturedContent();
+        }
+      }, 15 * 60 * 1000); // 15 minutes
+    };
+    
+    setupRefresh();
+    
+    return () => {
+      if (refreshInterval) {
+        trackedClearInterval(refreshInterval);
+      }
+    };
+  }, []); // Empty dependency array to prevent infinite loops
 
 
 
@@ -5919,7 +6087,7 @@ const HomePage = () => {
       );
     }
     return null;
-  }, [loadingStates.initial]); // FIXED: Remove loadingStates dependency to prevent unnecessary re-renders
+  }, [loadingStates.initial, shouldSkipInitialLoading]); // Keep necessary dependencies only
 
   // Early returns moved to the end after all hooks are called
   if (loadingStates.initial) {
@@ -5936,14 +6104,30 @@ const HomePage = () => {
 
   return (
     <div className="relative flex size-full min-h-screen flex-col bg-[#121417] dark group/design-root overflow-x-hidden font-inter scrollbar-hide smooth-scroll performance-scroll">
-      <div className="layout-container flex h-full grow flex-col scrollbar-hide momentum-scroll">
-        <div className="flex flex-1 justify-center">
-          <div className="layout-content-container flex flex-col w-full flex-1 scrollbar-hide custom-scroll-ease">
+      {/* Error Boundary for better error handling */}
+      <ErrorBoundary
+        fallback={
+          <div className="flex items-center justify-center min-h-screen bg-[#121417]">
+            <div className="text-white text-xl">Something went wrong. Please refresh the page.</div>
+          </div>
+        }
+        onError={(error, errorInfo) => {
+          console.error('HomePage Error Boundary caught an error:', error, errorInfo);
+          // Track error for analytics
+          if (typeof trackApiCall === 'function') {
+            trackApiCall('HomePageError', 0, false);
+          }
+        }}
+      >
+        <div className="layout-container flex h-full grow flex-col scrollbar-hide momentum-scroll">
+          <div className="flex flex-1 justify-center">
+            <div className="layout-content-container flex flex-col w-full flex-1 scrollbar-hide custom-scroll-ease">
 
             
             {/* Add HeroSection here */}
             <MemoizedHeroSection 
               featuredContent={featuredContent} 
+              trendingMovies={trendingMovies}
               onMovieSelect={handleMovieSelect}
               onGenreClick={handleGenreNavigation}
               onCastMemberClick={handleCastMemberClick}
@@ -6132,6 +6316,7 @@ const HomePage = () => {
           </div>
         </div>
       </div>
+      </ErrorBoundary>
       {/* Add MovieDetailsOverlay */}
       {selectedMovie && (
         <Suspense 

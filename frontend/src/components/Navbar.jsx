@@ -2486,7 +2486,17 @@ const Navbar = ({ onMovieSelect }) => {
         </div>
       </div>
       {/* RIGHT: Desktop search and profile/auth menu (hidden on mobile) */}
-      <div className="hidden sm:flex flex-1 justify-end gap-4 sm:gap-6 md:gap-8 mr-2">
+      <div className="hidden sm:flex flex-1 justify-end items-center gap-4 sm:gap-6 md:gap-8 mr-2">
+        {/* Active Users Display - Enhanced positioning and styling */}
+        <motion.div 
+          className="hidden md:flex items-center"
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+        >
+          <ActiveUsers className="bg-gradient-to-r from-white/8 to-white/5 border border-white/10 shadow-lg backdrop-blur-sm" />
+        </motion.div>
+        
         <div 
           ref={searchRef} 
           className={`relative transition-all duration-300 ease-out group ${
@@ -3005,11 +3015,6 @@ const Navbar = ({ onMovieSelect }) => {
           </AnimatePresence>
         </div>
         <div className="flex items-center gap-3 sm:gap-4 md:gap-6">
-          {/* Active Users Display */}
-          <div className="hidden md:block">
-            <ActiveUsers />
-          </div>
-          
           {/* Auth Buttons / Profile Menu */}
           <motion.div layout className="relative">
             <AnimatePresence mode="wait">
@@ -3197,32 +3202,37 @@ const Navbar = ({ onMovieSelect }) => {
         </div>
       </div>
 
-      {/* RIGHT: Mobile icons (search + hamburger) */}
-      <div className="flex items-center justify-end gap-3 sm:hidden">
-        {/* Search icon (mobile) */}
-        <motion.button
-          onClick={() => setIsMobileSearchOpen(true)}
-          className="w-10 h-10 flex items-center justify-center text-white/70 hover:text-white hover:bg-white/5 rounded-full transition-all duration-200"
-          aria-label="Open search"
-          whileHover={{ scale: 1.1 }}
-          whileTap={{ scale: 0.95 }}
-        >
-          <svg 
-            xmlns="http://www.w3.org/2000/svg" 
-            className="h-5 w-5" 
-            viewBox="0 0 24 24" 
-            fill="none" 
-            stroke="currentColor" 
-            strokeWidth="2"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-        </motion.button>
-
-        {/* Active Users Display (mobile) */}
-        <div className="md:hidden">
-          <ActiveUsers className="px-2 py-1" />
+      {/* MOBILE: Centered ActiveUsers with side icons */}
+      <div className="flex items-center justify-between w-full sm:hidden">
+        {/* Left side - empty for balance */}
+        <div className="w-8"></div>
+        
+        {/* Center - Active Users Display */}
+        <div className="flex-1 flex justify-center -ml-4">
+          <ActiveUsers className="px-3 py-2 bg-white/8 border border-white/15 rounded-full text-xs shadow-lg" />
         </div>
+        
+        {/* Right side - Search and Profile */}
+        <div className="flex items-center gap-2">
+          {/* Search icon (mobile) */}
+          <motion.button
+            onClick={() => setIsMobileSearchOpen(true)}
+            className="w-10 h-10 flex items-center justify-center text-white/70 hover:text-white hover:bg-white/5 rounded-full transition-all duration-200"
+            aria-label="Open search"
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <svg 
+              xmlns="http://www.w3.org/2000/svg" 
+              className="h-5 w-5" 
+              viewBox="0 0 24 24" 
+              fill="none" 
+              stroke="currentColor" 
+              strokeWidth="2"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </motion.button>
 
         {/* User Authentication Button (mobile) */}
         {user ? (
@@ -3255,8 +3265,8 @@ const Navbar = ({ onMovieSelect }) => {
             </svg>
           </motion.button>
         )}
-
         </div>
+      </div>
 
       {/* MOBILE SEARCH OVERLAY */}
       <AnimatePresence mode="wait">
@@ -3830,7 +3840,7 @@ const Navbar = ({ onMovieSelect }) => {
                                 <div className="text-white/60 mb-2">No results found for "{searchQuery}"</div>
                                 <div className="text-white/40 text-xs">Try different keywords or check your spelling</div>
                               </motion.div>
-                        )}
+                            )}
                           </motion.div>
                         )}
                       </motion.div>
@@ -3841,7 +3851,7 @@ const Navbar = ({ onMovieSelect }) => {
             </motion.div>
           </motion.div>
         )}
-        </AnimatePresence>
+      </AnimatePresence>
     </header>
   );
 };
