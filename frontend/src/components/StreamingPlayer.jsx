@@ -497,7 +497,7 @@ const StreamingPlayer = ({
             </button>
 
             {/* Top Controls Bar */}
-            <div className="absolute top-4 left-4 right-16 z-[99999999999] flex items-center justify-start">
+            <div className="absolute top-4 left-4 z-[99999999999] flex items-center justify-start">
               {/* Service Toggler */}
               <StreamingServiceToggler
                 content={content}
