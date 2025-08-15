@@ -1,0 +1,24 @@
+<svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.8; }
+      }
+      @keyframes scale {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+      }
+      .logo-path {
+        fill: #ffffff;
+        animation: pulse 3s ease-in-out infinite, scale 3s ease-in-out infinite;
+      }
+    </style>
+  </defs>
+  <path 
+    fillRule="evenodd" 
+    clipRule="evenodd" 
+    d="M24 4H42V17.3333V30.6667H24V44H6V30.6667V17.3333H24V4Z" 
+    class="logo-path"
+  />
+</svg> 
