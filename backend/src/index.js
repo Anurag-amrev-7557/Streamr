@@ -32,7 +32,7 @@ const frontendPath = path.join(__dirname, '../../frontend/dist');
 // Initialize Socket.IO with CORS
 const io = socketIo(server, {
   cors: {
-    origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+    origin: ['https://streamr-see.web.app', 'http://localhost:5173', 'http://127.0.0.1:5173'],
     methods: ['GET', 'POST'],
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization']
