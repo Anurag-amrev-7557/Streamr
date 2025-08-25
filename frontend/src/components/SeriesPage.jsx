@@ -21,6 +21,9 @@ import { formatRating } from '../utils/ratingUtils';
 import enhancedEpisodeService from '../services/enhancedEpisodeService';
 import RatingBadge from './RatingBadge';
 import { getTmdbImageUrl } from '../utils/imageUtils.js';
+import enhancedLoadingService from '../services/enhancedLoadingService';
+import EnhancedLoadingIndicator from './EnhancedLoadingIndicator';
+import NetworkStatusBadge from './NetworkStatusBadge';
 
 // Streaming service icons
 const StreamingIcons = {
@@ -444,6 +447,7 @@ const SeriesPage = () => {
   const [showEpisodeList, setShowEpisodeList] = useState(false);
   const [selectedSeriesForEpisodes, setSelectedSeriesForEpisodes] = useState(null);
   const [episodeListLoading, setEpisodeListLoading] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   const { watchlist, addToWatchlist, removeFromWatchlist } = useWatchlist();
 
   const categories = [
@@ -510,10 +514,23 @@ const SeriesPage = () => {
     }
   };
 
-  const fetchInitialSeries = async () => {
+  // Enhanced retry handler for loading failures
+  const handleRetry = useCallback(async () => {
+    setRetryCount(prev => prev + 1);
+    setError(null);
+    
+    try {
+      await fetchInitialSeries(activeCategory);
+    } catch (error) {
+      console.error('Retry failed:', error);
+      setError(enhancedLoadingService.getErrorMessage(error, 'TV series'));
+    }
+  }, [activeCategory]);
+
+  const fetchInitialSeries = async (category = activeCategory) => {
     try {
       setLoading(true);
-      const networkId = categories.find(c => c.id === activeCategory)?.networkId;
+      const networkId = categories.find(c => c.id === category)?.networkId;
       
       let response;
       if (networkId) {
@@ -521,7 +538,7 @@ const SeriesPage = () => {
         response = await getTVSeriesByNetwork(networkId, 1);
       } else {
         // Fetch based on category
-        switch (activeCategory) {
+        switch (category) {
           case 'popular':
             response = await getPopularTVShows(1);
             break;
@@ -611,7 +628,7 @@ const SeriesPage = () => {
       }
     } catch (err) {
       console.error('Error fetching series:', err);
-      setError('Failed to load series');
+      setError(enhancedLoadingService.getErrorMessage(err, 'TV series'));
     } finally {
       setLoading(false);
     }
@@ -729,14 +746,110 @@ const SeriesPage = () => {
       }
     } catch (err) {
       console.error('Error loading more series:', err);
-      setError('Failed to load more series');
+      setError(enhancedLoadingService.getErrorMessage(err, 'more TV series'));
     } finally {
       setIsLoadingMore(false);
     }
   }, [loading, isLoadingMore, page, activeCategory, categories]); // Added dependency array to prevent infinite loops
 
-  const handleCategoryClick = async (category) => {
-    // Prevent multiple rapid clicks
+  // Add URL parameter handling
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const category = searchParams.get('category');
+    const genreParam = searchParams.get('genre');
+    const yearParam = searchParams.get('year');
+    
+    if (category && category !== activeCategory) {
+      handleCategoryClick(category);
+    }
+
+    // Only restore filters if they exist in URL and we don't have them set locally
+    if (genreParam && genres.length > 0 && !selectedGenre) {
+      // Map genre names to their IDs
+      const genreIdMap = {
+        'action': 28,
+        'adventure': 12,
+        'animation': 16,
+        'comedy': 35,
+        'crime': 80,
+        'documentary': 99,
+        'drama': 18,
+        'family': 10751,
+        'fantasy': 14,
+        'history': 36,
+        'horror': 27,
+        'music': 10402,
+        'mystery': 9648,
+        'romance': 10749,
+        'sci-fi': 878,
+        'tv movie': 10770,
+        'thriller': 53,
+        'war': 10752,
+        'western': 37
+      };
+
+      const genreId = genreIdMap[genreParam.toLowerCase()];
+      if (genreId) {
+        setSelectedGenre(genreId);
+      }
+    }
+
+    if (yearParam && !selectedYear) {
+      const year = parseInt(yearParam);
+      if (year && year >= 1900 && year <= new Date().getFullYear()) {
+        setSelectedYear(year);
+      }
+    }
+    
+    return () => {
+      // Cleanup function for URL parameter handling
+      // Clear any pending operations
+      if (isTransitioning) {
+        setIsTransitioning(false);
+      }
+    };
+  }, [window.location.search, genres, activeCategory, selectedGenre, selectedYear]);
+
+  // Enhanced clear filters function that properly clears URL parameters
+  const clearAllFilters = useCallback(() => {
+    try {
+      // Clear local state
+      setSelectedYear(null);
+      setSelectedGenre(null);
+      
+      // Clear URL parameters completely
+      const searchParams = new URLSearchParams(window.location.search);
+      searchParams.delete('genre');
+      searchParams.delete('year');
+      
+      // Keep only the category parameter
+      const category = searchParams.get('category');
+      if (category) {
+        searchParams.set('category', category);
+      }
+      
+      // Update URL without the filter parameters
+      navigate(`?${searchParams.toString()}`, { replace: true });
+      
+      // Force refetch series without filters
+      if (activeCategory) {
+        setSeries([]);
+        setPage(1);
+        setHasMore(true);
+        setError(null);
+        setLoading(true);
+        setIsLoadingMore(false);
+        
+        // Refetch series without filters
+        fetchInitialSeries(activeCategory);
+      }
+    } catch (error) {
+      console.error('Error clearing filters:', error);
+    }
+  }, [navigate, activeCategory]);
+
+  // Enhanced category change handler that preserves existing filters
+  const handleCategoryClick = useCallback(async (category) => {
     if (activeCategory === category || isTransitioning) return;
     
     // Set transition state for smooth animations
@@ -745,31 +858,41 @@ const SeriesPage = () => {
     // Reset all states when changing category
     setActiveCategory(category);
     setSeries([]);
-    setLoading(true);
-    setError(null);
     setPage(1);
     setHasMore(true);
-
-    try {
-      // Use enhanced fetch with fallback mechanisms
-      const response = await fetchSeriesWithFallback(category, 1);
-      
-      if (response.success) {
-        setSeries(response.series || []);
-        setHasMore(response.hasMore || false);
-        setPage(1);
-        
-        // Update URL for better navigation
-        updateURLWithCategory(category);
-      } else {
-        setError(response.error || 'Failed to load series');
-        setSeries([]);
-        setHasMore(false);
+    setError(null);
+    setLoading(true);
+    setIsLoadingMore(false);
+    
+    // Update URL with new category and preserve existing filters
+    const searchParams = new URLSearchParams(window.location.search);
+    searchParams.set('category', category);
+    
+    // Only preserve filters if they exist locally (not cleared)
+    if (selectedGenre) {
+      const genreName = genres.find(g => g.id === selectedGenre)?.name;
+      if (genreName) {
+        searchParams.set('genre', genreName.toLowerCase());
       }
-    } catch (err) {
-      console.error('Error fetching series:', err);
+    } else {
+      searchParams.delete('genre');
+    }
+    
+    if (selectedYear) {
+      searchParams.set('year', selectedYear.toString());
+    } else {
+      searchParams.delete('year');
+    }
+    
+    navigate(`?${searchParams.toString()}`, { replace: true });
+    
+    try {
+      // Fetch series for the new category
+      await fetchInitialSeries(category);
+    } catch (error) {
+      console.error('Category change error:', error);
+      setError('Failed to load series: ' + (error.message || 'Unknown error'));
       setSeries([]);
-      setError('Failed to load series');
       setHasMore(false);
     } finally {
       setLoading(false);
@@ -778,250 +901,7 @@ const SeriesPage = () => {
         setIsTransitioning(false);
       }, 400);
     }
-  };
-
-  // Enhanced fetch function with fallback mechanisms
-  const fetchSeriesWithFallback = async (category, pageNum = 1) => {
-    try {
-      let response;
-      let seriesData = [];
-      let totalPages = 1;
-      let hasMore = false;
-
-      // Fetch based on category
-      if (isStreamingService(category)) {
-        response = await fetchStreamingServiceSeries(category, pageNum);
-      } else {
-        response = await fetchStandardSeries(category, pageNum);
-      }
-
-      // Normalize response format
-      if (response) {
-        if (response.movies && Array.isArray(response.movies)) {
-          seriesData = response.movies;
-          totalPages = response.totalPages || 1;
-          hasMore = pageNum < totalPages;
-        } else if (response.results && Array.isArray(response.results)) {
-          seriesData = response.results;
-          totalPages = response.totalPages || 1;
-          hasMore = pageNum < totalPages;
-        } else if (Array.isArray(response)) {
-          seriesData = response;
-        }
-      }
-
-      if (seriesData.length > 0) {
-        const transformedSeries = transformSeriesData(seriesData);
-        return {
-          success: true,
-          series: transformedSeries,
-          totalPages,
-          hasMore,
-          currentPage: pageNum
-        };
-      } else {
-        return {
-          success: false,
-          error: 'No series found',
-          series: [],
-          totalPages: 1,
-          hasMore: false
-        };
-      }
-    } catch (error) {
-      console.error(`Failed to fetch series for category ${category}:`, error);
-      
-      // Try fallback to popular series if streaming service fails
-      if (isStreamingService(category)) {
-        try {
-          console.log(`Trying fallback to popular series for ${category}`);
-          const fallbackResponse = await getPopularTVShows(pageNum);
-          if (fallbackResponse.movies && fallbackResponse.movies.length > 0) {
-            const transformedSeries = transformSeriesData(fallbackResponse.movies);
-            return {
-              success: true,
-              series: transformedSeries,
-              totalPages: fallbackResponse.totalPages || 1,
-              hasMore: pageNum < (fallbackResponse.totalPages || 1),
-              currentPage: pageNum,
-              fallback: true
-            };
-          }
-        } catch (fallbackError) {
-          console.error('Fallback also failed:', fallbackError);
-        }
-      }
-      
-      return {
-        success: false,
-        error: error.message || 'Failed to fetch series',
-        series: [],
-        totalPages: 1,
-        hasMore: false
-      };
-    }
-  };
-
-  // Helper function to check if category is a streaming service
-  const isStreamingService = (category) => {
-    return ['netflix', 'prime', 'hbo', 'hulu', 'disney', 'apple'].includes(category);
-  };
-
-  // Enhanced fetch for streaming service series
-  const fetchStreamingServiceSeries = async (category, pageNum) => {
-    switch (category) {
-      case 'netflix':
-        return await getTVSeriesByNetwork(213, pageNum);
-      case 'prime':
-        return await fetchPrimeSeries(pageNum);
-      case 'hbo':
-        return await fetchHBOSeries(pageNum);
-      case 'hulu':
-        return await fetchHuluSeries(pageNum);
-      case 'disney':
-        return await getTVSeriesByNetwork(2739, pageNum);
-      case 'apple':
-        return await getTVSeriesByNetwork(2552, pageNum);
-      default:
-        return await getPopularTVShows(pageNum);
-    }
-  };
-
-  // Enhanced fetch for standard series categories
-  const fetchStandardSeries = async (category, pageNum) => {
-    switch (category) {
-      case 'popular':
-        return await getPopularTVShows(pageNum);
-      case 'top_rated':
-        return await getTopRatedTVShows(pageNum);
-      case 'airing_today':
-        return await getAiringTodayTVShows(pageNum);
-      default:
-        return await getPopularTVShows(pageNum);
-    }
-  };
-
-  // Enhanced Prime Video series fetching with multiple network IDs
-  const fetchPrimeSeries = async (pageNum) => {
-    const primeNetworkIds = [1024, 9, 119, 10, 8];
-    
-    for (const networkId of primeNetworkIds) {
-      try {
-        const response = await getTVSeriesByNetwork(networkId, pageNum);
-        if (response.results && response.results.length > 0) {
-          return response;
-        }
-      } catch (error) {
-        console.warn(`Failed to fetch Prime Video series with network ID ${networkId}:`, error.message);
-      }
-    }
-    
-    // Fallback to popular series
-    return await getPopularTVShows(pageNum);
-  };
-
-  // Enhanced HBO series fetching with multiple network IDs
-  const fetchHBOSeries = async (pageNum) => {
-    const hboNetworkIds = [49, 118, 384, 50, 119, 8, 213, 2];
-    
-    for (const networkId of hboNetworkIds) {
-      try {
-        const response = await getTVSeriesByNetwork(networkId, pageNum);
-        if (response.results && response.results.length > 0) {
-          return response;
-        }
-      } catch (error) {
-        console.warn(`Failed to fetch HBO series with network ID ${networkId}:`, error.message);
-      }
-    }
-    
-    // Fallback to popular series
-    return await getPopularTVShows(pageNum);
-  };
-
-  // Enhanced Hulu series fetching with multiple network IDs
-  const fetchHuluSeries = async (pageNum) => {
-    const huluNetworkIds = [453, 15, 122];
-    
-    for (const networkId of huluNetworkIds) {
-      try {
-        const response = await getTVSeriesByNetwork(networkId, pageNum);
-        if (response.results && response.results.length > 0) {
-          return response;
-        }
-      } catch (error) {
-        console.warn(`Failed to fetch Hulu series with network ID ${networkId}:`, error.message);
-      }
-    }
-    
-    // Fallback to popular series
-    return await getPopularTVShows(pageNum);
-  };
-
-  // Enhanced series data transformation
-  const transformSeriesData = (seriesData) => {
-    return seriesData.map(series => {
-      // Check if data is already transformed (from getPopularTVShows)
-      const isAlreadyTransformed = series.title && series.poster && !series.name;
-      
-      if (isAlreadyTransformed) {
-        // Data is already transformed, just ensure it has the required properties
-        return {
-          ...series,
-          type: 'tv',
-          name: series.title, // Map title back to name for consistency
-          poster_path: series.poster, // Map poster back to poster_path
-          backdrop_path: series.backdrop, // Map backdrop back to backdrop_path
-          first_air_date: series.year ? `${series.year}-01-01` : null,
-          vote_average: parseFloat(series.rating) || 0,
-          number_of_seasons: series.seasons || 0,
-          overview: series.overview || '',
-          genre_ids: series.genre_ids || [],
-          networks: series.networks || []
-        };
-      } else {
-        // Raw data from getTVSeriesByNetwork, apply standard transformation
-        return {
-          ...series,
-          type: 'tv',
-          title: series.name || series.title,
-          year: series.first_air_date ? series.first_air_date.split('-')[0] : 'N/A',
-          rating: series.vote_average,
-          duration: `${series.number_of_seasons || 0} Season${(series.number_of_seasons || 0) !== 1 ? 's' : ''}`,
-          backdrop: series.backdrop_path,
-          image: series.poster_path,
-          overview: series.overview,
-          genre_ids: Array.isArray(series.genre_ids)
-            ? series.genre_ids
-            : (Array.isArray(series.genres)
-              ? series.genres.map(g => (typeof g === 'object' ? g.id : g))
-              : []),
-          networks: series.networks
-        };
-      }
-    });
-  };
-
-  // Update URL with category for better navigation
-  const updateURLWithCategory = (category) => {
-    try {
-      const searchParams = new URLSearchParams(window.location.search);
-      searchParams.set('category', category);
-      
-      // Preserve existing filters
-      if (selectedGenre) {
-        searchParams.set('genre', selectedGenre.name.toLowerCase());
-      }
-      if (selectedYear) {
-        searchParams.set('year', selectedYear.toString());
-      }
-      
-      const newURL = `${window.location.pathname}?${searchParams.toString()}`;
-      window.history.replaceState({}, '', newURL);
-    } catch (error) {
-      console.warn('Failed to update URL:', error);
-    }
-  };
+  }, [activeCategory, isTransitioning, navigate, selectedGenre, selectedYear, genres]);
 
   const handleSeriesClick = async (series) => {
     try {
@@ -1582,16 +1462,7 @@ const SeriesPage = () => {
                 </span>
               )}
               <button
-                onClick={() => {
-                  setSelectedYear(null);
-                  setSelectedGenre(null);
-                  
-                  // Clear URL parameters
-                  const searchParams = new URLSearchParams(window.location.search);
-                  searchParams.delete('genre');
-                  searchParams.delete('year');
-                  navigate(`?${searchParams.toString()}`, { replace: true });
-                }}
+                onClick={() => clearAllFilters()}
                 className="px-3 py-1 bg-gray-600 text-white text-sm rounded-full hover:bg-gray-500 transition-colors"
               >
                 Clear All
@@ -1601,14 +1472,24 @@ const SeriesPage = () => {
         )}
 
         {error ? (
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-            className="text-center text-red-500 py-8"
-          >
-            {error}
-          </motion.div>
+          <EnhancedLoadingIndicator
+            isLoading={false}
+            error={error}
+            retryCount={retryCount}
+            onRetry={handleRetry}
+            context={`${activeCategory} TV series`}
+            className="mt-8"
+          />
+        ) : (loading && series.length === 0 && !searchQuery && searchResults.length === 0) ? (
+          <EnhancedLoadingIndicator
+            isLoading={true}
+            error={null}
+            retryCount={retryCount}
+            onRetry={handleRetry}
+            context={`${activeCategory} TV series`}
+            className="mt-8"
+            hasContent={series.length > 0 || searchResults.length > 0}
+          />
         ) : (
           <motion.div 
             className="mt-8"
@@ -1620,59 +1501,48 @@ const SeriesPage = () => {
               ease: [0.25, 0.46, 0.45, 0.94]
             }}
           >
-            {loading && series.length === 0 && !searchQuery ? (
-              <motion.div 
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.3 }}
-                className="flex justify-center py-8"
-              >
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
-              </motion.div>
-            ) : (
-              (() => {
-                const displaySeries = getDisplaySeries();
+            {(() => {
+              const displaySeries = getDisplaySeries();
 
-                return (
-                  <motion.div
-                    key={`${activeCategory}-${searchQuery.trim() ? 'search' : 'series'}`}
-                    variants={gridVariants}
-                    initial="hidden"
-                    animate="visible"
-                    transition={{
-                      duration: 0.4,
-                      ease: [0.25, 0.46, 0.45, 0.94],
-                      staggerChildren: 0.02,
-                      delayChildren: 0.05
-                    }}
-                    className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 3xl:grid-cols-10 gap-4"
-                  >
-                    {displaySeries.map((s, index) => {
-                      if (!s || typeof s !== 'object') {
-                        console.warn('Invalid series object in render:', s);
-                        return null;
-                      }
-                      
-                      return (
-                        <motion.div
-                          key={`${s.id || index}-${index}`}
-                          variants={cardVariants}
-                          initial="hidden"
-                          animate="visible"
-                        >
-                          <SeriesCard 
-                            series={s} 
-                            onSeriesClick={handleSeriesClick} 
-                            onShowEpisodes={handleShowEpisodes}
-                            index={index}
-                          />
-                        </motion.div>
-                      );
-                    }).filter(Boolean)}
-                  </motion.div>
-                );
-              })()
-            )}
+              return (
+                <motion.div
+                  key={`${activeCategory}-${searchQuery.trim() ? 'search' : 'series'}`}
+                  variants={gridVariants}
+                  initial="hidden"
+                  animate="visible"
+                  transition={{
+                    duration: 0.4,
+                    ease: [0.25, 0.46, 0.45, 0.94],
+                    staggerChildren: 0.02,
+                    delayChildren: 0.05
+                  }}
+                  className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 3xl:grid-cols-10 gap-4"
+                >
+                  {displaySeries.map((s, index) => {
+                    if (!s || typeof s !== 'object') {
+                      console.warn('Invalid series object in render:', s);
+                      return null;
+                    }
+                    
+                    return (
+                      <motion.div
+                        key={`${s.id || index}-${index}`}
+                        variants={cardVariants}
+                        initial="hidden"
+                        animate="visible"
+                      >
+                        <SeriesCard 
+                          series={s} 
+                          onSeriesClick={handleSeriesClick} 
+                          onShowEpisodes={handleShowEpisodes}
+                          index={index}
+                        />
+                      </motion.div>
+                    );
+                  }).filter(Boolean)}
+                </motion.div>
+              );
+            })()}
           </motion.div>
         )}
 
@@ -1684,7 +1554,26 @@ const SeriesPage = () => {
             transition={{ duration: 0.3 }}
             className="flex justify-center py-8"
           >
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+            <div className="flex items-center space-x-3">
+              <div className="flex space-x-1">
+                <motion.div
+                  className="w-2 h-2 bg-white/40 rounded-full"
+                  animate={{ opacity: [0.4, 1, 0.4] }}
+                  transition={{ duration: 1.4, repeat: Infinity, delay: 0 }}
+                />
+                <motion.div
+                  className="w-2 h-2 bg-white/40 rounded-full"
+                  animate={{ opacity: [0.4, 1, 0.4] }}
+                  transition={{ duration: 1.4, repeat: Infinity, delay: 0.2 }}
+                />
+                <motion.div
+                  className="w-2 h-2 bg-white/40 rounded-full"
+                  animate={{ opacity: [0.4, 1, 0.4] }}
+                  transition={{ duration: 1.4, repeat: Infinity, delay: 0.4 }}
+                />
+              </div>
+              <span className="text-white/50 text-sm font-light">Loading more...</span>
+            </div>
           </motion.div>
         )}
 
@@ -1696,7 +1585,26 @@ const SeriesPage = () => {
             transition={{ duration: 0.3 }}
             className="flex justify-center py-8"
           >
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+            <div className="flex items-center space-x-3">
+              <div className="flex space-x-1">
+                <motion.div
+                  className="w-2 h-2 bg-white/40 rounded-full"
+                  animate={{ opacity: [0.4, 1, 0.4] }}
+                  transition={{ duration: 1.4, repeat: Infinity, delay: 0 }}
+                />
+                <motion.div
+                  className="w-2 h-2 bg-white/40 rounded-full"
+                  animate={{ opacity: [0.4, 1, 0.4] }}
+                  transition={{ duration: 1.4, repeat: Infinity, delay: 0.2 }}
+                />
+                <motion.div
+                  className="w-2 h-2 bg-white/40 rounded-full"
+                  animate={{ opacity: [0.4, 1, 0.4] }}
+                  transition={{ duration: 1.4, repeat: Infinity, delay: 0.4 }}
+                />
+              </div>
+              <span className="text-white/50 text-sm font-light">Searching...</span>
+            </div>
           </motion.div>
         )}
 
@@ -1762,6 +1670,9 @@ const SeriesPage = () => {
             </div>
           </div>
         )}
+
+        {/* Network Status Badge */}
+        <NetworkStatusBadge />
       </div>
     </div>
   );

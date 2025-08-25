@@ -30,6 +30,9 @@ const EnhancedSearchBar = lazy(() => import('./EnhancedSearchBar'));
 import searchHistoryService from '../services/searchHistoryService';
 import { getPosterProps, getBackdropProps, getTmdbImageUrl } from '../utils/imageUtils';
 import RatingBadge from './RatingBadge';
+import enhancedLoadingService from '../services/enhancedLoadingService';
+import EnhancedLoadingIndicator from './EnhancedLoadingIndicator';
+import NetworkStatusBadge from './NetworkStatusBadge';
 
 // Streaming service icons
 const StreamingIcons = {
@@ -756,6 +759,7 @@ const MoviesPage = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [isLoadingNextPage, setIsLoadingNextPage] = useState(false);
   const [nextPageMovies, setNextPageMovies] = useState([]);
+  const [retryCount, setRetryCount] = useState(0);
 
   // Define fetchMovies function before useEffect hooks
   const fetchMovies = useCallback(async (category, pageNum = 1) => {
@@ -764,20 +768,10 @@ const MoviesPage = () => {
     }
     fetchInProgress.current = true;
     
-    // 🚀 FIXED: Add loading timeout to prevent infinite loading states
-    let loadingTimeout;
+    // 🚀 ENHANCED: Use enhanced loading service instead of timeout
     if (pageNum === 1) {
       setLoading(true);
       setError(null);
-      
-      // Set a timeout to prevent infinite loading
-      loadingTimeout = setTimeout(() => {
-        if (loading) {
-          console.warn('🎬 Loading timeout reached, resetting loading state');
-          setLoading(false);
-          setError('Loading timeout - please try again');
-        }
-      }, 30000); // 30 second timeout
     } else {
       setIsLoadingNextPage(true);
     }
@@ -1020,11 +1014,6 @@ const MoviesPage = () => {
     } catch (err) {
       setError('Failed to load movies: ' + (err.message || 'Unknown error'));
     } finally {
-      // Clear loading timeout
-      if (loadingTimeout) {
-        clearTimeout(loadingTimeout);
-      }
-      
       if (pageNum === 1) {
         setLoading(false);
       } else {
@@ -1061,17 +1050,42 @@ const MoviesPage = () => {
       fetchMovies(activeCategory, 1);
     }
     
-    // 🚀 FIXED: Add loading timeout reset to prevent stuck loading states
-    const loadingTimeout = setTimeout(() => {
-      if (loading && movies.length === 0) {
-        console.warn('🎬 Initial loading timeout, resetting state');
-        setLoading(false);
-        setError('Initial loading failed - please refresh the page');
+    // 🚀 ENHANCED: Use enhanced loading service instead of timeout
+    const initializeLoading = async () => {
+      try {
+        const result = await enhancedLoadingService.retryWithBackoff(
+          async () => {
+            // This will be called by fetchMovies below
+            return true;
+          },
+          'initial movies load'
+        );
+        
+        if (!result.success) {
+          console.warn('🎬 Initial loading failed after retries:', result.error);
+          setError(enhancedLoadingService.getErrorMessage(result.error, 'movies'));
+        }
+      } catch (error) {
+        console.error('🎬 Initial loading error:', error);
+        setError(enhancedLoadingService.getErrorMessage(error, 'movies'));
       }
-    }, 15000); // 15 second timeout for initial load
+    };
     
-    return () => clearTimeout(loadingTimeout);
+    initializeLoading();
   }, []); // Empty dependency array - only run once on mount
+
+  // Enhanced retry handler for loading failures
+  const handleRetry = useCallback(async () => {
+    setRetryCount(prev => prev + 1);
+    setError(null);
+    
+    try {
+      await fetchMovies(activeCategory, 1);
+    } catch (error) {
+      console.error('Retry failed:', error);
+      setError(enhancedLoadingService.getErrorMessage(error, 'movies'));
+    }
+  }, [activeCategory]);
 
   // Enhanced category change handler with better error handling and performance
   const handleCategoryChange = useCallback(async (category) => {
@@ -1394,11 +1408,12 @@ const MoviesPage = () => {
     const genreParam = searchParams.get('genre');
     const yearParam = searchParams.get('year');
     
-    if (category) {
+    if (category && category !== activeCategory) {
       handleCategoryChange(category);
     }
 
-    if (genreParam && genres.length > 0) {
+    // Only restore filters if they exist in URL and we don't have them set locally
+    if (genreParam && genres.length > 0 && !selectedGenre) {
       // Map genre names to their IDs
       const genreIdMap = {
         'action': 28,
@@ -1431,7 +1446,7 @@ const MoviesPage = () => {
       }
     }
 
-    if (yearParam) {
+    if (yearParam && !selectedYear) {
       const year = parseInt(yearParam);
       if (year && year >= 1900 && year <= new Date().getFullYear()) {
         setSelectedYear(year);
@@ -1445,7 +1460,7 @@ const MoviesPage = () => {
         fetchInProgress.current = false;
       }
     };
-  }, [window.location.search, genres]);
+  }, [window.location.search, genres, activeCategory, selectedGenre, selectedYear]);
 
   useEffect(() => {
     return () => {
@@ -2985,6 +3000,50 @@ const MoviesPage = () => {
     };
   }, []);
 
+  // Enhanced clear filters function that properly clears URL parameters
+  const clearAllFilters = useCallback(() => {
+    try {
+      // Clear local state
+      setSelectedYear(null);
+      setSelectedGenre(null);
+      
+      // Clear URL parameters completely
+      const searchParams = new URLSearchParams(window.location.search);
+      searchParams.delete('genre');
+      searchParams.delete('year');
+      
+      // Keep only the category parameter
+      const category = searchParams.get('category');
+      if (category) {
+        searchParams.set('category', category);
+      }
+      
+      // Update URL without the filter parameters
+      navigate(`?${searchParams.toString()}`, { replace: true });
+      
+      // Force refetch movies without filters
+      if (activeCategory) {
+        setMovies([]);
+        setPage(1);
+        setHasMore(true);
+        setError(null);
+        setLoading(true);
+        setIsLoadingNextPage(false);
+        setNextPageMovies([]);
+        
+        // Clear any existing fetch operations
+        if (fetchInProgress.current) {
+          fetchInProgress.current = false;
+        }
+        
+        // Refetch movies without filters
+        fetchMovies(activeCategory, 1);
+      }
+    } catch (error) {
+      console.error('Error clearing filters:', error);
+    }
+  }, [navigate, activeCategory]);
+
   return (
     <motion.div 
       ref={(el) => { scrollContainerRef.current = el; setScrollRootEl(el); }}
@@ -3223,27 +3282,12 @@ const MoviesPage = () => {
                   {selectedYear}
                 </span>
               )}
-              <button
-                onClick={() => {
-                  try {
-                    setSelectedYear(null);
-                    setSelectedGenre(null);
-                    
-                    // Clear URL parameters
-                    const searchParams = new URLSearchParams(window.location.search);
-                    searchParams.delete('genre');
-                    searchParams.delete('year');
-                    navigate(`?${searchParams.toString()}`, { replace: true });
-
-
-                  } catch (error) {
-                    console.error('Error clearing filters:', error);
-                  }
-                }}
-                className="px-3 py-1 bg-gray-600 text-white text-sm rounded-full hover:bg-gray-500 transition-colors"
-              >
-                Clear All
-              </button>
+                              <button
+                  onClick={() => clearAllFilters()}
+                  className="px-3 py-1 bg-gray-600 text-white text-sm rounded-full hover:bg-gray-500 transition-colors"
+                >
+                  Clear All
+                </button>
             </div>
           </motion.div>
         )}
@@ -3259,61 +3303,27 @@ const MoviesPage = () => {
             ease: [0.25, 0.46, 0.45, 0.94]
           }}
         >
-          {error ? (
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.3 }}
-              className="text-center text-red-500 py-8"
-            >
-              {error}
-            </motion.div>
-          ) : (loading && movies.length === 0 && !error) ? (
-            <motion.div 
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-              variants={loadingVariants}
-              className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 3xl:grid-cols-10 gap-4"
-            >
-                          {/* Show skeleton loaders for initial loading */}
-            {Array.from({ length: 20 }, (_, index) => (
-              <motion.div
-                key={`skeleton-${index}`}
-                variants={cardVariants}
-                initial="hidden"
-                animate="visible"
-                className="aspect-[2/3] rounded-lg overflow-hidden bg-gray-800"
-              >
-                <motion.div 
-                  className="w-full h-full bg-gray-800"
-                  animate={{
-                    opacity: [0.5, 0.8, 0.5],
-                  }}
-                  transition={{
-                    duration: 1.5,
-                    repeat: Infinity,
-                    ease: "easeInOut"
-                  }}
-                />
-              </motion.div>
-            ))}
-            
-            {/* Loading progress indicator */}
+                    {error ? (
+            <EnhancedLoadingIndicator
+              isLoading={false}
+              error={error}
+              retryCount={retryCount}
+              onRetry={handleRetry}
+              context={`${activeCategory} movies`}
+              className="col-span-full"
+            />
+          ) : (loading && movies.length === 0) ? (
+            <EnhancedLoadingIndicator
+              isLoading={true}
+              error={null}
+              retryCount={retryCount}
+              onRetry={handleRetry}
+              context={`${activeCategory} movies`}
+              className="col-span-full"
+              hasContent={movies.length > 0}
+            />
+          ) : (
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="col-span-full flex justify-center items-center py-8"
-            >
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-2"></div>
-                <p className="text-white/60 text-sm">Loading {activeCategory} movies...</p>
-              </div>
-            </motion.div>
-            </motion.div>
-                      ) : (
-              <motion.div
                 key={`movies-grid-${activeCategory}-${selectedGenre?.id || 'all'}-${selectedYear || 'all'}`}
                 variants={gridVariants}
                 initial="hidden"
@@ -3388,8 +3398,27 @@ const MoviesPage = () => {
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.2 }}
-                  className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"
-                />
+                  className="flex items-center space-x-3"
+                >
+                  <div className="flex space-x-1">
+                    <motion.div
+                      className="w-2 h-2 bg-white/40 rounded-full"
+                      animate={{ opacity: [0.4, 1, 0.4] }}
+                      transition={{ duration: 1.4, repeat: Infinity, delay: 0 }}
+                    />
+                    <motion.div
+                      className="w-2 h-2 bg-white/40 rounded-full"
+                      animate={{ opacity: [0.4, 1, 0.4] }}
+                      transition={{ duration: 1.4, repeat: Infinity, delay: 0.2 }}
+                    />
+                    <motion.div
+                      className="w-2 h-2 bg-white/40 rounded-full"
+                      animate={{ opacity: [0.4, 1, 0.4] }}
+                      transition={{ duration: 1.4, repeat: Infinity, delay: 0.4 }}
+                    />
+                  </div>
+                  <span className="text-white/50 text-sm font-light">Loading more...</span>
+                </motion.div>
               )}
             </motion.div>
           ) : (
@@ -3464,6 +3493,9 @@ const MoviesPage = () => {
         }
         ${styles}
       `}</style>
+
+      {/* Network Status Badge */}
+      <NetworkStatusBadge />
     </motion.div>
   );
 };
