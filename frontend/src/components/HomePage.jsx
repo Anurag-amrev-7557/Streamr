@@ -47,6 +47,7 @@ import { PageLoader, SectionLoader, CardLoader } from './Loader';
 import ContinueWatching from './ContinueWatching';
 import CastDetailsOverlay from './CastDetailsOverlay';
 import RatingBadge from './RatingBadge';
+import AdBlockerRecommendationToast from './AdBlockerRecommendationToast';
 
 // Contexts and Hooks
 import { useLoading } from '../contexts/LoadingContext';
@@ -4223,6 +4224,9 @@ const HomePage = () => {
   const [isInWatchlistState, setIsInWatchlistState] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   
+  // Ad blocker recommendation toast state
+  const [showAdBlockerToast, setShowAdBlockerToast] = useState(false);
+  
   // Cast Details state
   const [selectedCastMember, setSelectedCastMember] = useState(null);
   const [showCastDetails, setShowCastDetails] = useState(false);
@@ -7291,6 +7295,20 @@ const HomePage = () => {
     };
   }, []); // Empty dependency array since fetchFeaturedContent has no dependencies
 
+  // Ad blocker recommendation toast - show on first visit
+  useEffect(() => {
+    const hasSeenAdBlockerToast = localStorage.getItem('adBlockerToastShown');
+    
+    if (!hasSeenAdBlockerToast) {
+      // Show toast after a short delay to let the page load
+      const timer = setTimeout(() => {
+        setShowAdBlockerToast(true);
+      }, 2000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
   // 🚀 PERFORMANCE OPTIMIZED: Load all movie sections data with intelligent prioritization and parallel loading
   useEffect(() => {
     let isMounted = true;
@@ -8225,6 +8243,14 @@ const HomePage = () => {
       </div>
     )}
 
+         {/* Ad Blocker Recommendation Toast */}
+     <AdBlockerRecommendationToast 
+       show={showAdBlockerToast}
+       onClose={() => setShowAdBlockerToast(false)}
+       onDismiss={() => {
+         localStorage.setItem('adBlockerToastShown', 'true');
+       }}
+     />
   </div>
   );
 };
