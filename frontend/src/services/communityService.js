@@ -1,0 +1,315 @@
+import axios from 'axios';
+import { getNetworkAwareConfig, fetchWithRetry } from './api.js';
+import { getApiUrl } from '../config/api.js';
+
+// Simple cache for community data
+const communityCache = new Map();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+const getCachedData = (key) => {
+  const cached = communityCache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    return cached.data;
+  }
+  return null;
+};
+
+const setCachedData = (key, data) => {
+  communityCache.set(key, {
+    data,
+    timestamp: Date.now()
+  });
+};
+
+const clearCache = () => {
+  communityCache.clear();
+};
+
+// Lazy initialization to avoid hoisting issues
+let API_URL = null;
+const getApiUrlLazy = () => {
+  if (!API_URL) {
+    API_URL = getApiUrl();
+  }
+  return API_URL;
+};
+
+const getAuthHeader = () => {
+  const token = localStorage.getItem('accessToken');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
+// Create axios instance with default config
+const createApiInstance = () => {
+  return axios.create({
+    baseURL: getApiUrlLazy(),
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  });
+};
+
+// Lazy API instance - only create when needed
+let apiInstance = null;
+const getApiInstance = () => {
+  if (!apiInstance) {
+    apiInstance = createApiInstance();
+    addInterceptors(apiInstance);
+  }
+  return apiInstance;
+ };
+
+// Add request interceptor to add auth token
+const addInterceptors = (api) => {
+  api.interceptors.request.use(
+    (config) => {
+      const token = localStorage.getItem('accessToken');
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+      return config;
+    },
+    (error) => {
+      return Promise.reject(error);
+    }
+  );
+
+  // Add response interceptor to handle errors
+  api.interceptors.response.use(
+    (response) => response,
+    (error) => {
+      if (error.response) {
+        // The request was made and the server responded with a status code
+        // that falls out of the range of 2xx
+        console.error('Response error:', error.response.data);
+        return Promise.reject(error.response.data);
+      } else if (error.request) {
+        // The request was made but no response was received
+        console.error('Request error:', error.request);
+        return Promise.reject({ message: 'No response from server' });
+      } else {
+        // Something happened in setting up the request that triggered an Error
+        console.error('Error:', error.message);
+        return Promise.reject({ message: error.message });
+      }
+    }
+  );
+};
+
+export const communityService = {
+  // Discussions
+  getDiscussions: async (page = 1, limit = 10, sortBy = 'newest', category = '', tag = '') => {
+    const { timeout } = getNetworkAwareConfig();
+    const params = new URLSearchParams({
+      page,
+      limit,
+      sortBy,
+      ...(category && { category }),
+      ...(tag && { tag })
+    });
+    
+    console.log('🔍 Community Service - Fetching discussions:', {
+      url: `/community/discussions?${params}`,
+      timeout,
+      apiUrl: getApiUrlLazy()
+    });
+    
+    try {
+      const result = await fetchWithRetry(() =>
+        getApiInstance().get(`/community/discussions?${params}`, { timeout })
+          .then(response => response.data)
+      );
+      
+      console.log('✅ Community Service - Discussions fetched successfully:', result);
+      return result;
+    } catch (error) {
+      console.error('❌ Community Service - Failed to fetch discussions:', error);
+      throw error;
+    }
+  },
+
+  getDiscussion: async (id) => {
+    const { timeout } = getNetworkAwareConfig();
+    return fetchWithRetry(() =>
+      getApiInstance().get(`/community/discussions/${id}`, { timeout })
+        .then(response => response.data)
+    );
+  },
+
+  createDiscussion: async (discussionData) => {
+    const { timeout } = getNetworkAwareConfig();
+    return fetchWithRetry(() =>
+      getApiInstance().post('/community/discussions', discussionData, { timeout })
+        .then(response => response.data)
+    );
+  },
+
+  updateDiscussion: async (id, discussionData) => {
+    const { timeout } = getNetworkAwareConfig();
+    return fetchWithRetry(() =>
+      getApiInstance().put(`/community/discussions/${id}`, discussionData, { timeout })
+        .then(response => response.data)
+    );
+  },
+
+  deleteDiscussion: async (id) => {
+    const { timeout } = getNetworkAwareConfig();
+    return fetchWithRetry(() =>
+      getApiInstance().delete(`/community/discussions/${id}`, { timeout })
+        .then(response => response.data)
+    );
+  },
+
+  // Replies
+  addReply: async (discussionId, replyData) => {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    if (!token) throw new Error('Authentication required');
+    return fetchWithRetry(() =>
+      getApiInstance().post(`/community/discussions/${discussionId}/replies`, {
+        content: replyData.content,
+        parentReplyId: replyData.parentReplyId
+      }, {
+        headers: { Authorization: `Bearer ${token}` },
+        timeout
+      }).then(response => response.data)
+    );
+  },
+
+  updateReply: async (discussionId, replyId, replyData) => {
+    const { timeout } = getNetworkAwareConfig();
+    return fetchWithRetry(() =>
+      getApiInstance().put(
+        `/community/discussions/${discussionId}/replies/${replyId}`,
+        replyData,
+        { timeout }
+      ).then(response => response.data)
+    );
+  },
+
+  deleteReply: async (discussionId, replyId) => {
+    const { timeout } = getNetworkAwareConfig();
+    return fetchWithRetry(() =>
+      getApiInstance().delete(
+        `/community/discussions/${discussionId}/replies/${replyId}`,
+        { timeout }
+      ).then(response => response.data)
+    );
+  },
+
+  // Likes
+  likeDiscussion: async (discussionId) => {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    if (!token) throw new Error('Authentication required');
+    return fetchWithRetry(() =>
+      getApiInstance().post(`/community/discussions/${discussionId}/like`, {}, {
+        headers: { Authorization: `Bearer ${token}` },
+        timeout
+      }).then(response => response.data)
+    );
+  },
+
+  likeReply: async (discussionId, replyId) => {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    if (!token) throw new Error('Authentication required');
+    return fetchWithRetry(() =>
+      getApiInstance().post(
+        `/community/discussions/${discussionId}/replies/${replyId}/like`,
+        {},
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          timeout
+        }
+      ).then(response => response.data)
+    );
+  },
+
+  // Search and Filters
+  searchDiscussions: async (query) => {
+    const { timeout } = getNetworkAwareConfig();
+    return fetchWithRetry(() =>
+      getApiInstance().get(`/community/search?q=${encodeURIComponent(query)}`, { timeout })
+        .then(response => response.data)
+    );
+  },
+
+  getCategories: async () => {
+    const cacheKey = 'categories';
+    const cached = getCachedData(cacheKey);
+    if (cached) {
+      console.log('📦 Using cached categories');
+      return cached;
+    }
+
+    const { timeout } = getNetworkAwareConfig();
+    const result = await fetchWithRetry(() =>
+      getApiInstance().get('/community/categories', { timeout })
+        .then(response => response.data)
+    );
+    
+    setCachedData(cacheKey, result);
+    return result;
+  },
+
+  getTopTags: async () => {
+    const cacheKey = 'tags';
+    const cached = getCachedData(cacheKey);
+    if (cached) {
+      console.log('📦 Using cached tags');
+      return cached;
+    }
+
+    const { timeout } = getNetworkAwareConfig();
+    const result = await fetchWithRetry(() =>
+      getApiInstance().get('/community/tags', { timeout })
+        .then(response => response.data)
+    );
+    
+    setCachedData(cacheKey, result);
+    return result;
+  },
+
+  // Community Stats
+  getTrendingTopics: async () => {
+    const cacheKey = 'trending';
+    const cached = getCachedData(cacheKey);
+    if (cached) {
+      console.log('📦 Using cached trending topics');
+      return cached;
+    }
+
+    const { timeout } = getNetworkAwareConfig();
+    const result = await fetchWithRetry(() =>
+      getApiInstance().get('/community/trending', { timeout })
+        .then(response => response.data)
+    );
+    
+    setCachedData(cacheKey, result);
+    return result;
+  },
+
+  getCommunityStats: async () => {
+    const cacheKey = 'stats';
+    const cached = getCachedData(cacheKey);
+    if (cached) {
+      console.log('📦 Using cached community stats');
+      return cached;
+    }
+
+    const { timeout } = getNetworkAwareConfig();
+    const result = await fetchWithRetry(() =>
+      getApiInstance().get('/community/stats', { timeout })
+        .then(response => response.data)
+    );
+    
+    setCachedData(cacheKey, result);
+    return result;
+  },
+
+  // Cache management
+  clearCache,
+  getCachedData,
+  setCachedData
+}; 
