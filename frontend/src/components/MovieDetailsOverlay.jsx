@@ -5178,7 +5178,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                                 animate={{ opacity: 1, y: 0, scale: 1 }}
                                 exit={{ opacity: 0, y: 20, scale: 0.9 }}
                                 transition={{ duration: 0.3, ease: "easeOut" }}
-                                className="absolute -top-20 left-2/5 transform -translate-x-1/2 bg-black/90 backdrop-blur-md text-white text-sm px-4 py-2 rounded-full border border-white/20 shadow-lg z-50 whitespace-nowrap"
+                                className="absolute -top-20 left-2/5 transform -translate-x-1/2 bg-black/40 backdrop-blur-md text-white text-sm px-4 py-2 rounded-full border border-white/5 shadow-lg z-50 whitespace-nowrap"
                               >
                                 <div className="flex items-center gap-2">
                                   <svg 
@@ -5204,7 +5204,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                                 animate={{ opacity: 1, y: 0, scale: 1 }}
                                 exit={{ opacity: 0, y: 20, scale: 0.9 }}
                                 transition={{ duration: 0.3, ease: "easeOut" }}
-                                className="absolute -top-20 left-2/5 transform -translate-x-1/2 bg-black/90 backdrop-blur-md text-white text-sm px-4 py-2 rounded-full border border-white/20 shadow-lg z-50 whitespace-nowrap"
+                                className="absolute -top-20 left-2/5 transform -translate-x-1/2 bg-black/40 backdrop-blur-md text-white text-sm px-4 py-2 rounded-full border border-white/5 shadow-lg z-50 whitespace-nowrap"
                               >
                                 <div className="flex items-center gap-2">
                                   <svg 
