@@ -1220,6 +1220,9 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       setLoading(true);
       setError(null);
       
+      // Reset attempted seasons when switching to a new show
+      setAttemptedSeasons(new Set());
+      
       // Reset scroll position
       if (scrollContainerRef.current) {
         scrollContainerRef.current.scrollTop = 0;
@@ -2330,6 +2333,13 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     }
     return 'list';
   });
+  
+  // Add state to track when episodes are intentionally empty vs when they're still loading
+  // This will help the UI make better decisions about what to show and prevent flashing
+  const [showEmptyState, setShowEmptyState] = useState(false);
+  
+  // Track which seasons we've already attempted to load episodes for to prevent infinite loops
+  const [attemptedSeasons, setAttemptedSeasons] = useState(new Set());
 
   // Custom setter that saves to localStorage
   const setEpisodesViewModeWithStorage = useCallback((mode) => {
@@ -2350,6 +2360,19 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     setLastLoadMoreTime(now);
     setDisplayedEpisodes(prev => prev + 10);
   }, [lastLoadMoreTime]);
+  
+  // Effect to manage empty state display with delay to prevent flashing
+  useEffect(() => {
+    if (seasons.length > 0 && episodes.length === 0 && !isSeasonsLoading && !isEpisodesLoading) {
+      // Only show empty state after a delay to prevent flashing
+      const timer = setTimeout(() => {
+        setShowEmptyState(true);
+      }, 500);
+      return () => clearTimeout(timer);
+    } else {
+      setShowEmptyState(false);
+    }
+  }, [seasons.length, episodes.length, isSeasonsLoading, isEpisodesLoading]);
 
   // Check if there are more episodes to load
   const hasMoreEpisodes = useMemo(() => {
@@ -3735,7 +3758,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     }
   }, [movie]);
 
-  // Consolidated episode loading function to prevent race conditions
+  // Consolidated episode loading function to prevent race conditions and flashing
   const loadEpisodesForSeason = useCallback(async (seasonNumber) => {
     if (!movie?.id || !seasonNumber || isEpisodesLoading) {
       console.log('[Episode Loading] Skipping load - conditions not met:', { 
@@ -3746,8 +3769,17 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       return;
     }
     
+    // Check if we've already attempted to load this season to prevent infinite loops
+    if (attemptedSeasons.has(seasonNumber)) {
+      console.log('[Episode Loading] Already attempted to load season:', seasonNumber, '- skipping to prevent infinite loop');
+      return;
+    }
+    
     console.log('[Episode Loading] Loading episodes for season:', seasonNumber);
     setIsEpisodesLoading(true);
+    
+    // Mark this season as attempted
+    setAttemptedSeasons(prev => new Set([...prev, seasonNumber]));
     
     try {
       const seasonData = await getTVSeason(movie.id, seasonNumber);
@@ -3759,19 +3791,21 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         firstEpisode: episodeList[0]?.name || 'N/A'
       });
       
-      setEpisodes(episodeList);
-      
-      // Verify episodes were set correctly
-      setTimeout(() => {
-        if (episodes.length === 0 && episodeList.length > 0) {
-          console.warn('[Episode Loading] Episodes state not updated, forcing update');
-          setEpisodes([...episodeList]);
-        }
-      }, 100);
+      // Only update episodes if we have a valid result
+      if (episodeList.length > 0) {
+        setEpisodes(episodeList);
+      } else {
+        // Don't clear episodes if the season has no episodes - keep previous episodes
+        // This prevents flashing when switching between seasons
+        console.log('[Episode Loading] Season has no episodes, keeping previous episodes');
+      }
       
     } catch (err) {
       console.error('[Episode Loading] Failed to fetch season episodes:', err);
-      setEpisodes([]);
+      
+      // Don't clear episodes on error - this prevents flashing
+      // Instead, keep the previous episodes and just log the error
+      console.warn('[Episode Loading] Keeping previous episodes due to error');
       
       // Show user-friendly error message
       if (import.meta.env.DEV) {
@@ -3785,7 +3819,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     } finally {
       setIsEpisodesLoading(false);
     }
-  }, [movie?.id, isEpisodesLoading]);
+  }, [movie?.id, isEpisodesLoading, attemptedSeasons]);
 
   // Keep the old function for backward compatibility but mark as deprecated
   const fetchSeasonEpisodes = useCallback(async (seasonNumber) => {
@@ -3837,13 +3871,15 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
             } else {
               console.warn('[TV Loading] No seasons found for TV show:', movie.id);
               setSeasons([]);
-              setEpisodes([]);
+              // Don't clear episodes here - keep them to prevent flashing
+              // setEpisodes([]);
             }
         } catch (err) {
           console.error('[TV Loading] Failed to load TV content independently:', err);
           // Set empty states on error to prevent UI from showing stale data
           setSeasons([]);
-          setEpisodes([]);
+          // Don't clear episodes here - keep them to prevent flashing
+          // setEpisodes([]);
         }
       };
       
@@ -3874,10 +3910,21 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
           try {
             const seasonData = await getTVSeason(movie.id, season.season_number);
             const episodeList = seasonData.episodes || [];
-            setEpisodes(episodeList);
+            // Only update episodes if we have a valid result
+            if (episodeList.length > 0) {
+              setEpisodes(episodeList);
+            } else {
+              // Don't clear episodes if the season has no episodes - keep previous episodes
+              console.log('[Season Change] Season has no episodes, keeping previous episodes');
+            }
+            // Mark this season as attempted
+            setAttemptedSeasons(prev => new Set([...prev, season.season_number]));
           } catch (err) {
             console.error('[Episode Loading] Failed to fetch season episodes:', err);
-            setEpisodes([]);
+            // Don't clear episodes on error - this prevents flashing
+            console.warn('[Season Change] Keeping previous episodes due to error');
+            // Mark this season as attempted even on error
+            setAttemptedSeasons(prev => new Set([...prev, season.season_number]));
           }
         };
         loadEpisodes();
@@ -5942,118 +5989,133 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                         </div>
 
                         {/* Episodes Content */}
-                        {isSeasonsLoading || isEpisodesLoading ? (
-                          episodesViewMode === 'card' ? (
-                            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4 lg:gap-6">
-                              {[...Array(8)].map((_, index) => (
-                                <motion.div
-                                  key={index}
-                                  initial={{ opacity: 0 }}
-                                  animate={{ opacity: 1 }}
-                                  transition={{ duration: 0.3, delay: index * 0.05 }}
-                                  className="group relative bg-gradient-to-br from-white/[0.08] via-white/[0.04] to-white/[0.02] rounded-2xl overflow-hidden border border-white/[0.08] shadow-lg backdrop-blur-sm"
-                                >
-                                  <div className="aspect-square sm:aspect-video lg:aspect-video bg-gradient-to-br from-gray-800 to-gray-700 rounded-t-2xl"></div>
-                                  <div className="p-4 lg:p-5 space-y-3">
-                                    <div className="h-4 bg-white/10 rounded"></div>
-                                    <div className="h-3 bg-white/10 rounded w-2/3"></div>
-                                    <div className="h-3 bg-white/10 rounded w-1/2"></div>
-                                    <div className="pt-3 border-t border-white/[0.08]">
-                                      <div className="flex items-center justify-between">
-                                        <div className="h-3 bg-white/10 rounded w-16"></div>
-                                        <div className="h-3 bg-white/10 rounded w-12"></div>
+                        {(() => {
+                          // Stabilize the episode section rendering to prevent flashing
+                          const isLoading = isSeasonsLoading || isEpisodesLoading;
+                          const hasSeasons = seasons.length > 0;
+                          const hasEpisodes = episodes.length > 0;
+                          const isEpisodesLoadingOnly = hasSeasons && isEpisodesLoading && !isSeasonsLoading;
+                          
+                          // Show loading skeletons when initially loading
+                          if (isLoading) {
+                            return episodesViewMode === 'card' ? (
+                              <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4 lg:gap-6">
+                                {[...Array(8)].map((_, index) => (
+                                  <motion.div
+                                    key={index}
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    transition={{ duration: 0.3, delay: index * 0.05 }}
+                                    className="group relative bg-gradient-to-br from-white/[0.08] via-white/[0.04] to-white/[0.02] rounded-2xl overflow-hidden border border-white/[0.08] shadow-lg backdrop-blur-sm"
+                                  >
+                                    <div className="aspect-square sm:aspect-video lg:aspect-video bg-gradient-to-br from-gray-800 to-gray-700 rounded-t-2xl"></div>
+                                    <div className="p-4 lg:p-5 space-y-3">
+                                      <div className="h-4 bg-white/10 rounded"></div>
+                                      <div className="h-3 bg-white/10 rounded w-2/3"></div>
+                                      <div className="h-3 bg-white/10 rounded w-1/2"></div>
+                                      <div className="pt-3 border-t border-white/[0.08]">
+                                        <div className="flex items-center justify-between">
+                                          <div className="h-3 bg-white/10 rounded w-16"></div>
+                                          <div className="h-3 bg-white/10 rounded w-12"></div>
+                                        </div>
                                       </div>
                                     </div>
-                                  </div>
-                                </motion.div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="space-y-0">
-                              {[...Array(6)].map((_, index) => (
-                                <motion.div
-                                  key={index}
-                                  initial={{ opacity: 0 }}
-                                  animate={{ opacity: 1 }}
-                                  transition={{ duration: 0.3, delay: index * 0.05 }}
-                                  className={`group relative ${
-                                    index < 5 ? 'border-b border-white/[0.08]' : ''
-                                  }`}
-                                >
-                                                                     <div className="flex items-center gap-3 sm:gap-6 p-3 sm:p-6">
-                                     {/* Episode Number Skeleton - Left of Thumbnail (Desktop Only) */}
-                                     <div className="hidden md:flex flex-shrink-0 items-center justify-center w-10 h-10">
-                                       <div className="w-6 h-6 bg-white/10 rounded"></div>
-                                     </div>
-                                     
-                                     {/* Episode Thumbnail Skeleton */}
-                                     <div className="relative w-32 h-20 sm:w-32 sm:h-20 md:w-40 md:h-24 overflow-hidden rounded-lg flex-shrink-0 bg-white/10"></div>
-                                     
-                                     {/* Episode Info Skeleton */}
-                                     <div className="flex-1 min-w-0 flex flex-col justify-between">
-                                       <div className="space-y-3 sm:space-y-3">
-                                         <div className="space-y-1 sm:space-y-2">
-                                           {/* Episode Title Skeleton */}
-                                           <div className="h-4 sm:h-5 bg-white/10 rounded" style={{ width: `${Math.random() * 40 + 60}%` }}></div>
-                                           
-                                           {/* Episode Overview Skeleton - Hidden on mobile */}
-                                           <div className="hidden sm:block space-y-1.5">
-                                             <div className="h-3 bg-white/8 rounded" style={{ width: '100%' }}></div>
-                                             <div className="h-3 bg-white/8 rounded" style={{ width: `${Math.random() * 20 + 80}%` }}></div>
-                                           </div>
-                                         </div>
-                                         
-                                         {/* Episode Details Skeleton */}
-                                         <div className="flex items-center gap-2 sm:gap-4 text-xs sm:text-sm text-white/45">
-                                           {/* Desktop: Separate date and runtime skeletons */}
-                                           <div className="hidden sm:flex items-center gap-4">
-                                             {/* Date skeleton */}
-                                             <div className="flex items-center gap-1">
-                                               <div className="w-4 h-4 bg-white/10 rounded"></div>
-                                               <div className="w-16 h-3 bg-white/10 rounded"></div>
-                                             </div>
-                                             <div className="w-3 h-3 bg-white/30 rounded-full"></div>
-                                             {/* Runtime skeleton */}
-                                             <div className="flex items-center gap-1">
-                                               <div className="w-4 h-4 bg-white/10 rounded"></div>
-                                               <div className="w-12 h-3 bg-white/10 rounded"></div>
-                                             </div>
-                                           </div>
-                                           
-                                           {/* Mobile: Combined skeleton */}
-                                           <div className="sm:hidden flex items-center gap-1 text-xs">
-                                             <div className="w-8 h-3 bg-white/10 rounded "></div>
-                                             <div className="w-2 h-2 bg-white/30 rounded-full"></div>
-                                             <div className="w-12 h-3 bg-white/10 rounded"></div>
-                                             <div className="w-2 h-2 bg-white/30 rounded-full"></div>
-                                             <div className="w-10 h-3 bg-white/10 rounded"></div>
-                                           </div>
-                                         </div>
-                                       </div>
-                                     </div>
-                                   </div>
-                                </motion.div>
-                              ))}
-                            </div>
-                          )
-                        ) : seasons.length > 0 && isEpisodesLoading ? (
-                          // Show loading indicator when seasons are loaded but episodes are still loading
-                          <motion.div 
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ duration: 0.5 }}
-                            className="text-center text-white/40 py-8"
-                          >
-                            <div className="bg-gradient-to-br from-white/5 to-white/2 rounded-2xl p-6 border border-white/10">
-                              <div className="flex items-center justify-center mb-4">
-                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                                  </motion.div>
+                                ))}
                               </div>
-                              <h3 className="text-lg font-semibold text-white/60 mb-2">Loading Episodes</h3>
-                              <p className="text-white/40 text-sm">Fetching episodes for this season...</p>
-                            </div>
-                          </motion.div>
-                        ) : seasons.length > 0 && episodes.length > 0 ? (
-                          episodesViewMode === 'card' ? (
+                            ) : (
+                              <div className="space-y-0">
+                                {[...Array(6)].map((_, index) => (
+                                  <motion.div
+                                    key={index}
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    transition={{ duration: 0.3, delay: index * 0.05 }}
+                                    className={`group relative ${
+                                      index < 5 ? 'border-b border-white/[0.08]' : ''
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-3 sm:gap-6 p-3 sm:p-6">
+                                      {/* Episode Number Skeleton - Left of Thumbnail (Desktop Only) */}
+                                      <div className="hidden md:flex flex-shrink-0 items-center justify-center w-10 h-10">
+                                        <div className="w-6 h-6 bg-white/10 rounded"></div>
+                                      </div>
+                                      
+                                      {/* Episode Thumbnail Skeleton */}
+                                      <div className="relative w-32 h-20 sm:w-32 sm:h-20 md:w-40 md:h-24 overflow-hidden rounded-lg flex-shrink-0 bg-white/10"></div>
+                                      
+                                      {/* Episode Info Skeleton */}
+                                      <div className="flex-1 min-w-0 flex flex-col justify-between">
+                                        <div className="space-y-3 sm:space-y-3">
+                                          <div className="space-y-1 sm:space-y-2">
+                                            {/* Episode Title Skeleton */}
+                                            <div className="h-4 sm:h-5 bg-white/10 rounded" style={{ width: `${Math.random() * 40 + 60}%` }}></div>
+                                            
+                                            {/* Episode Overview Skeleton - Hidden on mobile */}
+                                            <div className="hidden sm:block space-y-1.5">
+                                              <div className="h-3 bg-white/8 rounded" style={{ width: '100%' }}></div>
+                                              <div className="h-3 bg-white/8 rounded" style={{ width: `${Math.random() * 20 + 80}%` }}></div>
+                                            </div>
+                                          </div>
+                                          
+                                          {/* Episode Details Skeleton */}
+                                          <div className="flex items-center gap-2 sm:gap-4 text-xs sm:text-sm text-white/45">
+                                            {/* Desktop: Separate date and runtime skeletons */}
+                                            <div className="hidden sm:flex items-center gap-4">
+                                              {/* Date skeleton */}
+                                              <div className="flex items-center gap-1">
+                                                <div className="w-4 h-4 bg-white/10 rounded"></div>
+                                                <div className="w-16 h-3 bg-white/10 rounded"></div>
+                                              </div>
+                                              <div className="w-3 h-3 bg-white/30 rounded-full"></div>
+                                              {/* Runtime skeleton */}
+                                              <div className="flex items-center gap-1">
+                                                <div className="w-4 h-4 bg-white/10 rounded"></div>
+                                                <div className="w-12 h-3 bg-white/10 rounded"></div>
+                                              </div>
+                                            </div>
+                                            
+                                            {/* Mobile: Combined skeleton */}
+                                            <div className="sm:hidden flex items-center gap-1 text-xs">
+                                              <div className="w-8 h-3 bg-white/10 rounded "></div>
+                                              <div className="w-2 h-2 bg-white/30 rounded-full"></div>
+                                              <div className="w-12 h-3 bg-white/10 rounded"></div>
+                                              <div className="w-2 h-2 bg-white/30 rounded-full"></div>
+                                              <div className="w-10 h-3 bg-white/10 rounded"></div>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </motion.div>
+                                ))}
+                              </div>
+                            );
+                          }
+                          
+                          // Show loading indicator when seasons are loaded but episodes are still loading
+                          if (isEpisodesLoadingOnly) {
+                            return (
+                              <motion.div 
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.5 }}
+                                className="text-center text-white/40 py-8"
+                              >
+                                <div className="bg-gradient-to-br from-white/5 to-white/2 rounded-2xl p-6 border border-white/10">
+                                  <div className="flex items-center justify-center mb-4">
+                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                                  </div>
+                                  <h3 className="text-lg font-semibold text-white/60 mb-2">Loading Episodes</h3>
+                                  <p className="text-white/40 text-sm">Fetching episodes for this season...</p>
+                                </div>
+                              </motion.div>
+                            );
+                          }
+                          
+                          // Show episodes when available
+                          if (hasSeasons && hasEpisodes) {
+                            return episodesViewMode === 'card' ? (
                             <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4 lg:gap-6">
                               {episodes.slice(0, displayedEpisodes).map((episode, index) => (
                                 <motion.div
@@ -6386,23 +6448,32 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                                 </div>
                               )}
                             </div>
-                          )
-                        ) : (
-                          <motion.div 
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ duration: 0.5 }}
-                            className="text-center text-white/40 py-12"
-                          >
-                            <div className="bg-gradient-to-br from-white/5 to-white/2 rounded-2xl p-8 border border-white/10">
-                              <svg className="w-16 h-16 mx-auto mb-4 text-white/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 002 2z" />
-                              </svg>
-                              <h3 className="text-lg font-semibold text-white/60 mb-2">No Episodes Available</h3>
-                              <p className="text-white/40 text-sm">This season doesn't have any episodes yet.</p>
-                            </div>
-                          </motion.div>
-                        )}
+                          );
+                          }
+                          
+                          // Show "no episodes" message when seasons exist but no episodes (with delay to prevent flashing)
+                          if (hasSeasons && !hasEpisodes && showEmptyState) {
+                            return (
+                              <motion.div 
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.5 }}
+                                className="text-center text-white/40 py-12"
+                              >
+                                <div className="bg-gradient-to-br from-white/5 to-white/2 rounded-2xl p-8 border border-white/10">
+                                  <svg className="w-16 h-16 mx-auto mb-4 text-white/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 002 2z" />
+                                  </svg>
+                                  <h3 className="text-lg font-semibold text-white/60 mb-2">No Episodes Available</h3>
+                                  <p className="text-white/40 text-sm">This season doesn't have any episodes yet.</p>
+                                </div>
+                              </motion.div>
+                            );
+                          }
+                          
+                          // Default: Show nothing when no seasons or episodes
+                          return null;
+                        })()}
                       </motion.div>
                     )}
                   </div>
