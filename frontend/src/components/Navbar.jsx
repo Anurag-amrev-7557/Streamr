@@ -2859,7 +2859,7 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
 
                 {/* Initial State - When search is focused but empty */}
                 {!searchQuery && searchHistory.length === 0 && (
-                  <div className="py-16 text-center">
+                  <div className="py-8 text-center">
                     {/* Minimal Search Icon */}
                     <motion.div
                       className="w-16 h-16 mx-auto mb-6"
@@ -2867,7 +2867,7 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.4, ease: "easeOut" }}
                     >
-                      <div className="w-full h-full bg-white/5 rounded-2xl border border-white/10 flex items-center justify-center">
+                      <div className="w-full h-full bg-white/5 rounded-full border border-white/10 flex items-center justify-center">
                         <svg className="w-8 h-8 text-white/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                         </svg>
@@ -3890,7 +3890,7 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
                               duration: 0.2,
                               ease: "easeOut"
                             }}
-                            className="text-center py-12"
+                            className="text-center py-3"
                             onClick={(e) => {
                               // Prevent closing when clicking inside initial state
                               if (e && typeof e.stopPropagation === 'function') {
@@ -3905,7 +3905,7 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
                               animate={{ opacity: 1, y: 0 }}
                               transition={{ duration: 0.4, ease: "easeOut" }}
                             >
-                              <div className="w-full h-full bg-white/5 rounded-xl border border-white/10 flex items-center justify-center">
+                              <div className="w-full h-full bg-white/5 rounded-full border border-white/10 flex items-center justify-center">
                                 <svg className="w-7 h-7 text-white/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                                 </svg>
