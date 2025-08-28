@@ -327,7 +327,7 @@ const MovieImage = React.memo(({
     >
       {/* Enhanced loading state with skeleton animation */}
       {isLoading && (
-        <div className="absolute inset-0 bg-gradient-to-r from-[#2b3036] via-[#3a4046] to-[#2b3036] animate-pulse">
+        <div className="absolute inset-0 bg-gradient-to-r from-[#2b3036] via-[#3a4046] to-[#2b3036]">
           <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent"></div>
           <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
             <div className="animate-spin rounded-full h-8 w-8 border-2 border-white/20 border-t-white/60"></div>
@@ -2914,7 +2914,7 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
                         >
                           {/* Movie Image Skeleton */}
                           <div className="w-20 h-28 flex-shrink-0 relative overflow-hidden rounded-xl bg-white/8 border border-white/15 shadow-lg">
-                            <div className="w-full h-full bg-gradient-to-br from-white/10 via-white/5 to-white/10 animate-pulse" />
+                            <div className="w-full h-full bg-gradient-to-br from-white/10 via-white/5 to-white/10" />
                           </div>
                           
                           {/* Content Skeleton */}
@@ -2922,37 +2922,37 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
                             <div className="flex items-start justify-between gap-4">
                               <div className='flex flex-col flex-1 items-start gap-2.5'>
                                 {/* Title Skeleton */}
-                                <div className="h-6 w-3/4 rounded bg-white/10 animate-pulse" />
+                                <div className="h-6 w-3/4 rounded bg-white/10" />
                                 
                                 {/* Meta Info Skeleton */}
                                 <div className="flex items-center gap-2">
-                                  <div className="h-4 w-8 rounded bg-white/10 animate-pulse" />
-                                  <div className="h-4 w-1 rounded-full bg-white/10 animate-pulse" />
-                                  <div className="h-4 w-16 rounded bg-white/10 animate-pulse" />
-                                  <div className="h-4 w-1 rounded-full bg-white/10 animate-pulse" />
-                                  <div className="h-4 w-12 rounded bg-white/10 animate-pulse flex items-center gap-1">
-                                    <div className="w-3 h-3 rounded bg-yellow-400/30 animate-pulse" />
+                                  <div className="h-4 w-8 rounded bg-white/10" />
+                                  <div className="h-4 w-1 rounded-full bg-white/10" />
+                                  <div className="h-4 w-16 rounded bg-white/10" />
+                                  <div className="h-4 w-1 rounded-full bg-white/10" />
+                                  <div className="h-4 w-12 rounded bg-white/10 flex items-center gap-1">
+                                    <div className="w-3 h-3 rounded bg-yellow-400/30" />
                                   </div>
                                 </div>
                                 
                                 {/* Genres Skeleton */}
                                 <div className="flex items-center gap-2 mt-3">
-                                  <div className="h-6 w-16 rounded-full bg-white/10 animate-pulse" />
-                                  <div className="h-6 w-20 rounded-full bg-white/10 animate-pulse" />
-                                  <div className="h-6 w-14 rounded-full bg-white/10 animate-pulse" />
+                                  <div className="h-6 w-16 rounded-full bg-white/10" />
+                                  <div className="h-6 w-20 rounded-full bg-white/10" />
+                                  <div className="h-6 w-14 rounded-full bg-white/10" />
                                 </div>
                                 
                                 {/* Overview Skeleton */}
                                 <div className="mt-3 space-y-2">
-                                  <div className="h-4 w-full rounded bg-white/10 animate-pulse" />
-                                  <div className="h-4 w-2/3 rounded bg-white/10 animate-pulse" />
+                                  <div className="h-4 w-full rounded bg-white/10" />
+                                  <div className="h-4 w-2/3 rounded bg-white/10" />
                                 </div>
                               </div>
                               
                               {/* Action Buttons Skeleton */}
                               <div className="flex items-center gap-1.5">
-                                <div className="w-7 h-7 rounded-lg bg-white/10 animate-pulse" />
-                                <div className="w-7 h-7 rounded-lg bg-white/10 animate-pulse" />
+                                <div className="w-7 h-7 rounded-lg bg-white/10" />
+                                <div className="w-7 h-7 rounded-lg bg-white/10" />
                               </div>
                             </div>
                           </div>
