@@ -1,5 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
+import PropTypes from 'prop-types';
 
 const RatingBadge = ({ 
   rating, 
@@ -26,12 +27,14 @@ const RatingBadge = ({
     normalizedRating = 0;
   }
 
-  // Validate size prop
-  const validSizes = ['small', 'default', 'large', 'xl'];
+  // Validate size prop - now includes ultra-small and extra-small
+  const validSizes = ['ultra-small', 'extra-small', 'small', 'default', 'large', 'xl'];
   const validSize = validSizes.includes(size) ? size : 'default';
   
   // Determine badge size and positioning for rectangular design with responsive sizing
   const sizeClasses = {
+    'ultra-small': 'h-4 sm:h-5 px-1.5 sm:px-2 text-xs',
+    'extra-small': 'h-4.5 sm:h-5.5 px-1.5 sm:px-2.5 text-xs',
     'small': 'h-5 sm:h-6 px-2 sm:px-2.5 text-xs',
     'default': 'h-6 sm:h-7 px-2.5 sm:px-3.5 text-xs sm:text-sm',
     'large': 'h-7 sm:h-8 px-3 sm:px-4.5 text-sm sm:text-base',
@@ -49,14 +52,14 @@ const RatingBadge = ({
     'bottom-right': 'bottom-2 sm:bottom-3 right-2 sm:right-3'
   };
 
-      // Dark theme with subtle opacity variations
-    const getBadgeStyle = (rating) => {
-      if (rating >= 8.5) return 'bg-black/90 text-white';
-      if (rating >= 7.5) return 'bg-black/80 text-white';
-      if (rating >= 6.5) return 'bg-black/70 text-white';
-      if (rating >= 5.5) return 'bg-black/60 text-white';
-      return 'bg-black/50 text-white';
-    };
+  // Dark theme with subtle opacity variations
+  const getBadgeStyle = (rating) => {
+    if (rating >= 8.5) return 'bg-black/90 text-white';
+    if (rating >= 7.5) return 'bg-black/80 text-white';
+    if (rating >= 6.5) return 'bg-black/70 text-white';
+    if (rating >= 5.5) return 'bg-black/60 text-white';
+    return 'bg-black/50 text-white';
+  };
 
   const badgeStyle = getBadgeStyle(normalizedRating);
 
@@ -76,12 +79,12 @@ const RatingBadge = ({
       }}
     >
       {/* Rectangular dark theme badge */}
-      <div className={`relative w-auto h-full ${validSize === 'small' ? 'rounded-sm' : validSize === 'default' ? 'rounded-md' : validSize === 'large' ? 'rounded-lg' : 'rounded-xl'} ${badgeStyle} overflow-hidden ${showShadow ? 'shadow-lg' : ''} flex items-center justify-center px-2 sm:px-1 min-w-max`}>
+      <div className={`relative w-auto h-full ${validSize === 'ultra-small' ? 'rounded-sm' : validSize === 'extra-small' ? 'rounded-sm' : validSize === 'small' ? 'rounded-sm' : validSize === 'default' ? 'rounded-md' : validSize === 'large' ? 'rounded-lg' : 'rounded-xl'} ${badgeStyle} overflow-hidden ${showShadow ? 'shadow-lg' : ''} flex items-center justify-center px-2 sm:px-1 min-w-max`}>
         {/* Star icon */}
         {showIcon && (
           <motion.svg
             xmlns="http://www.w3.org/2000/svg"
-            className={`${validSize === 'small' ? 'w-2 h-2 sm:w-2.5 sm:h-2.5' : validSize === 'default' ? 'w-2.5 h-2.5 sm:w-3 sm:h-3' : validSize === 'large' ? 'w-3 h-3 sm:w-3.5 sm:h-3.5' : 'w-3.5 h-3.5 sm:w-4 sm:h-4'} text-white flex-shrink-0`}
+            className={`${validSize === 'ultra-small' ? 'w-1.5 h-1.5 sm:w-2 sm:h-2' : validSize === 'extra-small' ? 'w-1.5 h-1.5 sm:w-2 sm:h-2' : validSize === 'small' ? 'w-2 h-2 sm:w-2.5 sm:h-2.5' : validSize === 'default' ? 'w-2.5 h-2.5 sm:w-3 sm:h-3' : validSize === 'large' ? 'w-3 h-3 sm:w-3.5 sm:h-3.5' : 'w-3.5 h-3.5 sm:w-4 sm:h-4'} text-white flex-shrink-0`}
             viewBox="0 0 24 24"
             fill="currentColor"
             initial={{ opacity: 0, scale: 0.8 }}
@@ -94,7 +97,7 @@ const RatingBadge = ({
         
         {/* Rating number */}
         <motion.span
-          className={`font-semibold sm:font-bold text-white leading-none tracking-tight flex-shrink-0 ${validSize === 'small' ? 'ml-0.5 sm:ml-1' : validSize === 'default' ? 'ml-1 sm:ml-1.5' : validSize === 'large' ? 'ml-1.5 sm:ml-2' : 'ml-2 sm:ml-2.5'}`}
+          className={`font-semibold sm:font-bold text-white leading-none tracking-tight flex-shrink-0 ${validSize === 'ultra-small' ? 'ml-0.5 sm:ml-0.5' : validSize === 'extra-small' ? 'ml-0.5 sm:ml-0.5' : validSize === 'small' ? 'ml-0.5 sm:ml-1' : validSize === 'default' ? 'ml-1 sm:ml-1.5' : validSize === 'large' ? 'ml-1.5 sm:ml-2' : 'ml-2 sm:ml-2.5'}`}
           initial={{ opacity: 0, x: 5 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.3, duration: 0.3 }}
@@ -104,6 +107,19 @@ const RatingBadge = ({
       </div>
     </motion.div>
   );
+};
+
+// Add PropTypes for better type safety and error prevention
+RatingBadge.propTypes = {
+  rating: PropTypes.oneOfType([
+    PropTypes.number,
+    PropTypes.string
+  ]).isRequired,
+  size: PropTypes.oneOf(['ultra-small', 'extra-small', 'small', 'default', 'large', 'xl']),
+  showIcon: PropTypes.bool,
+  className: PropTypes.string,
+  position: PropTypes.oneOf(['top-left', 'top-right', 'bottom-left', 'bottom-right']),
+  showShadow: PropTypes.bool
 };
 
 export default RatingBadge; 

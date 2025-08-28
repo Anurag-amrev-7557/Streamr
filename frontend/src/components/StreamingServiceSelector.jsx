@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import { getAvailableStreamingServices, openStreamingUrl, openEmbedPlayer, DEFAULT_STREAMING_SERVICE } from '../services/streamingService';
@@ -12,8 +12,15 @@ const StreamingServiceSelector = ({
   const [availableServices, setAvailableServices] = useState([]);
   const [portalContainer, setPortalContainer] = useState(null);
   const [selectedService, setSelectedService] = useState(null);
+  const portalRef = useRef(null);
 
-  // Create portal container for the modal
+  // Memoize available services to prevent unnecessary recalculations
+  const memoizedAvailableServices = useMemo(() => {
+    if (!content) return [];
+    return getAvailableStreamingServices(content);
+  }, [content]);
+
+  // Create portal container for the modal - simplified cleanup
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -24,77 +31,76 @@ const StreamingServiceSelector = ({
       document.body.appendChild(container);
     }
     setPortalContainer(container);
+    portalRef.current = container;
 
     return () => {
-      if (container && container.parentNode) {
+      // Cleanup portal container on unmount
+      if (portalRef.current && portalRef.current.parentNode) {
         try {
-          if (container.parentNode.contains(container)) {
-            const attemptRemoval = () => {
-              try {
-                if (container.parentNode && container.parentNode.contains(container)) {
-                  container.parentNode.removeChild(container);
-                }
-              } catch (removeError) {
-                console.warn('[StreamingServiceSelector] Failed to remove portal container:', removeError);
-              }
-            };
-
-            if (container.childElementCount === 0) {
-              attemptRemoval();
-            } else {
-              const observer = new MutationObserver(() => {
-                if (container.childElementCount === 0) {
-                  observer.disconnect();
-                  attemptRemoval();
-                }
-              });
-              observer.observe(container, { childList: true });
-
-              const timeoutId = window.setTimeout(() => {
-                if (container.childElementCount === 0) {
-                  observer.disconnect();
-                  attemptRemoval();
-                } else {
-                  observer.disconnect();
-                }
-              }, 1000);
-
-              const clearOnUnload = () => window.clearTimeout(timeoutId);
-              window.addEventListener('beforeunload', clearOnUnload, { once: true });
-            }
-          }
+          portalRef.current.parentNode.removeChild(portalRef.current);
         } catch (error) {
-          console.warn('[StreamingServiceSelector] Cleanup error during portal removal:', error);
+          console.warn('[StreamingServiceSelector] Cleanup error:', error);
         }
       }
     };
   }, []);
 
-  // Get available services when modal opens
+  // Get available services when modal opens - optimized
   useEffect(() => {
     if (isOpen && content) {
-      const services = getAvailableStreamingServices(content);
-      setAvailableServices(services);
-      if (services.length > 0) {
-        const preferred = services.find(s => s.key === DEFAULT_STREAMING_SERVICE) || services[0];
+      setAvailableServices(memoizedAvailableServices);
+      if (memoizedAvailableServices.length > 0) {
+        const preferred = memoizedAvailableServices.find(s => s.key === DEFAULT_STREAMING_SERVICE) || memoizedAvailableServices[0];
         setSelectedService(preferred);
       } else {
         setSelectedService(null);
       }
     }
-  }, [isOpen, content]);
+  }, [isOpen, content, memoizedAvailableServices]);
 
-  const handleClose = () => {
+  // Memoize handlers to prevent unnecessary re-renders
+  const handleClose = useCallback(() => {
     setSelectedService(null);
     onClose();
-  };
+  }, [onClose]);
 
-  const handleEscape = (e) => {
+  const handleEscape = useCallback((e) => {
     if (e.key === 'Escape' && isOpen) {
       handleClose();
     }
-  };
+  }, [isOpen, handleClose]);
 
+  const handleClickOutside = useCallback((e) => {
+    if (e.target.classList.contains('streaming-service-selector-overlay')) {
+      handleClose();
+    }
+  }, [handleClose]);
+
+  const handleServiceSelect = useCallback((service) => {
+    setSelectedService(service);
+  }, []);
+
+  const handleWatchNow = useCallback(() => {
+    if (selectedService && onServiceSelect) {
+      onServiceSelect(selectedService);
+    }
+  }, [selectedService, onServiceSelect]);
+
+  const handleOpenInNewTab = useCallback(() => {
+    if (selectedService) {
+      openStreamingUrl(selectedService.url);
+      handleClose();
+    }
+  }, [selectedService, handleClose]);
+
+  const handleOpenEmbed = useCallback(() => {
+    if (selectedService) {
+      openEmbedPlayer(selectedService.url);
+      handleClose();
+    }
+  }, [selectedService, handleClose]);
+
+  // Event listeners with proper cleanup
   useEffect(() => {
     if (isOpen) {
       document.addEventListener('keydown', handleEscape);
@@ -105,37 +111,7 @@ const StreamingServiceSelector = ({
       document.removeEventListener('keydown', handleEscape);
       document.body.style.overflow = '';
     };
-  }, [isOpen]);
-
-  const handleClickOutside = (e) => {
-    if (e.target.classList.contains('streaming-service-selector-overlay')) {
-      handleClose();
-    }
-  };
-
-  const handleServiceSelect = (service) => {
-    setSelectedService(service);
-  };
-
-  const handleWatchNow = () => {
-    if (selectedService && onServiceSelect) {
-      onServiceSelect(selectedService);
-    }
-  };
-
-  const handleOpenInNewTab = () => {
-    if (selectedService) {
-      openStreamingUrl(selectedService.url);
-      handleClose();
-    }
-  };
-
-  const handleOpenEmbed = () => {
-    if (selectedService) {
-      openEmbedPlayer(selectedService.url);
-      handleClose();
-    }
-  };
+  }, [isOpen, handleEscape]);
 
   // Don't render if portal container is not ready or in SSR
   if (typeof window === 'undefined' || !portalContainer) {

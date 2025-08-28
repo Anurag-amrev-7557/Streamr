@@ -71,22 +71,30 @@ const ContinueWatchingCard = React.memo(({ item, onClick, isMobile, onRemove }) 
 
 
 
-      // Use the optimized image service instead of manual URL construction
+      // 🎬 FIXED: Ensure mobile shows portrait (poster) and desktop shows landscape (backdrop)
       if (isMobileState) {
-        // For mobile, prefer poster
+        // For mobile: ALWAYS prefer poster for portrait aspect ratio
         if (item.poster_path) {
           const mobileUrl = getOptimizedImageUrl(item.poster_path, 'w500');
+          console.log('📱 Mobile using poster for portrait:', mobileUrl);
           return mobileUrl;
         } else if (item.backdrop_path) {
+          // Fallback to backdrop only if no poster available
           const mobileUrl = getOptimizedImageUrl(item.backdrop_path, 'w500');
+          console.log('📱 Mobile fallback to backdrop:', mobileUrl);
           return mobileUrl;
         }
       } else {
-        // For desktop, prefer backdrop
+        // For desktop: ALWAYS prefer backdrop for landscape aspect ratio
         if (item.backdrop_path) {
-          return getOptimizedImageUrl(item.backdrop_path, 'w780');
+          const desktopUrl = getOptimizedImageUrl(item.backdrop_path, 'w780');
+          console.log('🖥️ Desktop using backdrop for landscape:', desktopUrl);
+          return desktopUrl;
         } else if (item.poster_path) {
-          return getOptimizedImageUrl(item.poster_path, 'w500');
+          // Fallback to poster only if no backdrop available
+          const desktopUrl = getOptimizedImageUrl(item.poster_path, 'w500');
+          console.log('🖥️ Desktop fallback to poster:', desktopUrl);
+          return desktopUrl;
         }
       }
       
@@ -680,6 +688,11 @@ const ContinueWatching = ({ onMovieSelect, isMobile }) => {
     removeFromContinueWatching(item.id, item.type, item.season, item.episode);
   }, [removeFromContinueWatching]);
 
+  // 🎬 OPTIMIZED: Memoized clear all handler
+  const handleClearAll = useCallback(() => {
+    clearAllContinueWatching();
+  }, [clearAllContinueWatching]);
+
   // Don't render if no continue watching items
   if (!hasContinueWatching()) {
     return null;
@@ -692,9 +705,7 @@ const ContinueWatching = ({ onMovieSelect, isMobile }) => {
           <h2 className="text-xl font-semibold bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent">Continue Watching</h2>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => {
-                clearAllContinueWatching();
-              }}
+              onClick={handleClearAll}
               className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/10 transition-colors"
             >
               Clear All
@@ -732,9 +743,7 @@ const ContinueWatching = ({ onMovieSelect, isMobile }) => {
         <h2 className="text-xl font-semibold bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent">Continue Watching</h2>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => {
-              clearAllContinueWatching();
-            }}
+            onClick={handleClearAll}
             className="text-xs px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/10 transition-colors"
           >
             Clear All
@@ -780,12 +789,6 @@ const ContinueWatching = ({ onMovieSelect, isMobile }) => {
           observer={true}
           observeParents={true}
           updateOnWindowResize={true}
-          edgeSwipeDetection={true}
-          edgeSwipeThreshold={20}
-          longSwipes={true}
-          longSwipesRatio={0.5}
-          longSwipesMs={300}
-          shortSwipes={true}
           className="px-6 pb-4 overflow-hidden"
         >
                       <AnimatePresence>

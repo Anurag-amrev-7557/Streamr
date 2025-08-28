@@ -31,6 +31,20 @@ const BottomNav = () => {
   const isDocHiddenRef = useRef(false);
   const isFirstMount = useRef(true);
   
+  // Timer management to prevent memory leaks
+  const timersRef = useRef(new Set());
+  
+  // Helper function to manage timers
+  const addTimer = useCallback((timer) => {
+    timersRef.current.add(timer);
+    return timer;
+  }, []);
+  
+  const clearAllTimers = useCallback(() => {
+    timersRef.current.forEach(timer => clearTimeout(timer));
+    timersRef.current.clear();
+  }, []);
+  
   // State
   const [hasAnimatedIn, setHasAnimatedIn] = useState(false);
   

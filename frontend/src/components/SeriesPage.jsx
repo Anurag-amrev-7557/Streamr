@@ -452,6 +452,7 @@ const SeriesPage = () => {
   const [episodeListLoading, setEpisodeListLoading] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const { watchlist, addToWatchlist, removeFromWatchlist } = useWatchlist();
+  const [isMobile, setIsMobile] = useState(false);
 
   const categories = [
     { id: 'popular', label: 'Popular', networkId: null },
@@ -519,6 +520,26 @@ const SeriesPage = () => {
       };
     }
   }, [inView, hasMore, loading, isLoadingMore]); // FIXED: Removed loadMoreSeries dependency to prevent infinite loop
+
+  // 🎬 MOBILE OPTIMIZED: Mobile detection for responsive loading states
+  useEffect(() => {
+    const checkMobile = () => {
+      const isMobileDevice = window.innerWidth < 768 || 
+                           (window.navigator && window.navigator.userAgent && 
+                            /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(window.navigator.userAgent));
+      setIsMobile(isMobileDevice);
+    };
+    
+    // Check immediately
+    checkMobile();
+    
+    // Add resize listener
+    window.addEventListener('resize', checkMobile);
+    
+    return () => {
+      window.removeEventListener('resize', checkMobile);
+    };
+  }, []);
 
   const fetchGenres = async () => {
     try {

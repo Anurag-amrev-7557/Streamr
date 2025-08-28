@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { motion } from 'framer-motion';
 
@@ -249,7 +249,7 @@ const Loader = ({
           r="40"
           style={{
             stroke: `rgb(var(--${color}-500))`,
-            strokeDasharray: `${progress * 2.51} 251.2`,
+            strokeDasharray: `${(progress || 0) * 2.51} 251.2`,
             transform: 'rotate(-90deg)',
             transformOrigin: '50% 50%',
             transition: 'stroke-dasharray 0.3s ease'
@@ -329,7 +329,7 @@ const Loader = ({
       aria-label={ariaLabel}
       aria-valuemin="0"
       aria-valuemax="100"
-      aria-valuenow={showProgress ? progress : undefined}
+      aria-valuenow={showProgress ? (progress || 0) : undefined}
     >
       {/* Visually hidden label for screen readers */}
       <span className="sr-only">{ariaLabel}</span>
@@ -340,7 +340,7 @@ const Loader = ({
       {/* Progress Indicator */}
       {showProgress && (
         <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-xs font-medium text-white/60">{progress}%</span>
+          <span className="text-xs font-medium text-white/60">{progress || 0}%</span>
         </div>
       )}
 
@@ -396,7 +396,6 @@ const Loader = ({
  * - showTips: boolean (show tips)
  * - tipInterval: number (tip rotation interval in ms)
  */
-import { useEffect, useRef } from "react";
 
 const PageLoader = ({
   text = "Loading your cinematic experience...",
@@ -412,19 +411,26 @@ const PageLoader = ({
   ],
   showTips = true,
   tipInterval = 3000,
-  variant = 'minimalist', // 'minimalist' | 'classic'
+  variant = 'minimalist',
 }) => {
-  const [currentTip, setCurrentTip] = React.useState(
-    tips && tips.length > 0 ? Math.floor(Math.random() * tips.length) : 0
+  const [currentTip, setCurrentTip] = useState(
+    tips && Array.isArray(tips) && tips.length > 0 ? Math.floor(Math.random() * tips.length) : 0
   );
   
   // FIXED: Use useRef for timeout management to prevent memory leaks
   const tipTimeoutRef = useRef(null);
   const isMountedRef = useRef(true);
 
+  // FIXED: Memoize the tip update function to prevent unnecessary re-renders
+  const updateCurrentTip = useCallback(() => {
+    if (isMountedRef.current && tips && Array.isArray(tips) && tips.length > 0) {
+      setCurrentTip((prev) => (prev + 1) % tips.length);
+    }
+  }, [tips]);
+
   // FIXED: Proper cleanup of interval to prevent memory leaks
   useEffect(() => {
-    if (!showTips || !tips || tips.length < 2) return;
+    if (!showTips || !tips || !Array.isArray(tips) || tips.length < 2) return;
     
     // Clear any existing timeout first
     if (tipTimeoutRef.current) {
@@ -432,11 +438,7 @@ const PageLoader = ({
       tipTimeoutRef.current = null;
     }
     
-    tipTimeoutRef.current = setInterval(() => {
-      if (isMountedRef.current) {
-        setCurrentTip((prev) => (prev + 1) % tips.length);
-      }
-    }, tipInterval);
+    tipTimeoutRef.current = setInterval(updateCurrentTip, tipInterval);
     
     return () => {
       if (tipTimeoutRef.current) {
@@ -444,7 +446,7 @@ const PageLoader = ({
         tipTimeoutRef.current = null;
       }
     };
-  }, [showTips, tips, tipInterval]);
+  }, [showTips, tips, tipInterval, updateCurrentTip]);
 
   // FIXED: Cleanup on unmount
   useEffect(() => {
@@ -479,7 +481,7 @@ const PageLoader = ({
   }, []);
 
   // FIXED: Memoize tips array to prevent unnecessary re-renders
-  const memoizedTips = React.useMemo(() => tips, [tips]);
+  const memoizedTips = useMemo(() => tips, [tips]);
 
   return (
     <div
@@ -563,7 +565,7 @@ const PageLoader = ({
                 <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 w-20 h-1 bg-white/10 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-white/60 transition-all duration-500 ease-out rounded-full"
-                    style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
+                    style={{ width: `${Math.max(0, Math.min(100, progress || 0))}%` }}
                   ></div>
                 </div>
               )}
@@ -591,7 +593,7 @@ const PageLoader = ({
             </div>
 
             {/* Tips section */}
-            {showTips && memoizedTips && memoizedTips.length > 0 && (
+            {showTips && memoizedTips && Array.isArray(memoizedTips) && memoizedTips.length > 0 && (
               <div className="text-center max-w-md m-0">
                 <div className="text-white/40 text-sm font-medium transition-opacity duration-500">
                   <span className="inline-flex items-center gap-2">
@@ -707,7 +709,7 @@ const PageLoader = ({
                 <div className="absolute left-1/2 -translate-x-1/2 bottom-[-18px] w-24 h-2 bg-white/10 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-gradient-to-r from-[#818cf8] to-[#6ee7b7] transition-all duration-500"
-                    style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
+                    style={{ width: `${Math.max(0, Math.min(100, progress || 0))}%` }}
                   ></div>
                 </div>
               )}
@@ -717,7 +719,7 @@ const PageLoader = ({
               {text}
             </div>
             {/* Rotating tip or fun fact */}
-            {showTips && memoizedTips && memoizedTips.length > 0 && (
+            {showTips && memoizedTips && Array.isArray(memoizedTips) && memoizedTips.length > 0 && (
               <div className="text-xs text-white/40 font-medium text-center max-w-xs mt-2 transition-opacity duration-500 animate-fade-in m-0">
                 <span className="inline-flex items-center gap-1">
                   <svg
@@ -763,11 +765,10 @@ const PageLoader = ({
  * - text: string (main loading message)
  * - showProgress: boolean (optional, show animated progress bar)
  * - progress: number (optional, 0-100, for progress bar)
- * - tips: array of strings (optional, rotating tips/fun facts)
+ * - tips: array of string (optional, rotating tips/fun facts)
  * - showTips: boolean (optional, show tips/fun facts)
  * - className: string (optional, extra classes for outer container)
  */
-import { useState} from 'react';
 
 const SectionLoader = ({
   text = "Loading content...",
@@ -780,14 +781,19 @@ const SectionLoader = ({
   // For rotating tips/fun facts
   const [currentTip, setCurrentTip] = useState(0);
 
+  // FIXED: Use useCallback to memoize the setCurrentTip function
+  const updateCurrentTip = useCallback(() => {
+    if (tips && Array.isArray(tips) && tips.length > 0) {
+      setCurrentTip((prev) => (prev + 1) % tips.length);
+    }
+  }, [tips]);
+
   useEffect(() => {
-    if (showTips && tips && tips.length > 1) {
-      const interval = setInterval(() => {
-        setCurrentTip((prev) => (prev + 1) % tips.length);
-      }, 3500);
+    if (showTips && tips && Array.isArray(tips) && tips.length > 1) {
+      const interval = setInterval(updateCurrentTip, 3500);
       return () => clearInterval(interval);
     }
-  }, [showTips, tips]);
+  }, [showTips, tips, updateCurrentTip]);
 
   return (
     <div className={`flex items-center justify-center py-16 sm:py-20 relative min-h-[220px] ${className}`}>
@@ -822,12 +828,12 @@ const SectionLoader = ({
           <div className="w-40 h-2 bg-white/10 rounded-full overflow-hidden mt-2 shadow-inner">
             <div
               className="h-full bg-gradient-to-r from-[#818cf8] to-[#6ee7b7] transition-all duration-700"
-              style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
+              style={{ width: `${Math.max(0, Math.min(100, progress || 0))}%` }}
             ></div>
           </div>
         )}
         {/* Optional rotating tip/fun fact */}
-        {showTips && tips && tips.length > 0 && (
+        {showTips && tips && Array.isArray(tips) && tips.length > 0 && (
           <div className="text-xs text-white/50 font-medium text-center max-w-xs mt-3 transition-opacity duration-500 animate-fade-in">
             <span className="inline-flex items-center gap-1">
               <svg
@@ -869,7 +875,7 @@ const SectionLoader = ({
  */
 const CardLoader = ({ count = 1 }) => {
   return (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
       {Array.from({ length: count }).map((_, i) => (
         <div key={i} className="animate-pulse">
           <div className="aspect-[2/3] bg-white/5 rounded-lg"></div>
@@ -895,12 +901,38 @@ Loader.propTypes = {
   ariaLabel: PropTypes.string
 };
 
+PageLoader.propTypes = {
+  text: PropTypes.string,
+  showProgress: PropTypes.bool,
+  progress: PropTypes.number,
+  tips: PropTypes.arrayOf(PropTypes.string),
+  showTips: PropTypes.bool,
+  tipInterval: PropTypes.number,
+  variant: PropTypes.oneOf(['minimalist', 'classic'])
+};
+
+SectionLoader.propTypes = {
+  text: PropTypes.string,
+  showProgress: PropTypes.bool,
+  progress: PropTypes.number,
+  tips: PropTypes.arrayOf(PropTypes.string),
+  showTips: PropTypes.bool,
+  className: PropTypes.string
+};
+
+CardLoader.propTypes = {
+  count: PropTypes.number
+};
+
+
+
 // Enhanced: Add keyframes for advanced loader and skeleton animations, only once per page
 (function injectLoaderKeyframes() {
-  if (typeof window === "undefined" || document.getElementById("loader-keyframes")) return;
-  const style = document.createElement('style');
-  style.id = "loader-keyframes";
-  style.textContent = `
+  try {
+    if (typeof window === "undefined" || document.getElementById("loader-keyframes")) return;
+    const style = document.createElement('style');
+    style.id = "loader-keyframes";
+    style.textContent = `
     /* Reset styles for page loader to prevent extra space */
     .page-loader-container {
       margin: 0 !important;
@@ -1028,8 +1060,11 @@ Loader.propTypes = {
       0% { opacity: 0.2; }
       50%, 100% { opacity: 1; }
     }
-  `;
-  document.head.appendChild(style);
+      `;
+    document.head.appendChild(style);
+  } catch (error) {
+    console.warn('Failed to inject loader keyframes:', error);
+  }
 })();
 
 export { Loader, PageLoader, SectionLoader, CardLoader }; 

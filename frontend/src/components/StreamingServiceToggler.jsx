@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getAvailableStreamingServices, DEFAULT_STREAMING_SERVICE } from '../services/streamingService';
 
@@ -16,7 +16,12 @@ const StreamingServiceToggler = ({
   const [lastSelectedService, setLastSelectedService] = useState(null);
   const dropdownRef = useRef(null);
 
-  // Define handleServiceSelect before useEffect to avoid hooks order violation
+  // Memoize the current service data to prevent unnecessary re-renders
+  const currentServiceData = useMemo(() => {
+    return availableServices.find(s => s.key === currentService) || availableServices[0];
+  }, [availableServices, currentService]);
+
+  // Memoize the service change handler to prevent infinite loops
   const handleServiceSelect = useCallback(async (service) => {
     if (service.key === currentService) {
       setIsOpen(false);
@@ -63,8 +68,8 @@ const StreamingServiceToggler = ({
     }
   }, []);
 
-  // Get available services when content changes
-  useEffect(() => {
+  // Memoize the available services processing to prevent unnecessary recalculations
+  const processAvailableServices = useCallback(async () => {
     if (!content) return;
     
     setIsLoading(true);
@@ -86,24 +91,27 @@ const StreamingServiceToggler = ({
     }
   }, [content, currentService, onServiceChange]);
 
-  // Close dropdown when clicking outside
+  // Get available services when content changes - optimized dependencies
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
-    };
+    processAvailableServices();
+  }, [processAvailableServices]);
 
+  // Close dropdown when clicking outside - optimized with useCallback
+  const handleClickOutside = useCallback((event) => {
+    if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+      setIsOpen(false);
+    }
+  }, []);
+
+  useEffect(() => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  }, [handleClickOutside]);
 
   // Don't show if no services available or disabled
   if (availableServices.length === 0 || disabled) {
     return null;
   }
-
-  const currentServiceData = availableServices.find(s => s.key === currentService) || availableServices[0];
 
   return (
     <div className={`relative ${className}`} ref={dropdownRef}>

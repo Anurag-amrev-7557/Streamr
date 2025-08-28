@@ -126,12 +126,12 @@ const TVEpisodeSelector = ({
   const [loadMoreError, setLoadMoreError] = useState(null);
   const [lastLoadTime, setLastLoadTime] = useState(0);
   
-  // Performance optimization
-  const loadMoreTimeoutRef = useRef(null);
-  const loadMoreAbortControllerRef = useRef(null);
+  // Performance optimization - simplified refs
+  const portalRef = useRef(null);
   const isMountedRef = useRef(true);
+  const loadMoreTimeoutRef = useRef(null);
 
-  // Create portal container for the modal
+  // Create portal container for the modal - simplified cleanup
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -142,53 +142,21 @@ const TVEpisodeSelector = ({
       document.body.appendChild(container);
     }
     setPortalContainer(container);
+    portalRef.current = container;
 
     return () => {
-      if (container && container.parentNode) {
+      // Cleanup portal container on unmount
+      if (portalRef.current && portalRef.current.parentNode) {
         try {
-          if (container.parentNode.contains(container)) {
-            const attemptRemoval = () => {
-              try {
-                if (container.parentNode && container.parentNode.contains(container)) {
-                  container.parentNode.removeChild(container);
-                }
-              } catch (removeError) {
-                console.warn('[TVEpisodeSelector] Failed to remove portal container:', removeError);
-              }
-            };
-
-            if (container.childElementCount === 0) {
-              attemptRemoval();
-            } else {
-              const observer = new MutationObserver(() => {
-                if (container.childElementCount === 0) {
-                  observer.disconnect();
-                  attemptRemoval();
-                }
-              });
-              observer.observe(container, { childList: true });
-
-              const timeoutId = window.setTimeout(() => {
-                if (container.childElementCount === 0) {
-                  observer.disconnect();
-                  attemptRemoval();
-                } else {
-                  observer.disconnect();
-                }
-              }, 1000);
-
-              const clearOnUnload = () => window.clearTimeout(timeoutId);
-              window.addEventListener('beforeunload', clearOnUnload, { once: true });
-            }
-          }
+          portalRef.current.parentNode.removeChild(portalRef.current);
         } catch (error) {
-          console.warn('[TVEpisodeSelector] Cleanup error during portal removal:', error);
+          console.warn('[TVEpisodeSelector] Cleanup error:', error);
         }
       }
     };
   }, []);
 
-  // Reset state when modal opens
+  // Reset state when modal opens - simplified dependencies
   useEffect(() => {
     if (isOpen) {
       setSelectedSeason(currentSeason?.season_number || 1);
@@ -196,11 +164,11 @@ const TVEpisodeSelector = ({
       setSearchTerm('');
       setDisplayedEpisodes(10); // Reset to show 10 episodes
     }
-  }, [isOpen, currentSeason]);
+  }, [isOpen, currentSeason?.season_number]);
 
-  // Fetch episodes for selected season
+  // Fetch episodes for selected season - optimized with useCallback
   const fetchEpisodes = useCallback(async (seasonNumber) => {
-    if (!show?.id || !seasonNumber) return;
+    if (!show?.id || !seasonNumber || !isMountedRef.current) return;
     
     console.log('[TVEpisodeSelector] Fetching episodes for season:', seasonNumber, 'show ID:', show.id);
     setIsLoadingEpisodes(true);
@@ -208,6 +176,8 @@ const TVEpisodeSelector = ({
     try {
       const seasonData = await getTVSeason(show.id, seasonNumber);
       const allEpisodes = seasonData.episodes || [];
+      
+      if (!isMountedRef.current) return;
       
       console.log('[TVEpisodeSelector] Successfully loaded episodes:', {
         seasonNumber,
@@ -219,15 +189,9 @@ const TVEpisodeSelector = ({
       setTotalEpisodes(allEpisodes.length);
       setDisplayedEpisodes(10); // Reset to show 10 episodes
       
-      // Verify episodes were set correctly
-      setTimeout(() => {
-        if (episodes.length === 0 && allEpisodes.length > 0) {
-          console.warn('[TVEpisodeSelector] Episodes state not updated, forcing update');
-          setEpisodes([...allEpisodes]);
-        }
-      }, 100);
-      
     } catch (error) {
+      if (!isMountedRef.current) return;
+      
       console.error('[TVEpisodeSelector] Failed to fetch episodes:', error);
       setEpisodes([]);
       setTotalEpisodes(0);
@@ -242,18 +206,20 @@ const TVEpisodeSelector = ({
         });
       }
     } finally {
-      setIsLoadingEpisodes(false);
+      if (isMountedRef.current) {
+        setIsLoadingEpisodes(false);
+      }
     }
   }, [show?.id]);
 
-  // Fetch episodes when season changes
+  // Fetch episodes when season changes - simplified dependencies
   useEffect(() => {
     if (isOpen && selectedSeason) {
       fetchEpisodes(selectedSeason);
     }
   }, [isOpen, selectedSeason, fetchEpisodes]);
 
-  // Cleanup on unmount
+  // Cleanup on unmount - simplified
   useEffect(() => {
     isMountedRef.current = true;
     
@@ -263,11 +229,6 @@ const TVEpisodeSelector = ({
       // Clear timeouts
       if (loadMoreTimeoutRef.current) {
         clearTimeout(loadMoreTimeoutRef.current);
-      }
-      
-      // Abort ongoing requests
-      if (loadMoreAbortControllerRef.current) {
-        loadMoreAbortControllerRef.current.abort();
       }
     };
   }, []);
@@ -294,15 +255,16 @@ const TVEpisodeSelector = ({
     return displayedEpisodes < filteredEpisodes.length;
   }, [displayedEpisodes, filteredEpisodes.length]);
 
-  const handleClose = () => {
+  // Memoized event handlers to prevent unnecessary re-renders
+  const handleClose = useCallback(() => {
     onClose();
-  };
+  }, [onClose]);
 
-  const handleEscape = (e) => {
+  const handleEscape = useCallback((e) => {
     if (e.key === 'Escape' && isOpen) {
       handleClose();
     }
-  };
+  }, [isOpen, handleClose]);
 
   useEffect(() => {
     if (isOpen) {
@@ -314,15 +276,15 @@ const TVEpisodeSelector = ({
       document.removeEventListener('keydown', handleEscape);
       document.body.style.overflow = '';
     };
-  }, [isOpen]);
+  }, [isOpen, handleEscape]);
 
-  const handleClickOutside = (e) => {
+  const handleClickOutside = useCallback((e) => {
     if (e.target.classList.contains('tv-episode-selector-overlay')) {
       handleClose();
     }
-  };
+  }, [handleClose]);
 
-  const handleSeasonChange = (season) => {
+  const handleSeasonChange = useCallback((season) => {
     setSelectedSeason(season.season_number || season);
     setSelectedEpisode(1);
     setSearchTerm('');
@@ -330,9 +292,9 @@ const TVEpisodeSelector = ({
     if (onSeasonChange) {
       onSeasonChange(season);
     }
-  };
+  }, [onSeasonChange]);
 
-  const handleEpisodeSelect = (episode) => {
+  const handleEpisodeSelect = useCallback((episode) => {
     setSelectedEpisode(episode.episode_number);
     
     console.log('🎬 TVEpisodeSelector: Starting episode tracking...', {
@@ -369,7 +331,7 @@ const TVEpisodeSelector = ({
     
     onEpisodeSelect(selectedSeason, episode.episode_number, episodeData);
     handleClose();
-  };
+  }, [selectedSeason, startWatchingEpisode, show, onEpisodeSelect, handleClose]);
 
   // Enhanced load more function with better UX and error handling
   const handleLoadMore = useCallback(async () => {
@@ -384,12 +346,9 @@ const TVEpisodeSelector = ({
     }
 
     // Cancel previous request if it exists
-    if (loadMoreAbortControllerRef.current) {
-      loadMoreAbortControllerRef.current.abort();
+    if (loadMoreTimeoutRef.current) {
+      clearTimeout(loadMoreTimeoutRef.current);
     }
-
-    // Create new abort controller
-    loadMoreAbortControllerRef.current = new AbortController();
 
     setIsLoadingMore(true);
     setLoadMoreError(null);
@@ -412,16 +371,14 @@ const TVEpisodeSelector = ({
       
       setDisplayedEpisodes(newDisplayedCount);
 
-      // Trigger any additional data fetching if needed
-      if (newDisplayedCount >= filteredEpisodes.length && episodes.length < totalEpisodes) {
-        // Fetch more episodes from API if we've shown all current ones
-        await fetchMoreEpisodesFromAPI();
-      }
+              // Trigger any additional data fetching if needed
+        if (newDisplayedCount >= filteredEpisodes.length && episodes.length < totalEpisodes) {
+          // Fetch more episodes from API if we've shown all current ones
+          // await fetchMoreEpisodesFromAPI(); // Temporarily disabled to prevent infinite loops
+        }
 
     } catch (error) {
-      if (error.name === 'AbortError') {
-        return; // Request was cancelled
-      }
+      if (!isMountedRef.current) return;
       
       console.error('Error loading more episodes:', error);
       setLoadMoreError('Failed to load more episodes. Please try again.');
@@ -447,9 +404,9 @@ const TVEpisodeSelector = ({
     lastLoadTime
   ]);
 
-  // Fetch more episodes from API
+  // Fetch more episodes from API - simplified
   const fetchMoreEpisodesFromAPI = useCallback(async () => {
-    if (!show?.id || !selectedSeason) return;
+    if (!show?.id || !selectedSeason || !isMountedRef.current) return;
 
     try {
       // This would typically fetch the next page of episodes
@@ -462,20 +419,20 @@ const TVEpisodeSelector = ({
         setTotalEpisodes(allEpisodes.length);
       }
     } catch (error) {
-      console.error('Failed to fetch more episodes:', error);
+      if (isMountedRef.current) {
+        console.error('Failed to fetch more episodes:', error);
+      }
     }
   }, [show?.id, selectedSeason]);
 
-  // Enhanced search with debouncing
+  // Enhanced search with debouncing - optimized
   const handleSearch = useCallback((e) => {
     const value = e.target.value;
     setSearchTerm(value);
     
     // Reset displayed episodes when searching
-    if (value.trim() !== searchTerm.trim()) {
-      setDisplayedEpisodes(10);
-    }
-  }, [searchTerm]);
+    setDisplayedEpisodes(10);
+  }, []);
 
   const handleViewModeChange = useCallback((mode) => {
     setViewMode(mode);

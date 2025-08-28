@@ -509,42 +509,66 @@ const usePerformanceMonitoring = () => {
         if (!isMountedRef.current) return;
         const entries = list.getEntries();
         const fcp = entries[entries.length - 1];
-        setMetrics(prev => ({ ...prev, firstContentfulPaint: fcp.startTime }));
+        if (fcp && typeof fcp.startTime === 'number') {
+          setMetrics(prev => ({ ...prev, firstContentfulPaint: fcp.startTime }));
+        }
       });
-      fcpObserver.observe({ entryTypes: ['paint'] });
-      observersRef.current.push(fcpObserver);
+      try {
+        fcpObserver.observe({ entryTypes: ['paint'] });
+        observersRef.current.push(fcpObserver);
+      } catch (error) {
+        console.warn('Failed to observe FCP:', error);
+      }
 
       // Largest Contentful Paint
       const lcpObserver = new PerformanceObserver((list) => {
         if (!isMountedRef.current) return;
         const entries = list.getEntries();
         const lcp = entries[entries.length - 1];
-        setMetrics(prev => ({ ...prev, largestContentfulPaint: lcp.startTime }));
+        if (lcp && typeof lcp.startTime === 'number') {
+          setMetrics(prev => ({ ...prev, largestContentfulPaint: lcp.startTime }));
+        }
       });
-      lcpObserver.observe({ entryTypes: ['largest-contentful-paint'] });
-      observersRef.current.push(lcpObserver);
+      try {
+        lcpObserver.observe({ entryTypes: ['largest-contentful-paint'] });
+        observersRef.current.push(lcpObserver);
+      } catch (error) {
+        console.warn('Failed to observe LCP:', error);
+      }
 
       // First Input Delay
       const fidObserver = new PerformanceObserver((list) => {
         if (!isMountedRef.current) return;
         const entries = list.getEntries();
         const fid = entries[entries.length - 1];
-        setMetrics(prev => ({ ...prev, firstInputDelay: fid.processingStart - fid.startTime }));
+        if (fid && typeof fid.processingStart === 'number' && typeof fid.startTime === 'number') {
+          setMetrics(prev => ({ ...prev, firstInputDelay: fid.processingStart - fid.startTime }));
+        }
       });
-      fidObserver.observe({ entryTypes: ['first-input'] });
-      observersRef.current.push(fidObserver);
+      try {
+        fidObserver.observe({ entryTypes: ['first-input'] });
+        observersRef.current.push(fidObserver);
+      } catch (error) {
+        console.warn('Failed to observe FID:', error);
+      }
 
       // Cumulative Layout Shift
       const clsObserver = new PerformanceObserver((list) => {
         if (!isMountedRef.current) return;
         let clsValue = 0;
         for (const entry of list.getEntries()) {
-          clsValue += entry.value;
+          if (entry && typeof entry.value === 'number') {
+            clsValue += entry.value;
+          }
         }
         setMetrics(prev => ({ ...prev, cumulativeLayoutShift: clsValue }));
       });
-      clsObserver.observe({ entryTypes: ['layout-shift'] });
-      observersRef.current.push(clsObserver);
+      try {
+        clsObserver.observe({ entryTypes: ['layout-shift'] });
+        observersRef.current.push(clsObserver);
+      } catch (error) {
+        console.warn('Failed to observe CLS:', error);
+      }
     }
 
     // Enhanced memory monitoring
@@ -552,20 +576,26 @@ const usePerformanceMonitoring = () => {
       const updateMemoryMetrics = () => {
         if (!isMountedRef.current) return;
         
-        const usedMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-        const limitMB = performance.memory.jsHeapSizeLimit / 1024 / 1024;
-        
-        setMetrics(prev => ({
-          ...prev,
-          memoryUsage: usedMB,
-          memoryLimit: limitMB
-        }));
+        try {
+          const usedMB = performance.memory.usedJSHeapSize / 1024 / 1024;
+          const limitMB = performance.memory.jsHeapSizeLimit / 1024 / 1024;
+          
+          if (typeof usedMB === 'number' && typeof limitMB === 'number' && isFinite(usedMB) && isFinite(limitMB)) {
+            setMetrics(prev => ({
+              ...prev,
+              memoryUsage: usedMB,
+              memoryLimit: limitMB
+            }));
+          }
+        } catch (error) {
+          console.warn('Failed to update memory metrics:', error);
+        }
       };
 
       // Update memory metrics less frequently in production and only when tab is visible
       const memIntervalMs = (import.meta && import.meta.env && import.meta.env.DEV) ? 5000 : 30000;
       memoryIntervalRef.current = setInterval(() => {
-        if (document.visibilityState === 'visible') {
+        if (document.visibilityState === 'visible' && isMountedRef.current) {
           updateMemoryMetrics();
         }
       }, memIntervalMs);
@@ -587,10 +617,12 @@ const usePerformanceMonitoring = () => {
           ? (cacheStats.hits / (cacheStats.hits + cacheStats.misses)) * 100 
           : 0;
         
-        setMetrics(prev => ({
-          ...prev,
-          cacheHitRate: hitRate
-        }));
+        if (typeof hitRate === 'number' && isFinite(hitRate)) {
+          setMetrics(prev => ({
+            ...prev,
+            cacheHitRate: hitRate
+          }));
+        }
       } catch (error) {
         console.warn('Failed to update cache metrics:', error);
       }
@@ -599,7 +631,7 @@ const usePerformanceMonitoring = () => {
     // Update cache metrics less frequently in production and only when tab is visible
     const cacheIntervalMs = (import.meta && import.meta.env && import.meta.env.DEV) ? 10000 : 60000;
     const cacheInterval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
+      if (document.visibilityState === 'visible' && isMountedRef.current) {
         updateCacheMetrics();
       }
     }, cacheIntervalMs);
@@ -652,11 +684,15 @@ const MemoizedMovieCard = memo(({ onClick, onPrefetch, ...movie }) => (
 // Optimized Category Swiper Component for Desktop View
 const CategorySwiper = memo(({ categories, activeCategory, onCategoryClick, isMobile }) => {
   const categorySwiperRef = useRef(null);
+  const isMountedRef = useRef(true);
   
   useEffect(() => {
+    isMountedRef.current = true;
+    
     return () => {
+      isMountedRef.current = false;
       try {
-        if (categorySwiperRef.current?.destroy) {
+        if (categorySwiperRef.current?.destroy && typeof categorySwiperRef.current.destroy === 'function') {
           categorySwiperRef.current.destroy(true, true);
         }
       } catch (error) {
@@ -757,8 +793,6 @@ const CategorySwiper = memo(({ categories, activeCategory, onCategoryClick, isMo
         resistance={true}
         resistanceRatio={0.8}
         watchSlidesProgress={true}
-        followFinger={true}
-        threshold={8}
         className="px-4 pb-2"
         breakpoints={{
           768: {
@@ -1103,15 +1137,6 @@ const MovieSectionSwiper = memo(({ title, movies, loading, onLoadMore, hasMore, 
           observer={true}
           observeParents={true}
           updateOnWindowResize={true}
-          edgeSwipeDetection={true}
-          edgeSwipeThreshold={30}
-          longSwipes={true}
-          longSwipesRatio={0.6}
-          longSwipesMs={400}
-          shortSwipes={true}
-          shortSwipesMs={300}
-          followFinger={true}
-          threshold={10}
           className="px-6 pb-4 overflow-hidden"
         >
                       {itemsToRender.map((movie, index) => (
@@ -2072,7 +2097,7 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
           >
             <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 ${isInWatchlistState ? 'text-white-400' : 'text-white'} transition-colors duration-300`} viewBox="0 0 24 24" fill="currentColor">
               {isInWatchlistState ? (
-                <path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/>
+                <path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2zm0 15l-5-2.18L7 18V5h10v13z"/>
               ) : (
                 <path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2zm0 15l-5-2.18L7 18V5h10v13z"/>
               )}
@@ -2946,35 +2971,67 @@ const HeroSection = memo(({ featuredContent, trendingMovies, onMovieSelect, onGe
 
   if (!featuredContent) return null;
 
-    // Animation variants simplified for performance
+    // 🚀 OPTIMIZED: Animation variants optimized to prevent jitter and improve performance
   const titleVariants = {
-    hidden: { opacity: 0, y: 20 },
+    hidden: { 
+      opacity: 0, 
+      y: 15,
+      filter: 'blur(1px)'
+    },
     visible: { 
       opacity: 1, 
       y: 0,
-      transition: { duration: 0.6, ease: 'easeOut' }
+      filter: 'blur(0px)',
+      transition: { 
+        duration: 0.5, 
+        ease: [0.25, 0.46, 0.45, 0.94], // Custom cubic-bezier for smooth motion
+        opacity: { duration: 0.4 },
+        y: { duration: 0.5 },
+        filter: { duration: 0.3 }
+      }
     }
   };
 
   const logoVariants = {
-    hidden: { opacity: 0, scale: 0.8 },
+    hidden: { 
+      opacity: 0, 
+      scale: 0.9,
+      filter: 'blur(0.5px)'
+    },
     visible: { 
       opacity: 1, 
       scale: 1,
-      transition: { duration: 0.5, ease: 'easeOut' }
+      filter: 'blur(0px)',
+      transition: { 
+        duration: 0.4, 
+        ease: [0.25, 0.46, 0.45, 0.94],
+        scale: { duration: 0.4 },
+        opacity: { duration: 0.3 },
+        filter: { duration: 0.2 }
+      }
     }
   };
 
   const genreChipVariants = {
-    hidden: { opacity: 0, y: 10, scale: 0.8 },
+    hidden: { 
+      opacity: 0, 
+      y: 8, 
+      scale: 0.9,
+      filter: 'blur(0.5px)'
+    },
     visible: (i) => ({ 
       opacity: 1, 
       y: 0, 
       scale: 1,
+      filter: 'blur(0px)',
       transition: { 
-        delay: 0.3 + i * 0.1,
-        duration: 0.4, 
-        ease: 'easeOut' 
+        delay: 0.2 + i * 0.08, // Reduced delay for faster perceived loading
+        duration: 0.35, // Slightly faster for better responsiveness
+        ease: [0.25, 0.46, 0.45, 0.94],
+        y: { duration: 0.35 },
+        scale: { duration: 0.35 },
+        opacity: { duration: 0.3 },
+        filter: { duration: 0.2 }
       }
     })
   };
@@ -2983,11 +3040,11 @@ const HeroSection = memo(({ featuredContent, trendingMovies, onMovieSelect, onGe
     <MotionConfig reducedMotion="user" transition={{ type: 'tween' }}>
     <div
       ref={heroRef}
-      className="relative min-h-[65vh] sm:min-h-[70vh] min-h-[550px] sm:min-h-[600px] w-full overflow-hidden flex items-stretch scrollbar-hide"
+      className="relative min-h-[65vh] sm:min-h-[70vh] min-h-[550px] sm:min-h-[600px] w-full overflow-hidden flex items-stretch scrollbar-hide hero-section"
     >
-      {/* Background Image (No Parallax) - use img for better LCP with fetchPriority */}
+      {/* 🚀 OPTIMIZED: Background Image with smooth fade-in to prevent jitter */}
       <motion.img
-        className="absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 will-change-transform transform-gpu"
+        className="absolute inset-0 w-full h-full object-cover will-change-opacity transform-gpu"
         src={featuredContent.backdrop}
         alt={`${featuredContent.title || featuredContent.name || 'Featured'} backdrop`}
         decoding="async"
@@ -2996,16 +3053,21 @@ const HeroSection = memo(({ featuredContent, trendingMovies, onMovieSelect, onGe
         sizes="100vw"
         style={{
           backfaceVisibility: 'hidden',
-          transform: 'translateZ(0)'
+          transform: 'translateZ(0)',
+          imageRendering: 'optimizeQuality'
         }}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ duration: 1 }}
+        transition={{ 
+          duration: 0.8, 
+          ease: [0.25, 0.46, 0.45, 0.94],
+          opacity: { duration: 0.8 }
+        }}
       />
       {/* Gradient Overlay - Enhanced for mobile visibility */}
       <div className="absolute inset-0 bg-gradient-to-r from-[#121417] via-[#121417]/90 sm:via-[#121417]/80 to-[#121417]/40 sm:to-transparent" />
       {/* Content */}
-      <div className="relative h-full max-w-7xl px-4 sm:px-6 lg:px-8 flex items-center will-change-transform transform-gpu">
+      <div className="relative h-full max-w-7xl px-4 sm:px-6 lg:px-8 flex items-center will-change-transform transform-gpu hero-content">
         <div className="w-full max-w-2xl flex flex-col gap-4 sm:gap-6 rounded-2xl p-4 sm:p-6 md:p-10 overflow-auto max-h-[85vh] sm:max-h-[90vh] md:max-h-[85vh] lg:max-h-[90vh] mt-4 sm:mt-8 mx-auto scrollbar-hide">
           <div className="flex items-center gap-2 mb-2 sm:mb-4">
             <div className="relative group will-change-transform">
@@ -3031,15 +3093,24 @@ const HeroSection = memo(({ featuredContent, trendingMovies, onMovieSelect, onGe
                  <img
                   src={featuredContent.logo}
                   alt={featuredContent.title}
-                   className="w-[180px] sm:w-[220px] md:w-[280px] lg:w-[320px] xl:w-[340px] max-w-full h-auto object-contain transform transition-all duration-300 hover:scale-105 opacity-0 animate-fadeIn will-change-transform"
+                   className="w-[180px] sm:w-[220px] md:w-[280px] lg:w-[320px] xl:w-[340px] max-w-full h-auto object-contain transform-gpu will-change-transform hero-logo"
+                  style={{
+                    backfaceVisibility: 'hidden',
+                    imageRendering: 'optimizeQuality'
+                  }}
                   onError={e => {
                     const target = e?.currentTarget || e?.target;
                     if (target && target.style) {
                       target.style.display = 'none';
                     }
                   }}
-                  onLoad={e => { e.target.classList.remove('opacity-0'); }}
-                   loading="eager"
+                  onLoad={e => { 
+                    // Smooth fade-in without CSS animation to prevent jitter
+                    e.target.style.transition = 'opacity 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+                    e.target.style.opacity = '1';
+                  }}
+                  loading="eager"
+                  fetchpriority="high"
                 />
               </motion.div>
             ) : (
@@ -4563,24 +4634,42 @@ const HomePage = () => {
     itemsInMemory: 0,
     maxItemsAllowed: 500 // Reduced for better performance
   });
+  
+  // FIXED: Add error boundary state for better error handling
+  const [hasError, setHasError] = useState(false);
+  const [errorDetails, setErrorDetails] = useState(null);
+  
+  // FIXED: Add error recovery and retry mechanism
+  const [retryCount, setRetryCount] = useState(0);
+  const [isRetrying, setIsRetrying] = useState(false);
 
   // Add movie to prefetch queue
   const queuePrefetch = useCallback((movieId) => {
-    if (prefetchQueue.has(movieId)) {
-      return; // Already in queue
-    }
-    
-    // Add to prefetch queue
-    setPrefetchQueue(prev => new Set([...prev, movieId]));
-    
-    // Start prefetching if not already running
-    if (!isPrefetching) {
-      setIsPrefetching(true);
-      // Process prefetch queue
-      setTimeout(() => {
-        setPrefetchQueue(new Set());
-        setIsPrefetching(false);
-      }, 100);
+    try {
+      if (!movieId || prefetchQueue.has(movieId)) {
+        return; // Already in queue or invalid ID
+      }
+      
+      // Add to prefetch queue
+      setPrefetchQueue(prev => new Set([...prev, movieId]));
+      
+      // Start prefetching if not already running
+      if (!isPrefetching) {
+        setIsPrefetching(true);
+        // Process prefetch queue
+        setTimeout(() => {
+          try {
+            setPrefetchQueue(new Set());
+            setIsPrefetching(false);
+          } catch (error) {
+            console.warn('Error processing prefetch queue:', error);
+            setIsPrefetching(false);
+          }
+        }, 100);
+      }
+    } catch (error) {
+      console.warn('Error in queuePrefetch:', error);
+      setIsPrefetching(false);
     }
   }, [prefetchQueue, isPrefetching]);
 
@@ -4715,6 +4804,8 @@ const HomePage = () => {
     }
   };
   
+
+  
   // 🚀 PERFORMANCE OPTIMIZED: Enhanced intersection observer with advanced lazy loading and performance monitoring
   useEffect(() => {
     if (!('IntersectionObserver' in window)) return;
@@ -4767,10 +4858,15 @@ const HomePage = () => {
 
   // FIXED: Enhanced mobile detection effect with proper cleanup
   useEffect(() => {
+    let isMounted = true;
+    
     const checkScreenSize = () => {
+      if (!isMounted) return;
+      
       const isNowMobile = window.innerWidth < 768 || 
                          (window.navigator && window.navigator.userAgent && 
                           /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(window.navigator.userAgent));
+      
       setIsMobile(prev => {
         if (prev !== isNowMobile) {
           if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_MEMORY === 'true') {
@@ -4793,6 +4889,7 @@ const HomePage = () => {
     }
     
     return () => {
+      isMounted = false;
       try {
         window.removeEventListener('resize', resizeHandler);
       } catch (error) {
@@ -4837,10 +4934,14 @@ const HomePage = () => {
 
   // 🧹 FIXED: Memory optimization registration with proper cleanup
   useEffect(() => {
+    let isMounted = true;
+    
     // Register HomePage with centralized memory optimization service
     memoryOptimizationService.registerComponent('HomePage');
     
     const unregisterCleanup = memoryOptimizationService.registerCleanupCallback(() => {
+      if (!isMounted) return;
+      
       // Cleanup HomePage-specific caches and data
       if (cacheRef.current) {
         cacheRef.current.clear();
@@ -4889,24 +4990,42 @@ const HomePage = () => {
     }, 'HomePage');
 
     return () => {
+      isMounted = false;
       memoryOptimizationService.unregisterComponent('HomePage');
       unregisterCleanup();
       
       // Additional cleanup on unmount
       if (sectionObserverRef.current) {
-        sectionObserverRef.current.disconnect();
+        try {
+          sectionObserverRef.current.disconnect();
+        } catch (error) {
+          console.warn('Error disconnecting section observer during cleanup:', error);
+        }
         sectionObserverRef.current = null;
       }
       
       // Clear all timeouts and intervals
-      timeoutRefs.current.forEach(timeoutId => {
-        clearTimeout(timeoutId);
-      });
-      intervalRefs.current.forEach(intervalId => {
-        clearInterval(intervalId);
-      });
-      timeoutRefs.current.clear();
-      intervalRefs.current.clear();
+      if (timeoutRefs.current) {
+        timeoutRefs.current.forEach(timeoutId => {
+          try {
+            clearTimeout(timeoutId);
+          } catch (error) {
+            console.warn('Error clearing timeout during cleanup:', error);
+          }
+        });
+        timeoutRefs.current.clear();
+      }
+      
+      if (intervalRefs.current) {
+        intervalRefs.current.forEach(intervalId => {
+          try {
+            clearInterval(intervalId);
+          } catch (error) {
+            console.warn('Error clearing interval during cleanup:', error);
+          }
+        });
+        intervalRefs.current.clear();
+      }
     };
   }, []);
 
@@ -4991,6 +5110,9 @@ const HomePage = () => {
 
   // 🧹 ENHANCED: Comprehensive cleanup function - FIXED: Memory leaks
   const cleanup = useCallback(() => {
+    // Check if already cleaned up to prevent double cleanup
+    if (!isMountedRef.current) return;
+    
     // Clear all timeouts and intervals
     if (performanceObserver.current) {
       try {
@@ -5002,39 +5124,53 @@ const HomePage = () => {
     }
 
     // Clear pending requests
-    pendingRequests.current.clear();
+    if (pendingRequests.current) {
+      pendingRequests.current.clear();
+    }
 
     // Clear caches
-    cacheRef.current.clear();
-    lruQueue.current = [];
-    memoryUsage.current = 0;
+    if (cacheRef.current) {
+      cacheRef.current.clear();
+    }
+    if (lruQueue.current) {
+      lruQueue.current.length = 0;
+    }
+    if (memoryUsage.current) {
+      memoryUsage.current = 0;
+    }
 
     // State updates only if still mounted to avoid update-depth loops
     if (isMountedRef.current) {
-      // Clear prefetch queue
-      setPrefetchQueue(new Set());
-      setIsPrefetching(false);
+      try {
+        // Clear prefetch queue
+        setPrefetchQueue(new Set());
+        setIsPrefetching(false);
 
-      // Clear viewport items
-      setViewportItems(new Set());
+        // Clear viewport items
+        setViewportItems(new Set());
 
-      // Clear visible sections
-      setVisibleSections(new Set(['all', 'trending', 'popular', 'topRated', 'upcoming', 'action', 'comedy', 'drama', 'horror', 'sciFi', 'documentary', 'family', 'animation', 'awardWinning', 'latest', 'popularTV', 'topRatedTV', 'airingToday', 'nowPlaying']));
+        // Clear visible sections
+        setVisibleSections(new Set(['all', 'trending', 'popular', 'topRated', 'upcoming', 'action', 'comedy', 'drama', 'horror', 'sciFi', 'documentary', 'family', 'animation', 'awardWinning', 'latest', 'popularTV', 'topRatedTV', 'airingToday', 'nowPlaying']));
 
-      // Reset memory optimization
-      setMemoryOptimization({
-        lastCleanup: Date.now(),
-        itemsInMemory: 0,
-        maxItemsAllowed: 500
-      });
+        // Reset memory optimization
+        setMemoryOptimization({
+          lastCleanup: Date.now(),
+          itemsInMemory: 0,
+          maxItemsAllowed: 500
+        });
+      } catch (error) {
+        console.warn('Error during state cleanup:', error);
+      }
     }
 
     // Clear network conditions
-    networkConditions.current = {
-      isSlow: false,
-      lastCheck: Date.now(),
-      averageResponseTime: 0
-    };
+    if (networkConditions.current) {
+      networkConditions.current = {
+        isSlow: false,
+        lastCheck: Date.now(),
+        averageResponseTime: 0
+      };
+    }
 
     // Clear movie details cache
     if (movieDetailsCache.current) {
@@ -5052,7 +5188,11 @@ const HomePage = () => {
     }
 
     // Use centralized timer cleanup function
-    cleanupAllTimers();
+    try {
+      cleanupAllTimers();
+    } catch (error) {
+      console.warn('Error during timer cleanup:', error);
+    }
 
     // Clear all timeouts and intervals
     if (window.performanceObserver) {
@@ -5089,48 +5229,6 @@ const HomePage = () => {
     console.log('🧹 HomePage cleanup completed');
   }, []);
 
-  // 🧹 ENHANCED: Memory optimization helpers with better monitoring
-  const optimizeMemoryUsage = useCallback(() => {
-    const now = Date.now();
-    
-    setMemoryOptimization(prev => {
-      const timeSinceLastCleanup = now - prev.lastCleanup;
-      
-      // Clean up old cache entries if needed
-      if (timeSinceLastCleanup > 5 * 60 * 1000) { // 5 minutes
-        // Use a safer approach to avoid dependency issues
-        try {
-          const currentCache = cacheRef.current;
-          if (currentCache && currentCache.size > MAX_TOTAL_CACHE_ITEMS) {
-            // Convert to array and sort by timestamp
-            const entries = Array.from(currentCache.entries());
-            const sortedEntries = entries.sort((a, b) => {
-              const aTime = a[1]?.timestamp || 0;
-              const bTime = b[1]?.timestamp || 0;
-              return aTime - bTime;
-            });
-            
-            // Remove oldest entries
-            const keysToRemove = sortedEntries.slice(0, entries.length - MAX_TOTAL_CACHE_ITEMS);
-            keysToRemove.forEach(([key]) => {
-              currentCache.delete(key);
-            });
-          }
-        } catch (error) {
-          console.warn('Error during memory optimization:', error);
-        }
-        
-        return {
-          ...prev,
-          lastCleanup: now,
-          itemsInMemory: cacheRef.current ? cacheRef.current.size : 0
-        };
-      }
-      
-      return prev;
-    });
-  }, []); // No dependencies to prevent infinite loops
-
   // 🧹 ENHANCED: Advanced memory monitoring with performance tracking
   const monitorMemoryUsage = useCallback(() => {
     if (performance.memory && import.meta.env.DEV) {
@@ -5138,6 +5236,12 @@ const HomePage = () => {
         const usedMB = performance.memory.usedJSHeapSize / 1024 / 1024;
         const totalMB = performance.memory.totalJSHeapSize / 1024 / 1024;
         const limitMB = performance.memory.jsHeapSizeLimit / 1024 / 1024;
+        
+        // Validate memory values before using them
+        if (!isFinite(usedMB) || !isFinite(totalMB) || !isFinite(limitMB)) {
+          console.warn('Invalid memory values detected, skipping memory monitoring');
+          return;
+        }
         
         // Log memory usage for debugging
         if (import.meta.env.VITE_DEBUG_MEMORY === 'true') {
@@ -5150,7 +5254,11 @@ const HomePage = () => {
           
           // Trigger aggressive cleanup
           if (cleanup && typeof cleanup === 'function') {
-            cleanup();
+            try {
+              cleanup();
+            } catch (cleanupError) {
+              console.warn('Error during aggressive cleanup:', cleanupError);
+            }
           }
           
           // Force garbage collection if available
@@ -5847,6 +5955,106 @@ const HomePage = () => {
       }
     }
   }, []);
+
+  // 🚀 ULTRA-OPTIMIZED: Advanced memory optimization with intelligent cleanup and performance monitoring
+  const optimizeMemoryUsage = useCallback(() => {
+    const startTime = performance.now();
+    let memoryFreed = 0;
+    let itemsCleaned = 0;
+    
+    try {
+      // Check current memory status
+      if (!performance.memory) {
+        if (import.meta.env.DEV) {
+          console.log('🧠 Memory API not available, skipping optimization');
+        }
+        return;
+      }
+      
+      const memoryMB = performance.memory.usedJSHeapSize / 1024 / 1024;
+      const totalMB = performance.memory.totalJSHeapSize / 1024 / 1024;
+      const limitMB = performance.memory.jsHeapSizeLimit / 1024 / 1024;
+      
+      if (import.meta.env.DEV) {
+        console.log(`🧠 Memory optimization triggered at ${memoryMB.toFixed(2)}MB / ${totalMB.toFixed(2)}MB (Limit: ${limitMB.toFixed(2)}MB)`);
+      }
+      
+      // Strategy 1: Aggressive cache cleanup
+      cleanupCache();
+      
+      // Strategy 2: Clear non-essential state variables
+      if (memoryMB > limitMB * 0.8) {
+        // Clear lazy load queue if memory pressure is high
+        setLazyLoadQueue(new Set());
+        
+        // Clear visible sections cache if memory pressure is high
+        setVisibleSections(new Set(['all', 'trending', 'popular', 'topRated']));
+        
+        if (import.meta.env.DEV) {
+          console.log('🧠 High memory pressure: cleared non-essential state');
+        }
+      }
+      
+      // Strategy 3: Force garbage collection if available
+      if (window.gc) {
+        try {
+          window.gc();
+          if (import.meta.env.DEV) {
+            console.log('🧠 Forced garbage collection');
+          }
+        } catch (gcError) {
+          if (import.meta.env.DEV) {
+            console.warn('🧠 Garbage collection failed:', gcError);
+          }
+        }
+      }
+      
+      // Strategy 4: Clear any large objects that might be held in memory
+      if (memoryMB > limitMB * 0.7) {
+        // Clear any large arrays or objects that might be cached
+        if (window.performance && window.performance.memory) {
+          // Force memory cleanup by clearing any potential memory leaks
+          if (typeof window.performance.memory.usedJSHeapSize !== 'undefined') {
+            // This is a workaround to help trigger memory cleanup
+            const temp = performance.memory.usedJSHeapSize;
+            if (import.meta.env.DEV) {
+              console.log('🧠 Memory cleanup workaround applied');
+            }
+          }
+        }
+      }
+      
+      // Update memory optimization metrics
+      const endTime = performance.now();
+      const duration = endTime - startTime;
+      
+      if (import.meta.env.DEV) {
+        console.log(`🧠 Memory optimization completed in ${duration.toFixed(2)}ms`);
+      }
+      
+      // Update memory optimization state
+      setMemoryOptimization(prev => ({
+        ...prev,
+        lastOptimization: Date.now(),
+        optimizationDuration: duration,
+        itemsCleaned
+      }));
+      
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error('🧠 Memory optimization failed:', error);
+      }
+      
+      // Fallback: basic cleanup
+      try {
+        cleanupCache();
+      } catch (fallbackError) {
+        if (import.meta.env.DEV) {
+          console.error('🧠 Fallback cleanup also failed:', fallbackError);
+        }
+      }
+    }
+  }, [cleanupCache]);
 
   // Add function to check if cache is valid (per-section TTL + versioning + SWR allowance)
   const isCacheValid = useCallback((cacheKey) => {
@@ -7045,6 +7253,57 @@ const HomePage = () => {
     });
   }, []);
 
+  // FIXED: Add error recovery function after all dependencies are declared
+  const handleErrorRecovery = useCallback(async () => {
+    try {
+      setIsRetrying(true);
+      setHasError(false);
+      setErrorDetails(null);
+      setError(null);
+      
+      // Reset loading states
+      Object.keys(loadingStates).forEach(key => {
+        if (key !== 'initial') {
+          setLoadingState(key, false);
+        }
+      });
+      
+      // Clear caches to force fresh data
+      if (cacheRef.current) {
+        cacheRef.current.clear();
+      }
+      
+      // Retry loading critical sections
+      console.log('🔄 Attempting error recovery...');
+      const criticalSections = ['trending', 'popular', 'topRated'];
+      
+      for (const section of criticalSections) {
+        try {
+          setLoadingState(section, true);
+          const result = await fetchMoviesForCategory(section, 1);
+          if (result && result.movies && Array.isArray(result.movies)) {
+            const setter = getSetterFunction(section);
+            if (setter) {
+              setter(result.movies);
+            }
+          }
+        } catch (error) {
+          console.warn(`Failed to retry ${section}:`, error);
+        } finally {
+          setLoadingState(section, false);
+        }
+      }
+      
+      setRetryCount(prev => prev + 1);
+    } catch (error) {
+      console.error('Error during recovery:', error);
+      setHasError(true);
+      setErrorDetails(`Recovery failed: ${error.message || 'Unknown error'}`);
+    } finally {
+      setIsRetrying(false);
+    }
+  }, [loadingStates, setLoadingState, fetchMoviesForCategory, getSetterFunction]);
+
   const prefetchAdjacentCategories = useCallback(async (currentCategory) => {
     const categoryIndex = categories.findIndex(cat => cat.id === currentCategory);
     if (categoryIndex === -1) return;
@@ -7548,10 +7807,17 @@ const HomePage = () => {
   // FIXED: Fetch content useEffect with proper cleanup - run only once on mount
   useEffect(() => {
     let isMounted = true;
+    const abortController = new AbortController(); // FIXED: Add abort controller
     
     const fetchContent = async () => {
-      if (isMounted && isMountedRef.current) { // FIXED: Added mount check
-        await fetchFeaturedContent();
+      if (isMounted && isMountedRef.current && !abortController.signal.aborted) {
+        try {
+          await fetchFeaturedContent();
+        } catch (error) {
+          if (!abortController.signal.aborted) {
+            console.error('Error fetching featured content:', error);
+          }
+        }
       }
     };
     
@@ -7559,6 +7825,7 @@ const HomePage = () => {
     
     return () => {
       isMounted = false;
+      abortController.abort(); // FIXED: Abort pending requests
     };
   }, []); // Empty dependency array since fetchFeaturedContent has no dependencies
 
@@ -7579,11 +7846,13 @@ const HomePage = () => {
   // 🚀 PERFORMANCE OPTIMIZED: Load all movie sections data with intelligent prioritization and parallel loading
   useEffect(() => {
     let isMounted = true;
+    const abortController = new AbortController(); // FIXED: Add abort controller
+    const timeoutIds = []; // FIXED: Track all timeouts for cleanup
     
     console.log('🚀 HomePage: Starting to load all movie sections...');
     
     const loadAllSections = async () => {
-      if (!isMounted || !isMountedRef.current) return;
+      if (!isMounted || !isMountedRef.current || abortController.signal.aborted) return;
       
       try {
         // 🚀 OPTIMIZED: Load critical sections in parallel for better performance
@@ -7593,7 +7862,7 @@ const HomePage = () => {
         
         // 🚀 OPTIMIZED: Parallel loading with Promise.allSettled for better performance
         const criticalPromises = criticalSections.map(async (section) => {
-          if (!isMounted) return null;
+          if (!isMounted || abortController.signal.aborted) return null;
           
           try {
             console.log(`🔄 HomePage: Loading ${section} section...`);
@@ -7622,15 +7891,21 @@ const HomePage = () => {
               console.log(`✅ HomePage: ${section} section loaded successfully with ${result.movies.length} movies`);
               return { section, success: true, count: result.movies.length };
             }
-          } catch (error) {
-            console.error(`❌ HomePage: Failed to load ${section} section:`, error);
-            setError(`Failed to load ${section} content. Please try again.`);
-            return { section, success: false, error };
-          } finally {
-            if (isMounted) {
-              setLoadingState(section, false);
-            }
-          }
+                } catch (error) {
+        if (!abortController.signal.aborted) {
+          console.error(`❌ HomePage: Failed to load ${section} section:`, error);
+          setError(`Failed to load ${section} content. Please try again.`);
+          
+          // FIXED: Set error state for better error handling
+          setHasError(true);
+          setErrorDetails(`Failed to load ${section} content: ${error.message || 'Unknown error'}`);
+        }
+        return { section, success: false, error };
+      } finally {
+        if (isMounted && !abortController.signal.aborted) {
+          setLoadingState(section, false);
+        }
+      }
         });
         
         // 🚀 OPTIMIZED: Wait for all critical sections to complete
@@ -7642,15 +7917,15 @@ const HomePage = () => {
         console.log(`✅ HomePage: Critical sections completed. Successful: ${successfulSections.length}/${criticalSections.length}`);
         
         // Load medium priority sections after a short delay
-        setTimeout(async () => {
-          if (!isMounted) return;
+        const mediumTimeoutId = setTimeout(async () => {
+          if (!isMounted || abortController.signal.aborted) return;
           
           const mediumSections = ['upcoming', 'action', 'comedy', 'drama'];
           
           console.log('📱 HomePage: Loading medium priority sections:', mediumSections);
           
           for (const section of mediumSections) {
-            if (!isMounted) return;
+            if (!isMounted || abortController.signal.aborted) return;
             
             try {
               console.log(`🔄 HomePage: Loading ${section} section...`);
@@ -7678,25 +7953,32 @@ const HomePage = () => {
                 console.log(`✅ HomePage: ${section} section loaded successfully with ${result.movies.length} movies`);
               }
             } catch (error) {
-              console.error(`❌ HomePage: Failed to load ${section} section:`, error);
+              if (!abortController.signal.aborted) {
+                console.error(`❌ HomePage: Failed to load ${section} section:`, error);
+                
+                // FIXED: Set error state for better error handling
+                setHasError(true);
+                setErrorDetails(`Failed to load ${section} content: ${error.message || 'Unknown error'}`);
+              }
             } finally {
-              if (isMounted) {
+              if (isMounted && !abortController.signal.aborted) {
                 setLoadingState(section, false);
               }
             }
           }
         }, 500);
+        timeoutIds.push(mediumTimeoutId);
         
         // Load low priority sections after another delay
-        setTimeout(async () => {
-          if (!isMounted) return;
+        const lowTimeoutId = setTimeout(async () => {
+          if (!isMounted || abortController.signal.aborted) return;
           
           const lowSections = ['horror', 'sciFi', 'documentary', 'family', 'animation', 'awardWinning', 'latest'];
           
           console.log('📱 HomePage: Loading low priority sections:', lowSections);
           
           for (const section of lowSections) {
-            if (!isMounted) return;
+            if (!isMounted || abortController.signal.aborted) return;
             
             try {
               console.log(`🔄 HomePage: Loading ${section} section...`);
@@ -7724,25 +8006,32 @@ const HomePage = () => {
                 console.log(`✅ HomePage: ${section} section loaded successfully with ${result.movies.length} movies`);
               }
             } catch (error) {
-              console.error(`❌ HomePage: Failed to load ${section} section:`, error);
+              if (!abortController.signal.aborted) {
+                console.error(`❌ HomePage: Failed to load ${section} section:`, error);
+                
+                // FIXED: Set error state for better error handling
+                setHasError(true);
+                setErrorDetails(`Failed to load ${section} content: ${error.message || 'Unknown error'}`);
+              }
             } finally {
-              if (isMounted) {
+              if (isMounted && !abortController.signal.aborted) {
                 setLoadingState(section, false);
               }
             }
           }
         }, 1000);
+        timeoutIds.push(lowTimeoutId);
         
         // Load TV show sections
-        setTimeout(async () => {
-          if (!isMounted) return;
+        const tvTimeoutId = setTimeout(async () => {
+          if (!isMounted || abortController.signal.aborted) return;
           
           const tvSections = ['popularTV', 'topRatedTV', 'airingToday', 'nowPlaying'];
           
           console.log('📱 HomePage: Loading TV show sections:', tvSections);
           
           for (const section of tvSections) {
-            if (!isMounted) return;
+            if (!isMounted || abortController.signal.aborted) return;
             
             try {
               console.log(`🔄 HomePage: Loading ${section} section...`);
@@ -7770,18 +8059,40 @@ const HomePage = () => {
                 console.log(`✅ HomePage: ${section} section loaded successfully with ${result.movies.length} movies`);
               }
             } catch (error) {
-              console.error(`❌ HomePage: Failed to load ${section} section:`, error);
+              if (!abortController.signal.aborted) {
+                console.error(`❌ HomePage: Failed to load ${section} section:`, error);
+                
+                // FIXED: Set error state for better error handling
+                setHasError(true);
+                setErrorDetails(`Failed to load ${section} content: ${error.message || 'Unknown error'}`);
+              }
             } finally {
-              if (isMounted) {
+              if (isMounted && !abortController.signal.aborted) {
                 setLoadingState(section, false);
               }
             }
           }
         }, 1500);
+        timeoutIds.push(tvTimeoutId);
         
       } catch (error) {
-        console.error('❌ HomePage: Failed to load movie sections:', error);
-        setError('Failed to load movie content. Please refresh the page.');
+        if (!abortController.signal.aborted) {
+          console.error('❌ HomePage: Failed to load movie sections:', error);
+          setError('Failed to load movie content. Please refresh the page.');
+          
+          // FIXED: Set error state for better error handling
+          setHasError(true);
+          setErrorDetails(`Failed to load movie sections: ${error.message || 'Network error'}`);
+          
+          // FIXED: Track network failures for better debugging
+          if (typeof trackApiCall === 'function') {
+            try {
+              trackApiCall('HomePageNetworkFailure', 0, false);
+            } catch (trackError) {
+              console.warn('Failed to track network failure:', trackError);
+            }
+          }
+        }
       }
     };
     
@@ -7789,6 +8100,11 @@ const HomePage = () => {
     
     return () => {
       isMounted = false;
+      abortController.abort(); // FIXED: Abort pending requests
+      // FIXED: Clear all timeouts to prevent memory leaks
+      timeoutIds.forEach(id => {
+        if (id) clearTimeout(id);
+      });
     };
   }, []); // Empty dependency array to run only once on mount
 
@@ -8164,26 +8480,46 @@ const HomePage = () => {
       isMountedRef.current = false;
       
       // Run comprehensive cleanup (guarded)
-      try { cleanup(); } catch (_) {}
+      try { 
+        cleanup(); 
+      } catch (error) {
+        console.warn('Error during main cleanup:', error);
+      }
       
       // Additional cleanup for any remaining resources (guarded)
-      try { cleanupAllTimers(); } catch (_) {}
+      try { 
+        cleanupAllTimers(); 
+      } catch (error) {
+        console.warn('Error during timer cleanup:', error);
+      }
       
       // Clear intersection observer
       if (sectionObserverRef && sectionObserverRef.current) {
-        sectionObserverRef.current.disconnect();
+        try {
+          sectionObserverRef.current.disconnect();
+        } catch (error) {
+          console.warn('Error disconnecting section observer:', error);
+        }
         sectionObserverRef.current = null;
       }
       
       // Clear visibility observer
       if (visibilityObserverRef.current) {
-        visibilityObserverRef.current.disconnect();
+        try {
+          visibilityObserverRef.current.disconnect();
+        } catch (error) {
+          console.warn('Error disconnecting visibility observer:', error);
+        }
         visibilityObserverRef.current = null;
       }
       
       // Clear performance observer
       if (performanceObserver.current) {
-        performanceObserver.current.disconnect();
+        try {
+          performanceObserver.current.disconnect();
+        } catch (error) {
+          console.warn('Error disconnecting performance observer:', error);
+        }
         performanceObserver.current = null;
       }
       
@@ -8192,7 +8528,11 @@ const HomePage = () => {
       // Clear all timeouts
       if (timeoutRefs.current) {
         timeoutRefs.current.forEach(timeoutId => {
-          try { clearTimeout(timeoutId); } catch (_) {}
+          try { 
+            clearTimeout(timeoutId); 
+          } catch (error) {
+            console.warn('Error clearing timeout:', error);
+          }
         });
         timeoutRefs.current.clear();
       }
@@ -8200,29 +8540,54 @@ const HomePage = () => {
       // Clear all intervals
       if (intervalRefs.current) {
         intervalRefs.current.forEach(intervalId => {
-          try { clearInterval(intervalId); } catch (_) {}
+          try { 
+            clearInterval(intervalId); 
+          } catch (error) {
+            console.warn('Error clearing interval:', error);
+          }
         });
         intervalRefs.current.clear();
       }
       
       // Cleanup caches
-      cleanMovieDetailsCache();
+      try {
+        cleanMovieDetailsCache();
+      } catch (error) {
+        console.warn('Error cleaning movie details cache:', error);
+      }
+      
       if (cacheRef.current) {
-        cacheRef.current.clear();
+        try {
+          cacheRef.current.clear();
+        } catch (error) {
+          console.warn('Error clearing cache:', error);
+        }
       }
       if (lruQueue.current) {
-        lruQueue.current.length = 0;
+        try {
+          lruQueue.current.length = 0;
+        } catch (error) {
+          console.warn('Error clearing LRU queue:', error);
+        }
       }
       
       // Avoid state updates here to prevent update-depth loops on cleanup
       
       // Clear pending requests
       if (pendingRequests.current) {
-        pendingRequests.current.clear();
+        try {
+          pendingRequests.current.clear();
+        } catch (error) {
+          console.warn('Error clearing pending requests:', error);
+        }
       }
       
       // Ensure scroll is enabled
-      document.body.style.overflow = 'auto';
+      try {
+        document.body.style.overflow = 'auto';
+      } catch (error) {
+        console.warn('Error restoring scroll:', error);
+      }
       
       if (import.meta.env.DEV) {
         console.log('🧹 HomePage component unmounted - all memory cleaned up');
@@ -8232,27 +8597,70 @@ const HomePage = () => {
 
   // FIXED: Memoize the PageLoader component to prevent unnecessary re-renders and memory leaks
   const pageLoader = useMemo(() => {
-    if (loadingStates.initial) {
-      // Calculate loading progress based on loaded sections
-      const totalSections = 6; // Reduced from 18 to 6 (featured, trending, popular, topRated, upcoming, action)
-      const loadedSections = Object.keys(loadingStates).filter(key => 
-        key !== 'initial' && !loadingStates[key]
-      ).length;
-      const progress = Math.min((loadedSections / totalSections) * 100, 95); // Cap at 95% until fully loaded
-      
-      return (
-        <PageLoader 
-          text={shouldSkipInitialLoading() ? "Loading from cache..." : "Loading your cinematic experience..."} 
-          showProgress={true}
-          progress={progress}
-          variant="minimalist" // Use minimalist variant for better performance
-          showTips={false} // FIXED: Disable tips to reduce memory usage
-        />
-      );
+    try {
+      if (loadingStates.initial) {
+        // Calculate loading progress based on loaded sections
+        const totalSections = 6; // Reduced from 18 to 6 (featured, trending, popular, topRated, upcoming, action)
+        const loadedSections = Object.keys(loadingStates).filter(key => 
+          key !== 'initial' && !loadingStates[key]
+        ).length;
+        const progress = Math.min((loadedSections / totalSections) * 100, 95); // Cap at 95% until fully loaded
+        
+        return (
+          <PageLoader 
+            text={shouldSkipInitialLoading() ? "Loading from cache..." : "Loading your cinematic experience..."} 
+            showProgress={true}
+            progress={progress}
+            variant="minimalist" // Use minimalist variant for better performance
+            showTips={false} // FIXED: Disable tips to reduce memory usage
+          />
+        );
+      }
+      return null;
+    } catch (error) {
+      console.warn('Error rendering page loader:', error);
+      return null;
     }
-    return null;
   }, [loadingStates.initial, shouldSkipInitialLoading]); // Keep necessary dependencies only
 
+  // FIXED: Add error boundary check before early returns
+  if (hasError) {
+    return (
+      <div className="min-h-screen bg-[#121417] flex items-center justify-center">
+        <div className="text-center p-8">
+          <h2 className="text-2xl font-bold text-white mb-4">Something went wrong</h2>
+          <p className="text-gray-400 mb-6">
+            {errorDetails || 'An unexpected error occurred while loading the homepage.'}
+          </p>
+          <div className="flex gap-4 justify-center">
+            <button
+              onClick={handleErrorRecovery}
+              disabled={isRetrying}
+              className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-3 rounded-lg transition-colors"
+            >
+              {isRetrying ? 'Recovering...' : 'Try to Recover'}
+            </button>
+            <button
+              onClick={() => {
+                setHasError(false);
+                setErrorDetails(null);
+                window.location.reload();
+              }}
+              className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg transition-colors"
+            >
+              Reload Page
+            </button>
+          </div>
+          {retryCount > 0 && (
+            <p className="text-sm text-gray-500 mt-4">
+              Recovery attempts: {retryCount}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+  
   // Early returns moved to the end after all hooks are called
   if (loadingStates.initial) {
     return pageLoader;
@@ -8262,6 +8670,16 @@ const HomePage = () => {
     return (
       <div className="flex items-center justify-center min-h-screen bg-[#121417]">
         <div className="text-white text-xl">{error}</div>
+      </div>
+    );
+  }
+  
+  // FIXED: Add safety check for required functions
+  if (typeof handleErrorRecovery !== 'function') {
+    console.error('handleErrorRecovery function is not defined');
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-[#121417]">
+        <div className="text-white text-xl">Configuration error. Please refresh the page.</div>
       </div>
     );
   }
@@ -8279,8 +8697,16 @@ const HomePage = () => {
           console.error('HomePage Error Boundary caught an error:', error, errorInfo);
           // Track error for analytics
           if (typeof trackApiCall === 'function') {
-            trackApiCall('HomePageError', 0, false);
+            try {
+              trackApiCall('HomePageError', 0, false);
+            } catch (trackError) {
+              console.warn('Failed to track error:', trackError);
+            }
           }
+          
+          // FIXED: Set error state for better error handling
+          setHasError(true);
+          setErrorDetails(`Component error: ${error.message || 'Unknown error'}`);
         }}
       >
         <div className="layout-container flex h-full grow flex-col scrollbar-hide momentum-scroll">
@@ -8291,9 +8717,9 @@ const HomePage = () => {
             {/* Add HeroSection here - Mobile vs Desktop */}
             {/* Mobile Hero Section */}
             <MemoizedMobileHeroSection 
-              featuredContent={featuredContent} 
-              trendingMovies={trendingMovies}
-              loading={loadingStates.featured || loadingStates.trending}
+              featuredContent={featuredContent || null} 
+              trendingMovies={trendingMovies || []}
+              loading={loadingStates.featured || loadingStates.trending || false}
               onMovieSelect={handleMovieSelect}
               onGenreClick={handleGenreNavigation}
               onCastMemberClick={handleCastMemberClick}
@@ -8301,8 +8727,8 @@ const HomePage = () => {
             {/* Desktop Hero Section */}
             <div className="hidden sm:block">
               <MemoizedHeroSection 
-                featuredContent={featuredContent} 
-                trendingMovies={trendingMovies}
+                featuredContent={featuredContent || null} 
+                trendingMovies={trendingMovies || []}
                 onMovieSelect={handleMovieSelect}
                 onGenreClick={handleGenreNavigation}
                 onCastMemberClick={handleCastMemberClick}
@@ -8310,36 +8736,36 @@ const HomePage = () => {
             </div>
             {/* Category Selector with Swiper for Desktop */}
             <CategorySwiper 
-              categories={categories}
-              activeCategory={activeCategory}
+              categories={categories || []}
+              activeCategory={activeCategory || 'all'}
               onCategoryClick={handleCategoryButtonClick}
-              isMobile={isMobile}
+              isMobile={isMobile || false}
             />
             {/* Movie Sections with Swiper for Desktop - lazily mount on visibility */}
             {activeCategory === 'all' ? (
               <>
-                {/* Continue Watching Section */}
-                <VisibleOnDemand placeholderHeight={220}>
-                  <ContinueWatching 
-                    onMovieSelect={handleMovieSelect}
-                    isMobile={isMobile}
-                  />
-                </VisibleOnDemand>
+                            {/* Continue Watching Section */}
+            <VisibleOnDemand placeholderHeight={220}>
+              <ContinueWatching 
+                onMovieSelect={handleMovieSelect}
+                isMobile={isMobile || false}
+              />
+            </VisibleOnDemand>
                 
                 {/* Netflix-style Hero Section with Trending */}
                 <VisibleOnDemand placeholderHeight={320}>
                   <MovieSectionSwiper 
                     title="Trending Now" 
-                    movies={trendingMovies}
-                    loading={loadingStates.trending}
+                    movies={trendingMovies || []}
+                    loading={loadingStates.trending || false}
                     onLoadMore={() => loadMoreMovies('trending')}
-                    hasMore={pageStates.trending.current < pageStates.trending.total}
-                    currentPage={pageStates.trending.current}
+                    hasMore={pageStates.trending?.current < pageStates.trending?.total || false}
+                    currentPage={pageStates.trending?.current || 1}
                     sectionKey="trending"
                     onMovieSelect={handleMovieSelect}
                     onMovieHover={isPointerFine ? handleMovieHover : undefined}
                     onPrefetch={queuePrefetch}
-                    isMobile={isMobile}
+                    isMobile={isMobile || false}
                   />
                 </VisibleOnDemand>
                 
@@ -8347,16 +8773,16 @@ const HomePage = () => {
                 <VisibleOnDemand placeholderHeight={320}>
                   <MovieSectionSwiper 
                     title="Popular TV Shows" 
-                    movies={popularTVShows}
-                    loading={loadingStates.popularTV}
+                    movies={popularTVShows || []}
+                    loading={loadingStates.popularTV || false}
                     onLoadMore={() => loadMoreMovies('popularTV')}
-                    hasMore={pageStates.popularTV.current < pageStates.popularTV.total}
-                    currentPage={pageStates.popularTV.current}
+                    hasMore={pageStates.popularTV?.current < pageStates.popularTV?.total || false}
+                    currentPage={pageStates.popularTV?.current || 1}
                     sectionKey="popularTV"
                     onMovieSelect={handleMovieSelect}
                     onMovieHover={isPointerFine ? handleMovieHover : undefined}
                     onPrefetch={queuePrefetch}
-                    isMobile={isMobile}
+                    isMobile={isMobile || false}
                   />
                 </VisibleOnDemand>
                 

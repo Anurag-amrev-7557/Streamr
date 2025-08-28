@@ -500,6 +500,104 @@ div, section, main, article {
   animation: fadeIn 0.5s ease-out forwards;
 }
 
+/* Hero Title Animation - Optimized to prevent jitter */
+@keyframes hero-title {
+  0% {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+    filter: blur(2px);
+  }
+  50% {
+    opacity: 0.8;
+    transform: translateY(5px) scale(0.98);
+    filter: blur(1px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0px);
+  }
+}
+
+.animate-hero-title {
+  animation: hero-title 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+  will-change: transform, opacity, filter;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+}
+
+/* Optimized fadeIn animation to prevent jitter */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) translateZ(0);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) translateZ(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+}
+
+/* Hero logo initial state to prevent jitter */
+.hero-logo {
+  opacity: 0;
+  transition: opacity 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Prevent layout shifts and jitter in hero section */
+.hero-section {
+  contain: layout style paint;
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.hero-content {
+  contain: layout style;
+  will-change: transform, opacity;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* Optimize motion for reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .animate-hero-title,
+  .animate-fadeIn,
+  .hero-logo {
+    animation: none;
+    transition: opacity 0.2s ease-out;
+  }
+  
+  .hero-section,
+  .hero-content {
+    will-change: auto;
+  }
+}
+
+/* Smooth hero section loading to prevent jitter */
+.hero-section {
+  opacity: 0;
+  animation: heroSectionFadeIn 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+@keyframes heroSectionFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) translateZ(0);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) translateZ(0);
+  }
+}
+
 /* Line clamp utilities for text truncation */
 .line-clamp-1 {
   overflow: hidden;
