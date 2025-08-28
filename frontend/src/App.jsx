@@ -18,6 +18,10 @@ const Navbar = lazy(() => import('./components/Navbar').catch(err => {
   console.error('Failed to load Navbar:', err);
   return { default: () => <div>Failed to load Navbar</div> };
 }));
+const CastDetailsOverlay = lazy(() => import('./components/CastDetailsOverlay').catch(err => {
+  console.error('Failed to load CastDetailsOverlay:', err);
+  return { default: () => <div>Failed to load CastDetailsOverlay</div> };
+}));
 const MoviesPage = lazy(() => import('./components/MoviesPage').catch(err => {
   console.error('Failed to load MoviesPage:', err);
   return { default: () => <div>Failed to load MoviesPage</div> };
@@ -270,6 +274,7 @@ if (typeof window !== 'undefined') {
 
 const Layout = () => {
   const [selectedMovie, setSelectedMovie] = React.useState(null);
+  const [selectedCast, setSelectedCast] = React.useState(null);
   const [showPerformanceDashboard, setShowPerformanceDashboard] = useState(false);
   const isMountedRef = useRef(true); // FIXED: Add mounted ref for cleanup
   
@@ -297,10 +302,22 @@ const Layout = () => {
       setSelectedMovie(movie);
     }
   }, []);
+
+  const handleCastSelect = React.useCallback((cast) => {
+    if (isMountedRef.current) {
+      setSelectedCast(cast);
+    }
+  }, []);
   
   const handleCloseOverlay = React.useCallback(() => {
     if (isMountedRef.current) {
       setSelectedMovie(null);
+    }
+  }, []);
+
+  const handleCloseCastOverlay = React.useCallback(() => {
+    if (isMountedRef.current) {
+      setSelectedCast(null);
     }
   }, []);
 
@@ -385,7 +402,7 @@ const Layout = () => {
       
       {/* Conditionally render Navbar and other elements */}
       <Suspense>
-        <Navbar onMovieSelect={handleMovieSelect} />
+        <Navbar onMovieSelect={handleMovieSelect} onCastSelect={handleCastSelect} />
       </Suspense>
       
       <main className="momentum-scroll">
@@ -402,6 +419,17 @@ const Layout = () => {
             onClose={handleCloseOverlay}
             onMovieSelect={handleMovieSelect}
             onGenreClick={handleGenreNavigation}
+          />
+        </Suspense>
+      )}
+
+      {selectedCast && (
+        <Suspense fallback={null}>
+          <CastDetailsOverlay
+            person={selectedCast}
+            onClose={handleCloseCastOverlay}
+            onMovieSelect={handleMovieSelect}
+            onSeriesSelect={handleMovieSelect}
           />
         </Suspense>
       )}

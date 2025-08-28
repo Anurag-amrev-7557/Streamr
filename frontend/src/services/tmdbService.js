@@ -6161,3 +6161,595 @@ export const searchPeople = async (query, page = 1, includeAdult = false, region
   }
 };
 
+// Enhanced search for people/actors with advanced retry logic, caching, and performance optimizations
+export const searchPerson = async (query, page = 1, options = {}) => {
+  // Validate and sanitize page parameter
+  const validatedPage = Math.max(1, Math.min(500, parseInt(page) || 1));
+  
+  const {
+    includeAdult = true,
+    language = 'en-US',
+    region = 'US',
+    maxRetries = 5,
+    initialRetryDelay = 2000,
+    maxRetryDelay = 10000,
+    timeout = 12000,
+    enableCaching = true,
+    cacheExpiry = 5 * 60 * 1000, // 5 minutes
+    sortBy = 'popularity.desc',
+    enableMetrics = true,
+    enableCompression = true,
+    maxResults = 1000
+  } = options;
+
+  const RESULTS_PER_PAGE = 20;
+  const CACHE_KEY = `search_person_${btoa(query)}_${validatedPage}_${btoa(JSON.stringify(options))}`;
+  const metrics = {
+    startTime: Date.now(),
+    cacheHits: 0,
+    retryCount: 0,
+    requestCount: 0,
+    errors: [],
+    performance: {}
+  };
+
+  // Enhanced sleep function with exponential backoff and jitter
+  const sleep = (ms, attempt = 1) => {
+    const jitter = Math.random() * 0.1 * ms; // 10% jitter
+    const actualDelay = ms + jitter;
+    console.debug(`Sleeping for ${actualDelay.toFixed(0)}ms (attempt ${attempt})...`);
+    return new Promise(resolve => setTimeout(resolve, actualDelay));
+  };
+
+  // Advanced fetch with retry logic, timeout, compression, and comprehensive error handling
+  const fetchWithRetry = async (url, attempt = 1, customTimeout = timeout) => {
+    const startTime = Date.now();
+    metrics.requestCount++;
+    
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+        console.warn(`Request timeout after ${customTimeout}ms: ${url}`);
+      }, customTimeout);
+
+      console.debug(`Fetching URL (attempt ${attempt}): ${url}`);
+      
+      const headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'MovieApp/2.0',
+        'Accept-Encoding': enableCompression ? 'gzip, deflate, br' : 'identity'
+      };
+
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers,
+        compress: enableCompression
+      });
+
+      clearTimeout(timeoutId);
+      const duration = Date.now() - startTime;
+      console.debug(`Request completed in ${duration}ms with status ${response.status}`);
+
+      // Enhanced status code handling with detailed error categorization
+      if (!response.ok) {
+        const errorData = await response.text().catch(() => 'No error details');
+        const errorInfo = {
+          status: response.status,
+          statusText: response.statusText,
+          url,
+          attempt,
+          duration,
+          details: errorData
+        };
+        
+        if (response.status === 404) {
+          console.info('Resource not found, returning null');
+          return null;
+        }
+        
+        if (response.status === 429) {
+          const retryAfter = parseInt(response.headers.get('Retry-After')) || 60;
+          console.warn(`Rate limit exceeded. Retry after ${retryAfter} seconds`);
+          if (attempt < maxRetries) {
+            metrics.retryCount++;
+            await sleep(retryAfter * 1000, attempt);
+            return fetchWithRetry(url, attempt + 1, customTimeout);
+          }
+        }
+        
+        if ((response.status === 503 || response.status === 502 || response.status === 504) && attempt < maxRetries) {
+          const delay = Math.min(initialRetryDelay * Math.pow(2, attempt - 1), maxRetryDelay);
+          console.warn(`Server error ${response.status}, retrying in ${delay}ms (attempt ${attempt}/${maxRetries})`);
+          metrics.retryCount++;
+          await sleep(delay, attempt);
+          return fetchWithRetry(url, attempt + 1, customTimeout);
+        }
+        
+        metrics.errors.push(errorInfo);
+        throw new Error(`HTTP ${response.status}: ${response.statusText}. Details: ${errorData}`);
+      }
+
+      const data = await response.json();
+      
+      // Enhanced response validation with detailed error messages
+      if (!data || typeof data !== 'object') {
+        throw new Error('Invalid response: not an object');
+      }
+      
+      if (!Array.isArray(data.results)) {
+        throw new Error('Invalid response: missing or invalid results array');
+      }
+
+      return data;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      
+      if (error.name === 'AbortError') {
+        console.error(`Request aborted after ${duration}ms due to timeout`);
+      } else {
+        console.error(`Request failed after ${duration}ms:`, error.message);
+      }
+
+      if (attempt < maxRetries && error.name !== 'TypeError') {
+        const delay = Math.min(initialRetryDelay * Math.pow(2, attempt - 1), maxRetryDelay);
+        console.warn(`Retrying in ${delay}ms (attempt ${attempt}/${maxRetries}): ${error.message}`);
+        metrics.retryCount++;
+        await sleep(delay, attempt);
+        return fetchWithRetry(url, attempt + 1, customTimeout);
+      }
+      
+      metrics.errors.push({
+        error: error.message,
+        url,
+        attempt,
+        duration
+      });
+      throw error;
+    }
+  };
+
+  // Enhanced data transformation for person results
+  const transformPersonResult = (item) => {
+    try {
+      if (!item || !item.id) {
+        console.warn('Invalid person result item:', item);
+        return null;
+      }
+
+      const knownFor = item.known_for || [];
+      const knownForMovies = knownFor
+        .filter(work => work.media_type === 'movie' || work.media_type === 'tv')
+        .slice(0, 3)
+        .map(work => ({
+          id: work.id,
+          title: work.title || work.name,
+          type: work.media_type,
+          year: work.release_date || work.first_air_date 
+            ? new Date(work.release_date || work.first_air_date).getFullYear() 
+            : null,
+          poster: work.poster_path || work.profile_path
+        }));
+
+      return {
+        id: item.id,
+        name: item.name || 'Unknown Name',
+        type: 'person',
+        image: item.profile_path ? `${TMDB_IMAGE_BASE_URL}/w500${item.profile_path.startsWith('/') ? item.profile_path : `/${item.profile_path}`}` : null,
+        popularity: item.popularity || 0,
+        knownFor: knownForMovies,
+        knownForDepartment: item.known_for_department || 'Acting',
+        adult: item.adult || false,
+        gender: item.gender || 0,
+        originalName: item.original_name || item.name,
+        mediaType: 'person',
+        relevanceScore: calculatePersonRelevanceScore(item, query)
+      };
+    } catch (error) {
+      console.error('Error transforming person result:', error, item);
+      return null;
+    }
+  };
+
+  // Calculate relevance score for person search
+  const calculatePersonRelevanceScore = (item, searchQuery) => {
+    const query = searchQuery.toLowerCase();
+    const name = (item.name || '').toLowerCase();
+    const knownForDepartment = (item.known_for_department || '').toLowerCase();
+    
+    let score = 0;
+    
+    // Exact name match gets highest score
+    if (name === query) score += 100;
+    // Name starts with query
+    else if (name.startsWith(query)) score += 80;
+    // Name contains query
+    else if (name.includes(query)) score += 60;
+    
+    // Boost for acting department (most common search)
+    if (knownForDepartment === 'acting') score += 20;
+    
+    // Boost for high popularity
+    if (item.popularity >= 50) score += 15;
+    if (item.popularity >= 100) score += 10;
+    
+    // Boost for having known works
+    if (item.known_for && item.known_for.length > 0) score += 10;
+    
+    return score;
+  };
+
+  // Enhanced cache management with compression and TTL
+  const cacheManager = {
+    get: (key) => {
+      try {
+        const cached = sessionStorage.getItem(key);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Date.now() - parsed.timestamp < cacheExpiry) {
+            metrics.cacheHits++;
+            console.debug('Cache hit for key:', key);
+            return parsed.data;
+          }
+          // Remove expired cache
+          sessionStorage.removeItem(key);
+        }
+        return null;
+      } catch (error) {
+        console.warn('Failed to retrieve cached data:', error);
+        return null;
+      }
+    },
+    set: (key, data) => {
+      try {
+        const cacheData = {
+          data,
+          timestamp: Date.now(),
+          version: '2.0'
+        };
+        sessionStorage.setItem(key, JSON.stringify(cacheData));
+        console.debug('Cached data for key:', key);
+      } catch (error) {
+        console.warn('Failed to cache data:', error);
+      }
+    }
+  };
+
+  try {
+    // Enhanced input validation and sanitization
+    if (!query || typeof query !== 'string' || query.trim().length === 0) {
+      console.warn('Invalid search query:', query);
+      return {
+        results: [],
+        page: 1,
+        total_pages: 0,
+        total_results: 0,
+        query: query || '',
+        timestamp: new Date().toISOString(),
+        metadata: {
+          searchType: 'person',
+          processingTime: 0,
+          metrics: enableMetrics ? metrics : null
+        }
+      };
+    }
+
+    const sanitizedQuery = query.trim();
+    const startTime = Date.now();
+
+    // Check cache first if enabled
+    if (enableCaching) {
+      const cachedResult = cacheManager.get(CACHE_KEY);
+      if (cachedResult) {
+        return {
+          ...cachedResult,
+          metadata: {
+            ...cachedResult.metadata,
+            cacheHit: true,
+            processingTime: Date.now() - startTime
+          }
+        };
+      }
+    }
+
+    // Execute person search
+    const url = `${TMDB_BASE_URL}/search/person?api_key=${TMDB_API_KEY}&language=${language}&query=${encodeURIComponent(sanitizedQuery)}&page=${validatedPage}&include_adult=${includeAdult}&region=${region}`;
+    
+    let searchResponse = null;
+    try {
+      searchResponse = await fetchWithRetry(url);
+    } catch (error) {
+      console.error('Person search failed:', error);
+      throw error;
+    }
+
+    // Process results
+    if (searchResponse && Array.isArray(searchResponse.results)) {
+      // Filter and transform results
+      const transformedResults = searchResponse.results
+        .map(transformPersonResult)
+        .filter(Boolean)
+        .sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0))
+        .slice(0, maxResults);
+
+      const result = {
+        results: transformedResults,
+        page: validatedPage,
+        total_pages: searchResponse.total_pages || 1,
+        total_results: searchResponse.total_results || transformedResults.length,
+        has_more: validatedPage < (searchResponse.total_pages || 1),
+        query: sanitizedQuery,
+        timestamp: new Date().toISOString(),
+        metadata: {
+          searchType: 'person',
+          processingTime: Date.now() - startTime,
+          cacheHit: false,
+          metrics: enableMetrics ? {
+            ...metrics,
+            performance: {
+              totalTime: Date.now() - startTime,
+              requestCount: metrics.requestCount,
+              retryCount: metrics.retryCount,
+              cacheHits: metrics.cacheHits
+            }
+          } : null
+        }
+      };
+
+      // Cache the result
+      if (enableCaching) {
+        cacheManager.set(CACHE_KEY, result);
+      }
+
+      return result;
+    }
+
+    // No results found
+    return {
+      results: [],
+      page: validatedPage,
+      total_pages: 0,
+      total_results: 0,
+      has_more: false,
+      query: sanitizedQuery,
+      timestamp: new Date().toISOString(),
+      metadata: {
+        searchType: 'person',
+        processingTime: Date.now() - startTime,
+        cacheHit: false,
+        metrics: enableMetrics ? {
+          ...metrics,
+          performance: {
+            totalTime: Date.now() - startTime,
+            requestCount: metrics.requestCount,
+            retryCount: metrics.retryCount,
+            cacheHits: metrics.cacheHits
+          }
+        } : null
+      }
+    };
+
+  } catch (error) {
+    console.error('Error searching people:', error);
+    return {
+      results: [],
+      page: validatedPage,
+      total_pages: 0,
+      total_results: 0,
+      has_more: false,
+      query: query || '',
+      timestamp: new Date().toISOString(),
+      error: error.message,
+      metadata: {
+        searchType: 'person',
+        processingTime: Date.now() - metrics.startTime,
+        cacheHit: false,
+        metrics: enableMetrics ? {
+          ...metrics,
+          performance: {
+            totalTime: Date.now() - metrics.startTime,
+            requestCount: metrics.requestCount,
+            retryCount: metrics.retryCount,
+            cacheHits: metrics.cacheHits
+          }
+        } : null
+      }
+    };
+  }
+};
+
+// Combined search function that searches for both content (movies/TV) and people
+export const searchCombined = async (query, page = 1, options = {}) => {
+  const {
+    includeAdult = true,
+    language = 'en-US',
+    region = 'US',
+    maxRetries = 3,
+    timeout = 10000,
+    enableCaching = true,
+    cacheExpiry = 5 * 60 * 1000, // 5 minutes
+    maxResults = 50, // Limit combined results for better UX
+    enableMetrics = true
+  } = options;
+
+  const CACHE_KEY = `search_combined_${btoa(query)}_${page}_${btoa(JSON.stringify(options))}`;
+  const metrics = {
+    startTime: Date.now(),
+    cacheHits: 0,
+    requestCount: 0,
+    performance: {}
+  };
+
+  // Enhanced cache management
+  const cacheManager = {
+    get: (key) => {
+      try {
+        const cached = sessionStorage.getItem(key);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Date.now() - parsed.timestamp < cacheExpiry) {
+            metrics.cacheHits++;
+            return parsed.data;
+          }
+          sessionStorage.removeItem(key);
+        }
+        return null;
+      } catch (error) {
+        console.warn('Failed to retrieve cached data:', error);
+        return null;
+      }
+    },
+    set: (key, data) => {
+      try {
+        const cacheData = {
+          data,
+          timestamp: Date.now(),
+          version: '2.0'
+        };
+        sessionStorage.setItem(key, JSON.stringify(cacheData));
+      } catch (error) {
+        console.warn('Failed to cache data:', error);
+      }
+    }
+  };
+
+  try {
+    // Input validation
+    if (!query || typeof query !== 'string' || query.trim().length === 0) {
+      return {
+        results: [],
+        page: 1,
+        total_pages: 0,
+        total_results: 0,
+        query: query || '',
+        timestamp: new Date().toISOString(),
+        metadata: {
+          searchType: 'combined',
+          processingTime: 0,
+          metrics: enableMetrics ? metrics : null
+        }
+      };
+    }
+
+    const sanitizedQuery = query.trim();
+    const startTime = Date.now();
+
+    // Check cache first
+    if (enableCaching) {
+      const cachedResult = cacheManager.get(CACHE_KEY);
+      if (cachedResult) {
+        return {
+          ...cachedResult,
+          metadata: {
+            ...cachedResult.metadata,
+            cacheHit: true,
+            processingTime: Date.now() - startTime
+          }
+        };
+      }
+    }
+
+    // Execute parallel searches for content and people
+    const [contentResults, personResults] = await Promise.allSettled([
+      searchMovies(sanitizedQuery, page, { 
+        searchType: 'multi', 
+        maxResults: Math.ceil(maxResults * 0.7), // 70% for content
+        ...options 
+      }),
+      searchPerson(sanitizedQuery, page, { 
+        maxResults: Math.ceil(maxResults * 0.3), // 30% for people
+        ...options 
+      })
+    ]);
+
+    // Process results
+    const contentData = contentResults.status === 'fulfilled' ? contentResults.value : { results: [] };
+    const personData = personResults.status === 'fulfilled' ? personResults.value : { results: [] };
+
+    // Combine and sort results intelligently
+    const allResults = [
+      ...(contentData.results || []).map(item => ({ ...item, searchCategory: 'content' })),
+      ...(personData.results || []).map(item => ({ ...item, searchCategory: 'person' }))
+    ];
+
+    // Enhanced relevance scoring for combined results
+    const scoredResults = allResults.map(item => {
+      let relevanceScore = item._relevanceScore || item.relevanceScore || 0;
+      
+      // Boost content results slightly for better user experience
+      if (item.searchCategory === 'content') {
+        relevanceScore += 5;
+      }
+      
+      // Boost person results if they have high popularity
+      if (item.searchCategory === 'person' && item.popularity > 50) {
+        relevanceScore += 10;
+      }
+      
+      return { ...item, combinedRelevanceScore: relevanceScore };
+    });
+
+    // Sort by combined relevance score
+    const sortedResults = scoredResults
+      .sort((a, b) => (b.combinedRelevanceScore || 0) - (a.combinedRelevanceScore || 0))
+      .slice(0, maxResults);
+
+    const result = {
+      results: sortedResults,
+      page: page,
+      total_pages: Math.max(contentData.total_pages || 1, personData.total_pages || 1),
+      total_results: (contentData.total_results || 0) + (personData.total_results || 0),
+      has_more: page < Math.max(contentData.total_pages || 1, personData.total_pages || 1),
+      query: sanitizedQuery,
+      timestamp: new Date().toISOString(),
+      metadata: {
+        searchType: 'combined',
+        processingTime: Date.now() - startTime,
+        cacheHit: false,
+        contentResults: contentData.results?.length || 0,
+        personResults: personData.results?.length || 0,
+        metrics: enableMetrics ? {
+          ...metrics,
+          performance: {
+            totalTime: Date.now() - startTime,
+            requestCount: metrics.requestCount
+          }
+        } : null
+      }
+    };
+
+    // Cache the result
+    if (enableCaching) {
+      cacheManager.set(CACHE_KEY, result);
+    }
+
+    return result;
+
+  } catch (error) {
+    console.error('Error in combined search:', error);
+    return {
+      results: [],
+      page: page,
+      total_pages: 0,
+      total_results: 0,
+      has_more: false,
+      query: query || '',
+      timestamp: new Date().toISOString(),
+      error: error.message,
+      metadata: {
+        searchType: 'combined',
+        processingTime: Date.now() - metrics.startTime,
+        cacheHit: false,
+        metrics: enableMetrics ? {
+          ...metrics,
+          performance: {
+            totalTime: Date.now() - metrics.startTime,
+            requestCount: metrics.requestCount
+          }
+        } : null
+      }
+    };
+  }
+};
+

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, useTransition, useDeferredValue } from 'react';
-import { searchMovies, transformMovieData } from '../services/tmdbService';
+import { searchCombined, transformMovieData } from '../services/tmdbService';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -602,7 +602,7 @@ const useOptimizedAccessibility = () => {
   return { announceToScreenReader };
 };
 
-const Navbar = ({ onMovieSelect }) => {
+const Navbar = ({ onMovieSelect, onCastSelect }) => {
   // 🚀 FIXED: Add mounted ref to prevent state updates on unmounted components
   const isMountedRef = useRef(true);
   
@@ -633,6 +633,8 @@ const Navbar = ({ onMovieSelect }) => {
 
   // Performance-optimized mobile menu state management
   const { isOpen: isMobileMenuOpen, isPending, openMenu, closeMenu, toggleMenu } = useMobileMenuState();
+  
+
   // Performance-optimized animation variants with reduced motion support
   const animations = useOptimizedAnimations();
   // Performance-optimized event handlers with debouncing and throttling
@@ -741,6 +743,19 @@ const Navbar = ({ onMovieSelect }) => {
       document.removeEventListener('touchstart', handleTouchStart);
     };
   }, [isMobileMenuOpen, handleEscapeKey, handleTouchStart]);
+
+  // Helper function to count result types
+  const getResultTypeCounts = useCallback((results) => {
+    const counts = { content: 0, person: 0 };
+    results.forEach(result => {
+      if (result.type === 'person') {
+        counts.person++;
+      } else {
+        counts.content++;
+      }
+    });
+    return counts;
+  }, []);
 
   // Enhanced memoized processSearchResults with advanced scoring algorithm
   const processSearchResults = useCallback((results, query) => {
@@ -909,7 +924,7 @@ const Navbar = ({ onMovieSelect }) => {
     let isActive = true;
     
     try {
-      const results = await searchMovies(trimmedQuery, { signal: abortController.signal });
+      const results = await searchCombined(trimmedQuery, 1, { signal: abortController.signal });
 
       // Defensive: Ensure results is an object and has a results array
       const safeResults = (results && Array.isArray(results.results)) ? results.results : [];
@@ -930,7 +945,7 @@ const Navbar = ({ onMovieSelect }) => {
         // Request was cancelled, don't update state
         return;
       }
-      console.error('Error searching movies:', error);
+      console.error('Error searching content and people:', error);
       if (isActive) {
         setSearchResults([]);
       }
@@ -1645,7 +1660,7 @@ const Navbar = ({ onMovieSelect }) => {
     
     const executeSearch = async () => {
       try {
-        const results = await searchMovies(normalizedQuery);
+        const results = await searchCombined(normalizedQuery, 1);
         
         // Check if component is still mounted
         if (!isActive) return;
@@ -2028,6 +2043,13 @@ const Navbar = ({ onMovieSelect }) => {
     },
     [addToWatchlist, isInWatchlist, setSearchHistory]
   );
+
+  // Cast overlay handlers
+  const handleCastSelect = useCallback((cast) => {
+    if (onCastSelect) {
+      onCastSelect(cast);
+    }
+  }, [onCastSelect]);
 
   return (
     <header className="relative z-50 flex items-center justify-between whitespace-nowrap border-b border-solid border-b-[#2b3036] px-2 pl-4 py-3 bg-gradient-to-b from-[#23272F]/90 via-[#181A20]/80 to-[#181A20]/70 backdrop-blur-[10px] shadow-xl shadow-black/10 transition-all duration-500">
@@ -2708,7 +2730,7 @@ const Navbar = ({ onMovieSelect }) => {
                   setIsSearchFocused(true);
                   setShowResults(true);
                 }}
-                placeholder="Search movies, TV shows, actors..."
+                placeholder="Search movies, TV shows, cast..."
                 className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-xl rounded-r-full text-white focus:outline-0 focus:ring-0 border-none bg-[#2b3036] group-hover:bg-[#323840] focus:bg-[#323840] focus:border-none h-full placeholder:text-[#a1abb5] placeholder:group-hover:text-white/60 placeholder:focus:text-white/60 px-4 rounded-l-none border-l-0 pl-3 pr-10 text-base font-normal leading-normal relative z-10 transition-all duration-300"
               />
               
@@ -2794,7 +2816,13 @@ const Navbar = ({ onMovieSelect }) => {
                     <h3 className="text-white font-semibold">Search Results</h3>
                   </div>
                   <div className="flex items-center gap-2 text-sm text-white/60">
-                    <span>{isSearching ? 'Searching...' : `${searchResults.length} results`}</span>
+                    <span>{isSearching ? 'Searching...' : (() => {
+                      const counts = getResultTypeCounts(searchResults);
+                      const contentText = counts.content > 0 ? `${counts.content} content` : '';
+                      const personText = counts.person > 0 ? `${counts.person} cast` : '';
+                      const parts = [contentText, personText].filter(Boolean);
+                      return `${searchResults.length} results (${parts.join(', ')})`;
+                    })()}</span>
                     <span>•</span>
                     <span>Press Enter to select</span>
                   </div>
@@ -2831,33 +2859,39 @@ const Navbar = ({ onMovieSelect }) => {
 
                 {/* Initial State - When search is focused but empty */}
                 {!searchQuery && searchHistory.length === 0 && (
-                  <div className="p-8 text-center flex flex-col items-center justify-center gap-4">
-                    {/* Friendly illustration */}
-                    <motion.svg 
-                      width="64" height="64" fill="none" viewBox="0 0 64 64" className="mx-auto"
-                      initial={{ scale: 0.8, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      transition={{ duration: 0.3 }}
-                    >
-                      <rect width="64" height="64" rx="16" fill="#1a1a1a"/>
-                      <circle cx="32" cy="32" r="16" fill="none" stroke="#fff" strokeWidth="2"/>
-                      <path d="M24 32l4 4 8-8" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                    </motion.svg>
-                    <motion.div 
-                      className="text-white/80 mb-2 text-lg font-medium"
-                      initial={{ opacity: 0, y: 10 }}
+                  <div className="py-16 text-center">
+                    {/* Minimal Search Icon */}
+                    <motion.div
+                      className="w-16 h-16 mx-auto mb-6"
+                      initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.1 }}
+                      transition={{ duration: 0.4, ease: "easeOut" }}
                     >
-                      Start searching for movies & TV shows
+                      <div className="w-full h-full bg-white/5 rounded-2xl border border-white/10 flex items-center justify-center">
+                        <svg className="w-8 h-8 text-white/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                      </div>
                     </motion.div>
-                    <motion.div 
-                      className="text-white/50 text-sm"
-                      initial={{ opacity: 0, y: 10 }}
+                    
+                    {/* Clean Title */}
+                    <motion.h3 
+                      className="text-white/80 mb-3 text-lg font-medium"
+                      initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.2 }}
+                      transition={{ delay: 0.1, duration: 0.4, ease: "easeOut" }}
                     >
-                      Type to discover amazing content
+                      Start searching
+                    </motion.h3>
+                    
+                    {/* Simple Subtitle */}
+                    <motion.div 
+                      className="text-white/50 text-sm max-w-xs mx-auto leading-relaxed"
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.2, duration: 0.4, ease: "easeOut" }}
+                    >
+                      Find movies, TV shows, and cast members
                     </motion.div>
                   </div>
                 )}
@@ -2932,7 +2966,13 @@ const Navbar = ({ onMovieSelect }) => {
                             <motion.button
                               key={movie.id}
                               data-index={index}
-                              onClick={() => handleMovieSelect(movie)}
+                              onClick={() => {
+                                if (movie.type === 'person') {
+                                  handleCastSelect(movie);
+                                } else {
+                                  handleMovieSelect(movie);
+                                }
+                              }}
                             initial={{ opacity: 0, y: 16 }}
                               animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: 8 }}
@@ -2963,19 +3003,51 @@ const Navbar = ({ onMovieSelect }) => {
                             <div className="w-20 h-28 flex-shrink-0 relative group/image overflow-hidden rounded-xl bg-white/8 border border-white/15 shadow-lg">
                                 <MovieImage
                                 src={movie.image || movie.poster_path ? getTmdbImageUrl(movie.poster_path || movie.image, 'w185') : ''}
-                                  alt={movie.title}
+                                  alt={movie.type === 'person' ? movie.name : movie.title}
                                   className="w-full h-full"
+                                  fallbackIcon={movie.type === 'person' ? 'person' : 'movie'}
                                 />
                               </div>
                             <div className="flex-1 min-w-0 relative z-10">
                               <div className="flex items-start justify-between gap-4">
                                 <div className='flex flex-col flex-1 items-start gap-2.5'>
-                                  <h3 className="text-white font-semibold truncate text-base md:text-lg leading-tight">{movie.title}</h3>
+                                  <div className="flex items-center gap-2">
+                                    <h3 className="text-white font-semibold truncate text-base md:text-lg leading-tight">
+                                      {movie.type === 'person' ? movie.name : movie.title}
+                                    </h3>
+                                    {/* Type indicator badge */}
+                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                      movie.type === 'person' 
+                                        ? 'bg-blue-500/20 text-blue-300 border border-blue-400/30' 
+                                        : 'bg-green-500/20 text-green-300 border border-green-400/30'
+                                    }`}>
+                                      {movie.type === 'person' ? 'Cast' : movie.type === 'tv' ? 'TV' : 'Movie'}
+                                    </span>
+                                  </div>
                                   <div className="flex items-center gap-2 text-white/70 text-xs md:text-sm">
-                                    <span>{movie.year}</span>
-                                    <span>•</span>
-                                    <span>{movie.type === 'tv' ? 'TV Show' : 'Movie'}</span>
-                                  {movie.rating > 0 && (
+                                    {movie.type === 'person' ? (
+                                      <>
+                                        <span>{movie.knownForDepartment}</span>
+                                        {movie.popularity > 0 && (
+                                          <>
+                                            <span>•</span>
+                                            <span className="inline-flex items-center gap-1">
+                                              <svg className="w-3 h-3 text-yellow-400 inline" fill="currentColor" viewBox="0 0 20 20">
+                                                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.967a1 1 0 00.95.69h4.178c.969 0 1.371 1.24.588 1.81l-3.286 2.46a1 1 0 00-.364 1.118l1.287 3.966c.3.922-.755 1.688-1.54 1.118l-3.385-2.46a1 1 0 00-1.175 0l-3.385 2.46c-.784.57-1.838-.196-1.54-1.118l1.287-3.966c.3.922-.755 1.688-1.54 1.118l-3.385-2.46c-.783-.57-.38-1.81.588-1.81h4.178a1 1 0 00.95-.69l1.286-3.967z"/>
+                                              </svg>
+                                              {Math.round(movie.popularity)}
+                                            </span>
+                                          </>
+                                        )}
+                                      </>
+                                    ) : (
+                                      <>
+                                        <span>{movie.year}</span>
+                                        <span>•</span>
+                                        <span>{movie.type === 'tv' ? 'TV Show' : 'Movie'}</span>
+                                      </>
+                                    )}
+                                  {movie.type !== 'person' && movie.rating > 0 && (
                                     <>
                                         <span>•</span>
                                         <span className="inline-flex items-center gap-1">
@@ -2991,44 +3063,58 @@ const Navbar = ({ onMovieSelect }) => {
                                 {/* Action buttons */}
                                 <div className="flex items-center gap-1.5 opacity-0 group-hover/item:opacity-100 transition-all duration-300 transform translate-x-2 group-hover/item:translate-x-0">
                                   {/* Minimal Add to Watchlist Button */}
+                                  {/* Add to Watchlist Button (for content) or View Profile Button (for people) */}
                                   <motion.div
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      if (isInWatchlist && isInWatchlist(movie.id)) {
-                                        // Remove from watchlist using context
-                                        if (removeFromWatchlist) {
-                                          removeFromWatchlist(movie.id);
-                                        }
+                                      if (movie.type === 'person') {
+                                        // For people, show cast details overlay
+                                        handleCastSelect(movie);
                                       } else {
-                                        // Add to watchlist
-                                        handleAddToWatchlist(e, movie);
+                                        // For content, handle watchlist
+                                        if (isInWatchlist && isInWatchlist(movie.id)) {
+                                          // Remove from watchlist using context
+                                          if (removeFromWatchlist) {
+                                            removeFromWatchlist(movie.id);
+                                          }
+                                        } else {
+                                          // Add to watchlist
+                                          handleAddToWatchlist(e, movie);
+                                        }
                                       }
                                     }}
                                     className={`relative w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-200 cursor-pointer group/btn
-                                      ${(isInWatchlist && isInWatchlist(movie.id))
-                                        ? 'bg-white/20 text-white'
-                                        : 'bg-white/10 text-white/70 hover:bg-white/15 hover:text-white'
+                                      ${movie.type === 'person' 
+                                        ? 'bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 hover:text-blue-200'
+                                        : (isInWatchlist && isInWatchlist(movie.id))
+                                          ? 'bg-white/20 text-white'
+                                          : 'bg-white/10 text-white/70 hover:bg-white/15 hover:text-white'
                                       }
                                     `}
-                                    title={(isInWatchlist && isInWatchlist(movie.id)) ? 'Remove from watchlist' : 'Add to watchlist'}
+                                    title={movie.type === 'person' ? 'View profile' : (isInWatchlist && isInWatchlist(movie.id)) ? 'Remove from watchlist' : 'Add to watchlist'}
                                     whileHover={{ scale: 1.1 }}
                                     whileTap={{ scale: 0.95 }}
                                   >
                                     {/* Icon */}
                                     <div className="relative z-10">
-                                      {(isInWatchlist && isInWatchlist(movie.id)) ? (
+                                      {movie.type === 'person' ? (
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                                          <circle cx="12" cy="7" r="4" />
+                                        </svg>
+                                      ) : (isInWatchlist && isInWatchlist(movie.id)) ? (
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
                                           <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
                                         </svg>
                                       ) : (
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                          <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                                          <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2z" />
                                         </svg>
                                       )}
                                     </div>
                                     
                                     {/* Subtle success indicator */}
-                                    {(isInWatchlist && isInWatchlist(movie.id)) && (
+                                    {movie.type !== 'person' && (isInWatchlist && isInWatchlist(movie.id)) && (
                                       <motion.div
                                         className="absolute inset-0 rounded-lg bg-white/10"
                                         initial={{ scale: 0, opacity: 0 }}
@@ -3042,15 +3128,27 @@ const Navbar = ({ onMovieSelect }) => {
                                   <motion.div
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      if (navigator.share) {
-                                        navigator.share({
-                                          title: movie.title,
-                                          text: `Check out ${movie.title} (${movie.year})`,
-                                          url: window.location.href
-                                        });
-                                      } else {
-                                        navigator.clipboard.writeText(`${movie.title} (${movie.year}) - ${window.location.href}`);
-                                      }
+                                                                              if (navigator.share) {
+                                          if (movie.type === 'person') {
+                                            navigator.share({
+                                              title: movie.name,
+                                              text: `Check out ${movie.name} (${movie.knownForDepartment})`,
+                                              url: window.location.href
+                                            });
+                                          } else {
+                                            navigator.share({
+                                              title: movie.title,
+                                              text: `Check out ${movie.title} (${movie.year})`,
+                                              url: window.location.href
+                                            });
+                                          }
+                                        } else {
+                                          if (movie.type === 'person') {
+                                            navigator.clipboard.writeText(`${movie.name} (${movie.knownForDepartment}) - ${window.location.href}`);
+                                          } else {
+                                            navigator.clipboard.writeText(`${movie.title} (${movie.year}) - ${window.location.href}`);
+                                          }
+                                        }
                                     }}
                                     className="relative w-7 h-7 rounded-lg bg-white/10 hover:bg-white/15 flex items-center justify-center transition-all duration-200 text-white/70 hover:text-white cursor-pointer group/share"
                                     title="Share"
@@ -3075,51 +3173,105 @@ const Navbar = ({ onMovieSelect }) => {
                                   </span>
                                 ))}
                               </div>
-                              {/* Short overview/excerpt */}
-                                {movie.overview && (
-                                <div className="mt-3 text-xs text-white/60 line-clamp-2 leading-relaxed">
-                                  {movie.overview}
-                                </div>
-                                )}
+                              {/* Short overview/excerpt or known works for people */}
+                              {movie.type === 'person' ? (
+                                movie.knownFor && movie.knownFor.length > 0 && (
+                                  <div className="mt-3 text-xs text-white/60">
+                                    <span className="text-white/70 font-medium">Known for: </span>
+                                    {movie.knownFor.map((work, idx) => (
+                                      <span key={work.id}>
+                                        {work.title} ({work.year || 'N/A'})
+                                        {idx < movie.knownFor.length - 1 ? ', ' : ''}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )
+                              ) : (
+                                movie.overview && (
+                                  <div className="mt-3 text-xs text-white/60 line-clamp-2 leading-relaxed">
+                                    {movie.overview}
+                                  </div>
+                                )
+                              )}
                               </div>
                             </motion.button>
                           ))}
                         </div>
                     ) : (
-                      <div className="p-8 text-center flex flex-col items-center justify-center gap-4">
-                        {/* Friendly illustration */}
-                        <motion.svg 
-                          width="64" height="64" fill="none" viewBox="0 0 64 64" className="mx-auto"
-                          initial={{ scale: 0.8, opacity: 0 }}
-                          animate={{ scale: 1, opacity: 1 }}
-                          transition={{ duration: 0.3 }}
-                        >
-                          <rect width="64" height="64" rx="16" fill="#1a1a1a"/>
-                          <path d="M20 44c0-6 8-10 12-10s12 4 12 10" stroke="#fff" strokeWidth="2" strokeLinecap="round"/>
-                          <circle cx="26" cy="28" r="2" fill="#fff"/>
-                          <circle cx="38" cy="28" r="2" fill="#fff"/>
-                          <path d="M28 36c1.333 1.333 6.667 1.333 8 0" stroke="#fff" strokeWidth="2" strokeLinecap="round"/>
-                        </motion.svg>
-                        <motion.div 
-                          className="text-white/80 mb-2 text-lg font-medium"
-                          initial={{ opacity: 0, y: 10 }}
+                      <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ 
+                          duration: 0.4,
+                          ease: "easeOut"
+                        }}
+                        className="text-center py-16"
+                      >
+                        {/* Minimal No Results Icon */}
+                        <motion.div
+                          className="w-16 h-16 mx-auto mb-6"
+                          initial={{ opacity: 0, y: 20 }}
                           animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: 0.1 }}
+                          transition={{ delay: 0.1, duration: 0.4, ease: "easeOut" }}
                         >
-                          No results found for "{searchQuery}"
+                          <div className="w-full h-full bg-white/5 rounded-2xl border border-white/10 flex items-center justify-center">
+                            <svg className="w-8 h-8 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 12h6m-6-4h6m2 5.291A7.962 7.962 0 0112 15c-2.34 0-4.47-.881-6.08-2.33" />
+                            </svg>
+                          </div>
                         </motion.div>
-                        <motion.div 
-                          className="text-white/50 text-sm"
-                          initial={{ opacity: 0, y: 10 }}
+                        
+                        {/* Clean Message */}
+                        <motion.h3 
+                          className="text-white/80 mb-3 text-lg font-medium"
+                          initial={{ opacity: 0, y: 20 }}
                           animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: 0.2 }}
+                          transition={{ delay: 0.2, duration: 0.4, ease: "easeOut" }}
+                        >
+                          No results found
+                        </motion.h3>
+                        
+                        {/* Simple Subtitle */}
+                        <motion.div 
+                          className="text-white/50 mb-6 text-sm max-w-sm mx-auto"
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: 0.3, duration: 0.4, ease: "easeOut" }}
                         >
                           Try different keywords or check your spelling
-                          {searchQuery.length < 3 && (
-                            <div className="mt-2">Tip: Try using at least 3 characters</div>
-                          )}
                         </motion.div>
-                      </div>
+                        
+                        {/* Minimal Tips */}
+                        <motion.div 
+                          className="max-w-md mx-auto space-y-3"
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: 0.4, duration: 0.4, ease: "easeOut" }}
+                        >
+                          <div className="flex items-center justify-center gap-6 text-xs text-white/40">
+                            <span>• Try synonyms</span>
+                            <span>• Check spelling</span>
+                            <span>• Use keywords</span>
+                          </div>
+                        </motion.div>
+                        
+                        {/* Character Count Tip */}
+                        {searchQuery.length < 3 && (
+                          <motion.div 
+                            className="mt-6 text-center"
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.5, duration: 0.4, ease: "easeOut" }}
+                          >
+                            <div className="inline-flex items-center gap-2 px-3 py-2 bg-white/5 rounded-lg border border-white/10">
+                              <svg className="w-4 h-4 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              <span className="text-white/50 text-xs">Use at least 3 characters</span>
+                            </div>
+                          </motion.div>
+                        )}
+                      </motion.div>
                     )
                   ) : null}
                 </div>
@@ -3534,7 +3686,7 @@ const Navbar = ({ onMovieSelect }) => {
                         <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                       </svg>
                     </motion.div>
-                    <span className="text-white/90 font-medium text-lg">Search Movies & TV Shows</span>
+                    <span className="text-white/90 font-medium text-lg">Search Movies, TV Shows & Cast</span>
                   </motion.div>
                   
                   <motion.div
@@ -3549,7 +3701,7 @@ const Navbar = ({ onMovieSelect }) => {
               <input
                 ref={inputRef}
                       type="text"
-                      placeholder="Search for movies, TV shows, actors..."
+                      placeholder="Search for movies, TV shows, cast members..."
                 value={searchQuery}
                 onChange={handleSearchChange}
                 onKeyDown={handleKeyDown}
@@ -3728,17 +3880,17 @@ const Navbar = ({ onMovieSelect }) => {
                           </motion.div>
                         )}
 
-                        {/* Initial State - When mobile search is focused but empty */}
+                                                {/* Initial State - When mobile search is focused but empty */}
                         {!searchQuery && searchHistory.length === 0 && (
                           <motion.div
                             initial={{ opacity: 0, y: 3 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: 3 }}
                             transition={{ 
-                              duration: 0.2, 
+                              duration: 0.2,
                               ease: "easeOut"
                             }}
-                            className="text-center py-8"
+                            className="text-center py-12"
                             onClick={(e) => {
                               // Prevent closing when clicking inside initial state
                               if (e && typeof e.stopPropagation === 'function') {
@@ -3746,31 +3898,38 @@ const Navbar = ({ onMovieSelect }) => {
                               }
                             }}
                           >
-                            <motion.svg 
-                              width="48" height="48" fill="none" viewBox="0 0 48 48" className="mx-auto mb-4"
-                              initial={{ scale: 0.8, opacity: 0 }}
-                              animate={{ scale: 1, opacity: 1 }}
-                              transition={{ duration: 0.3 }}
-                            >
-                              <rect width="48" height="48" rx="12" fill="#1a1a1a"/>
-                              <circle cx="24" cy="24" r="12" fill="none" stroke="#fff" strokeWidth="2"/>
-                              <path d="M18 24l3 3 6-6" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                            </motion.svg>
-                            <motion.div 
-                              className="text-white/80 mb-2 text-base font-medium"
-                              initial={{ opacity: 0, y: 10 }}
+                            {/* Minimal Mobile Search Icon */}
+                            <motion.div
+                              className="w-14 h-14 mx-auto mb-5"
+                              initial={{ opacity: 0, y: 20 }}
                               animate={{ opacity: 1, y: 0 }}
-                              transition={{ delay: 0.1 }}
+                              transition={{ duration: 0.4, ease: "easeOut" }}
                             >
-                              Start searching for movies & TV shows
+                              <div className="w-full h-full bg-white/5 rounded-xl border border-white/10 flex items-center justify-center">
+                                <svg className="w-7 h-7 text-white/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                </svg>
+                              </div>
                             </motion.div>
-                            <motion.div 
-                              className="text-white/50 text-xs"
-                              initial={{ opacity: 0, y: 10 }}
+                            
+                            {/* Clean Title */}
+                            <motion.h3 
+                              className="text-white/80 mb-3 text-base font-medium"
+                              initial={{ opacity: 0, y: 20 }}
                               animate={{ opacity: 1, y: 0 }}
-                              transition={{ delay: 0.2 }}
+                              transition={{ delay: 0.1, duration: 0.4, ease: "easeOut" }}
                             >
-                              Type to discover amazing content
+                              Start searching
+                            </motion.h3>
+                            
+                            {/* Simple Subtitle */}
+                            <motion.div 
+                              className="text-white/50 text-sm max-w-xs mx-auto leading-relaxed"
+                              initial={{ opacity: 0, y: 20 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ delay: 0.2, duration: 0.4, ease: "easeOut" }}
+                            >
+                              Find movies, TV shows, and cast members
                             </motion.div>
                           </motion.div>
                         )}
@@ -3827,10 +3986,17 @@ const Navbar = ({ onMovieSelect }) => {
                                         e.preventDefault();
                                         e.stopPropagation();
                                       }
-                                      handleMovieSelect(movie);
-                                      setIsMobileSearchOpen(false);
-                                      setIsMobileSearchActive(false);
-                                      setShowResults(false);
+                                      if (movie.type === 'person') {
+                                        handleCastSelect(movie);
+                                        setIsMobileSearchOpen(false);
+                                        setIsMobileSearchActive(false);
+                                        setShowResults(false);
+                                      } else {
+                                        handleMovieSelect(movie);
+                                        setIsMobileSearchOpen(false);
+                                        setIsMobileSearchActive(false);
+                                        setShowResults(false);
+                                      }
                                     }}
                                     onMouseDown={(e) => {
                                       // Prevent any mouse events from bubbling
@@ -3874,19 +4040,51 @@ const Navbar = ({ onMovieSelect }) => {
                                     <div className="w-20 h-28 flex-shrink-0 relative group/image overflow-hidden rounded-xl bg-white/8 border border-white/15 shadow-lg">
                                       <MovieImage
                                         src={movie.image || movie.poster_path ? getTmdbImageUrl(movie.poster_path || movie.image, 'w185') : ''}
-                                        alt={movie.title}
+                                        alt={movie.type === 'person' ? movie.name : movie.title}
                                         className="w-full h-full"
+                                        fallbackIcon={movie.type === 'person' ? 'person' : 'movie'}
                                       />
                                     </div>
                                     <div className="flex-1 min-w-0 relative z-10">
                                       <div className="flex items-start justify-between gap-4">
                                         <div className='flex flex-col flex-1 items-start gap-2.5'>
-                                          <h3 className="text-white font-semibold truncate text-base md:text-lg leading-tight">{movie.title}</h3>
+                                          <div className="flex items-center gap-2">
+                                            <h3 className="text-white font-semibold truncate text-base md:text-lg leading-tight">
+                                              {movie.type === 'person' ? movie.name : movie.title}
+                                            </h3>
+                                            {/* Type indicator badge */}
+                                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                              movie.type === 'person' 
+                                                ? 'bg-blue-500/20 text-blue-300 border border-blue-400/30' 
+                                                : 'bg-green-500/20 text-green-300 border border-green-400/30'
+                                            }`}>
+                                              {movie.type === 'person' ? 'Cast' : movie.type === 'tv' ? 'TV' : 'Movie'}
+                                            </span>
+                                          </div>
                                           <div className="flex items-center gap-2 text-white/70 text-xs md:text-sm">
-                                            <span>{movie.year}</span>
-                                            <span>•</span>
-                                            <span>{movie.type === 'tv' ? 'TV Show' : 'Movie'}</span>
-                                            {movie.rating > 0 && (
+                                            {movie.type === 'person' ? (
+                                              <>
+                                                <span>{movie.knownForDepartment}</span>
+                                                {movie.popularity > 0 && (
+                                                  <>
+                                                    <span>•</span>
+                                                    <span className="inline-flex items-center gap-1">
+                                                      <svg className="w-3 h-3 text-yellow-400 inline" fill="currentColor" viewBox="0 0 20 20">
+                                                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.967a1 1 0 00.95.69h4.178c.969 0 1.371 1.24.588 1.81l-3.286 2.46a1 1 0 00-.364 1.118l1.287 3.966c.3.922-.755 1.688-1.54 1.118l-3.385-2.46a1 1 0 00-1.175 0l-3.385 2.46c-.784.57-1.838-.196-1.54-1.118l1.287-3.966c.3.922-.755 1.688-1.54 1.118l-3.385-2.46c-.783-.57-.38-1.81.588-1.81h4.178a1 1 0 00.95-.69l1.286-3.967z"/>
+                                                      </svg>
+                                                      {Math.round(movie.popularity)}
+                                                    </span>
+                                                  </>
+                                                )}
+                                              </>
+                                            ) : (
+                                              <>
+                                                <span>{movie.year}</span>
+                                                <span>•</span>
+                                                <span>{movie.type === 'tv' ? 'TV Show' : 'Movie'}</span>
+                                              </>
+                                            )}
+                                            {movie.type !== 'person' && movie.rating > 0 && (
                                               <>
                                                 <span>•</span>
                                                 <span className="inline-flex items-center gap-1">
@@ -3901,20 +4099,26 @@ const Navbar = ({ onMovieSelect }) => {
                                         </div>
                                         {/* Action buttons */}
                                         <div className="flex items-center gap-1.5 opacity-0 group-hover/item:opacity-100 transition-all duration-300 transform translate-x-2 group-hover/item:translate-x-0">
-                                          {/* Minimal Add to Watchlist Button */}
+                                          {/* Add to Watchlist Button (for content) or View Profile Button (for people) */}
                                           <motion.div
                                             onClick={(e) => {
                                               if (e && typeof e.stopPropagation === 'function') {
                                                 e.stopPropagation();
                                               }
-                                              if (isInWatchlist && isInWatchlist(movie.id)) {
-                                                // Remove from watchlist using context
-                                                if (removeFromWatchlist) {
-                                                  removeFromWatchlist(movie.id);
-                                                }
+                                              if (movie.type === 'person') {
+                                                // For people, show cast details overlay
+                                                handleCastSelect(movie);
                                               } else {
-                                                // Add to watchlist
-                                                handleAddToWatchlist(e, movie);
+                                                // For content, handle watchlist
+                                                if (isInWatchlist && isInWatchlist(movie.id)) {
+                                                  // Remove from watchlist using context
+                                                  if (removeFromWatchlist) {
+                                                    removeFromWatchlist(movie.id);
+                                                  }
+                                                } else {
+                                                  // Add to watchlist
+                                                  handleAddToWatchlist(e, movie);
+                                                }
                                               }
                                             }}
                                             onMouseDown={(e) => {
@@ -3928,18 +4132,25 @@ const Navbar = ({ onMovieSelect }) => {
                                               }
                                             }}
                                             className={`relative w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-200 cursor-pointer group/btn
-                                              ${(isInWatchlist && isInWatchlist(movie.id))
-                                                ? 'bg-white/20 text-white'
-                                                : 'bg-white/10 text-white/70 hover:bg-white/15 hover:text-white'
+                                              ${movie.type === 'person' 
+                                                ? 'bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 hover:text-blue-200'
+                                                : (isInWatchlist && isInWatchlist(movie.id))
+                                                  ? 'bg-white/20 text-white'
+                                                  : 'bg-white/10 text-white/70 hover:bg-white/15 hover:text-white'
                                               }
                                             `}
-                                            title={(isInWatchlist && isInWatchlist(movie.id)) ? 'Remove from watchlist' : 'Add to watchlist'}
+                                            title={movie.type === 'person' ? 'View profile' : (isInWatchlist && isInWatchlist(movie.id)) ? 'Remove from watchlist' : 'Add to watchlist'}
                                             whileHover={{ scale: 1.1 }}
                                             whileTap={{ scale: 0.95 }}
                                           >
                                             {/* Icon */}
                                             <div className="relative z-10">
-                                              {(isInWatchlist && isInWatchlist(movie.id)) ? (
+                                              {movie.type === 'person' ? (
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                                                  <circle cx="12" cy="7" r="4" />
+                                                </svg>
+                                              ) : (isInWatchlist && isInWatchlist(movie.id)) ? (
                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
                                                   <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
                                                 </svg>
@@ -3951,7 +4162,7 @@ const Navbar = ({ onMovieSelect }) => {
                                             </div>
                                             
                                             {/* Subtle success indicator */}
-                                            {(isInWatchlist && isInWatchlist(movie.id)) && (
+                                            {movie.type !== 'person' && (isInWatchlist && isInWatchlist(movie.id)) && (
                                               <motion.div
                                                 className="absolute inset-0 rounded-lg bg-white/10"
                                                 initial={{ scale: 0, opacity: 0 }}
@@ -3968,13 +4179,25 @@ const Navbar = ({ onMovieSelect }) => {
                                                 e.stopPropagation();
                                               }
                                               if (navigator.share) {
-                                                navigator.share({
-                                                  title: movie.title,
-                                                  text: `Check out ${movie.title} (${movie.year})`,
-                                                  url: window.location.href
-                                                });
+                                                if (movie.type === 'person') {
+                                                  navigator.share({
+                                                    title: movie.name,
+                                                    text: `Check out ${movie.name} (${movie.knownForDepartment})`,
+                                                    url: window.location.href
+                                                  });
+                                                } else {
+                                                  navigator.share({
+                                                    title: movie.title,
+                                                    text: `Check out ${movie.title} (${movie.year})`,
+                                                    url: window.location.href
+                                                  });
+                                                }
                                               } else {
-                                                navigator.clipboard.writeText(`${movie.title} (${movie.year}) - ${window.location.href}`);
+                                                if (movie.type === 'person') {
+                                                  navigator.clipboard.writeText(`${movie.name} (${movie.knownForDepartment}) - ${window.location.href}`);
+                                                } else {
+                                                  navigator.clipboard.writeText(`${movie.title} (${movie.year}) - ${window.location.href}`);
+                                                }
                                               }
                                             }}
                                             onMouseDown={(e) => {
@@ -4010,28 +4233,103 @@ const Navbar = ({ onMovieSelect }) => {
                                           </span>
                                         ))}
                                       </div>
-                                      {/* Short overview/excerpt */}
-                                      {movie.overview && (
-                                        <div className="mt-3 text-xs text-white/60 line-clamp-2 leading-relaxed">
-                                          {movie.overview}
-                                        </div>
+                                      {/* Short overview/excerpt or known works for people */}
+                                      {movie.type === 'person' ? (
+                                        movie.knownFor && movie.knownFor.length > 0 && (
+                                          <div className="mt-3 text-xs text-white/60">
+                                            <span className="text-white/70 font-medium">Known for: </span>
+                                            {movie.knownFor.map((work, idx) => (
+                                              <span key={work.id}>
+                                                {work.title} ({work.year || 'N/A'})
+                                                {idx < movie.knownFor.length - 1 ? ', ' : ''}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        )
+                                      ) : (
+                                        movie.overview && (
+                                          <div className="mt-3 text-xs text-white/60 line-clamp-2 leading-relaxed">
+                                            {movie.overview}
+                                          </div>
+                                        )
                                       )}
                                     </div>
                                   </motion.button>
                                 ))}
                               </div>
                             ) : (
-                              <motion.div
-                                initial={{ opacity: 0, scale: 0.98 }}
-                                animate={{ opacity: 1, scale: 1 }}
+                                                                                        <motion.div
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
                                 transition={{ 
-                                  duration: 0.2,
+                                  duration: 0.4,
                                   ease: "easeOut"
                                 }}
-                                className="text-center py-8"
+                                className="text-center py-12"
                               >
-                                <div className="text-white/60 mb-2">No results found for "{searchQuery}"</div>
-                                <div className="text-white/40 text-xs">Try different keywords or check your spelling</div>
+                                {/* Minimal Mobile No Results Icon */}
+                                <motion.div
+                                  className="w-14 h-14 mx-auto mb-5"
+                                  initial={{ opacity: 0, y: 20 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  transition={{ delay: 0.1, duration: 0.4, ease: "easeOut" }}
+                                >
+                                  <div className="w-full h-full bg-white/5 rounded-xl border border-white/10 flex items-center justify-center">
+                                    <svg className="w-7 h-7 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 12h6m-6-4h6m2 5.291A7.962 7.962 0 0112 15c-2.34 0-4.47-.881-6.08-2.33" />
+                                    </svg>
+                                  </div>
+                                </motion.div>
+                                
+                                {/* Clean Message */}
+                                <motion.h3 
+                                  className="text-white/80 mb-3 text-base font-medium"
+                                  initial={{ opacity: 0, y: 20 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  transition={{ delay: 0.2, duration: 0.4, ease: "easeOut" }}
+                                >
+                                  No results found
+                                </motion.h3>
+                                
+                                {/* Simple Subtitle */}
+                                <motion.div 
+                                  className="text-white/50 mb-5 text-sm max-w-xs mx-auto"
+                                  initial={{ opacity: 0, y: 20 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  transition={{ delay: 0.3, duration: 0.4, ease: "easeOut" }}
+                                >
+                                  Try different keywords or check your spelling
+                                </motion.div>
+                                
+                                {/* Minimal Tips */}
+                                <motion.div 
+                                  className="space-y-2 max-w-xs mx-auto"
+                                  initial={{ opacity: 0, y: 20 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  transition={{ delay: 0.4, duration: 0.4, ease: "easeOut" }}
+                                >
+                                  <div className="flex items-center justify-center gap-4 text-xs text-white/40">
+                                    <span>• Try synonyms</span>
+                                    <span>• Check spelling</span>
+                                  </div>
+                                </motion.div>
+                                
+                                {/* Character Count Tip for Mobile */}
+                                {searchQuery.length < 3 && (
+                                  <motion.div 
+                                    className="mt-5 text-center"
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: 0.5, duration: 0.4, ease: "easeOut" }}
+                                  >
+                                    <div className="inline-flex items-center gap-2 px-3 py-2 bg-white/5 rounded-lg border border-white/10">
+                                      <svg className="w-3 h-3 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                      </svg>
+                                      <span className="text-white/50 text-xs">Use at least 3 characters</span>
+                                    </div>
+                                  </motion.div>
+                                )}
                               </motion.div>
                             )}
                           </motion.div>
@@ -4045,6 +4343,8 @@ const Navbar = ({ onMovieSelect }) => {
           </motion.div>
         )}
       </AnimatePresence>
+      
+
     </header>
   );
 };

@@ -461,7 +461,7 @@ const CastDetailsOverlay = memo(({ person, onClose, onMovieSelect, onSeriesSelec
     return (
       <AnimatePresence>
         <motion.div
-          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[1000000003] flex items-center justify-center cast-details-backdrop"
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[1000000004] flex items-center justify-center cast-details-backdrop"
           variants={overlayVariants}
           initial="hidden"
           animate="visible"
@@ -500,7 +500,7 @@ const CastDetailsOverlay = memo(({ person, onClose, onMovieSelect, onSeriesSelec
     return (
       <AnimatePresence>
         <motion.div
-          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[1000000003] flex items-center justify-center cast-details-backdrop"
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[1000000004] flex items-center justify-center cast-details-backdrop"
           variants={overlayVariants}
           initial="hidden"
           animate="visible"
@@ -577,7 +577,7 @@ const CastDetailsOverlay = memo(({ person, onClose, onMovieSelect, onSeriesSelec
       <AnimatePresence>
         <motion.div
           ref={overlayRef}
-          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[1000000003] overflow-y-auto cast-details-backdrop"
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[1000000004] overflow-y-auto cast-details-backdrop"
           variants={overlayVariants}
           initial="hidden"
           animate="visible"
@@ -688,7 +688,7 @@ const CastDetailsOverlay = memo(({ person, onClose, onMovieSelect, onSeriesSelec
     <AnimatePresence>
       <motion.div
         ref={overlayRef}
-        className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[1000000003] overflow-y-auto cast-details-backdrop"
+        className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[1000000004] overflow-y-auto cast-details-backdrop"
         variants={overlayVariants}
         initial="hidden"
         animate="visible"
