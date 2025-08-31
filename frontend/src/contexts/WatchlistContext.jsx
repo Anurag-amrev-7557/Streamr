@@ -1,9 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { toNumericRating } from '../utils/ratingUtils';
 import { useUndoSafe } from './UndoContext';
-import syncService from '../services/syncService';
-import { userAPI } from '../services/api';
-import { useAuth } from './AuthContext';
 
 // Genre mapping for converting TMDB genre IDs to names
 const GENRE_MAP = {
@@ -102,129 +99,17 @@ export const WatchlistProvider = ({ children }) => {
     }
   });
 
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [lastSyncTime, setLastSyncTime] = useState(null);
-  const { user } = useAuth();
-  const isMountedRef = useRef(true);
-
   // Get undo context safely
   const undoContext = useUndoSafe();
 
-  // Initialize sync service when user is authenticated
+  // Save watchlist to localStorage whenever it changes
   useEffect(() => {
-    if (user && isMountedRef.current) {
-      try {
-        syncService.init();
-        
-        // Load watchlist from backend if available
-        loadWatchlistFromBackend();
-        
-        // Set up periodic sync
-        const syncInterval = setInterval(() => {
-          if (user && navigator.onLine) {
-            syncWatchlistWithBackend();
-          }
-        }, 30000); // Sync every 30 seconds when online
-        
-        return () => {
-          clearInterval(syncInterval);
-          syncService.cleanup();
-        };
-      } catch (error) {
-        console.error('Error initializing sync service:', error);
-      }
-    }
-    
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, [user]);
-
-  // Load watchlist from backend
-  const loadWatchlistFromBackend = async () => {
-    if (!user) return;
-    
-    try {
-      setIsSyncing(true);
-      const response = await userAPI.getWatchlist();
-      
-      if (response.success && response.data.watchlist) {
-        const backendWatchlist = response.data.watchlist.map(item => ({
-          id: item.tmdbId,
-          tmdbId: item.tmdbId,
-          title: item.title,
-          type: item.type,
-          poster_path: item.posterPath,
-          backdrop_path: item.backdropPath,
-          overview: item.overview,
-          release_date: item.releaseDate,
-          rating: item.rating,
-          genres: item.genres,
-          addedAt: item.addedAt
-        }));
-        
-        // Merge with local watchlist, prioritizing backend data
-        const mergedWatchlist = mergeWatchlists(watchlist, backendWatchlist);
-        setWatchlist(mergedWatchlist);
-        
-        // Update localStorage with merged data
-        localStorage.setItem('watchlist', JSON.stringify(mergedWatchlist));
-        
-        console.log('Watchlist loaded from backend:', backendWatchlist.length, 'items');
-      }
-    } catch (error) {
-      console.error('Error loading watchlist from backend:', error);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  // Merge local and backend watchlists
-  const mergeWatchlists = (local, backend) => {
-    const merged = [...local];
-    const localIds = new Set(local.map(item => `${item.id}_${item.type}`));
-    
-    backend.forEach(backendItem => {
-      const key = `${backendItem.id}_${backendItem.type}`;
-      if (!localIds.has(key)) {
-        merged.push(backendItem);
-      }
-    });
-    
-    return merged;
-  };
-
-  // Sync watchlist with backend
-  const syncWatchlistWithBackend = async () => {
-    if (!user || !navigator.onLine) return;
-    
-    try {
-      setIsSyncing(true);
-      await syncService.syncWatchlist();
-      setLastSyncTime(new Date());
-    } catch (error) {
-      console.error('Error syncing watchlist with backend:', error);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  // Save watchlist to localStorage and trigger sync
-  useEffect(() => {
-    // Don't save during initial load
-    if (!isMountedRef.current) return;
-    
     try {
       localStorage.setItem('watchlist', JSON.stringify(watchlist));
-      
-      // Trigger sync with backend if user is authenticated
-      if (user && navigator.onLine) {
-        syncService.queueSync('watchlist');
-      }
     } catch (error) {
       console.error('Error saving watchlist to localStorage:', error);
     }
-  }, [watchlist, user]);
+  }, [watchlist]);
 
   const validateMovieData = (movie) => {
     // Ensure all required fields are present
@@ -247,41 +132,51 @@ export const WatchlistProvider = ({ children }) => {
   };
 
   const addToWatchlist = (movie) => {
+    console.log('Attempting to add movie to watchlist:', movie);
+    
+    // Validate movie data
     if (!validateMovieData(movie)) {
-      console.warn('Invalid movie data, skipping add to watchlist');
+      console.error('Invalid movie data, cannot add to watchlist');
       return;
     }
 
-    console.log('Adding movie to watchlist:', movie.title);
-    
     setWatchlist(prev => {
       // Check if movie is already in watchlist
-      const existingIndex = prev.findIndex(item => item.id === movie.id);
-      
-      if (existingIndex > -1) {
-        console.log('Movie already in watchlist, updating...');
-        // Update existing entry
-        const updated = [...prev];
-        updated[existingIndex] = {
-          ...updated[existingIndex],
-          ...movie,
-          addedAt: new Date().toISOString()
-        };
-        return updated;
+      if (prev.some(item => item.id === movie.id)) {
+        console.log('Movie already in watchlist:', movie.title);
+        return prev;
       }
       
-      // Add new movie
-      const newMovie = {
-        ...movie,
+      // Format movie data to ensure all necessary fields are present
+      const formattedMovie = {
+        id: movie.id,
+        title: movie.title || movie.name,
+        poster_path: movie.poster_path || movie.poster,
+        backdrop_path: movie.backdrop_path || movie.backdrop,
+        overview: movie.overview || '',
+        type: movie.media_type || movie.type || 'movie',
+        year: movie.release_date ? new Date(movie.release_date).getFullYear() : 
+              movie.first_air_date ? new Date(movie.first_air_date).getFullYear() : 
+              movie.year || 'N/A',
+        rating: toNumericRating(movie.vote_average || movie.rating, 0),
+        genres: formatGenres(movie.genre_ids || movie.genres),
+        release_date: movie.release_date || movie.first_air_date,
+        duration: movie.runtime ? `${Math.floor(movie.runtime / 60)}h ${movie.runtime % 60}m` : 
+                 movie.episode_run_time ? `${Math.floor(movie.episode_run_time[0] / 60)}h ${movie.episode_run_time[0] % 60}m` : 
+                 movie.duration || 'N/A',
+        director: movie.director,
+        cast: movie.cast || [],
         addedAt: new Date().toISOString()
       };
       
-      const newWatchlist = [newMovie, ...prev];
+      console.log('Formatted movie data:', formattedMovie);
+      
+      // Add the new movie at the beginning of the list
+      const newWatchlist = [formattedMovie, ...prev];
+      console.log('Added movie to watchlist:', formattedMovie.title);
       console.log('New watchlist length:', newWatchlist.length);
       return newWatchlist;
     });
-
-    // Sync will be handled by useEffect after localStorage is updated
   };
 
   const removeFromWatchlist = useCallback((movieId) => {
@@ -300,14 +195,16 @@ export const WatchlistProvider = ({ children }) => {
     if (undoContext && movieToRemove) {
       undoContext.addDeletedItem('watchlist', movieToRemove);
     }
-
-    // Sync will be handled by useEffect after localStorage is updated
   }, [watchlist, undoContext]);
 
   // Clear all items from the watchlist
   const clearWatchlist = () => {
     setWatchlist([]);
-    // localStorage will be updated by useEffect after state change
+    try {
+      localStorage.setItem('watchlist', JSON.stringify([]));
+    } catch (error) {
+      console.error('Error clearing watchlist from localStorage:', error);
+    }
   };
 
   // Restore item to watchlist (for undo functionality)
@@ -322,8 +219,6 @@ export const WatchlistProvider = ({ children }) => {
     
     // Add the movie back to the watchlist
     setWatchlist(prev => [movie, ...prev]);
-    
-    // Sync will be handled by useEffect after localStorage is updated
   }, [watchlist]);
 
   const isInWatchlist = (movieId) => {
@@ -336,10 +231,7 @@ export const WatchlistProvider = ({ children }) => {
     removeFromWatchlist,
     restoreToWatchlist,
     clearWatchlist,
-    isInWatchlist,
-    isSyncing,
-    lastSyncTime,
-    syncWatchlistWithBackend
+    isInWatchlist
   };
 
   return (

@@ -27,7 +27,7 @@ const generateTokens = (user, res) => {
   res.cookie('refreshToken', refreshToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Use 'lax' for development
+    sameSite: 'none', // Allow cross-origin cookies
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     path: '/'
   });
@@ -155,7 +155,7 @@ exports.logout = async (req, res) => {
   res.clearCookie('refreshToken', {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Match the sameSite setting from generateTokens
+    sameSite: 'none', // Match the sameSite setting from generateTokens
     path: '/'
   });
   
@@ -195,7 +195,7 @@ exports.refreshToken = async (req, res) => {
     const payload = verifyRefreshToken(refreshToken);
     console.log('✅ Token verified, payload:', payload);
     
-    const user = await User.findById(payload.id);
+    const user = await User.findById(payload.userId);
     console.log('👤 User found:', user ? user._id : 'Not found');
 
     if (!user) {
