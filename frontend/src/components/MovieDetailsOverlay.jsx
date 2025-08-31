@@ -4911,75 +4911,50 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                         <motion.button 
                           data-trailer-button
                           onClick={handleTrailerClick}
-                          className="group relative px-4 sm:px-6 py-2 sm:py-3 rounded-full flex items-center gap-2 text-base sm:text-base font-medium text-white/80 overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 hover:bg-white/10 flex-1 sm:flex-none w-full sm:w-auto justify-center min-w-0 transform-gpu will-change-transform"
-                          variants={window.innerWidth > 1024 ? undefined : buttonVariants}
-                          initial="initial"
-                          whileHover={window.innerWidth > 1024 ? undefined : "hover"}
-                          whileTap={window.innerWidth > 1024 ? undefined : "tap"}
+                          className="group relative px-4 sm:px-6 py-2 sm:py-3 rounded-full flex items-center gap-2 text-base sm:text-base font-medium text-white/80 overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 hover:bg-white/10 flex-1 sm:flex-none w-full sm:w-auto justify-center min-w-0 transform-gpu will-change-transform transition-all duration-300 hover:scale-105 active:scale-95 shadow-sm shadow-black/20"
                         >
                           {/* Animated background effect */}
-                          <motion.div 
-                            className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full"
-                            initial={{ x: '-100%' }}
-                            whileHover={window.innerWidth > 1024 ? undefined : { x: '100%' }}
-                            transition={{ duration: 0.6, ease: "easeInOut" }}
-                          />
+                          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
                           
                           {/* Button content */}
                           <div className="relative flex items-center gap-2 min-w-0">
-                            <motion.svg 
+                            <svg 
                               xmlns="http://www.w3.org/2000/svg" 
-                              className="h-5 w-5 flex-shrink-0" 
+                              className="h-5 w-5 flex-shrink-0 transition-all duration-300 group-hover:scale-110" 
                               viewBox="0 0 24 24" 
                               fill="currentColor"
-                              whileHover={window.innerWidth > 1024 ? undefined : { scale: 1.1 }}
-                              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
                             >
                               <path d="M8 5v14l11-7z"/>
-                            </motion.svg>
+                            </svg>
                             <span className="truncate whitespace-nowrap">Watch Trailer</span>
                           </div>
                         </motion.button>
 
                         <motion.button 
                           onClick={handleWatchlistClick}
-                          className={`group relative px-4 sm:px-6 py-3 rounded-full flex items-center gap-2 text-base sm:text-base font-medium overflow-hidden w-full sm:w-auto justify-center min-w-0 hidden sm:flex transform-gpu will-change-transform ${
+                          className={`group relative px-4 sm:px-6 py-3 rounded-full flex items-center gap-2 text-base sm:text-base font-medium overflow-hidden w-full sm:w-auto justify-center min-w-0 hidden sm:flex transform-gpu will-change-transform transition-all duration-300 hover:scale-105 active:scale-95 shadow-sm shadow-black/20 hover:shadow-black/30 ${
                             isOptimisticallyInWatchlist
                               ? 'text-white/80 overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 hover:bg-white/10' 
                               : 'text-white/80 overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 hover:bg-white/10'
                           }`}
-                          variants={window.innerWidth > 1024 ? undefined : buttonVariants}
-                          initial="initial"
-                          whileHover={window.innerWidth > 1024 ? undefined : "hover"}
-                          whileTap={window.innerWidth > 1024 ? undefined : "tap"}
                         >
                           {/* Animated background effect */}
-                          <motion.div 
-                            className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full"
-                            initial={{ x: '-100%' }}
-                            whileHover={window.innerWidth > 1024 ? undefined : { x: '100%' }}
-                            transition={{ duration: 0.6, ease: "easeInOut" }}
-                          />
+                          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
                           
                           {/* Button content */}
                           <div className="relative flex items-center gap-2 min-w-0">
-                            <motion.svg 
+                            <svg 
                               xmlns="http://www.w3.org/2000/svg" 
-                              className="h-5 w-5 flex-shrink-0" 
+                              className="h-5 w-5 flex-shrink-0 transition-all duration-300 group-hover:scale-110" 
                               viewBox="0 0 24 24" 
                               fill="currentColor"
-                              whileHover={window.innerWidth > 1024 ? undefined : { 
-                                scale: 1.1,
-                                rotate: isOptimisticallyInWatchlist ? 12 : 90,
-                                transition: { type: 'spring', stiffness: 400, damping: 25 }
-                              }}
                             >
                               {isOptimisticallyInWatchlist ? (
                                 <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
                               ) : (
                                 <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
                               )}
-                            </motion.svg>
+                            </svg>
                             <span className="truncate whitespace-nowrap">{isOptimisticallyInWatchlist ? 'Remove from List' : 'Add to List'}</span>
                           </div>
                         </motion.button>
@@ -5131,7 +5106,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                                                    {/* Add to List Button */}
                           <button 
                             onClick={handleWatchlistClick}
-                            className={`group relative w-12 h-12 rounded-full transition-all duration-300 hover:scale-105 active:scale-95 overflow-hidden flex items-center justify-center transform-gpu will-change-transform ${
+                            className={`group relative w-12 h-12 rounded-full transition-all duration-300 hover:scale-105 active:scale-95 overflow-hidden flex items-center justify-center transform-gpu will-change-transform shadow-sm shadow-black/20 hover:shadow-black/30 ${
                               isOptimisticallyInWatchlist 
                                 ? 'bg-red-500/20 border-t-[1px] border-b-[1px] border-red-400/30 text-red-400' 
                                 : 'bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 text-white/80 hover:bg-white/10'
@@ -5162,7 +5137,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                                  handleLikeClick(e);
                                }
                              }}
-                             className={`group relative w-12 h-12 rounded-full overflow-hidden backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] transition-all duration-300 hover:scale-105 active:scale-95 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-red-400/50 focus:ring-offset-2 focus:ring-offset-black/50 transform-gpu will-change-transform ${
+                             className={`group relative w-12 h-12 rounded-full overflow-hidden backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] transition-all duration-300 hover:scale-105 active:scale-95 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-red-400/50 focus:ring-offset-2 focus:ring-offset-black/50 transform-gpu will-change-transform shadow-sm shadow-black/20 hover:shadow-black/30 ${
                                isLiked 
                                  ? 'bg-red-500/20 border-red-400/30 text-red-400' 
                                  : 'bg-[rgb(255,255,255,0.03)] border-white/30 text-white/80 hover:bg-white/10'
@@ -5324,7 +5299,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                              
                                // You could add a modal or navigation to report page
                              }}
-                             className="group relative w-12 h-12 rounded-full overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 text-white/80 hover:bg-white/10 transition-all duration-300 hover:scale-105 active:scale-95 flex items-center justify-center transform-gpu will-change-transform"
+                             className="group relative w-12 h-12 rounded-full overflow-hidden bg-[rgb(255,255,255,0.03)] backdrop-blur-[0.5px] border-t-[1px] border-b-[1px] border-white/30 text-white/80 hover:bg-white/10 transition-all duration-300 hover:scale-105 active:scale-95 flex items-center justify-center transform-gpu will-change-transform shadow-sm shadow-black/20 hover:shadow-black/30"
                              title="Report"
                            >
                              {/* Animated background effect */}
@@ -6532,9 +6507,10 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
             whileHover="hover"
             whileTap="tap"
           >
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
             <motion.svg 
               xmlns="http://www.w3.org/2000/svg" 
-              className="h-6 w-6" 
+              className="h-6 w-6 relative z-10" 
               viewBox="0 0 24 24" 
               fill="currentColor"
               whileHover={{ 
@@ -6546,7 +6522,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
               <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
             </motion.svg>
             <motion.span 
-              className="absolute right-full mr-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-[#1a1a1a] rounded text-sm whitespace-nowrap"
+              className="absolute right-full mr-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-[#1a1a1a] rounded text-sm whitespace-nowrap z-20"
               variants={textRevealVariants}
               initial="hidden"
               whileHover="visible"

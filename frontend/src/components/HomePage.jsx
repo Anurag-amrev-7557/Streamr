@@ -2095,9 +2095,9 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
           touchAction: 'auto',
         }}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 ${isInWatchlistState ? 'text-white-400' : 'text-white'} transition-colors duration-300`} viewBox="0 0 24 24" fill="currentColor">
+            <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 ${isInWatchlistState ? 'text-white' : 'text-white/80'} transition-colors duration-300`} viewBox="0 0 24 24" fill="currentColor">
               {isInWatchlistState ? (
-                <path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2zm0 15l-5-2.18L7 18V5h10v13z"/>
+                <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-4-7 4V5z"/>
               ) : (
                 <path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2zm0 15l-5-2.18L7 18V5h10v13z"/>
               )}
@@ -3286,7 +3286,7 @@ const HeroSection = memo(({ featuredContent, trendingMovies, onMovieSelect, onGe
               onClick={handleWatchlistClick}
               className={`group relative flex-1 sm:w-auto px-3 sm:px-4 md:px-6 py-2.5 sm:py-3 rounded-full transition-all duration-300 flex items-center justify-center gap-2 font-medium hover:scale-105 hover:shadow-lg overflow-hidden flex-shrink-0 transform-gpu will-change-transform ${
                 isMovieInWatchlist 
-                  ? 'bg-white-500/20 text-white-400 border border-white/30 hover:bg-white/20' 
+                  ? 'bg-white/20 text-white border border-white/30 hover:bg-white/30' 
                   : 'bg-white/10 text-white/90 border border-white/10 hover:bg-white/20'
               }`}
               style={{ whiteSpace: 'nowrap' }}
