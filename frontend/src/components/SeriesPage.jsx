@@ -14,7 +14,7 @@ const MovieDetailsOverlay = lazy(() => import('./MovieDetailsOverlay'));
 const EnhancedEpisodeList = lazy(() => import('./EnhancedEpisodeList'));
 import { motion, AnimatePresence } from 'framer-motion';
 import { debounce } from 'lodash';
-import { useWatchlist } from '../contexts/EnhancedWatchlistContext';
+import { useWatchlist } from '../contexts/WatchlistContext';
 const EnhancedSearchBar = lazy(() => import('./EnhancedSearchBar'));
 import searchHistoryService from '../services/searchHistoryService';
 import { formatRating } from '../utils/ratingUtils';

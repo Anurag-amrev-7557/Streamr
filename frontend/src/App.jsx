@@ -126,7 +126,7 @@ if (typeof document !== 'undefined') {
   document.head.appendChild(style);
 }
 // Dev-only: load test utilities dynamically to avoid production overhead
-import { EnhancedWatchlistProvider } from './contexts/EnhancedWatchlistContext'
+import { WatchlistProvider } from './contexts/WatchlistContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { ViewingProgressProvider } from './contexts/ViewingProgressContext'
 import { UndoProvider } from './contexts/UndoContext'
@@ -182,11 +182,6 @@ const ProgressTestComponent = lazy(() => import('./components/ProgressTestCompon
 const UndoTest = lazy(() => import('./components/UndoTest').catch(err => {
   console.error('Failed to load UndoTest:', err);
   return { default: () => <div>Failed to load UndoTest</div> };
-}));
-
-const EnhancedWatchlistTestPage = lazy(() => import('./pages/EnhancedWatchlistTestPage').catch(err => {
-  console.error('Failed to load EnhancedWatchlistTestPage:', err);
-  return { default: () => <div>Failed to load EnhancedWatchlistTestPage</div> };
 }));
 import { SocketProvider } from './contexts/SocketContext'
 // Lazy load components that are not immediately needed
@@ -518,7 +513,6 @@ const AppRoutes = () => {
         <Route path="/test-auth" element={<TestAuthPage />} />
         <Route path="/test-progress" element={<TestProgressPage />} />
         <Route path="/test-undo" element={<UndoTest />} />
-        <Route path="/test-enhanced-watchlist" element={<EnhancedWatchlistTestPage />} />
         <Route path="/verify-email/:token" element={<VerifyEmailPage />} />
         <Route path="/oauth-success" element={<OAuthSuccessPage />} />
         <Route path="/cache-dashboard" element={<CacheManagementDashboard />} />
@@ -619,23 +613,24 @@ const App = () => {
     <ErrorBoundary>
       <Router>
         <SocketProvider>
-                      <LoadingProvider>
-              <UndoProvider>
-                <AuthProvider>
-                  <EnhancedWatchlistProvider>
-                                          <ViewingProgressProvider>
-                        {/* Full Page Loader - renders at app level when active */}
-                        <FullPageLoader />
-                        <Layout />
-                        {/* Bottom Navigation (mobile) - conditionally rendered */}
-                        <ConditionalBottomNav />
-                        {/* Undo Manager - handles undo toasts */}
-                        <UndoManager />
-                      </ViewingProgressProvider>
-                  </EnhancedWatchlistProvider>
-                </AuthProvider>
-              </UndoProvider>
-            </LoadingProvider>
+          <LoadingProvider>
+            <UndoProvider>
+              <WatchlistProvider>
+                <ViewingProgressProvider>
+                  <AuthProvider>
+                    {/* Full Page Loader - renders at app level when active */}
+                    <FullPageLoader />
+                    <Layout />
+                    {/* Bottom Navigation (mobile) - conditionally rendered */}
+                    <ConditionalBottomNav />
+                    {/* Undo Manager - handles undo toasts */}
+                    <UndoManager />
+
+                  </AuthProvider>
+                </ViewingProgressProvider>
+              </WatchlistProvider>
+            </UndoProvider>
+          </LoadingProvider>
         </SocketProvider>
       </Router>
     </ErrorBoundary>

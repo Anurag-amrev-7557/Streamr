@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, lazy } from 'react';
 import { Link } from 'react-router-dom';
-import { useWatchlist } from '../contexts/EnhancedWatchlistContext';
+import { useWatchlist } from '../contexts/WatchlistContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {

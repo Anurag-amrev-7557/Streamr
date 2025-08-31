@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useUndo } from '../contexts/UndoContext';
 import { useViewingProgress } from '../contexts/ViewingProgressContext';
-import { useWatchlist } from '../contexts/EnhancedWatchlistContext';
+import { useWatchlist } from '../contexts/WatchlistContext';
 import UndoToast from './UndoToast';
 
 const MOBILE_NAV_HEIGHT_PX = 64; // approximate BottomNav height including padding

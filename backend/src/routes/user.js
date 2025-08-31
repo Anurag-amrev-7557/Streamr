@@ -56,45 +56,4 @@ router.post('/2fa/backup-codes/regenerate', rateLimiters.general, authenticate, 
 // @access  Private
 router.post('/2fa/backup-codes/verify', rateLimiters.general, authenticate, userController.verifyBackupCode);
 
-// Watch History and Wishlist Routes
-// @route   POST /api/user/watchlist
-// @desc    Add content to watchlist
-// @access  Private
-router.post('/watchlist', rateLimiters.general, authenticate, userController.addToWatchlist);
-
-// @route   DELETE /api/user/watchlist/:contentId
-// @desc    Remove content from watchlist
-// @access  Private
-router.delete('/watchlist/:contentId', rateLimiters.general, authenticate, userController.removeFromWatchlist);
-
-// @route   GET /api/user/watchlist
-// @desc    Get user's watchlist
-// @access  Private
-router.get('/watchlist', rateLimiters.general, authenticate, userController.getWatchlist);
-
-// @route   POST /api/user/watch-history
-// @desc    Update watch history
-// @access  Private
-router.post('/watch-history', rateLimiters.general, authenticate, userController.updateWatchHistory);
-
-// @route   GET /api/user/watch-history
-// @desc    Get user's watch history
-// @access  Private
-router.get('/watch-history', rateLimiters.general, authenticate, userController.getWatchHistory);
-
-// @route   DELETE /api/user/watch-history/:contentId
-// @desc    Remove item from watch history
-// @access  Private
-router.delete('/watch-history/:contentId', rateLimiters.general, authenticate, userController.removeFromWatchHistory);
-
-// @route   DELETE /api/user/watch-history
-// @desc    Clear entire watch history
-// @access  Private
-router.delete('/watch-history', rateLimiters.general, authenticate, userController.clearWatchHistory);
-
-// @route   GET /api/user/watch-stats
-// @desc    Get user's watch statistics
-// @access  Private
-router.get('/watch-stats', rateLimiters.general, authenticate, userController.getWatchStats);
-
 module.exports = router; 

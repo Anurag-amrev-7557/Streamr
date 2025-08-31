@@ -959,7 +959,6 @@ export const AuthProvider = ({ children }) => {
     error,
     rememberMe,
     sessionWarning,
-    isAuthenticated: !!user, // Add computed authentication state
     login,
     signup,
     logout,

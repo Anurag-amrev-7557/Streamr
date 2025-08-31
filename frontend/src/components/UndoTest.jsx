@@ -1,6 +1,6 @@
 import React from 'react';
 import { useViewingProgress } from '../contexts/ViewingProgressContext';
-import { useWatchlist } from '../contexts/EnhancedWatchlistContext';
+import { useWatchlist } from '../contexts/WatchlistContext';
 import { useUndo } from '../contexts/UndoContext';
 
 const UndoTest = () => {

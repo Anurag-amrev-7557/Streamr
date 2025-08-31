@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 const MovieDetailsOverlay = lazy(() => import('../components/MovieDetailsOverlay'));
 import { PageLoader } from '../components/Loader';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useWatchlist } from '../contexts/EnhancedWatchlistContext';
+import { useWatchlist } from '../contexts/WatchlistContext';
 import { useAuth } from '../contexts/AuthContext';
 import { formatRating } from '../utils/ratingUtils';
 

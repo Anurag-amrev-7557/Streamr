@@ -32,7 +32,7 @@ import {
 import { PageLoader, SectionLoader, CardLoader } from './Loader';
 import { useLoading } from '../contexts/LoadingContext';
 import Navbar from './Navbar';
-import { useWatchlist } from '../contexts/EnhancedWatchlistContext';
+import { useWatchlist } from '../contexts/WatchlistContext';
 const MovieDetailsOverlay = lazy(() => import('./MovieDetailsOverlay'));
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';

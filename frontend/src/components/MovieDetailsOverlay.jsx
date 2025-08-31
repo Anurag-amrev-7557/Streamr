@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, Suspense, lazy, useMem
 import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import { getMovieDetails, getMovieCredits, getMovieVideos, getSimilarMovies, getTVSeason, getTVSeasons } from '../services/tmdbService';
-import { useWatchlist } from '../contexts/EnhancedWatchlistContext';
+import { useWatchlist } from '../contexts/WatchlistContext';
 import { useViewingProgress } from '../contexts/ViewingProgressContext';
 import { Loader, PageLoader, SectionLoader, CardLoader } from './Loader';
 import { getStreamingUrl, isStreamingAvailable, needsEpisodeSelection, DEFAULT_STREAMING_SERVICE } from '../services/streamingService';

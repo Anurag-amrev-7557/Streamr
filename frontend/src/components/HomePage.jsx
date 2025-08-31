@@ -54,7 +54,7 @@ import AdBlockerRecommendationToast from './AdBlockerRecommendationToast';
 
 // Contexts and Hooks
 import { useLoading } from '../contexts/LoadingContext';
-import { useWatchlist } from '../contexts/EnhancedWatchlistContext';
+import { useWatchlist } from '../contexts/WatchlistContext';
 import { useViewingProgress } from '../contexts/ViewingProgressContext';
 import { useSmoothScroll, useScrollAnimation } from '../hooks/useSmoothScroll';
 import { usePersistentCache } from '../hooks/usePersistentCache';
