@@ -7,6 +7,7 @@ import { useWatchlistSafe } from '../contexts/WatchlistContext';
 import { formatRating } from '../utils/ratingUtils';
 import { getTmdbImageUrl } from '../utils/imageUtils.js';
 import ActiveUsers from './ActiveUsers';
+import SyncIndicator from './SyncIndicator';
 
 // Fix SERVER_URL construction for profile pictures
 const SERVER_URL = import.meta.env.VITE_API_URL 
@@ -3394,6 +3395,11 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
                           <p className="text-white font-medium text-lg">{user.name || 'User'}</p>
                           <p className="text-white/60 text-sm mt-0.5">{user.email}</p>
                         </div>
+                      </div>
+                      
+                      {/* Sync Status Indicator */}
+                      <div className="mt-4">
+                        <SyncIndicator className="w-full" />
                       </div>
                     </div>
 

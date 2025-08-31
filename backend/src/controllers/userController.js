@@ -485,3 +485,262 @@ exports.verifyBackupCode = async (req, res) => {
     res.status(500).json({ success: false, message: 'Error verifying backup code' });
   }
 }; 
+
+// Watchlist Controllers
+exports.getWatchlist = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        watchlist: user.watchlist || []
+      }
+    });
+  } catch (error) {
+    console.error('Get watchlist error:', error);
+    res.status(500).json({ success: false, message: 'Error fetching watchlist' });
+  }
+};
+
+exports.addToWatchlist = async (req, res) => {
+  try {
+    const { tmdbId, type, title, posterPath, backdropPath, overview, releaseDate, rating, genres } = req.body;
+    
+    if (!tmdbId || !type) {
+      return res.status(400).json({ success: false, message: 'TMDB ID and type are required' });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // Check if already in watchlist
+    const existingItem = user.watchlist.find(
+      item => item.tmdbId === tmdbId && item.type === type
+    );
+    
+    if (existingItem) {
+      return res.json({
+        success: true,
+        message: 'Content already in watchlist',
+        data: { watchlist: user.watchlist }
+      });
+    }
+
+    // Add to watchlist using the model method
+    await user.addToWatchlist({
+      tmdbId,
+      type,
+      title,
+      posterPath,
+      backdropPath,
+      overview,
+      releaseDate,
+      rating,
+      genres
+    });
+
+    res.json({
+      success: true,
+      message: 'Added to watchlist',
+      data: { watchlist: user.watchlist }
+    });
+  } catch (error) {
+    console.error('Add to watchlist error:', error);
+    res.status(500).json({ success: false, message: 'Error adding to watchlist' });
+  }
+};
+
+exports.removeFromWatchlist = async (req, res) => {
+  try {
+    const { tmdbId, type } = req.params;
+    
+    if (!tmdbId || !type) {
+      return res.status(400).json({ success: false, message: 'TMDB ID and type are required' });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // Remove from watchlist using the model method
+    await user.removeFromWatchlist(parseInt(tmdbId), type);
+
+    res.json({
+      success: true,
+      message: 'Removed from watchlist',
+      data: { watchlist: user.watchlist }
+    });
+  } catch (error) {
+    console.error('Remove from watchlist error:', error);
+    res.status(500).json({ success: false, message: 'Error removing from watchlist' });
+  }
+};
+
+exports.syncWatchlist = async (req, res) => {
+  try {
+    const { watchlist } = req.body;
+    
+    if (!Array.isArray(watchlist)) {
+      return res.status(400).json({ success: false, message: 'Watchlist must be an array' });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // Convert localStorage format to backend format
+    const newWatchlist = watchlist.map(item => ({
+      tmdbId: item.id || item.tmdbId,
+      type: item.type || item.media_type || 'movie',
+      title: item.title || item.name,
+      posterPath: item.poster_path || item.poster,
+      backdropPath: item.backdrop_path || item.backdrop,
+      overview: item.overview,
+      releaseDate: item.release_date || item.first_air_date,
+      rating: item.rating || item.vote_average,
+      genres: item.genres || item.genre_ids || [],
+      addedAt: item.addedAt ? new Date(item.addedAt) : new Date()
+    }));
+    
+    // Update user's watchlist
+    user.watchlist = newWatchlist;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Watchlist synced successfully',
+      data: { watchlist: user.watchlist }
+    });
+  } catch (error) {
+    console.error('Sync watchlist error:', error);
+    res.status(500).json({ success: false, message: 'Error syncing watchlist' });
+  }
+};
+
+// Viewing Progress Controllers
+exports.getViewingProgress = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        viewingProgress: user.watchHistory || []
+      }
+    });
+  } catch (error) {
+    console.error('Get viewing progress error:', error);
+    res.status(500).json({ success: false, message: 'Error fetching viewing progress' });
+  }
+};
+
+exports.updateViewingProgress = async (req, res) => {
+  try {
+    const { tmdbId, type, season, episode, progress, title, posterPath, backdropPath, episodeTitle } = req.body;
+    
+    if (!tmdbId || !type || typeof progress !== 'number') {
+      return res.status(400).json({ success: false, message: 'TMDB ID, type, and progress are required' });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // Update viewing progress using the model method
+    await user.updateWatchHistory({
+      tmdbId,
+      type,
+      season,
+      episode,
+      progress,
+      title,
+      posterPath,
+      backdropPath,
+      episodeTitle
+    });
+
+    res.json({
+      success: true,
+      message: 'Viewing progress updated',
+      data: { viewingProgress: user.watchHistory }
+    });
+  } catch (error) {
+    console.error('Update viewing progress error:', error);
+    res.status(500).json({ success: false, message: 'Error updating viewing progress' });
+  }
+};
+
+exports.syncViewingProgress = async (req, res) => {
+  try {
+    const { viewingProgress } = req.body;
+    
+    if (!viewingProgress || typeof viewingProgress !== 'object') {
+      return res.status(400).json({ success: false, message: 'Viewing progress must be an object' });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // Convert localStorage format to backend format
+    const newWatchHistory = [];
+    
+    for (const [key, data] of Object.entries(viewingProgress)) {
+      if (key.startsWith('movie_')) {
+        const tmdbId = parseInt(key.replace('movie_', ''));
+        newWatchHistory.push({
+          tmdbId,
+          type: 'movie',
+          title: data.title,
+          posterPath: data.poster_path || data.poster,
+          backdropPath: data.backdrop_path || data.backdrop,
+          progress: data.progress || 0,
+          lastWatched: data.lastWatched ? new Date(data.lastWatched) : new Date()
+        });
+      } else if (key.startsWith('tv_')) {
+        const parts = key.replace('tv_', '').split('_');
+        if (parts.length >= 3) {
+          const [tmdbId, season, episode] = parts;
+          newWatchHistory.push({
+            tmdbId: parseInt(tmdbId),
+            type: 'tv',
+            title: data.title,
+            posterPath: data.poster_path || data.poster,
+            backdropPath: data.backdrop_path || data.backdrop,
+            season: parseInt(season),
+            episode: parseInt(episode),
+            episodeTitle: data.episodeTitle,
+            progress: data.progress || 0,
+            lastWatched: data.lastWatched ? new Date(data.lastWatched) : new Date()
+          });
+        }
+      }
+    }
+
+    // Update user's watch history
+    user.watchHistory = newWatchHistory;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Viewing progress synced successfully',
+      data: { viewingProgress: user.watchHistory }
+    });
+  } catch (error) {
+    console.error('Sync viewing progress error:', error);
+    res.status(500).json({ success: false, message: 'Error syncing viewing progress' });
+  }
+}; 

@@ -615,9 +615,9 @@ const App = () => {
         <SocketProvider>
           <LoadingProvider>
             <UndoProvider>
-              <WatchlistProvider>
-                <ViewingProgressProvider>
-                  <AuthProvider>
+              <AuthProvider>
+                <WatchlistProvider>
+                  <ViewingProgressProvider>
                     {/* Full Page Loader - renders at app level when active */}
                     <FullPageLoader />
                     <Layout />
@@ -625,10 +625,9 @@ const App = () => {
                     <ConditionalBottomNav />
                     {/* Undo Manager - handles undo toasts */}
                     <UndoManager />
-
-                  </AuthProvider>
-                </ViewingProgressProvider>
-              </WatchlistProvider>
+                  </ViewingProgressProvider>
+                </WatchlistProvider>
+              </AuthProvider>
             </UndoProvider>
           </LoadingProvider>
         </SocketProvider>

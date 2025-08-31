@@ -1,4 +1,7 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import syncService from '../services/syncService';
+import { userAPI } from '../services/api';
+import { useAuth } from './AuthContext';
 import { useUndoSafe } from './UndoContext';
 
 const ViewingProgressContext = createContext();
@@ -15,71 +18,62 @@ export const ViewingProgressProvider = ({ children }) => {
   const [viewingProgress, setViewingProgress] = useState({});
   const [continueWatching, setContinueWatching] = useState([]);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState(null);
+  const { user } = useAuth();
+  const isMountedRef = useRef(true);
   
   // Get undo context safely
   const undoContext = useUndoSafe();
 
-  // Load viewing progress from localStorage on mount - OPTIMIZED
+  // Load viewing progress from localStorage on mount
   useEffect(() => {
     try {
       const savedProgress = localStorage.getItem('viewingProgress');
-      
       if (savedProgress) {
-        const parsed = JSON.parse(savedProgress);
-        setViewingProgress(parsed);
+        const parsedProgress = JSON.parse(savedProgress);
+        setViewingProgress(parsedProgress);
         
-        // Convert to continue watching array with TV show grouping - OPTIMIZED
-        const continueWatchingArray = Object.entries(parsed)
-          .map(([key, data]) => ({
-            id: data.id,
-            title: data.title,
-            type: data.type,
-            poster_path: data.poster_path,
-            backdrop_path: data.backdrop_path,
-            lastWatched: data.lastWatched,
-            season: data.season,
-            episode: data.episode,
-            episodeTitle: data.episodeTitle,
-            progress: data.progress || 0
-          }))
-          .sort((a, b) => new Date(b.lastWatched) - new Date(a.lastWatched));
-        
-        // Group TV shows by ID and keep only the most recent episode for each show - OPTIMIZED
-        const groupedItems = [];
-        const tvShows = new Map();
-        
-        // Process items in batches to prevent blocking
-        const processItems = () => {
-          continueWatchingArray.forEach(item => {
-            if (item.type === 'tv') {
-              // For TV shows, group by show ID and keep only the most recent episode
-              if (!tvShows.has(item.id) || new Date(item.lastWatched) > new Date(tvShows.get(item.id).lastWatched)) {
-                tvShows.set(item.id, item);
+        // Process continue watching array
+        const continueWatchingArray = Object.values(parsedProgress);
+        if (continueWatchingArray.length > 0) {
+          // Group TV shows by show ID and keep only the most recent episode
+          const tvShows = new Map();
+          const groupedItems = [];
+          
+          // Process items in batches to prevent blocking
+          const processItems = () => {
+            continueWatchingArray.forEach(item => {
+              if (item.type === 'tv') {
+                // For TV shows, group by show ID and keep only the most recent episode
+                if (!tvShows.has(item.id) || new Date(item.lastWatched) > new Date(tvShows.get(item.id).lastWatched)) {
+                  tvShows.set(item.id, item);
+                }
+              } else {
+                // For movies, add directly
+                groupedItems.push(item);
               }
-            } else {
-              // For movies, add directly
-              groupedItems.push(item);
-            }
-          });
+            });
+            
+            // Add the most recent episode for each TV show
+            tvShows.forEach(show => {
+              groupedItems.push(show);
+            });
+            
+            // Sort by last watched date and limit to 20 items
+            const finalArray = groupedItems
+              .sort((a, b) => new Date(b.lastWatched) - new Date(a.lastWatched))
+              .slice(0, 20);
+            
+            setContinueWatching(finalArray);
+          };
           
-          // Add the most recent episode for each TV show
-          tvShows.forEach(show => {
-            groupedItems.push(show);
-          });
-          
-          // Sort by last watched date and limit to 20 items
-          const finalArray = groupedItems
-            .sort((a, b) => new Date(b.lastWatched) - new Date(a.lastWatched))
-            .slice(0, 20);
-          
-          setContinueWatching(finalArray);
-        };
-        
-        // Use requestIdleCallback if available, otherwise setTimeout
-        if (window.requestIdleCallback) {
-          window.requestIdleCallback(processItems);
-        } else {
-          setTimeout(processItems, 0);
+          // Use requestIdleCallback if available, otherwise setTimeout
+          if (window.requestIdleCallback) {
+            window.requestIdleCallback(processItems);
+          } else {
+            setTimeout(processItems, 0);
+          }
         }
       }
       setIsInitialized(true);
@@ -89,18 +83,121 @@ export const ViewingProgressProvider = ({ children }) => {
     }
   }, []);
 
+  // Initialize sync service when user is authenticated
+  useEffect(() => {
+    if (user && isMountedRef.current) {
+      try {
+        // Load viewing progress from backend if available
+        loadViewingProgressFromBackend();
+        
+        // Set up periodic sync
+        const syncInterval = setInterval(() => {
+          if (user && navigator.onLine) {
+            syncViewingProgressWithBackend();
+          }
+        }, 30000); // Sync every 30 seconds when online
+        
+        return () => {
+          clearInterval(syncInterval);
+        };
+      } catch (error) {
+        console.error('Error initializing viewing progress sync:', error);
+      }
+    }
+    
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, [user]);
+
+  // Load viewing progress from backend
+  const loadViewingProgressFromBackend = async () => {
+    if (!user) return;
+    
+    try {
+      setIsSyncing(true);
+      const response = await userAPI.getViewingProgress();
+      
+      if (response.success && response.data.viewingProgress) {
+        const backendProgress = {};
+        
+        response.data.viewingProgress.forEach(item => {
+          if (item.type === 'movie') {
+            const key = `movie_${item.tmdbId}`;
+            backendProgress[key] = {
+              id: item.tmdbId,
+              type: item.type,
+              title: item.title,
+              poster_path: item.posterPath,
+              backdrop_path: item.backdropPath,
+              progress: item.progress,
+              lastWatched: item.lastWatched
+            };
+          } else if (item.type === 'tv') {
+            const key = `tv_${item.tmdbId}_${item.season}_${item.episode}`;
+            backendProgress[key] = {
+              id: item.tmdbId,
+              type: item.type,
+              title: item.title,
+              poster_path: item.posterPath,
+              backdrop_path: item.backdropPath,
+              season: item.season,
+              episode: item.episode,
+              episodeTitle: item.episodeTitle,
+              progress: item.progress,
+              lastWatched: item.lastWatched
+            };
+          }
+        });
+        
+        // Merge with local progress, prioritizing backend data
+        const mergedProgress = { ...viewingProgress, ...backendProgress };
+        setViewingProgress(mergedProgress);
+        
+        // Update localStorage with merged data
+        localStorage.setItem('viewingProgress', JSON.stringify(mergedProgress));
+        
+        console.log('Viewing progress loaded from backend:', Object.keys(backendProgress).length, 'items');
+      }
+    } catch (error) {
+      console.error('Error loading viewing progress from backend:', error);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Sync viewing progress with backend
+  const syncViewingProgressWithBackend = async () => {
+    if (!user || !navigator.onLine) return;
+    
+    try {
+      setIsSyncing(true);
+      await syncService.syncViewingProgress();
+      setLastSyncTime(new Date());
+    } catch (error) {
+      console.error('Error syncing viewing progress with backend:', error);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   // Save viewing progress to localStorage whenever it changes
   useEffect(() => {
     // Don't save during initial load
-    if (!isInitialized) return;
+    if (!isInitialized || !isMountedRef.current) return;
     
     try {
       // Always save the current state to localStorage (even if empty)
       localStorage.setItem('viewingProgress', JSON.stringify(viewingProgress));
+      
+      // Trigger sync with backend if user is authenticated
+      if (user && navigator.onLine) {
+        syncService.queueSync('viewingProgress');
+      }
     } catch (error) {
       console.error('Error saving viewing progress:', error);
     }
-  }, [viewingProgress, isInitialized]);
+  }, [viewingProgress, isInitialized, user]);
 
   // Helper function to extract path from full TMDB URL
   const extractPathFromUrl = (url) => {
@@ -139,24 +236,30 @@ export const ViewingProgressProvider = ({ children }) => {
 
   // Start watching a movie
   const startWatchingMovie = useCallback((movie) => {
-    if (!movie || !movie.id) return;
+    console.log('🎬 startWatchingMovie called with:', {
+      movie: movie?.title || movie?.name,
+      movieId: movie?.id,
+      hasMovie: !!movie,
+      hasMovieId: !!movie?.id
+    });
 
-    console.log('🎬 startWatchingMovie called with:', movie);
+    if (!movie || !movie.id) {
+      console.warn('❌ startWatchingMovie: Missing movie data');
+      return;
+    }
 
     const progressKey = `movie_${movie.id}`;
     const now = new Date().toISOString();
     
     const movieProgress = {
       id: movie.id,
-      title: movie.title,
       type: 'movie',
-      poster_path: extractPathFromUrl(movie.poster_path || movie.poster),
-      backdrop_path: extractPathFromUrl(movie.backdrop_path || movie.backdrop),
-      lastWatched: now,
-      progress: 0
+      title: movie.title || movie.name,
+      poster_path: movie.poster_path || movie.poster,
+      backdrop_path: movie.backdrop_path || movie.backdrop,
+      progress: 0,
+      lastWatched: now
     };
-
-    console.log('🎬 movieProgress created:', movieProgress);
 
     setViewingProgress(prev => ({
       ...prev,
@@ -165,10 +268,29 @@ export const ViewingProgressProvider = ({ children }) => {
 
     // Update continue watching list
     setContinueWatching(prev => {
-      const filtered = prev.filter(item => !(item.id === movie.id && item.type === 'movie'));
-      return [movieProgress, ...filtered].slice(0, 20);
+      const existingIndex = prev.findIndex(item => 
+        item.id === movie.id && item.type === 'movie'
+      );
+
+      if (existingIndex > -1) {
+        // Update existing entry
+        const updated = [...prev];
+        updated[existingIndex] = {
+          ...updated[existingIndex],
+          ...movieProgress
+        };
+        return updated;
+      } else {
+        // Add new entry at the beginning
+        return [movieProgress, ...prev];
+      }
     });
-  }, []);
+
+    // Sync with backend immediately
+    if (user) {
+      syncViewingProgressWithBackend();
+    }
+  }, [user]);
 
   // Start watching a TV episode
   const startWatchingEpisode = useCallback((show, season, episode, episodeData = null) => {
@@ -226,32 +348,16 @@ export const ViewingProgressProvider = ({ children }) => {
     
     const episodeProgress = {
       id: show.id,
-      title: show.name || show.title,
       type: 'tv',
+      title: show.name || show.title,
       poster_path: extractedPosterPath,
       backdrop_path: extractedBackdropPath,
-      lastWatched: now,
-      season: season,
-      episode: episode,
-      episodeTitle: episodeData?.name || `Episode ${episode}`,
-      progress: 0
+      season,
+      episode,
+      episodeTitle: episodeData?.name || null,
+      progress: 0,
+      lastWatched: now
     };
-
-    console.log('🎬 episodeProgress created:', episodeProgress);
-    
-    // Mobile-specific debugging for TV show storage
-    if (typeof window !== 'undefined' && window.innerWidth < 768) {
-      console.log('📱 Mobile TV Show storage debugging:', {
-        id: show.id,
-        title: show.name || show.title,
-        poster_path: extractedPosterPath,
-        backdrop_path: extractedBackdropPath,
-        hasPosterPath: !!extractedPosterPath,
-        hasBackdropPath: !!extractedBackdropPath,
-        season,
-        episode
-      });
-    }
 
     setViewingProgress(prev => ({
       ...prev,
@@ -260,15 +366,32 @@ export const ViewingProgressProvider = ({ children }) => {
 
     // Update continue watching list
     setContinueWatching(prev => {
-      // For TV shows, remove ALL episodes of the same show and add only the latest one
-      const filtered = prev.filter(item => 
-        !(item.id === show.id && item.type === 'tv')
+      const existingIndex = prev.findIndex(item => 
+        item.id === show.id && 
+        item.type === 'tv' && 
+        item.season === season && 
+        item.episode === episode
       );
-      const newList = [episodeProgress, ...filtered].slice(0, 20);
-      console.log('🎬 Updated continue watching list:', newList.length, 'items');
-      return newList;
+
+      if (existingIndex > -1) {
+        // Update existing entry
+        const updated = [...prev];
+        updated[existingIndex] = {
+          ...updated[existingIndex],
+          ...episodeProgress
+        };
+        return updated;
+      } else {
+        // Add new entry at the beginning
+        return [episodeProgress, ...prev];
+      }
     });
-  }, []);
+
+    // Sync with backend immediately
+    if (user) {
+      syncViewingProgressWithBackend();
+    }
+  }, [user]);
 
   // Update viewing progress
   const updateProgress = useCallback((id, type, season = null, episode = null, progress = 0) => {
@@ -324,7 +447,12 @@ export const ViewingProgressProvider = ({ children }) => {
       console.log('📊 Updated continue watching list with progress:', sorted.length, 'items');
       return sorted;
     });
-  }, []);
+
+    // Sync with backend immediately
+    if (user) {
+      syncViewingProgressWithBackend();
+    }
+  }, [user]);
 
   // Remove from continue watching
   const removeFromContinueWatching = useCallback((id, type, season = null, episode = null) => {
@@ -574,7 +702,10 @@ export const ViewingProgressProvider = ({ children }) => {
     clearAllContinueWatching,
     hasContinueWatching,
     refreshFromStorage,
-    isInitialized
+    isInitialized,
+    isSyncing,
+    lastSyncTime,
+    syncViewingProgressWithBackend
   };
 
   return (

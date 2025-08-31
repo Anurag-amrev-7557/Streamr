@@ -25,6 +25,43 @@ router.post('/profile/picture', rateLimiters.general, authenticate, upload.singl
 // @access  Private
 router.put('/preferences', rateLimiters.general, authenticate, userController.updatePreferences);
 
+// Watchlist Routes
+// @route   GET /api/user/watchlist
+// @desc    Get user watchlist
+// @access  Private
+router.get('/watchlist', rateLimiters.general, authenticate, userController.getWatchlist);
+
+// @route   POST /api/user/watchlist
+// @desc    Add item to watchlist
+// @access  Private
+router.post('/watchlist', rateLimiters.general, authenticate, userController.addToWatchlist);
+
+// @route   DELETE /api/user/watchlist/:tmdbId/:type
+// @desc    Remove item from watchlist
+// @access  Private
+router.delete('/watchlist/:tmdbId/:type', rateLimiters.general, authenticate, userController.removeFromWatchlist);
+
+// @route   POST /api/user/watchlist/sync
+// @desc    Sync watchlist from localStorage
+// @access  Private
+router.post('/watchlist/sync', rateLimiters.general, authenticate, userController.syncWatchlist);
+
+// Viewing Progress Routes
+// @route   GET /api/user/viewing-progress
+// @desc    Get user viewing progress
+// @access  Private
+router.get('/viewing-progress', rateLimiters.general, authenticate, userController.getViewingProgress);
+
+// @route   POST /api/user/viewing-progress
+// @desc    Update viewing progress
+// @access  Private
+router.post('/viewing-progress', rateLimiters.general, authenticate, userController.updateViewingProgress);
+
+// @route   POST /api/user/viewing-progress/sync
+// @desc    Sync viewing progress from localStorage
+// @access  Private
+router.post('/viewing-progress/sync', rateLimiters.general, authenticate, userController.syncViewingProgress);
+
 // 2FA Routes
 // @route   POST /api/user/2fa/setup
 // @desc    Setup 2FA - generate secret and QR code

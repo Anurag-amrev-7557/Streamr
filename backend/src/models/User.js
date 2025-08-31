@@ -110,17 +110,48 @@ const userSchema = new mongoose.Schema({
     }
   }],
   watchlist: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Content'
+    tmdbId: {
+      type: Number,
+      required: true
+    },
+    type: {
+      type: String,
+      enum: ['movie', 'tv'],
+      required: true
+    },
+    title: String,
+    posterPath: String,
+    backdropPath: String,
+    overview: String,
+    releaseDate: String,
+    rating: Number,
+    genres: [String],
+    addedAt: {
+      type: Date,
+      default: Date.now
+    }
   }],
   watchHistory: [{
-    content: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Content'
+    tmdbId: {
+      type: Number,
+      required: true
     },
+    type: {
+      type: String,
+      enum: ['movie', 'tv'],
+      required: true
+    },
+    title: String,
+    posterPath: String,
+    backdropPath: String,
+    season: Number,
+    episode: Number,
+    episodeTitle: String,
     progress: {
       type: Number,
-      default: 0
+      default: 0,
+      min: 0,
+      max: 100
     },
     lastWatched: {
       type: Date,
@@ -183,36 +214,70 @@ userSchema.methods.generatePasswordResetToken = function() {
 };
 
 // Method to add content to watchlist
-userSchema.methods.addToWatchlist = async function(contentId) {
-  if (!this.watchlist.includes(contentId)) {
-    this.watchlist.push(contentId);
-    await this.save();
+userSchema.methods.addToWatchlist = async function(contentData) {
+  const { tmdbId, type } = contentData;
+  
+  // Check if already in watchlist
+  const existingIndex = this.watchlist.findIndex(
+    item => item.tmdbId === tmdbId && item.type === type
+  );
+  
+  if (existingIndex > -1) {
+    // Update existing entry
+    this.watchlist[existingIndex] = {
+      ...this.watchlist[existingIndex],
+      ...contentData,
+      addedAt: new Date()
+    };
+  } else {
+    // Add new entry
+    this.watchlist.push({
+      ...contentData,
+      addedAt: new Date()
+    });
   }
+  
+  await this.save();
 };
 
 // Method to remove content from watchlist
-userSchema.methods.removeFromWatchlist = async function(contentId) {
-  this.watchlist = this.watchlist.filter(id => id.toString() !== contentId.toString());
+userSchema.methods.removeFromWatchlist = async function(tmdbId, type) {
+  this.watchlist = this.watchlist.filter(
+    item => !(item.tmdbId === tmdbId && item.type === type)
+  );
   await this.save();
 };
 
 // Method to update watch history
-userSchema.methods.updateWatchHistory = async function(contentId, progress) {
-  const historyIndex = this.watchHistory.findIndex(
-    item => item.content.toString() === contentId.toString()
-  );
-
-  if (historyIndex > -1) {
-    this.watchHistory[historyIndex].progress = progress;
-    this.watchHistory[historyIndex].lastWatched = Date.now();
+userSchema.methods.updateWatchHistory = async function(contentData) {
+  const { tmdbId, type, season, episode } = contentData;
+  
+  // Find existing entry
+  const existingIndex = this.watchHistory.findIndex(item => {
+    if (type === 'tv') {
+      return item.tmdbId === tmdbId && 
+             item.type === type && 
+             item.season === season && 
+             item.episode === episode;
+    }
+    return item.tmdbId === tmdbId && item.type === type;
+  });
+  
+  if (existingIndex > -1) {
+    // Update existing entry
+    this.watchHistory[existingIndex] = {
+      ...this.watchHistory[existingIndex],
+      ...contentData,
+      lastWatched: new Date()
+    };
   } else {
+    // Add new entry
     this.watchHistory.push({
-      content: contentId,
-      progress,
-      lastWatched: Date.now()
+      ...contentData,
+      lastWatched: new Date()
     });
   }
-
+  
   await this.save();
 };
 
