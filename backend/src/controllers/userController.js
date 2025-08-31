@@ -29,7 +29,10 @@ exports.getProfile = async (req, res) => {
         twoFactorEnabled: user.twoFactorEnabled,
         createdAt: user.createdAt,
         googleId: user.googleId,
-        githubId: user.githubId
+        githubId: user.githubId,
+        watchlist: user.watchlist,
+        viewingProgress: user.viewingProgress,
+        watchHistory: user.watchHistory
       }
     });
   } catch (error) {
