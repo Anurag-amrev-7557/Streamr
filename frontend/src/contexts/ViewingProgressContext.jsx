@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useUndoSafe } from './UndoContext';
 import { userAPI } from '../services/api';
+import { getApiUrl } from '../config/api';
 
 const ViewingProgressContext = createContext();
 
@@ -100,16 +101,45 @@ export const ViewingProgressProvider = ({ children }) => {
   const loadFromBackendForSync = useCallback(async () => {
     try {
       const token = localStorage.getItem('accessToken');
-      if (token) {
-        const response = await userAPI.getViewingProgress();
-        if (response.success && response.data.viewingProgress) {
-          // Update local state with backend data
-          setViewingProgress(response.data.viewingProgress);
-          console.log('Loaded viewing progress from backend:', Object.keys(response.data.viewingProgress).length, 'items');
+      if (!token) {
+        console.log('No access token found, skipping backend viewing progress load');
+        return;
+      }
+      
+      // Check if token is valid by making a simple auth check using profile endpoint
+      try {
+        const authCheck = await fetch(`${getApiUrl()}/user/profile`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        if (!authCheck.ok) {
+          console.log('Token validation failed, clearing token and skipping backend load');
+          localStorage.removeItem('accessToken');
+          return;
         }
+      } catch (authError) {
+        console.log('Token validation error, skipping backend load:', authError);
+        return;
+      }
+      
+      const response = await userAPI.getViewingProgress();
+      if (response.success && response.data.viewingProgress) {
+        // Update local state with backend data
+        setViewingProgress(response.data.viewingProgress);
+        console.log('Loaded viewing progress from backend:', Object.keys(response.data.viewingProgress).length, 'items');
       }
     } catch (error) {
       console.error('Failed to load viewing progress from backend:', error);
+      
+      // Check if it's an authentication error
+      if (error.message && (error.message.includes('401') || error.message.includes('Unauthorized'))) {
+        console.log('Authentication error, clearing token and using local data');
+        localStorage.removeItem('accessToken');
+      }
+      
       // Fall back to localStorage
     }
   }, []);

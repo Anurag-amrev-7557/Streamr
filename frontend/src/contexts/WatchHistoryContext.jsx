@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { useUndoSafe } from './UndoContext';
 import { userAPI } from '../services/api';
+import { getApiUrl } from '../config/api';
 
 const WatchHistoryContext = createContext();
 
@@ -59,29 +60,58 @@ export const WatchHistoryProvider = ({ children }) => {
   const loadFromBackendForSync = useCallback(async () => {
     try {
       const token = localStorage.getItem('accessToken');
-      if (token) {
-        setIsSyncing(true);
-        setSyncError(null);
-        
-        const response = await userAPI.getWatchHistory();
-        if (response.success && response.data.watchHistory) {
-          // Update local state with backend data
-          const backendData = response.data.watchHistory;
-          isUpdatingFromBackend.current = true;
-          setWatchHistory(backendData);
-          setLastBackendSync(new Date().toISOString());
-          console.log('Loaded watch history from backend:', backendData.length, 'items');
-          
-          // Update localStorage with backend data
-          try {
-            localStorage.setItem('watchHistory', JSON.stringify(backendData));
-          } catch (error) {
-            console.error('Error updating localStorage with backend data:', error);
+      if (!token) {
+        console.log('No access token found, skipping backend watch history load');
+        return;
+      }
+      
+      // Check if token is valid by making a simple auth check using profile endpoint
+      try {
+        const authCheck = await fetch(`${getApiUrl()}/user/profile`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`
           }
+        });
+        
+        if (!authCheck.ok) {
+          console.log('Token validation failed, clearing token and skipping backend load');
+          localStorage.removeItem('accessToken');
+          return;
+        }
+      } catch (authError) {
+        console.log('Token validation error, skipping backend load:', authError);
+        return;
+      }
+      
+      setIsSyncing(true);
+      setSyncError(null);
+      
+      const response = await userAPI.getWatchHistory();
+      if (response.success && response.data.watchHistory) {
+        // Update local state with backend data
+        const backendData = response.data.watchHistory;
+        isUpdatingFromBackend.current = true;
+        setWatchHistory(backendData);
+        setLastBackendSync(new Date().toISOString());
+        console.log('Loaded watch history from backend:', backendData.length, 'items');
+        
+        // Update localStorage with backend data
+        try {
+          localStorage.setItem('watchHistory', JSON.stringify(backendData));
+        } catch (error) {
+          console.error('Error updating localStorage with backend data:', error);
         }
       }
     } catch (error) {
       console.error('Failed to load watch history from backend:', error);
+      
+      // Check if it's an authentication error
+      if (error.message && (error.message.includes('401') || error.message.includes('Unauthorized'))) {
+        console.log('Authentication error, clearing token and using local data');
+        localStorage.removeItem('accessToken');
+      }
+      
       setSyncError(error.message);
       // Fall back to localStorage
     } finally {
@@ -124,35 +154,63 @@ export const WatchHistoryProvider = ({ children }) => {
   useEffect(() => {
     const interval = setInterval(async () => {
       const token = localStorage.getItem('accessToken');
-      if (token && isInitialized && !isSyncing) {
-        try {
-          console.log('Performing periodic watch history refresh from backend');
-          const response = await userAPI.getWatchHistory();
-          if (response.success && response.data.watchHistory) {
-            const backendData = response.data.watchHistory;
+      if (!token || !isInitialized || isSyncing) {
+        return;
+      }
+      
+      // Check if token is valid before making the request using profile endpoint
+      try {
+        const authCheck = await fetch(`${getApiUrl()}/user/profile`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        if (!authCheck.ok) {
+          console.log('Token validation failed during periodic refresh, clearing token');
+          localStorage.removeItem('accessToken');
+          return;
+        }
+      } catch (authError) {
+        console.log('Token validation error during periodic refresh:', authError);
+        return;
+      }
+      
+      try {
+        console.log('Performing periodic watch history refresh from backend');
+        const response = await userAPI.getWatchHistory();
+        if (response.success && response.data.watchHistory) {
+          const backendData = response.data.watchHistory;
+          
+          // Only update if the data is different
+          const currentData = JSON.stringify(watchHistory);
+          const newData = JSON.stringify(backendData);
+          
+          if (currentData !== newData) {
+            console.log('Watch history data changed on backend, updating local state');
+            isUpdatingFromBackend.current = true;
+            setWatchHistory(backendData);
+            setLastBackendSync(new Date().toISOString());
             
-            // Only update if the data is different
-            const currentData = JSON.stringify(watchHistory);
-            const newData = JSON.stringify(backendData);
-            
-            if (currentData !== newData) {
-              console.log('Watch history data changed on backend, updating local state');
-              isUpdatingFromBackend.current = true;
-              setWatchHistory(backendData);
-              setLastBackendSync(new Date().toISOString());
-              
-              // Update localStorage with backend data
-              try {
-                localStorage.setItem('watchHistory', JSON.stringify(backendData));
-              } catch (error) {
-                console.error('Error updating localStorage with backend data:', error);
-              }
+            // Update localStorage with backend data
+            try {
+              localStorage.setItem('watchHistory', JSON.stringify(backendData));
+            } catch (error) {
+              console.error('Error updating localStorage with backend data:', error);
             }
           }
-        } catch (error) {
-          console.error('Periodic refresh failed:', error);
-          // Don't set sync error for background refresh
         }
+      } catch (error) {
+        console.error('Periodic refresh failed:', error);
+        
+        // Check if it's an authentication error
+        if (error.message && (error.message.includes('401') || error.message.includes('Unauthorized'))) {
+          console.log('Authentication error during periodic refresh, clearing token');
+          localStorage.removeItem('accessToken');
+        }
+        
+        // Don't set sync error for background refresh
       }
     }, 30000); // 30 seconds
 

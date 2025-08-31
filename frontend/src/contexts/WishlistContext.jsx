@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { toNumericRating } from '../utils/ratingUtils';
 import { useUndoSafe } from './UndoContext';
 import { userAPI } from '../services/api';
+import { getApiUrl } from '../config/api';
 
 // Genre mapping for converting TMDB genre IDs to names
 const GENRE_MAP = {
@@ -118,76 +119,108 @@ export const WishlistProvider = ({ children }) => {
     const loadFromBackend = async () => {
       try {
         const token = localStorage.getItem('accessToken');
-        if (token) {
-          setIsSyncing(true);
-          setSyncError(null);
+        if (!token) {
+          console.log('No access token found, skipping backend wishlist load');
+          setIsInitialized(true);
+          return;
+        }
+        
+        // Check if token is valid by making a simple auth check using profile endpoint
+        try {
+          const authCheck = await fetch(`${getApiUrl()}/user/profile`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
           
-          const response = await userAPI.getWishlist();
-          if (response.success && response.data.wishlist) {
-            // Update local state with backend data
-            const backendData = response.data.wishlist.map(movie => ({
-              ...movie,
-              genres: formatGenres(movie.genres || [])
-            }));
+          if (!authCheck.ok) {
+            console.log('Token validation failed, clearing token and skipping backend load');
+            localStorage.removeItem('accessToken');
+            setIsInitialized(true);
+            return;
+          }
+        } catch (authError) {
+          console.log('Token validation error, skipping backend load:', authError);
+          setIsInitialized(true);
+          return;
+        }
+        
+        setIsSyncing(true);
+        setSyncError(null);
+        
+        const response = await userAPI.getWishlist();
+        if (response.success && response.data.wishlist) {
+          // Update local state with backend data
+          const backendData = response.data.wishlist.map(movie => ({
+            ...movie,
+            genres: formatGenres(movie.genres || [])
+          }));
+          
+          // SAFEGUARD: Check if backend is empty but local storage has data
+          if (backendData.length === 0 && wishlist.length > 0) {
+            console.log('Backend returned empty wishlist on initial load but local has data. Preserving local data.');
+            console.log('Local wishlist has', wishlist.length, 'items');
             
-            // SAFEGUARD: Check if backend is empty but local storage has data
-            if (backendData.length === 0 && wishlist.length > 0) {
-              console.log('Backend returned empty wishlist on initial load but local has data. Preserving local data.');
-              console.log('Local wishlist has', wishlist.length, 'items');
-              
-              // Try to restore local data to backend
-              try {
-                console.log('Attempting to restore local wishlist to backend on initial load');
-                await userAPI.syncWishlist(wishlist);
-                console.log('Successfully restored local wishlist to backend on initial load');
-                setLastBackendSync(new Date().toISOString());
-              } catch (syncError) {
-                console.error('Failed to restore local wishlist to backend on initial load:', syncError);
-              }
-              
-              // Don't overwrite local data
-              setIsSyncing(false);
-              setIsInitialized(true);
-              return;
-            }
-            
-            // Update local state with backend data
-            isUpdatingFromBackend.current = true;
-            setWishlist(backendData);
-            setLastBackendSync(new Date().toISOString());
-            console.log('Loaded wishlist from backend:', backendData.length, 'items');
-            
-            // Update localStorage with backend data
+            // Try to restore local data to backend
             try {
-              localStorage.setItem('wishlist', JSON.stringify(backendData));
-            } catch (error) {
-              console.error('Error updating localStorage with backend data:', error);
+              console.log('Attempting to restore local wishlist to backend on initial load');
+              await userAPI.syncWishlist(wishlist);
+              console.log('Successfully restored local wishlist to backend on initial load');
+              setLastBackendSync(new Date().toISOString());
+            } catch (syncError) {
+              console.error('Failed to restore local wishlist to backend on initial load:', syncError);
             }
-          } else if (response.success && response.data.wishlist && response.data.wishlist.length === 0) {
-            // Backend explicitly returned empty array
-            console.log('Backend returned empty wishlist on initial load');
             
-            // Only clear local data if it was also empty
-            if (wishlist.length === 0) {
-              console.log('Local wishlist was already empty, no action needed');
-            } else {
-              console.log('Backend returned empty wishlist but local has data. This might indicate a backend issue.');
-              console.log('Local wishlist has', wishlist.length, 'items - preserving local data');
-              
-              // Try to restore local data to backend
-              try {
-                console.log('Attempting to restore local wishlist to backend on initial load');
-                await userAPI.syncWishlist(wishlist);
-                console.log('Successfully restored local wishlist to backend on initial load');
-                setLastBackendSync(new Date().toISOString());
-              } catch (syncError) {
-                console.error('Failed to restore local wishlist to backend on initial load:', syncError);
-              }
+            // Don't overwrite local data
+            setIsSyncing(false);
+            setIsInitialized(true);
+            return;
+          }
+          
+          // Update local state with backend data
+          isUpdatingFromBackend.current = true;
+          setWishlist(backendData);
+          setLastBackendSync(new Date().toISOString());
+          console.log('Loaded wishlist from backend:', backendData.length, 'items');
+          
+          // Update localStorage with backend data
+          try {
+            localStorage.setItem('wishlist', JSON.stringify(backendData));
+          } catch (error) {
+            console.error('Error updating localStorage with backend data:', error);
+          }
+        } else if (response.success && response.data.wishlist && response.data.wishlist.length === 0) {
+          // Backend explicitly returned empty array
+          console.log('Backend returned empty wishlist on initial load');
+          
+          // Only clear local data if it was also empty
+          if (wishlist.length === 0) {
+            console.log('Local wishlist was already empty, no action needed');
+          } else {
+            console.log('Backend returned empty wishlist but local has data. This might indicate a backend issue.');
+            console.log('Local wishlist has', wishlist.length, 'items - preserving local data');
+            
+            // Try to restore local data to backend
+            try {
+              console.log('Attempting to restore local wishlist to backend on initial load');
+              await userAPI.syncWishlist(wishlist);
+              console.log('Successfully restored local wishlist to backend on initial load');
+              setLastBackendSync(new Date().toISOString());
+            } catch (syncError) {
+              console.error('Failed to restore local wishlist to backend on initial load:', syncError);
             }
           }
         }
       } catch (error) {
         console.error('Failed to load wishlist from backend:', error);
+        
+        // Check if it's an authentication error
+        if (error.message && (error.message.includes('401') || error.message.includes('Unauthorized'))) {
+          console.log('Authentication error, clearing token and using local data');
+          localStorage.removeItem('accessToken');
+        }
+        
         setSyncError(error.message);
         // Don't show error toast for background loading
       } finally {
