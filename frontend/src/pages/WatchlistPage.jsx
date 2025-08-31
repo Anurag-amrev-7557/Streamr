@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useWatchlist } from '../contexts/WatchlistContext';
 import { useAuth } from '../contexts/AuthContext';
 import { formatRating } from '../utils/ratingUtils';
+import { useStreamingIconAnimation } from '../hooks/useStreamingIconAnimation';
 
 const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p';
 const PLACEHOLDER_IMAGE = 'https://placehold.co/500x750/1a1d21/ffffff?text=No+Image';
@@ -85,6 +86,9 @@ const WatchlistPage = () => {
   const navigate = useNavigate();
   const sortDropdownRef = useRef(null);
   const clearDialogRef = useRef(null);
+  
+  // Streaming icon animation hook with rubber band effect for tabs
+  const { getRubberBandVariants, getBackgroundTransition } = useStreamingIconAnimation(activeTab);
 
   // Set loading to false after initial render
   useEffect(() => {
@@ -301,8 +305,8 @@ const WatchlistPage = () => {
 
   // Dynamic label and dialog text for clear button
   const getClearLabel = () => {
-    if (activeTab === 'movie') return 'Clear Movies';
-    if (activeTab === 'tv') return 'Clear TV Shows';
+    if (activeTab === 'movie') return 'Clear All';
+    if (activeTab === 'tv') return 'Clear All';
     return 'Clear All';
   };
   const getClearDialogTitle = () => {
@@ -479,7 +483,7 @@ const WatchlistPage = () => {
                     className="absolute inset-0 rounded-full z-0"
                     initial={{ backgroundColor: 'rgba(255,255,255,0)' }}
                     whileHover={{ backgroundColor: 'rgba(255,255,255,0.85)' }}
-                    transition={{ type: 'spring', stiffness: 200, damping: 25 }}
+                    transition={getBackgroundTransition()}
                   />
                 </motion.button>
               )}
@@ -505,7 +509,11 @@ const WatchlistPage = () => {
                       <motion.div
                         layoutId="activeWatchlistTab"
                         className="absolute inset-0 bg-white rounded-full"
-                        transition={{ type: 'spring', stiffness: 200, damping: 25 }}
+                        variants={getRubberBandVariants()}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                        transition={getBackgroundTransition()}
                       />
                     )}
                   </button>
@@ -529,10 +537,11 @@ const WatchlistPage = () => {
                         key="sortby-bg-open"
                         layoutId="activeWatchlistTabSort"
                         className="absolute inset-0 bg-white rounded-full z-0"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                        variants={getRubberBandVariants()}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                        transition={getBackgroundTransition()}
                       />
                     ) : (
                       <motion.div
@@ -540,7 +549,7 @@ const WatchlistPage = () => {
                         className="absolute inset-0 rounded-full z-0"
                         initial={{ backgroundColor: 'rgba(255,255,255,0)' }}
                         whileHover={{ backgroundColor: 'rgba(255,255,255,0.13)' }}
-                        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                        transition={getBackgroundTransition()}
                       />
                     )}
                   </AnimatePresence>
