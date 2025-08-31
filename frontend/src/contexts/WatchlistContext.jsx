@@ -178,9 +178,15 @@ export const WatchlistProvider = ({ children }) => {
           return;
         }
 
-        // Check if we have pending changes
-        if (pendingChanges.current.size > 0) {
-          console.log('Skipping sync due to pending changes:', pendingChanges.current.size);
+        // Check if we have pending changes - but allow sync if they're old
+        const now = Date.now();
+        const hasRecentChanges = Array.from(pendingChanges.current).some(changeId => {
+          const timestamp = parseInt(changeId.split('_').pop());
+          return now - timestamp < 2000; // Allow sync if changes are older than 2 seconds
+        });
+        
+        if (pendingChanges.current.size > 0 && hasRecentChanges) {
+          console.log('Skipping sync due to recent pending changes:', pendingChanges.current.size);
           return;
         }
 
@@ -191,8 +197,12 @@ export const WatchlistProvider = ({ children }) => {
         setLastBackendSync(new Date().toISOString());
         console.log('Watchlist automatically synced with backend');
         
-        // Clear any pending changes after successful sync
-        pendingChanges.current.clear();
+        // Clear any old pending changes after successful sync
+        const oldChanges = Array.from(pendingChanges.current).filter(changeId => {
+          const timestamp = parseInt(changeId.split('_').pop());
+          return now - timestamp > 2000; // Remove changes older than 2 seconds
+        });
+        oldChanges.forEach(changeId => pendingChanges.current.delete(changeId));
         
       } catch (error) {
         console.error('Auto-sync failed:', error);
@@ -241,7 +251,7 @@ export const WatchlistProvider = ({ children }) => {
     return true;
   };
 
-  const addToWatchlist = (movie) => {
+  const addToWatchlist = async (movie) => {
     console.log('Attempting to add movie to watchlist:', movie);
     
     // Validate movie data
@@ -253,6 +263,31 @@ export const WatchlistProvider = ({ children }) => {
     // Mark this change as pending
     const changeId = `add_${movie.id}_${Date.now()}`;
     pendingChanges.current.add(changeId);
+    console.log('Added pending change for addition:', changeId, 'Total pending:', pendingChanges.current.size);
+
+    // Format movie data to ensure all necessary fields are present
+    const formattedMovie = {
+      id: movie.id,
+      title: movie.title || movie.name,
+      poster_path: movie.poster_path || movie.poster,
+      backdrop_path: movie.backdrop_path || movie.backdrop,
+      overview: movie.overview || '',
+      type: movie.media_type || movie.type || 'movie',
+      year: movie.release_date ? new Date(movie.release_date).getFullYear() : 
+            movie.first_air_date ? new Date(movie.first_air_date).getFullYear() : 
+            movie.year || 'N/A',
+      rating: toNumericRating(movie.vote_average || movie.rating, 0),
+      genres: formatGenres(movie.genre_ids || movie.genres),
+      release_date: movie.release_date || movie.first_air_date,
+      duration: movie.runtime ? `${Math.floor(movie.runtime / 60)}h ${movie.runtime % 60}m` : 
+               movie.episode_run_time ? `${Math.floor(movie.episode_run_time[0] / 60)}h ${movie.episode_run_time[0] % 60}m` : 
+               movie.duration || 'N/A',
+      director: movie.director,
+      cast: movie.cast || [],
+      addedAt: new Date().toISOString()
+    };
+    
+    console.log('Formatted movie data:', formattedMovie);
 
     setWatchlist(prev => {
       // Check if movie is already in watchlist
@@ -262,48 +297,42 @@ export const WatchlistProvider = ({ children }) => {
         return prev;
       }
       
-      // Format movie data to ensure all necessary fields are present
-      const formattedMovie = {
-        id: movie.id,
-        title: movie.title || movie.name,
-        poster_path: movie.poster_path || movie.poster,
-        backdrop_path: movie.backdrop_path || movie.backdrop,
-        overview: movie.overview || '',
-        type: movie.media_type || movie.type || 'movie',
-        year: movie.release_date ? new Date(movie.release_date).getFullYear() : 
-              movie.first_air_date ? new Date(movie.first_air_date).getFullYear() : 
-              movie.year || 'N/A',
-        rating: toNumericRating(movie.vote_average || movie.rating, 0),
-        genres: formatGenres(movie.genre_ids || movie.genres),
-        release_date: movie.release_date || movie.first_air_date,
-        duration: movie.runtime ? `${Math.floor(movie.runtime / 60)}h ${movie.runtime % 60}m` : 
-                 movie.episode_run_time ? `${Math.floor(movie.episode_run_time[0] / 60)}h ${movie.episode_run_time[0] % 60}m` : 
-                 movie.duration || 'N/A',
-        director: movie.director,
-        cast: movie.cast || [],
-        addedAt: new Date().toISOString()
-      };
-      
-      console.log('Formatted movie data:', formattedMovie);
-      
       // Add the new movie at the beginning of the list
       const newWatchlist = [formattedMovie, ...prev];
       console.log('Added movie to watchlist:', formattedMovie.title);
       console.log('New watchlist length:', newWatchlist.length);
-      
-      // Remove the pending change after successful update
-      setTimeout(() => pendingChanges.current.delete(changeId), 100);
-      
       return newWatchlist;
     });
+
+    // Ensure backend sync happens for addition
+    try {
+      const token = localStorage.getItem('accessToken');
+      if (token) {
+        // Get the updated watchlist after addition
+        const updatedWatchlist = [formattedMovie, ...watchlist];
+        await userAPI.syncWatchlist(updatedWatchlist);
+        console.log('Watchlist synced to backend after addition');
+        setLastBackendSync(new Date().toISOString());
+      }
+    } catch (error) {
+      console.error('Failed to sync addition to backend:', error);
+      setSyncError(error.message);
+    } finally {
+      // Remove the pending change after sync attempt
+      setTimeout(() => {
+        pendingChanges.current.delete(changeId);
+        console.log('Removed pending change for addition:', changeId);
+      }, 100);
+    }
   };
 
-  const removeFromWatchlist = useCallback((movieId) => {
+  const removeFromWatchlist = useCallback(async (movieId) => {
     console.log('Removing movie from watchlist:', movieId);
     
     // Mark this change as pending
     const changeId = `remove_${movieId}_${Date.now()}`;
     pendingChanges.current.add(changeId);
+    console.log('Added pending change for removal:', changeId, 'Total pending:', pendingChanges.current.size);
     
     // Find the movie to be removed for undo functionality
     const movieToRemove = watchlist.find(movie => movie.id === movieId);
@@ -311,10 +340,6 @@ export const WatchlistProvider = ({ children }) => {
     setWatchlist(prev => {
       const newWatchlist = prev.filter(movie => movie.id !== movieId);
       console.log('Updated watchlist length:', newWatchlist.length);
-      
-      // Remove the pending change after successful update
-      setTimeout(() => pendingChanges.current.delete(changeId), 100);
-      
       return newWatchlist;
     });
 
@@ -322,10 +347,31 @@ export const WatchlistProvider = ({ children }) => {
     if (undoContext && movieToRemove) {
       undoContext.addDeletedItem('watchlist', movieToRemove);
     }
+
+    // Ensure backend sync happens for removal
+    try {
+      const token = localStorage.getItem('accessToken');
+      if (token) {
+        // Get the updated watchlist after removal
+        const updatedWatchlist = watchlist.filter(movie => movie.id !== movieId);
+        await userAPI.syncWatchlist(updatedWatchlist);
+        console.log('Watchlist synced to backend after removal');
+        setLastBackendSync(new Date().toISOString());
+      }
+    } catch (error) {
+      console.error('Failed to sync removal to backend:', error);
+      setSyncError(error.message);
+    } finally {
+      // Remove the pending change after sync attempt
+      setTimeout(() => {
+        pendingChanges.current.delete(changeId);
+        console.log('Removed pending change for removal:', changeId);
+      }, 100);
+    }
   }, [watchlist, undoContext]);
 
   // Clear all items from the watchlist
-  const clearWatchlist = () => {
+  const clearWatchlist = async () => {
     // Mark this change as pending
     const changeId = `clear_${Date.now()}`;
     pendingChanges.current.add(changeId);
@@ -337,13 +383,29 @@ export const WatchlistProvider = ({ children }) => {
     } catch (error) {
       console.error('Error clearing watchlist from localStorage:', error);
     }
-    
-    // Remove the pending change after successful update
-    setTimeout(() => pendingChanges.current.delete(changeId), 100);
+
+    // Ensure backend sync happens for clearing
+    try {
+      const token = localStorage.getItem('accessToken');
+      if (token) {
+        await userAPI.syncWatchlist([]);
+        console.log('Watchlist synced to backend after clearing');
+        setLastBackendSync(new Date().toISOString());
+      }
+    } catch (error) {
+      console.error('Failed to sync clearing to backend:', error);
+      setSyncError(error.message);
+    } finally {
+      // Remove the pending change after sync attempt
+      setTimeout(() => {
+        pendingChanges.current.delete(changeId);
+        console.log('Removed pending change for clearing:', changeId);
+      }, 100);
+    }
   };
 
   // Restore item to watchlist (for undo functionality)
-  const restoreToWatchlist = useCallback((movie) => {
+  const restoreToWatchlist = useCallback(async (movie) => {
     console.log('Restoring movie to watchlist:', movie.title);
     
     // Check if movie is already in watchlist
@@ -359,12 +421,29 @@ export const WatchlistProvider = ({ children }) => {
     // Add the movie back to the watchlist
     setWatchlist(prev => {
       const newWatchlist = [movie, ...prev];
-      
-      // Remove the pending change after successful update
-      setTimeout(() => pendingChanges.current.delete(changeId), 100);
-      
       return newWatchlist;
     });
+
+    // Ensure backend sync happens for restoration
+    try {
+      const token = localStorage.getItem('accessToken');
+      if (token) {
+        // Get the updated watchlist after restoration
+        const updatedWatchlist = [movie, ...watchlist];
+        await userAPI.syncWatchlist(updatedWatchlist);
+        console.log('Watchlist synced to backend after restoration');
+        setLastBackendSync(new Date().toISOString());
+      }
+    } catch (error) {
+      console.error('Failed to sync restoration to backend:', error);
+      setSyncError(error.message);
+    } finally {
+      // Remove the pending change after sync attempt
+      setTimeout(() => {
+        pendingChanges.current.delete(changeId);
+        console.log('Removed pending change for restoration:', changeId);
+      }, 100);
+    }
   }, [watchlist]);
 
   // Enhanced sync with backend manually (for explicit sync operations)
@@ -462,6 +541,16 @@ export const WatchlistProvider = ({ children }) => {
     return await loadFromBackend(true);
   }, [loadFromBackend]);
 
+  // Debug function to check pending changes
+  const debugPendingChanges = useCallback(() => {
+    console.log('Current pending changes:', Array.from(pendingChanges.current));
+    console.log('Pending changes count:', pendingChanges.current.size);
+    console.log('Last local change:', lastLocalChange.current);
+    console.log('Last backend sync:', lastBackendSync);
+    console.log('Is syncing:', isSyncing);
+    console.log('Is initialized:', isInitialized);
+  }, [lastBackendSync, isSyncing, isInitialized]);
+
   const isInWatchlist = (movieId) => {
     return watchlist.some(movie => movie.id === movieId);
   };
@@ -480,7 +569,8 @@ export const WatchlistProvider = ({ children }) => {
     syncWithBackend,
     loadFromBackend,
     forceSync,
-    forceLoad
+    forceLoad,
+    debugPendingChanges
   };
 
   return (
