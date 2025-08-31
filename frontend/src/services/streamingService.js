@@ -69,7 +69,7 @@ export const STREAMING_SERVICES = {
 };
 
 // Default streaming service
-export const DEFAULT_STREAMING_SERVICE = 'MOVIES111';
+export const DEFAULT_STREAMING_SERVICE = 'RIVESTREAM';
 
 /**
  * Get streaming service configuration

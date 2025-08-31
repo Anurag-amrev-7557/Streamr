@@ -134,6 +134,23 @@ const userSchema = new mongoose.Schema({
     cast: [String],
     addedAt: { type: Date, default: Date.now }
   }],
+  // Separate wishlist for movies/shows user wants to watch later
+  wishlist: [{
+    id: { type: Number, required: true },
+    title: { type: String, required: true },
+    poster_path: String,
+    backdrop_path: String,
+    overview: String,
+    type: { type: String, enum: ['movie', 'tv'], default: 'movie' },
+    year: String,
+    rating: Number,
+    genres: [String],
+    release_date: String,
+    duration: String,
+    director: String,
+    cast: [String],
+    addedAt: { type: Date, default: Date.now }
+  }],
   viewingProgress: {
     type: Map,
     of: {

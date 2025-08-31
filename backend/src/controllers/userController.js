@@ -1079,4 +1079,190 @@ exports.clearWatchHistory = async (req, res) => {
       message: 'Error clearing watch history'
     });
   }
+};
+
+// Wishlist Methods
+// Get user's wishlist
+exports.getWishlist = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        wishlist: user.wishlist || []
+      }
+    });
+  } catch (error) {
+    console.error('Get wishlist error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching wishlist'
+    });
+  }
+};
+
+// Sync entire wishlist from frontend
+exports.syncWishlist = async (req, res) => {
+  try {
+    const { wishlist } = req.body;
+    
+    if (!Array.isArray(wishlist)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Wishlist must be an array'
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Update user's wishlist
+    user.wishlist = wishlist;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Wishlist synced successfully',
+      data: {
+        wishlist: user.wishlist
+      }
+    });
+  } catch (error) {
+    console.error('Sync wishlist error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error syncing wishlist'
+    });
+  }
+};
+
+// Add item to wishlist
+exports.addToWishlist = async (req, res) => {
+  try {
+    const { movie } = req.body;
+    
+    if (!movie || !movie.id || !movie.title) {
+      return res.status(400).json({
+        success: false,
+        message: 'Movie data with ID and title is required'
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Check if movie is already in wishlist
+    if (user.wishlist.some(item => item.id === movie.id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Movie already in wishlist'
+      });
+    }
+
+    // Add movie to wishlist
+    user.wishlist.push(movie);
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Movie added to wishlist successfully',
+      data: {
+        wishlist: user.wishlist
+      }
+    });
+  } catch (error) {
+    console.error('Add to wishlist error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error adding movie to wishlist'
+    });
+  }
+};
+
+// Remove item from wishlist
+exports.removeFromWishlist = async (req, res) => {
+  try {
+    const { movieId } = req.params;
+    
+    if (!movieId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Movie ID is required'
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Remove movie from wishlist
+    user.wishlist = user.wishlist.filter(item => item.id !== parseInt(movieId));
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Movie removed from wishlist successfully',
+      data: {
+        wishlist: user.wishlist
+      }
+    });
+  } catch (error) {
+    console.error('Remove from wishlist error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error removing movie from wishlist'
+    });
+  }
+};
+
+// Clear entire wishlist
+exports.clearWishlist = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Clear wishlist
+    user.wishlist = [];
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Wishlist cleared successfully',
+      data: {
+        wishlist: []
+      }
+    });
+  } catch (error) {
+    console.error('Clear wishlist error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error clearing wishlist'
+    });
+  }
 }; 

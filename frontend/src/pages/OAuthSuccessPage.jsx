@@ -23,6 +23,10 @@ const OAuthSuccessPage = () => {
         const user = JSON.parse(userStr);
         // Store access token in localStorage (refresh token is handled by HTTP-only cookie)
         localStorage.setItem('accessToken', token);
+        
+        // Dispatch auth change event for watchlist sync
+        window.dispatchEvent(new CustomEvent('auth-changed', { detail: { action: 'login' } }));
+        
         // Update auth context with user data
         login({ user, accessToken: token });
         // Redirect to profile

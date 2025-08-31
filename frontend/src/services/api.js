@@ -1373,5 +1373,135 @@ export const userAPI = {
       
       return response.json();
     }, { timeout });
+  },
+
+  // Wishlist Methods
+  // Get user's wishlist
+  getWishlist: async () => {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+    
+    return fetchWithRetry(async () => {
+      const response = await fetch(`${getApiUrl()}/user/wishlist`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return response.json();
+    }, { timeout });
+  },
+
+  // Sync entire wishlist from frontend
+  syncWishlist: async (wishlist) => {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+    
+    return fetchWithRetry(async () => {
+      const response = await fetch(`${getApiUrl()}/user/wishlist/sync`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ wishlist })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return response.json();
+    }, { timeout });
+  },
+
+  // Add item to wishlist
+  addToWishlist: async (movie) => {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+    
+    return fetchWithRetry(async () => {
+      const response = await fetch(`${getApiUrl()}/user/wishlist`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ movie })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return response.json();
+    }, { timeout });
+  },
+
+  // Remove item from wishlist
+  removeFromWishlist: async (movieId) => {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+    
+    return fetchWithRetry(async () => {
+      const response = await fetch(`${getApiUrl()}/user/wishlist/${movieId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return response.json();
+    }, { timeout });
+  },
+
+  // Clear entire wishlist
+  clearWishlist: async () => {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+    
+    return fetchWithRetry(async () => {
+      const response = await fetch(`${getApiUrl()}/user/wishlist`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return response.json();
+    }, { timeout });
   }
 }; 

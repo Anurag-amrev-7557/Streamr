@@ -22,23 +22,6 @@ export const ViewingProgressProvider = ({ children }) => {
 
   // Load viewing progress from backend and localStorage on mount - OPTIMIZED
   useEffect(() => {
-    const loadFromBackend = async () => {
-      try {
-        const token = localStorage.getItem('accessToken');
-        if (token) {
-          const response = await userAPI.getViewingProgress();
-          if (response.success && response.data.viewingProgress) {
-            // Update local state with backend data
-            setViewingProgress(response.data.viewingProgress);
-            console.log('Loaded viewing progress from backend:', Object.keys(response.data.viewingProgress).length, 'items');
-          }
-        }
-      } catch (error) {
-        console.error('Failed to load viewing progress from backend:', error);
-        // Fall back to localStorage
-      }
-    };
-
     const loadFromLocalStorage = () => {
       try {
         const savedProgress = localStorage.getItem('viewingProgress');
@@ -107,11 +90,97 @@ export const ViewingProgressProvider = ({ children }) => {
     };
 
     // Try backend first, then fall back to localStorage
-    loadFromBackend().finally(() => {
+    loadFromBackendForSync().finally(() => {
       loadFromLocalStorage();
       setIsInitialized(true);
     });
   }, []);
+
+  // Define loadFromBackend function that can be used by other useEffects
+  const loadFromBackendForSync = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      if (token) {
+        const response = await userAPI.getViewingProgress();
+        if (response.success && response.data.viewingProgress) {
+          // Update local state with backend data
+          setViewingProgress(response.data.viewingProgress);
+          console.log('Loaded viewing progress from backend:', Object.keys(response.data.viewingProgress).length, 'items');
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load viewing progress from backend:', error);
+      // Fall back to localStorage
+    }
+  }, []);
+
+  // Listen for authentication token changes and reload viewing progress
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === 'accessToken') {
+        console.log('Auth token changed, reloading viewing progress from backend');
+        // Small delay to ensure the token is properly set
+        setTimeout(() => {
+          loadFromBackendForSync();
+        }, 100);
+      }
+    };
+
+    // Listen for storage events (for cross-tab communication)
+    window.addEventListener('storage', handleStorageChange);
+    
+    // Also listen for custom auth events
+    const handleAuthChange = () => {
+      console.log('Auth change detected, reloading viewing progress from backend');
+      setTimeout(() => {
+        loadFromBackendForSync();
+      }, 100);
+    };
+
+    window.addEventListener('auth-changed', handleAuthChange);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('auth-changed', handleAuthChange);
+    };
+  }, []);
+
+  // Periodic refresh from backend (every 30 seconds) to catch changes from other devices
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const token = localStorage.getItem('accessToken');
+      if (token && isInitialized) {
+        try {
+          console.log('Performing periodic viewing progress refresh from backend');
+          const response = await userAPI.getViewingProgress();
+          if (response.success && response.data.viewingProgress) {
+            const backendData = response.data.viewingProgress;
+            
+            // Only update if the data is different
+            const currentData = JSON.stringify(viewingProgress);
+            const newData = JSON.stringify(backendData);
+            
+            if (currentData !== newData) {
+              console.log('Viewing progress data changed on backend, updating local state');
+              setViewingProgress(backendData);
+              
+              // Update localStorage with backend data
+              try {
+                localStorage.setItem('viewingProgress', JSON.stringify(backendData));
+              } catch (error) {
+                console.error('Error updating localStorage with backend data:', error);
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Periodic refresh failed:', error);
+          // Don't set sync error for background refresh
+        }
+      }
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(interval);
+  }, [viewingProgress, isInitialized]);
 
   // Auto-sync with backend and save to localStorage whenever viewing progress changes
   useEffect(() => {
@@ -606,6 +675,38 @@ export const ViewingProgressProvider = ({ children }) => {
     }, 100);
   }, [startWatchingMovie, updateProgress]);
 
+  // Manual refresh function for users to sync from backend
+  const refreshFromBackend = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+
+      const response = await userAPI.getViewingProgress();
+      if (response.success && response.data.viewingProgress) {
+        const backendData = response.data.viewingProgress;
+        
+        setViewingProgress(backendData);
+        console.log('Manually refreshed viewing progress from backend:', Object.keys(backendData).length, 'items');
+        
+        // Update localStorage with backend data
+        try {
+          localStorage.setItem('viewingProgress', JSON.stringify(backendData));
+        } catch (error) {
+          console.error('Error updating localStorage with backend data:', error);
+        }
+        
+        return { success: true, data: backendData };
+      }
+      
+      return { success: false, error: 'Invalid response format' };
+    } catch (error) {
+      console.error('Manual refresh failed:', error);
+      return { success: false, error: error.message };
+    }
+  }, []);
+
   const value = {
     viewingProgress,
     continueWatching,
@@ -617,6 +718,7 @@ export const ViewingProgressProvider = ({ children }) => {
     clearAllContinueWatching,
     hasContinueWatching,
     refreshFromStorage,
+    refreshFromBackend,
     isInitialized
   };
 

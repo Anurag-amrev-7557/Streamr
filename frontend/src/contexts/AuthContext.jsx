@@ -512,6 +512,10 @@ export const AuthProvider = ({ children }) => {
         if (accessToken) {
           localStorage.setItem('accessToken', accessToken);
         }
+        
+        // Dispatch auth change event for watchlist sync
+        window.dispatchEvent(new CustomEvent('auth-changed', { detail: { action: 'login' } }));
+        
         setUser(user);
         setLastActivity(Date.now());
         setSessionWarning(false);
@@ -599,6 +603,10 @@ export const AuthProvider = ({ children }) => {
       }
       
       localStorage.setItem('accessToken', accessToken);
+      
+      // Dispatch auth change event for watchlist sync
+      window.dispatchEvent(new CustomEvent('auth-changed', { detail: { action: 'login' } }));
+      
       // Fetch fresh user profile to ensure latest changes are reflected
       let currentUser = null;
       try {
@@ -709,6 +717,10 @@ export const AuthProvider = ({ children }) => {
       }
       
       localStorage.setItem('accessToken', accessToken);
+      
+      // Dispatch auth change event for watchlist sync
+      window.dispatchEvent(new CustomEvent('auth-changed', { detail: { action: 'login' } }));
+      
       setUser(user);
       setLastActivity(Date.now());
       
@@ -803,6 +815,9 @@ export const AuthProvider = ({ children }) => {
       setUser(null);
       setRememberMe(false);
       localStorage.removeItem('accessToken');
+      
+      // Dispatch auth change event for watchlist sync
+      window.dispatchEvent(new CustomEvent('auth-changed', { detail: { action: 'logout' } }));
     }
   }, []);
 

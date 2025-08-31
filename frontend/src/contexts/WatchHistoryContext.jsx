@@ -35,39 +35,6 @@ export const WatchHistoryProvider = ({ children }) => {
 
   // Load watch history from backend and localStorage on mount
   useEffect(() => {
-    const loadFromBackend = async () => {
-      try {
-        const token = localStorage.getItem('accessToken');
-        if (token) {
-          setIsSyncing(true);
-          setSyncError(null);
-          
-          const response = await userAPI.getWatchHistory();
-          if (response.success && response.data.watchHistory) {
-            // Update local state with backend data
-            const backendData = response.data.watchHistory;
-            isUpdatingFromBackend.current = true;
-            setWatchHistory(backendData);
-            setLastBackendSync(new Date().toISOString());
-            console.log('Loaded watch history from backend:', backendData.length, 'items');
-            
-            // Update localStorage with backend data
-            try {
-              localStorage.setItem('watchHistory', JSON.stringify(backendData));
-            } catch (error) {
-              console.error('Error updating localStorage with backend data:', error);
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Failed to load watch history from backend:', error);
-        setSyncError(error.message);
-        // Fall back to localStorage
-      } finally {
-        setIsSyncing(false);
-      }
-    };
-
     const loadFromLocalStorage = () => {
       try {
         const savedHistory = localStorage.getItem('watchHistory');
@@ -87,6 +54,110 @@ export const WatchHistoryProvider = ({ children }) => {
       setIsInitialized(true);
     });
   }, []);
+
+  // Define loadFromBackend function that can be used by other useEffects
+  const loadFromBackendForSync = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      if (token) {
+        setIsSyncing(true);
+        setSyncError(null);
+        
+        const response = await userAPI.getWatchHistory();
+        if (response.success && response.data.watchHistory) {
+          // Update local state with backend data
+          const backendData = response.data.watchHistory;
+          isUpdatingFromBackend.current = true;
+          setWatchHistory(backendData);
+          setLastBackendSync(new Date().toISOString());
+          console.log('Loaded watch history from backend:', backendData.length, 'items');
+          
+          // Update localStorage with backend data
+          try {
+            localStorage.setItem('watchHistory', JSON.stringify(backendData));
+          } catch (error) {
+            console.error('Error updating localStorage with backend data:', error);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load watch history from backend:', error);
+      setSyncError(error.message);
+      // Fall back to localStorage
+    } finally {
+      setIsSyncing(false);
+    }
+  }, []);
+
+  // Listen for authentication token changes and reload watch history
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === 'accessToken') {
+        console.log('Auth token changed, reloading watch history from backend');
+        // Small delay to ensure the token is properly set
+        setTimeout(() => {
+          loadFromBackendForSync();
+        }, 100);
+      }
+    };
+
+    // Listen for storage events (for cross-tab communication)
+    window.addEventListener('storage', handleStorageChange);
+    
+    // Also listen for custom auth events
+    const handleAuthChange = () => {
+      console.log('Auth change detected, reloading watch history from backend');
+      setTimeout(() => {
+        loadFromBackendForSync();
+      }, 100);
+    };
+
+    window.addEventListener('auth-changed', handleAuthChange);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('auth-changed', handleAuthChange);
+    };
+  }, []);
+
+  // Periodic refresh from backend (every 30 seconds) to catch changes from other devices
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const token = localStorage.getItem('accessToken');
+      if (token && isInitialized && !isSyncing) {
+        try {
+          console.log('Performing periodic watch history refresh from backend');
+          const response = await userAPI.getWatchHistory();
+          if (response.success && response.data.watchHistory) {
+            const backendData = response.data.watchHistory;
+            
+            // Only update if the data is different
+            const currentData = JSON.stringify(watchHistory);
+            const newData = JSON.stringify(backendData);
+            
+            if (currentData !== newData) {
+              console.log('Watch history data changed on backend, updating local state');
+              isUpdatingFromBackend.current = true;
+              setWatchHistory(backendData);
+              setLastBackendSync(new Date().toISOString());
+              
+              // Update localStorage with backend data
+              try {
+                localStorage.setItem('watchHistory', JSON.stringify(backendData));
+              } catch (error) {
+                console.error('Error updating localStorage with backend data:', error);
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Periodic refresh failed:', error);
+          // Don't set sync error for background refresh
+        }
+      }
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(interval);
+  }, [watchHistory, isInitialized, isSyncing]);
 
   // Enhanced auto-sync with backend and save to localStorage whenever watch history changes
   useEffect(() => {
@@ -150,7 +221,7 @@ export const WatchHistoryProvider = ({ children }) => {
   }, [watchHistory, isInitialized]);
 
   // Add item to watch history
-  const addToWatchHistory = useCallback((contentId, progress = 0) => {
+  const addToWatchHistory = useCallback(async (contentId, progress = 0) => {
     if (!contentId) return;
 
     // Mark this change as pending
@@ -172,9 +243,6 @@ export const WatchHistoryProvider = ({ children }) => {
           lastWatched: now
         };
         
-        // Remove the pending change after successful update
-        setTimeout(() => pendingChanges.current.delete(changeId), 100);
-        
         return updated;
       } else {
         // Add new item
@@ -184,9 +252,6 @@ export const WatchHistoryProvider = ({ children }) => {
           lastWatched: now
         }];
         
-        // Remove the pending change after successful update
-        setTimeout(() => pendingChanges.current.delete(changeId), 100);
-        
         return newHistory;
       }
     });
@@ -195,10 +260,38 @@ export const WatchHistoryProvider = ({ children }) => {
     if (undoContext?.addToHistory) {
       undoContext.addToHistory('watchHistory', 'add', { contentId, progress });
     }
-  }, [undoContext]);
+
+    // Ensure backend sync happens for addition
+    try {
+      const token = localStorage.getItem('accessToken');
+      if (token) {
+        // Get the updated watch history after addition
+        const updatedHistory = watchHistory.find(item => item.content === contentId) 
+          ? watchHistory.map(item => 
+              item.content === contentId 
+                ? { ...item, progress, lastWatched: now }
+                : item
+            )
+          : [...watchHistory, { content: contentId, progress, lastWatched: now }];
+        
+        await userAPI.syncWatchHistory(updatedHistory);
+        console.log('Watch history synced to backend after addition');
+        setLastBackendSync(new Date().toISOString());
+      }
+    } catch (error) {
+      console.error('Failed to sync addition to backend:', error);
+      setSyncError(error.message);
+    } finally {
+      // Remove the pending change after sync attempt
+      setTimeout(() => {
+        pendingChanges.current.delete(changeId);
+        console.log('Removed pending change for addition:', changeId);
+      }, 100);
+    }
+  }, [watchHistory, undoContext]);
 
   // Update watch history progress
-  const updateWatchHistoryProgress = useCallback((contentId, progress) => {
+  const updateWatchHistoryProgress = useCallback(async (contentId, progress) => {
     if (!contentId || typeof progress !== 'number') return;
 
     // Mark this change as pending
@@ -216,14 +309,8 @@ export const WatchHistoryProvider = ({ children }) => {
           lastWatched: new Date().toISOString()
         };
         
-        // Remove the pending change after successful update
-        setTimeout(() => pendingChanges.current.delete(changeId), 100);
-        
         return updated;
       }
-      
-      // Remove the pending change if item not found
-      setTimeout(() => pendingChanges.current.delete(changeId), 100);
       
       return prev;
     });
@@ -232,10 +319,36 @@ export const WatchHistoryProvider = ({ children }) => {
     if (undoContext?.addToHistory) {
       undoContext.addToHistory('watchHistory', 'update', { contentId, progress });
     }
-  }, [undoContext]);
+
+    // Ensure backend sync happens for progress update
+    try {
+      const token = localStorage.getItem('accessToken');
+      if (token) {
+        // Get the updated watch history after progress update
+        const updatedHistory = watchHistory.map(item => 
+          item.content === contentId 
+            ? { ...item, progress, lastWatched: new Date().toISOString() }
+            : item
+        );
+        
+        await userAPI.syncWatchHistory(updatedHistory);
+        console.log('Watch history synced to backend after progress update');
+        setLastBackendSync(new Date().toISOString());
+      }
+    } catch (error) {
+      console.error('Failed to sync progress update to backend:', error);
+      setSyncError(error.message);
+    } finally {
+      // Remove the pending change after sync attempt
+      setTimeout(() => {
+        pendingChanges.current.delete(changeId);
+        console.log('Removed pending change for progress update:', changeId);
+      }, 100);
+    }
+  }, [watchHistory, undoContext]);
 
   // Remove item from watch history
-  const removeFromWatchHistory = useCallback((contentId) => {
+  const removeFromWatchHistory = useCallback(async (contentId) => {
     if (!contentId) return;
 
     // Mark this change as pending
@@ -253,21 +366,37 @@ export const WatchHistoryProvider = ({ children }) => {
         
         const newHistory = prev.filter(item => item.content !== contentId);
         
-        // Remove the pending change after successful update
-        setTimeout(() => pendingChanges.current.delete(changeId), 100);
-        
         return newHistory;
       }
       
-      // Remove the pending change if item not found
-      setTimeout(() => pendingChanges.current.delete(changeId), 100);
-      
       return prev;
     });
-  }, [undoContext]);
+
+    // Ensure backend sync happens for removal
+    try {
+      const token = localStorage.getItem('accessToken');
+      if (token) {
+        // Get the updated watch history after removal
+        const updatedHistory = watchHistory.filter(item => item.content !== contentId);
+        
+        await userAPI.syncWatchHistory(updatedHistory);
+        console.log('Watch history synced to backend after removal');
+        setLastBackendSync(new Date().toISOString());
+      }
+    } catch (error) {
+      console.error('Failed to sync removal to backend:', error);
+      setSyncError(error.message);
+    } finally {
+      // Remove the pending change after sync attempt
+      setTimeout(() => {
+        pendingChanges.current.delete(changeId);
+        console.log('Removed pending change for removal:', changeId);
+      }, 100);
+    }
+  }, [watchHistory, undoContext]);
 
   // Clear entire watch history
-  const clearWatchHistory = useCallback(() => {
+  const clearWatchHistory = useCallback(async () => {
     // Mark this change as pending
     const changeId = `clear_${Date.now()}`;
     pendingChanges.current.add(changeId);
@@ -278,9 +407,25 @@ export const WatchHistoryProvider = ({ children }) => {
     }
     
     setWatchHistory([]);
-    
-    // Remove the pending change after successful update
-    setTimeout(() => pendingChanges.current.delete(changeId), 100);
+
+    // Ensure backend sync happens for clearing
+    try {
+      const token = localStorage.getItem('accessToken');
+      if (token) {
+        await userAPI.syncWatchHistory([]);
+        console.log('Watch history synced to backend after clearing');
+        setLastBackendSync(new Date().toISOString());
+      }
+    } catch (error) {
+      console.error('Failed to sync clearing to backend:', error);
+      setSyncError(error.message);
+    } finally {
+      // Remove the pending change after sync attempt
+      setTimeout(() => {
+        pendingChanges.current.delete(changeId);
+        console.log('Removed pending change for clearing:', changeId);
+      }, 100);
+    }
   }, [watchHistory, undoContext]);
 
   // Enhanced sync with backend manually (for explicit sync operations)
@@ -375,6 +520,46 @@ export const WatchHistoryProvider = ({ children }) => {
     return await loadFromBackend(true);
   }, [loadFromBackend]);
 
+  // Manual refresh function for users to sync from backend
+  const refreshFromBackend = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+
+      setIsSyncing(true);
+      setSyncError(null);
+      
+      const response = await userAPI.getWatchHistory();
+      if (response.success && response.data.watchHistory) {
+        const backendData = response.data.watchHistory;
+        
+        isUpdatingFromBackend.current = true;
+        setWatchHistory(backendData);
+        setLastBackendSync(new Date().toISOString());
+        console.log('Manually refreshed watch history from backend:', backendData.length, 'items');
+        
+        // Update localStorage with backend data
+        try {
+          localStorage.setItem('watchHistory', JSON.stringify(backendData));
+        } catch (error) {
+          console.error('Error updating localStorage with backend data:', error);
+        }
+        
+        return { success: true, data: backendData };
+      }
+      
+      return { success: false, error: 'Invalid response format' };
+    } catch (error) {
+      console.error('Manual refresh failed:', error);
+      setSyncError(error.message);
+      return { success: false, error: error.message };
+    } finally {
+      setIsSyncing(false);
+    }
+  }, []);
+
   const value = {
     watchHistory,
     isInitialized,
@@ -388,7 +573,8 @@ export const WatchHistoryProvider = ({ children }) => {
     syncWithBackend,
     loadFromBackend,
     forceSync,
-    forceLoad
+    forceLoad,
+    refreshFromBackend
   };
 
   return (

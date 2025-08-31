@@ -130,6 +130,28 @@ export const WatchlistProvider = ({ children }) => {
               genres: formatGenres(movie.genres || [])
             }));
             
+            // SAFEGUARD: Check if backend is empty but local storage has data
+            if (backendData.length === 0 && watchlist.length > 0) {
+              console.log('Backend returned empty watchlist on initial load but local has data. Preserving local data.');
+              console.log('Local watchlist has', watchlist.length, 'items');
+              
+              // Try to restore local data to backend
+              try {
+                console.log('Attempting to restore local watchlist to backend on initial load');
+                await userAPI.syncWatchlist(watchlist);
+                console.log('Successfully restored local watchlist to backend on initial load');
+                setLastBackendSync(new Date().toISOString());
+              } catch (syncError) {
+                console.error('Failed to restore local watchlist to backend on initial load:', syncError);
+              }
+              
+              // Don't overwrite local data
+              setIsSyncing(false);
+              setIsInitialized(true);
+              return;
+            }
+            
+            // Update local state with backend data
             isUpdatingFromBackend.current = true;
             setWatchlist(backendData);
             setLastBackendSync(new Date().toISOString());
@@ -140,6 +162,27 @@ export const WatchlistProvider = ({ children }) => {
               localStorage.setItem('watchlist', JSON.stringify(backendData));
             } catch (error) {
               console.error('Error updating localStorage with backend data:', error);
+            }
+          } else if (response.success && response.data.watchlist && response.data.watchlist.length === 0) {
+            // Backend explicitly returned empty array
+            console.log('Backend returned empty watchlist on initial load');
+            
+            // Only clear local data if it was also empty
+            if (watchlist.length === 0) {
+              console.log('Local watchlist was already empty, no action needed');
+            } else {
+              console.log('Backend returned empty watchlist but local has data. This might indicate a backend issue.');
+              console.log('Local watchlist has', watchlist.length, 'items - preserving local data');
+              
+              // Try to restore local data to backend
+              try {
+                console.log('Attempting to restore local watchlist to backend on initial load');
+                await userAPI.syncWatchlist(watchlist);
+                console.log('Successfully restored local watchlist to backend on initial load');
+                setLastBackendSync(new Date().toISOString());
+              } catch (syncError) {
+                console.error('Failed to restore local watchlist to backend on initial load:', syncError);
+              }
             }
           }
         }
@@ -225,11 +268,102 @@ export const WatchlistProvider = ({ children }) => {
     
     try {
       localStorage.setItem('watchlist', JSON.stringify(watchlist));
-      lastLocalChange.current = new Date().toISOString();
+      lastLocalChange.current = new Date().toISOString(); // Update ref with current state
+      console.log('Watchlist state changed, saved to localStorage:', watchlist.length, 'items');
     } catch (error) {
       console.error('Error saving watchlist to localStorage:', error);
     }
   }, [watchlist, isInitialized]);
+
+  // Listen for authentication token changes and reload watchlist
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === 'accessToken') {
+        console.log('Auth token changed, reloading watchlist from backend');
+        // Small delay to ensure the token is properly set
+        setTimeout(() => {
+          loadFromBackend();
+        }, 100);
+      }
+    };
+
+    // Listen for storage events (for cross-tab communication)
+    window.addEventListener('storage', handleStorageChange);
+    
+    // Also listen for custom auth events
+    const handleAuthChange = () => {
+      console.log('Auth change detected, reloading watchlist from backend');
+      setTimeout(() => {
+        loadFromBackend();
+      }, 100);
+    };
+
+    window.addEventListener('auth-changed', handleAuthChange);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('auth-changed', handleAuthChange);
+    };
+  }, []);
+
+  // Periodic refresh from backend (every 30 seconds) to catch changes from other devices
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const token = localStorage.getItem('accessToken');
+      if (token && isInitialized && !isSyncing) {
+        try {
+          console.log('Performing periodic watchlist refresh from backend');
+          const response = await userAPI.getWatchlist();
+          if (response.success && response.data.watchlist) {
+            const backendData = response.data.watchlist.map(movie => ({
+              ...movie,
+              genres: formatGenres(movie.genres || [])
+            }));
+            
+            // SAFEGUARD: Don't overwrite local data if backend is empty but local has data
+            if (backendData.length === 0 && watchlist.length > 0) {
+              console.log('Backend returned empty watchlist but local has data. Skipping update to prevent data loss.');
+              console.log('Local watchlist has', watchlist.length, 'items');
+              
+              // Instead of clearing local data, try to sync local data to backend
+              try {
+                console.log('Attempting to restore local watchlist to backend');
+                await userAPI.syncWatchlist(watchlist);
+                console.log('Successfully restored local watchlist to backend');
+                setLastBackendSync(new Date().toISOString());
+              } catch (syncError) {
+                console.error('Failed to restore local watchlist to backend:', syncError);
+              }
+              return;
+            }
+            
+            // Only update if the data is different
+            const currentData = JSON.stringify(watchlist);
+            const newData = JSON.stringify(backendData);
+            
+            if (currentData !== newData) {
+              console.log('Watchlist data changed on backend, updating local state');
+              isUpdatingFromBackend.current = true;
+              setWatchlist(backendData);
+              setLastBackendSync(new Date().toISOString());
+              
+              // Update localStorage with backend data
+              try {
+                localStorage.setItem('watchlist', JSON.stringify(backendData));
+              } catch (error) {
+                console.error('Error updating localStorage with backend data:', error);
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Periodic refresh failed:', error);
+          // Don't set sync error for background refresh
+        }
+      }
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(interval);
+  }, [watchlist, isInitialized, isSyncing]);
 
   const validateMovieData = (movie) => {
     // Ensure all required fields are present
@@ -252,18 +386,18 @@ export const WatchlistProvider = ({ children }) => {
   };
 
   const addToWatchlist = async (movie) => {
-    console.log('Attempting to add movie to watchlist:', movie);
+    console.log('🎬 Attempting to add movie to watchlist:', movie);
     
     // Validate movie data
     if (!validateMovieData(movie)) {
-      console.error('Invalid movie data, cannot add to watchlist');
+      console.error('❌ Invalid movie data, cannot add to watchlist');
       return;
     }
 
     // Mark this change as pending
     const changeId = `add_${movie.id}_${Date.now()}`;
     pendingChanges.current.add(changeId);
-    console.log('Added pending change for addition:', changeId, 'Total pending:', pendingChanges.current.size);
+    console.log('📝 Added pending change for addition:', changeId, 'Total pending:', pendingChanges.current.size);
 
     // Format movie data to ensure all necessary fields are present
     const formattedMovie = {
@@ -287,59 +421,67 @@ export const WatchlistProvider = ({ children }) => {
       addedAt: new Date().toISOString()
     };
     
-    console.log('Formatted movie data:', formattedMovie);
+    console.log('🎬 Formatted movie data:', formattedMovie);
 
+    // Update local state immediately (like viewing progress does)
     setWatchlist(prev => {
       // Check if movie is already in watchlist
       if (prev.some(item => item.id === movie.id)) {
-        console.log('Movie already in watchlist:', movie.title);
+        console.log('⚠️ Movie already in watchlist:', movie.title);
         pendingChanges.current.delete(changeId);
         return prev;
       }
       
       // Add the new movie at the beginning of the list
       const newWatchlist = [formattedMovie, ...prev];
-      console.log('Added movie to watchlist:', formattedMovie.title);
-      console.log('New watchlist length:', newWatchlist.length);
+      console.log('✅ Added movie to watchlist:', formattedMovie.title);
+      console.log('📊 New watchlist length:', newWatchlist.length);
       return newWatchlist;
     });
 
     // Ensure backend sync happens for addition
     try {
       const token = localStorage.getItem('accessToken');
+
       if (token) {
-        // Get the updated watchlist after addition
+        // Get the updated watchlist after addition - calculate it directly
         const updatedWatchlist = [formattedMovie, ...watchlist];
-        await userAPI.syncWatchlist(updatedWatchlist);
-        console.log('Watchlist synced to backend after addition');
+        console.log('🔄 Syncing to backend:', updatedWatchlist.length, 'items');
+        console.log('🔄 First item:', updatedWatchlist[0]?.title);
+        
+        const syncResult = await userAPI.syncWatchlist(updatedWatchlist);
+        console.log('✅ Watchlist synced to backend after addition:', syncResult);
         setLastBackendSync(new Date().toISOString());
+      } else {
+        console.warn('⚠️ No access token found, skipping backend sync');
       }
     } catch (error) {
-      console.error('Failed to sync addition to backend:', error);
+      console.error('❌ Failed to sync addition to backend:', error);
       setSyncError(error.message);
     } finally {
       // Remove the pending change after sync attempt
       setTimeout(() => {
         pendingChanges.current.delete(changeId);
-        console.log('Removed pending change for addition:', changeId);
+        console.log('🗑️ Removed pending change for addition:', changeId);
       }, 100);
     }
   };
 
   const removeFromWatchlist = useCallback(async (movieId) => {
-    console.log('Removing movie from watchlist:', movieId);
+    console.log('🗑️ Removing movie from watchlist:', movieId);
     
     // Mark this change as pending
     const changeId = `remove_${movieId}_${Date.now()}`;
     pendingChanges.current.add(changeId);
-    console.log('Added pending change for removal:', changeId, 'Total pending:', pendingChanges.current.size);
+    console.log('📝 Added pending change for removal:', changeId, 'Total pending:', pendingChanges.current.size);
     
     // Find the movie to be removed for undo functionality
     const movieToRemove = watchlist.find(movie => movie.id === movieId);
     
+    // Update local state immediately (like viewing progress does)
     setWatchlist(prev => {
       const newWatchlist = prev.filter(movie => movie.id !== movieId);
-      console.log('Updated watchlist length:', newWatchlist.length);
+      console.log('📊 Updated watchlist length:', newWatchlist.length);
       return newWatchlist;
     });
 
@@ -352,20 +494,24 @@ export const WatchlistProvider = ({ children }) => {
     try {
       const token = localStorage.getItem('accessToken');
       if (token) {
-        // Get the updated watchlist after removal
+        // Get the updated watchlist after removal - calculate it directly
         const updatedWatchlist = watchlist.filter(movie => movie.id !== movieId);
-        await userAPI.syncWatchlist(updatedWatchlist);
-        console.log('Watchlist synced to backend after removal');
+        console.log('🔄 Syncing removal to backend:', updatedWatchlist.length, 'items remaining');
+        
+        const syncResult = await userAPI.syncWatchlist(updatedWatchlist);
+        console.log('✅ Watchlist synced to backend after removal:', syncResult);
         setLastBackendSync(new Date().toISOString());
+      } else {
+        console.warn('⚠️ No access token found, skipping backend sync');
       }
     } catch (error) {
-      console.error('Failed to sync removal to backend:', error);
+      console.error('❌ Failed to sync removal to backend:', error);
       setSyncError(error.message);
     } finally {
       // Remove the pending change after sync attempt
       setTimeout(() => {
         pendingChanges.current.delete(changeId);
-        console.log('Removed pending change for removal:', changeId);
+        console.log('🗑️ Removed pending change for removal:', changeId);
       }, 100);
     }
   }, [watchlist, undoContext]);
@@ -504,6 +650,24 @@ export const WatchlistProvider = ({ children }) => {
           genres: formatGenres(movie.genres || [])
         }));
         
+        // SAFEGUARD: Don't overwrite local data if backend is empty but local has data
+        if (backendData.length === 0 && watchlist.length > 0) {
+          console.log('Backend returned empty watchlist on manual load but local has data. Preserving local data.');
+          console.log('Local watchlist has', watchlist.length, 'items');
+          
+          // Try to restore local data to backend
+          try {
+            console.log('Attempting to restore local watchlist to backend on manual load');
+            await userAPI.syncWatchlist(watchlist);
+            console.log('Successfully restored local watchlist to backend on manual load');
+            setLastBackendSync(new Date().toISOString());
+          } catch (syncError) {
+            console.error('Failed to restore local watchlist to backend on manual load:', syncError);
+          }
+          
+          return { success: true, data: watchlist, message: 'Backend was empty, preserved local data' };
+        }
+        
         isUpdatingFromBackend.current = true;
         setWatchlist(backendData);
         setLastBackendSync(new Date().toISOString());
@@ -527,7 +691,7 @@ export const WatchlistProvider = ({ children }) => {
     } finally {
       setIsSyncing(false);
     }
-  }, []);
+  }, [watchlist]);
 
   // Force sync to resolve conflicts
   const forceSync = useCallback(async () => {
@@ -551,6 +715,129 @@ export const WatchlistProvider = ({ children }) => {
     console.log('Is initialized:', isInitialized);
   }, [lastBackendSync, isSyncing, isInitialized]);
 
+  // Function to restore watchlist from localStorage if it gets cleared
+  const restoreFromLocalStorage = useCallback(async () => {
+    try {
+      const savedWatchlist = localStorage.getItem('watchlist');
+      if (savedWatchlist) {
+        const parsedWatchlist = JSON.parse(savedWatchlist);
+        if (parsedWatchlist.length > 0) {
+          console.log('Restoring watchlist from localStorage:', parsedWatchlist.length, 'items');
+          
+          // Format the data to ensure consistency
+          const formattedWatchlist = parsedWatchlist.map(movie => ({
+            ...movie,
+            genres: formatGenres(movie.genres || movie.genre_ids || [])
+          }));
+          
+          setWatchlist(formattedWatchlist);
+          
+          // Try to sync to backend
+          try {
+            const token = localStorage.getItem('accessToken');
+            if (token) {
+              await userAPI.syncWatchlist(formattedWatchlist);
+              console.log('Successfully synced restored watchlist to backend');
+              setLastBackendSync(new Date().toISOString());
+            }
+          } catch (syncError) {
+            console.error('Failed to sync restored watchlist to backend:', syncError);
+          }
+          
+          return { success: true, data: formattedWatchlist, message: 'Watchlist restored from localStorage' };
+        }
+      }
+      
+      return { success: false, error: 'No saved watchlist found in localStorage' };
+    } catch (error) {
+      console.error('Failed to restore from localStorage:', error);
+      return { success: false, error: error.message };
+    }
+  }, []);
+
+  // Function to log current watchlist state for debugging
+  const logWatchlistState = useCallback(() => {
+    console.log('=== WATCHLIST STATE DEBUG ===');
+    console.log('Current watchlist length:', watchlist.length);
+    console.log('LocalStorage watchlist length:', (() => {
+      try {
+        const saved = localStorage.getItem('watchlist');
+        return saved ? JSON.parse(saved).length : 'No data';
+      } catch (e) {
+        return 'Error parsing';
+      }
+    })());
+    console.log('Is initialized:', isInitialized);
+    console.log('Is syncing:', isSyncing);
+    console.log('Last backend sync:', lastBackendSync);
+    console.log('Pending changes:', Array.from(pendingChanges.current));
+    console.log('Last local change:', lastLocalChange.current);
+    console.log('Is updating from backend:', isUpdatingFromBackend.current);
+    console.log('Current watchlist items:', watchlist.map(item => ({ id: item.id, title: item.title })));
+    console.log('================================');
+  }, [watchlist, isInitialized, isSyncing, lastBackendSync, lastLocalChange]);
+
+  // Manual refresh function for users to sync from backend
+  const refreshFromBackend = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+
+      setIsSyncing(true);
+      setSyncError(null);
+      
+      const response = await userAPI.getWatchlist();
+      if (response.success && response.data.watchlist) {
+        const backendData = response.data.watchlist.map(movie => ({
+          ...movie,
+          genres: formatGenres(movie.genres || [])
+        }));
+        
+        // SAFEGUARD: Don't overwrite local data if backend is empty but local has data
+        if (backendData.length === 0 && watchlist.length > 0) {
+          console.log('Backend returned empty watchlist on manual refresh but local has data. Preserving local data.');
+          console.log('Local watchlist has', watchlist.length, 'items');
+          
+          // Try to restore local data to backend
+          try {
+            console.log('Attempting to restore local watchlist to backend on manual refresh');
+            await userAPI.syncWatchlist(watchlist);
+            console.log('Successfully restored local watchlist to backend on manual refresh');
+            setLastBackendSync(new Date().toISOString());
+          } catch (syncError) {
+            console.error('Failed to restore local watchlist to backend on manual refresh:', syncError);
+          }
+          
+          return { success: true, data: watchlist, message: 'Backend was empty, preserved local data' };
+        }
+        
+        isUpdatingFromBackend.current = true;
+        setWatchlist(backendData);
+        setLastBackendSync(new Date().toISOString());
+        console.log('Manually refreshed watchlist from backend:', backendData.length, 'items');
+        
+        // Update localStorage with backend data
+        try {
+          localStorage.setItem('watchlist', JSON.stringify(backendData));
+        } catch (error) {
+          console.error('Error updating localStorage with backend data:', error);
+        }
+        
+        return { success: true, data: backendData };
+      }
+      
+      return { success: false, error: 'Invalid response format' };
+    } catch (error) {
+      console.error('Manual refresh failed:', error);
+      setSyncError(error.message);
+      return { success: false, error: error.message };
+    } finally {
+      setIsSyncing(false);
+    }
+  }, []);
+
   const isInWatchlist = (movieId) => {
     return watchlist.some(movie => movie.id === movieId);
   };
@@ -570,8 +857,18 @@ export const WatchlistProvider = ({ children }) => {
     loadFromBackend,
     forceSync,
     forceLoad,
-    debugPendingChanges
+    debugPendingChanges,
+    refreshFromBackend,
+    restoreFromLocalStorage,
+    logWatchlistState
   };
+
+  // Expose context functions globally for debugging (only in development)
+  if (process.env.NODE_ENV === 'development' && typeof window !== 'undefined') {
+    window.watchlistContext = value;
+    console.log('🔧 Watchlist context exposed globally for debugging');
+    console.log('Available functions:', Object.keys(value).filter(key => typeof value[key] === 'function'));
+  }
 
   return (
     <WatchlistContext.Provider value={value}>

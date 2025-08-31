@@ -56,6 +56,32 @@ router.delete('/watchlist/:movieId', rateLimiters.general, authenticate, userCon
 // @access  Private
 router.delete('/watchlist', rateLimiters.general, authenticate, userController.clearWatchlist);
 
+// Wishlist Routes
+// @route   GET /api/user/wishlist
+// @desc    Get user's wishlist
+// @access  Private
+router.get('/wishlist', rateLimiters.general, authenticate, userController.getWishlist);
+
+// @route   POST /api/user/wishlist/sync
+// @desc    Sync entire wishlist from frontend
+// @access  Private
+router.post('/wishlist/sync', rateLimiters.general, authenticate, userController.syncWishlist);
+
+// @route   POST /api/user/wishlist
+// @desc    Add item to wishlist
+// @access  Private
+router.post('/wishlist', rateLimiters.general, authenticate, userController.addToWishlist);
+
+// @route   DELETE /api/user/wishlist/:movieId
+// @desc    Remove item from wishlist
+// @access  Private
+router.delete('/wishlist/:movieId', rateLimiters.general, authenticate, userController.removeFromWishlist);
+
+// @route   DELETE /api/user/wishlist
+// @desc    Clear entire wishlist
+// @access  Private
+router.delete('/wishlist', rateLimiters.general, authenticate, userController.clearWishlist);
+
 // Viewing Progress Routes
 // @route   GET /api/user/viewing-progress
 // @desc    Get user's viewing progress

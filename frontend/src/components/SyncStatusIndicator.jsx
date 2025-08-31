@@ -16,7 +16,8 @@ const SyncStatusIndicator = () => {
     syncError: watchlistError, 
     lastBackendSync: watchlistLastSync,
     forceSync: forceWatchlistSync,
-    forceLoad: forceWatchlistLoad
+    forceLoad: forceWatchlistLoad,
+    refreshFromBackend: refreshWatchlistFromBackend
   } = useWatchlist();
   
   const { 
@@ -24,7 +25,8 @@ const SyncStatusIndicator = () => {
     syncError: historyError, 
     lastBackendSync: historyLastSync,
     forceSync: forceHistorySync,
-    forceLoad: forceHistoryLoad
+    forceLoad: forceHistoryLoad,
+    refreshFromBackend: refreshHistoryFromBackend
   } = useWatchHistory();
   
   const [syncStatus, setSyncStatus] = useState(null);
@@ -41,6 +43,30 @@ const SyncStatusIndicator = () => {
       }
     } catch (error) {
       console.error('Failed to check sync status:', error);
+    } finally {
+      setIsCheckingStatus(false);
+    }
+  };
+
+  // Refresh all data from backend
+  const refreshAllFromBackend = async () => {
+    try {
+      setIsCheckingStatus(true);
+      console.log('Refreshing all data from backend...');
+      
+      // Refresh watchlist
+      if (refreshWatchlistFromBackend) {
+        await refreshWatchlistFromBackend();
+      }
+      
+      // Refresh watch history
+      if (refreshHistoryFromBackend) {
+        await refreshHistoryFromBackend();
+      }
+      
+      console.log('All data refreshed from backend');
+    } catch (error) {
+      console.error('Failed to refresh all data:', error);
     } finally {
       setIsCheckingStatus(false);
     }
@@ -344,6 +370,18 @@ const SyncStatusIndicator = () => {
                 </div>
               </div>
             )}
+
+            {/* Refresh All Button */}
+            <div className="flex justify-center mb-3">
+              <button
+                onClick={refreshAllFromBackend}
+                disabled={isCheckingStatus}
+                className="px-4 py-2 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 disabled:opacity-50 flex items-center gap-2"
+              >
+                <ArrowPathIcon className={`w-4 h-4 ${isCheckingStatus ? 'animate-spin' : ''}`} />
+                Refresh All Data
+              </button>
+            </div>
 
             {/* Refresh Button */}
             <div className="flex justify-center">
