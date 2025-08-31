@@ -150,15 +150,47 @@ class SyncService {
         return;
       }
 
-      console.log('Syncing watchlist with backend...');
-      const response = await userAPI.syncWatchlist(localWatchlist);
+      console.log('Syncing watchlist with backend...', localWatchlist.length, 'items');
+      
+      // Validate local data before sending
+      const validWatchlist = localWatchlist.filter(item => {
+        if (!item.id && !item.tmdbId) {
+          console.warn('Skipping item without ID:', item);
+          return false;
+        }
+        if (!item.type) {
+          console.warn('Skipping item without type:', item);
+          return false;
+        }
+        return true;
+      });
+
+      if (validWatchlist.length === 0) {
+        console.log('No valid watchlist items to sync');
+        return;
+      }
+
+      console.log('Sending', validWatchlist.length, 'valid items to backend');
+      const response = await userAPI.syncWatchlist(validWatchlist);
       
       if (response.success) {
         console.log('Watchlist synced successfully');
         this.updateLastSyncTime('watchlist');
+      } else {
+        console.warn('Backend sync response indicates failure:', response);
       }
     } catch (error) {
       console.error('Error syncing watchlist:', error);
+      
+      // Handle specific error types
+      if (error.message && error.message.includes('400')) {
+        console.error('Bad request - check watchlist data format');
+      } else if (error.message && error.message.includes('401')) {
+        console.error('Authentication error - user may need to re-login');
+      } else if (error.message && error.message.includes('500')) {
+        console.error('Server error - backend issue, will retry later');
+      }
+      
       throw error;
     }
   }
@@ -266,6 +298,17 @@ class SyncService {
   handleSyncError(error) {
     this.syncRetryCount++;
     
+    // Check if it's an authentication error
+    if (error.message && (error.message.includes('401') || error.message.includes('Authentication'))) {
+      console.error('Authentication error detected, stopping sync attempts');
+      this.stopPeriodicSync();
+      // Emit an event that the UI can listen to
+      window.dispatchEvent(new CustomEvent('syncAuthError', { 
+        detail: { message: 'Authentication failed. Please log in again.' } 
+      }));
+      return;
+    }
+    
     if (this.syncRetryCount <= this.maxRetries) {
       console.log(`Sync failed, retrying in ${this.syncRetryCount * 10} seconds...`);
       setTimeout(() => {
@@ -274,6 +317,11 @@ class SyncService {
     } else {
       console.error('Max sync retries reached, stopping sync');
       this.stopPeriodicSync();
+      
+      // Emit an event that the UI can listen to
+      window.dispatchEvent(new CustomEvent('syncMaxRetriesReached', { 
+        detail: { message: 'Sync failed after maximum retries. Please check your connection.' } 
+      }));
     }
   }
 

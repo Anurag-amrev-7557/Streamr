@@ -112,20 +112,43 @@ const userSchema = new mongoose.Schema({
   watchlist: [{
     tmdbId: {
       type: Number,
-      required: true
+      required: true,
+      min: 1
     },
     type: {
       type: String,
       enum: ['movie', 'tv'],
       required: true
     },
-    title: String,
-    posterPath: String,
-    backdropPath: String,
-    overview: String,
-    releaseDate: String,
-    rating: Number,
-    genres: [String],
+    title: {
+      type: String,
+      default: ''
+    },
+    posterPath: {
+      type: String,
+      default: ''
+    },
+    backdropPath: {
+      type: String,
+      default: ''
+    },
+    overview: {
+      type: String,
+      default: ''
+    },
+    releaseDate: {
+      type: String,
+      default: ''
+    },
+    rating: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    genres: {
+      type: [String],
+      default: []
+    },
     addedAt: {
       type: Date,
       default: Date.now

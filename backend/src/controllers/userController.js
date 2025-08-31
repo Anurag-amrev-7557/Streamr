@@ -591,28 +591,48 @@ exports.syncWatchlist = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Watchlist must be an array' });
     }
 
+    console.log('Syncing watchlist for user:', req.user.id, 'Items:', watchlist.length);
+
     const user = await User.findById(req.user.id);
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
     // Convert localStorage format to backend format
-    const newWatchlist = watchlist.map(item => ({
-      tmdbId: item.id || item.tmdbId,
-      type: item.type || item.media_type || 'movie',
-      title: item.title || item.name,
-      posterPath: item.poster_path || item.poster,
-      backdropPath: item.backdrop_path || item.backdrop,
-      overview: item.overview,
-      releaseDate: item.release_date || item.first_air_date,
-      rating: item.rating || item.vote_average,
-      genres: item.genres || item.genre_ids || [],
-      addedAt: item.addedAt ? new Date(item.addedAt) : new Date()
-    }));
+    const newWatchlist = watchlist.map(item => {
+      const convertedItem = {
+        tmdbId: parseInt(item.id || item.tmdbId) || 0,
+        type: item.type || item.media_type || 'movie',
+        title: item.title || item.name || '',
+        posterPath: item.poster_path || item.poster || '',
+        backdropPath: item.backdrop_path || item.backdrop || '',
+        overview: item.overview || '',
+        releaseDate: item.release_date || item.first_air_date || '',
+        rating: parseFloat(item.rating || item.vote_average) || 0,
+        genres: Array.isArray(item.genres || item.genre_ids) ? (item.genres || item.genre_ids) : [],
+        addedAt: item.addedAt ? new Date(item.addedAt) : new Date()
+      };
+      
+      console.log('Converting item:', item.id, 'to:', convertedItem.tmdbId);
+      return convertedItem;
+    });
+    
+    // Validate that all items have valid tmdbId
+    const invalidItems = newWatchlist.filter(item => !item.tmdbId || item.tmdbId === 0);
+    if (invalidItems.length > 0) {
+      console.warn('Invalid items found:', invalidItems);
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Some items have invalid TMDB IDs',
+        invalidItems 
+      });
+    }
     
     // Update user's watchlist
     user.watchlist = newWatchlist;
     await user.save();
+
+    console.log('Watchlist synced successfully for user:', req.user.id, 'Items:', newWatchlist.length);
 
     res.json({
       success: true,
@@ -621,7 +641,16 @@ exports.syncWatchlist = async (req, res) => {
     });
   } catch (error) {
     console.error('Sync watchlist error:', error);
-    res.status(500).json({ success: false, message: 'Error syncing watchlist' });
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error syncing watchlist',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
   }
 };
 
