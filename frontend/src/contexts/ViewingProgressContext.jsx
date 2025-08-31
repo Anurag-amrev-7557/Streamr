@@ -286,11 +286,8 @@ export const ViewingProgressProvider = ({ children }) => {
       }
     });
 
-    // Sync with backend immediately
-    if (user) {
-      syncViewingProgressWithBackend();
-    }
-  }, [user]);
+    // Sync will be handled by useEffect after localStorage is updated
+  }, []);
 
   // Start watching a TV episode
   const startWatchingEpisode = useCallback((show, season, episode, episodeData = null) => {
@@ -387,11 +384,8 @@ export const ViewingProgressProvider = ({ children }) => {
       }
     });
 
-    // Sync with backend immediately
-    if (user) {
-      syncViewingProgressWithBackend();
-    }
-  }, [user]);
+    // Sync will be handled by useEffect after localStorage is updated
+  }, []);
 
   // Update viewing progress
   const updateProgress = useCallback((id, type, season = null, episode = null, progress = 0) => {
@@ -448,11 +442,8 @@ export const ViewingProgressProvider = ({ children }) => {
       return sorted;
     });
 
-    // Sync with backend immediately
-    if (user) {
-      syncViewingProgressWithBackend();
-    }
-  }, [user]);
+    // Sync will be handled by useEffect after localStorage is updated
+  }, []);
 
   // Remove from continue watching
   const removeFromContinueWatching = useCallback((id, type, season = null, episode = null) => {

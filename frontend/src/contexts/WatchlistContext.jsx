@@ -281,10 +281,7 @@ export const WatchlistProvider = ({ children }) => {
       return newWatchlist;
     });
 
-    // Sync with backend immediately
-    if (user) {
-      syncWatchlistWithBackend();
-    }
+    // Sync will be handled by useEffect after localStorage is updated
   };
 
   const removeFromWatchlist = useCallback((movieId) => {
@@ -304,25 +301,13 @@ export const WatchlistProvider = ({ children }) => {
       undoContext.addDeletedItem('watchlist', movieToRemove);
     }
 
-    // Sync with backend immediately
-    if (user) {
-      syncWatchlistWithBackend();
-    }
-  }, [watchlist, undoContext, user]);
+    // Sync will be handled by useEffect after localStorage is updated
+  }, [watchlist, undoContext]);
 
   // Clear all items from the watchlist
   const clearWatchlist = () => {
     setWatchlist([]);
-    try {
-      localStorage.setItem('watchlist', JSON.stringify([]));
-      
-      // Sync with backend immediately
-      if (user) {
-        syncWatchlistWithBackend();
-      }
-    } catch (error) {
-      console.error('Error clearing watchlist from localStorage:', error);
-    }
+    // localStorage will be updated by useEffect after state change
   };
 
   // Restore item to watchlist (for undo functionality)
@@ -338,11 +323,8 @@ export const WatchlistProvider = ({ children }) => {
     // Add the movie back to the watchlist
     setWatchlist(prev => [movie, ...prev]);
     
-    // Sync with backend immediately
-    if (user) {
-      syncWatchlistWithBackend();
-    }
-  }, [watchlist, user]);
+    // Sync will be handled by useEffect after localStorage is updated
+  }, [watchlist]);
 
   const isInWatchlist = (movieId) => {
     return watchlist.some(movie => movie.id === movieId);
