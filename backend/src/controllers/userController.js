@@ -485,3 +485,310 @@ exports.verifyBackupCode = async (req, res) => {
     res.status(500).json({ success: false, message: 'Error verifying backup code' });
   }
 }; 
+
+// Sync watchlist from frontend
+exports.syncWatchlist = async (req, res) => {
+  try {
+    const { watchlist } = req.body;
+    
+    if (!Array.isArray(watchlist)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Watchlist must be an array'
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Sync the watchlist using the enhanced method
+    await user.syncWatchlist(watchlist);
+
+    res.json({
+      success: true,
+      message: 'Watchlist synced successfully',
+      data: {
+        watchlist: user.watchlist
+      }
+    });
+  } catch (error) {
+    console.error('Sync watchlist error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error syncing watchlist'
+    });
+  }
+};
+
+// Sync viewing progress from frontend
+exports.syncViewingProgress = async (req, res) => {
+  try {
+    const { viewingProgress } = req.body;
+    
+    if (!viewingProgress || typeof viewingProgress !== 'object') {
+      return res.status(400).json({
+        success: false,
+        message: 'Viewing progress must be an object'
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Sync the viewing progress using the enhanced method
+    await user.syncViewingProgress(viewingProgress);
+
+    res.json({
+      success: true,
+      message: 'Viewing progress synced successfully',
+      data: {
+        viewingProgress: user.getViewingProgress()
+      }
+    });
+  } catch (error) {
+    console.error('Sync viewing progress error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error syncing viewing progress'
+    });
+  }
+};
+
+// Get user's watchlist
+exports.getWatchlist = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        watchlist: user.watchlist
+      }
+    });
+  } catch (error) {
+    console.error('Get watchlist error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching watchlist'
+    });
+  }
+};
+
+// Get user's viewing progress
+exports.getViewingProgress = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        viewingProgress: user.getViewingProgress()
+      }
+    });
+  } catch (error) {
+    console.error('Get viewing progress error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching viewing progress'
+    });
+  }
+};
+
+// Add item to watchlist
+exports.addToWatchlist = async (req, res) => {
+  try {
+    const { movieData } = req.body;
+    
+    if (!movieData || !movieData.id || !movieData.title) {
+      return res.status(400).json({
+        success: false,
+        message: 'Movie data must include id and title'
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Add to watchlist using the enhanced method
+    await user.addToWatchlistEnhanced(movieData);
+
+    res.json({
+      success: true,
+      message: 'Added to watchlist successfully',
+      data: {
+        watchlist: user.watchlist
+      }
+    });
+  } catch (error) {
+    console.error('Add to watchlist error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error adding to watchlist'
+    });
+  }
+};
+
+// Remove item from watchlist
+exports.removeFromWatchlist = async (req, res) => {
+  try {
+    const { movieId } = req.params;
+    
+    if (!movieId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Movie ID is required'
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Remove from watchlist using the enhanced method
+    await user.removeFromWatchlistEnhanced(parseInt(movieId));
+
+    res.json({
+      success: true,
+      message: 'Removed from watchlist successfully',
+      data: {
+        watchlist: user.watchlist
+      }
+    });
+  } catch (error) {
+    console.error('Remove from watchlist error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error removing from watchlist'
+    });
+  }
+};
+
+// Update viewing progress
+exports.updateViewingProgress = async (req, res) => {
+  try {
+    const { progressData } = req.body;
+    
+    if (!progressData || !progressData.id || !progressData.type) {
+      return res.status(400).json({
+        success: false,
+        message: 'Progress data must include id and type'
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Update viewing progress using the enhanced method
+    await user.updateViewingProgress(progressData);
+
+    res.json({
+      success: true,
+      message: 'Viewing progress updated successfully',
+      data: {
+        viewingProgress: user.getViewingProgress()
+      }
+    });
+  } catch (error) {
+    console.error('Update viewing progress error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating viewing progress'
+    });
+  }
+};
+
+// Clear watchlist
+exports.clearWatchlist = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Clear watchlist using the enhanced method
+    await user.clearWatchlist();
+
+    res.json({
+      success: true,
+      message: 'Watchlist cleared successfully',
+      data: {
+        watchlist: []
+      }
+    });
+  } catch (error) {
+    console.error('Clear watchlist error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error clearing watchlist'
+    });
+  }
+};
+
+// Clear viewing progress
+exports.clearViewingProgress = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Clear viewing progress using the enhanced method
+    await user.clearViewingProgress();
+
+    res.json({
+      success: true,
+      message: 'Viewing progress cleared successfully',
+      data: {
+        viewingProgress: {}
+      }
+    });
+  } catch (error) {
+    console.error('Clear viewing progress error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error clearing viewing progress'
+    });
+  }
+}; 

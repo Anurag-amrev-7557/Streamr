@@ -88,6 +88,14 @@ const userSchema = new mongoose.Schema({
     rating: {
       type: String,
       default: 'all'
+    },
+    autoplay: {
+      type: Boolean,
+      default: true
+    },
+    quality: {
+      type: String,
+      default: '1080p'
     }
   },
   // 2FA fields
@@ -109,10 +117,40 @@ const userSchema = new mongoose.Schema({
       default: false
     }
   }],
+  // Enhanced watchlist and viewing progress for frontend sync
   watchlist: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Content'
+    id: { type: Number, required: true },
+    title: { type: String, required: true },
+    poster_path: String,
+    backdrop_path: String,
+    overview: String,
+    type: { type: String, enum: ['movie', 'tv'], default: 'movie' },
+    year: String,
+    rating: Number,
+    genres: [String],
+    release_date: String,
+    duration: String,
+    director: String,
+    cast: [String],
+    addedAt: { type: Date, default: Date.now }
   }],
+  viewingProgress: {
+    type: Map,
+    of: {
+      id: { type: Number, required: true },
+      title: { type: String, required: true },
+      type: { type: String, enum: ['movie', 'tv'], required: true },
+      poster_path: String,
+      backdrop_path: String,
+      lastWatched: { type: Date, default: Date.now },
+      season: Number,
+      episode: Number,
+      episodeTitle: String,
+      progress: { type: Number, default: 0, min: 0, max: 100 }
+    },
+    default: () => new Map()
+  },
+  // Legacy fields for backward compatibility
   watchHistory: [{
     content: {
       type: mongoose.Schema.Types.ObjectId,
@@ -182,7 +220,113 @@ userSchema.methods.generatePasswordResetToken = function() {
   return token;
 };
 
-// Method to add content to watchlist
+// Enhanced method to add movie/show to watchlist
+userSchema.methods.addToWatchlistEnhanced = async function(movieData) {
+  // Check if already exists
+  const existingIndex = this.watchlist.findIndex(item => item.id === movieData.id);
+  
+  if (existingIndex >= 0) {
+    // Update existing entry
+    this.watchlist[existingIndex] = {
+      ...this.watchlist[existingIndex],
+      ...movieData,
+      addedAt: new Date()
+    };
+  } else {
+    // Add new entry
+    this.watchlist.push({
+      ...movieData,
+      addedAt: new Date()
+    });
+  }
+  
+  await this.save();
+};
+
+// Enhanced method to remove movie/show from watchlist
+userSchema.methods.removeFromWatchlistEnhanced = async function(movieId) {
+  this.watchlist = this.watchlist.filter(item => item.id !== movieId);
+  await this.save();
+};
+
+// Enhanced method to sync entire watchlist
+userSchema.methods.syncWatchlist = async function(watchlistData) {
+  this.watchlist = watchlistData.map(item => ({
+    ...item,
+    addedAt: item.addedAt ? new Date(item.addedAt) : new Date()
+  }));
+  await this.save();
+};
+
+// Enhanced method to update viewing progress
+userSchema.methods.updateViewingProgress = async function(progressData) {
+  // Initialize viewingProgress if it's undefined
+  if (!this.viewingProgress) {
+    this.viewingProgress = new Map();
+  }
+  
+  const key = progressData.type === 'movie' 
+    ? `movie_${progressData.id}` 
+    : `tv_${progressData.id}_${progressData.season}_${progressData.episode}`;
+  
+  this.viewingProgress.set(key, {
+    ...progressData,
+    lastWatched: new Date()
+  });
+  
+  await this.save();
+};
+
+// Enhanced method to sync entire viewing progress
+userSchema.methods.syncViewingProgress = async function(progressData) {
+  // Initialize viewingProgress if it's undefined
+  if (!this.viewingProgress) {
+    this.viewingProgress = new Map();
+  }
+  
+  // Clear existing progress
+  this.viewingProgress.clear();
+  
+  // Add new progress entries
+  Object.entries(progressData).forEach(([key, data]) => {
+    this.viewingProgress.set(key, {
+      ...data,
+      lastWatched: data.lastWatched ? new Date(data.lastWatched) : new Date()
+    });
+  });
+  
+  await this.save();
+};
+
+// Method to get viewing progress
+userSchema.methods.getViewingProgress = function() {
+  // Initialize viewingProgress if it's undefined
+  if (!this.viewingProgress) {
+    this.viewingProgress = new Map();
+  }
+  
+  const progress = {};
+  this.viewingProgress.forEach((value, key) => {
+    // Convert Mongoose document to plain object if it has toObject method
+    progress[key] = value && typeof value.toObject === 'function' ? value.toObject() : value;
+  });
+  
+  return progress;
+};
+
+// Method to clear viewing progress
+userSchema.methods.clearViewingProgress = async function() {
+  this.viewingProgress.clear();
+  await this.save();
+};
+
+// Method to clear watchlist
+userSchema.methods.clearWatchlist = async function() {
+  this.watchlist = [];
+  await this.save();
+};
+
+// Legacy method to add content to watchlist (for backward compatibility)
 userSchema.methods.addToWatchlist = async function(contentId) {
   if (!this.watchlist.includes(contentId)) {
     this.watchlist.push(contentId);
@@ -190,13 +334,13 @@ userSchema.methods.addToWatchlist = async function(contentId) {
   }
 };
 
-// Method to remove content from watchlist
+// Legacy method to remove content from watchlist (for backward compatibility)
 userSchema.methods.removeFromWatchlist = async function(contentId) {
   this.watchlist = this.watchlist.filter(id => id.toString() !== contentId.toString());
   await this.save();
 };
 
-// Method to update watch history
+// Legacy method to update watch history (for backward compatibility)
 userSchema.methods.updateWatchHistory = async function(contentId, progress) {
   const historyIndex = this.watchHistory.findIndex(
     item => item.content.toString() === contentId.toString()

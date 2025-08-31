@@ -946,5 +946,240 @@ export const userAPI = {
       
       return response.json();
     }, { timeout });
+  },
+
+  // Watchlist Management
+  // Get user's watchlist
+  getWatchlist: async () => {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+    
+    return fetchWithRetry(async () => {
+      const response = await fetch(`${getApiUrl()}/user/watchlist`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return response.json();
+    }, { timeout });
+  },
+
+  // Sync entire watchlist with backend
+  syncWatchlist: async (watchlistData) => {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+    
+    return fetchWithRetry(async () => {
+      const response = await fetch(`${getApiUrl()}/user/watchlist/sync`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ watchlist: watchlistData })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return response.json();
+    }, { timeout });
+  },
+
+  // Add item to watchlist
+  addToWatchlist: async (movieData) => {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+    
+    return fetchWithRetry(async () => {
+      const response = await fetch(`${getApiUrl()}/user/watchlist`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ movieData })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return response.json();
+    }, { timeout });
+  },
+
+  // Remove item from watchlist
+  removeFromWatchlist: async (movieId) => {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+    
+    return fetchWithRetry(async () => {
+      const response = await fetch(`${getApiUrl()}/user/watchlist/${movieId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return response.json();
+    }, { timeout });
+  },
+
+  // Clear entire watchlist
+  clearWatchlist: async () => {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+    
+    return fetchWithRetry(async () => {
+      const response = await fetch(`${getApiUrl()}/user/watchlist`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return response.json();
+    }, { timeout });
+  },
+
+  // Viewing Progress Management
+  // Get user's viewing progress
+  getViewingProgress: async () => {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+    
+    return fetchWithRetry(async () => {
+      const response = await fetch(`${getApiUrl()}/user/viewing-progress`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return response.json();
+    }, { timeout });
+  },
+
+  // Sync entire viewing progress with backend
+  syncViewingProgress: async (progressData) => {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+    
+    return fetchWithRetry(async () => {
+      const response = await fetch(`${getApiUrl()}/user/viewing-progress/sync`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ viewingProgress: progressData })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return response.json();
+    }, { timeout });
+  },
+
+  // Update viewing progress for a specific item
+  updateViewingProgress: async (progressData) => {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+    
+    return fetchWithRetry(async () => {
+      const response = await fetch(`${getApiUrl()}/user/viewing-progress`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ progressData })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return response.json();
+    }, { timeout });
+  },
+
+  // Clear entire viewing progress
+  clearViewingProgress: async () => {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+    
+    return fetchWithRetry(async () => {
+      const response = await fetch(`${getApiUrl()}/user/viewing-progress`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return response.json();
+    }, { timeout });
   }
 }; 

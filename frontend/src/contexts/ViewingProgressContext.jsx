@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useUndoSafe } from './UndoContext';
+import { userAPI } from '../services/api';
 
 const ViewingProgressContext = createContext();
 

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { toNumericRating } from '../utils/ratingUtils';
 import { useUndoSafe } from './UndoContext';
+import { userAPI } from '../services/api';
 
 // Genre mapping for converting TMDB genre IDs to names
 const GENRE_MAP = {
@@ -101,6 +102,53 @@ export const WatchlistProvider = ({ children }) => {
 
   // Get undo context safely
   const undoContext = useUndoSafe();
+
+  // Load watchlist from backend on mount if user is authenticated
+  useEffect(() => {
+    const loadFromBackend = async () => {
+      try {
+        const token = localStorage.getItem('accessToken');
+        if (token) {
+          const response = await userAPI.getWatchlist();
+          if (response.success && response.data.watchlist && response.data.watchlist.length > 0) {
+            // Update local state with backend data
+            setWatchlist(response.data.watchlist.map(movie => ({
+              ...movie,
+              genres: formatGenres(movie.genres || [])
+            })));
+            console.log('Loaded watchlist from backend:', response.data.watchlist.length, 'items');
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load watchlist from backend:', error);
+        // Don't show error toast for background loading
+      }
+    };
+
+    loadFromBackend();
+  }, []);
+
+  // Auto-sync with backend whenever watchlist changes
+  useEffect(() => {
+    const autoSyncWithBackend = async () => {
+      try {
+        // Only sync if we have items and user is authenticated
+        const token = localStorage.getItem('accessToken');
+        if (watchlist.length > 0 && token) {
+          await userAPI.syncWatchlist(watchlist);
+          console.log('Watchlist automatically synced with backend');
+        }
+      } catch (error) {
+        console.error('Auto-sync failed:', error);
+        // Don't show error toast for auto-sync failures
+      }
+    };
+
+    // Debounce the sync to avoid too many API calls
+    const syncTimeout = setTimeout(autoSyncWithBackend, 1000);
+    
+    return () => clearTimeout(syncTimeout);
+  }, [watchlist]);
 
   // Save watchlist to localStorage whenever it changes
   useEffect(() => {
