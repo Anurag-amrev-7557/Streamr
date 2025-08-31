@@ -251,8 +251,8 @@ const userAPI = {
 
 const AuthContext = createContext(null);
 
-// Token refresh interval (14 minutes - refresh before 15-minute expiration)
-const TOKEN_REFRESH_INTERVAL = 14 * 60 * 1000;
+// Token refresh interval (55 minutes - refresh before 1-hour expiration)
+const TOKEN_REFRESH_INTERVAL = 55 * 60 * 1000;
 // Session timeout (2 days)
 const SESSION_TIMEOUT = 2 * 24 * 60 * 60 * 1000;
 
