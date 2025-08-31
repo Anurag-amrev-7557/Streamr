@@ -129,6 +129,7 @@ if (typeof document !== 'undefined') {
 import { WatchlistProvider } from './contexts/WatchlistContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { ViewingProgressProvider } from './contexts/ViewingProgressContext'
+import { WatchHistoryProvider } from './contexts/WatchHistoryContext'
 import { UndoProvider } from './contexts/UndoContext'
 import UndoManager from './components/UndoManager'
 const ProtectedRoute = lazy(() => import('./components/ProtectedRoute').catch(err => {
@@ -617,16 +618,18 @@ const App = () => {
             <UndoProvider>
               <WatchlistProvider>
                 <ViewingProgressProvider>
-                  <AuthProvider>
-                    {/* Full Page Loader - renders at app level when active */}
-                    <FullPageLoader />
-                    <Layout />
-                    {/* Bottom Navigation (mobile) - conditionally rendered */}
-                    <ConditionalBottomNav />
-                    {/* Undo Manager - handles undo toasts */}
-                    <UndoManager />
+                  <WatchHistoryProvider>
+                    <AuthProvider>
+                      {/* Full Page Loader - renders at app level when active */}
+                      <FullPageLoader />
+                      <Layout />
+                      {/* Bottom Navigation (mobile) - conditionally rendered */}
+                      <ConditionalBottomNav />
+                      {/* Undo Manager - handles undo toasts */}
+                      <UndoManager />
 
-                  </AuthProvider>
+                    </AuthProvider>
+                  </WatchHistoryProvider>
                 </ViewingProgressProvider>
               </WatchlistProvider>
             </UndoProvider>

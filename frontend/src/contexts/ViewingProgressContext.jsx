@@ -20,87 +20,129 @@ export const ViewingProgressProvider = ({ children }) => {
   // Get undo context safely
   const undoContext = useUndoSafe();
 
-  // Load viewing progress from localStorage on mount - OPTIMIZED
+  // Load viewing progress from backend and localStorage on mount - OPTIMIZED
   useEffect(() => {
-    try {
-      const savedProgress = localStorage.getItem('viewingProgress');
-      
-      if (savedProgress) {
-        const parsed = JSON.parse(savedProgress);
-        setViewingProgress(parsed);
-        
-        // Convert to continue watching array with TV show grouping - OPTIMIZED
-        const continueWatchingArray = Object.entries(parsed)
-          .map(([key, data]) => ({
-            id: data.id,
-            title: data.title,
-            type: data.type,
-            poster_path: data.poster_path,
-            backdrop_path: data.backdrop_path,
-            lastWatched: data.lastWatched,
-            season: data.season,
-            episode: data.episode,
-            episodeTitle: data.episodeTitle,
-            progress: data.progress || 0
-          }))
-          .sort((a, b) => new Date(b.lastWatched) - new Date(a.lastWatched));
-        
-        // Group TV shows by ID and keep only the most recent episode for each show - OPTIMIZED
-        const groupedItems = [];
-        const tvShows = new Map();
-        
-        // Process items in batches to prevent blocking
-        const processItems = () => {
-          continueWatchingArray.forEach(item => {
-            if (item.type === 'tv') {
-              // For TV shows, group by show ID and keep only the most recent episode
-              if (!tvShows.has(item.id) || new Date(item.lastWatched) > new Date(tvShows.get(item.id).lastWatched)) {
-                tvShows.set(item.id, item);
-              }
-            } else {
-              // For movies, add directly
-              groupedItems.push(item);
-            }
-          });
-          
-          // Add the most recent episode for each TV show
-          tvShows.forEach(show => {
-            groupedItems.push(show);
-          });
-          
-          // Sort by last watched date and limit to 20 items
-          const finalArray = groupedItems
-            .sort((a, b) => new Date(b.lastWatched) - new Date(a.lastWatched))
-            .slice(0, 20);
-          
-          setContinueWatching(finalArray);
-        };
-        
-        // Use requestIdleCallback if available, otherwise setTimeout
-        if (window.requestIdleCallback) {
-          window.requestIdleCallback(processItems);
-        } else {
-          setTimeout(processItems, 0);
+    const loadFromBackend = async () => {
+      try {
+        const token = localStorage.getItem('accessToken');
+        if (token) {
+          const response = await userAPI.getViewingProgress();
+          if (response.success && response.data.viewingProgress) {
+            // Update local state with backend data
+            setViewingProgress(response.data.viewingProgress);
+            console.log('Loaded viewing progress from backend:', Object.keys(response.data.viewingProgress).length, 'items');
+          }
         }
+      } catch (error) {
+        console.error('Failed to load viewing progress from backend:', error);
+        // Fall back to localStorage
       }
+    };
+
+    const loadFromLocalStorage = () => {
+      try {
+        const savedProgress = localStorage.getItem('viewingProgress');
+        
+        if (savedProgress) {
+          const parsed = JSON.parse(savedProgress);
+          setViewingProgress(parsed);
+          
+          // Convert to continue watching array with TV show grouping - OPTIMIZED
+          const continueWatchingArray = Object.entries(parsed)
+            .map(([key, data]) => ({
+              id: data.id,
+              title: data.title,
+              type: data.type,
+              poster_path: data.poster_path,
+              backdrop_path: data.backdrop_path,
+              lastWatched: data.lastWatched,
+              season: data.season,
+              episode: data.episode,
+              episodeTitle: data.episodeTitle,
+              progress: data.progress || 0
+            }))
+            .sort((a, b) => new Date(b.lastWatched) - new Date(a.lastWatched));
+          
+          // Group TV shows by ID and keep only the most recent episode for each show - OPTIMIZED
+          const groupedItems = [];
+          const tvShows = new Map();
+          
+          // Process items in batches to prevent blocking
+          const processItems = () => {
+            continueWatchingArray.forEach(item => {
+              if (item.type === 'tv') {
+                // For TV shows, group by show ID and keep only the most recent episode
+                if (!tvShows.has(item.id) || new Date(item.lastWatched) > new Date(tvShows.get(item.id).lastWatched)) {
+                  tvShows.set(item.id, item);
+                }
+              } else {
+                // For movies, add directly
+                groupedItems.push(item);
+              }
+            });
+            
+            // Add the most recent episode for each TV show
+            tvShows.forEach(show => {
+              groupedItems.push(show);
+            });
+            
+            // Sort by last watched date and limit to 20 items
+            const finalArray = groupedItems
+              .sort((a, b) => new Date(b.lastWatched) - new Date(a.lastWatched))
+              .slice(0, 20);
+            
+            setContinueWatching(finalArray);
+          };
+          
+          // Use requestIdleCallback if available, otherwise setTimeout
+          if (window.requestIdleCallback) {
+            window.requestIdleCallback(processItems);
+          } else {
+            setTimeout(processItems, 0);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading viewing progress from localStorage:', error);
+      }
+    };
+
+    // Try backend first, then fall back to localStorage
+    loadFromBackend().finally(() => {
+      loadFromLocalStorage();
       setIsInitialized(true);
-    } catch (error) {
-      console.error('Error loading viewing progress:', error);
-      setIsInitialized(true);
-    }
+    });
   }, []);
 
-  // Save viewing progress to localStorage whenever it changes
+  // Auto-sync with backend and save to localStorage whenever viewing progress changes
   useEffect(() => {
-    // Don't save during initial load
+    // Don't sync during initial load
     if (!isInitialized) return;
     
+    const autoSyncWithBackend = async () => {
+      try {
+        // Only sync if we have data and user is authenticated
+        const token = localStorage.getItem('accessToken');
+        if (Object.keys(viewingProgress).length > 0 && token) {
+          await userAPI.syncViewingProgress(viewingProgress);
+          console.log('Viewing progress automatically synced with backend');
+        }
+      } catch (error) {
+        console.error('Auto-sync failed:', error);
+        // Don't show error toast for auto-sync failures
+      }
+    };
+
+    // Debounce the sync to avoid too many API calls
+    const syncTimeout = setTimeout(autoSyncWithBackend, 1000);
+    
+    // Always save to localStorage
     try {
-      // Always save the current state to localStorage (even if empty)
       localStorage.setItem('viewingProgress', JSON.stringify(viewingProgress));
     } catch (error) {
       console.error('Error saving viewing progress:', error);
     }
+    
+    return () => clearTimeout(syncTimeout);
   }, [viewingProgress, isInitialized]);
 
   // Helper function to extract path from full TMDB URL

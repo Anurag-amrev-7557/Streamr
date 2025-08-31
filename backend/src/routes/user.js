@@ -36,6 +36,11 @@ router.get('/watchlist', rateLimiters.general, authenticate, userController.getW
 // @access  Private
 router.post('/watchlist/sync', rateLimiters.general, authenticate, userController.syncWatchlist);
 
+// @route   POST /api/user/watchlist/sync/enhanced
+// @desc    Enhanced sync watchlist with conflict resolution
+// @access  Private
+router.post('/watchlist/sync/enhanced', rateLimiters.general, authenticate, userController.syncWatchlistEnhanced);
+
 // @route   POST /api/user/watchlist
 // @desc    Add item to watchlist
 // @access  Private
@@ -71,6 +76,38 @@ router.put('/viewing-progress', rateLimiters.general, authenticate, userControll
 // @desc    Clear entire viewing progress
 // @access  Private
 router.delete('/viewing-progress', rateLimiters.general, authenticate, userController.clearViewingProgress);
+
+// Watch History Routes
+// @route   GET /api/user/watch-history
+// @desc    Get user's watch history
+// @access  Private
+router.get('/watch-history', rateLimiters.general, authenticate, userController.getWatchHistory);
+
+// @route   POST /api/user/watch-history/sync
+// @desc    Sync entire watch history from frontend
+// @access  Private
+router.post('/watch-history/sync', rateLimiters.general, authenticate, userController.syncWatchHistory);
+
+// @route   POST /api/user/watch-history/sync/enhanced
+// @desc    Enhanced sync watch history with conflict resolution
+// @access  Private
+router.post('/watch-history/sync/enhanced', rateLimiters.general, authenticate, userController.syncWatchHistoryEnhanced);
+
+// @route   PUT /api/user/watch-history
+// @desc    Update watch history for a specific item
+// @access  Private
+router.put('/watch-history', rateLimiters.general, authenticate, userController.updateWatchHistory);
+
+// @route   DELETE /api/user/watch-history
+// @desc    Clear entire watch history
+// @access  Private
+router.delete('/watch-history', rateLimiters.general, authenticate, userController.clearWatchHistory);
+
+// Sync Status Route
+// @route   GET /api/user/sync-status
+// @desc    Get sync status for watchlist and watch history
+// @access  Private
+router.get('/sync-status', rateLimiters.general, authenticate, userController.getSyncStatus);
 
 // 2FA Routes
 // @route   POST /api/user/2fa/setup

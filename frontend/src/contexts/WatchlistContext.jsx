@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { toNumericRating } from '../utils/ratingUtils';
 import { useUndoSafe } from './UndoContext';
 import { userAPI } from '../services/api';
@@ -100,6 +100,16 @@ export const WatchlistProvider = ({ children }) => {
     }
   });
 
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [lastBackendSync, setLastBackendSync] = useState(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState(null);
+  
+  // Refs to track changes and prevent infinite loops
+  const isUpdatingFromBackend = useRef(false);
+  const pendingChanges = useRef(new Set());
+  const lastLocalChange = useRef(null);
+
   // Get undo context safely
   const undoContext = useUndoSafe();
 
@@ -109,55 +119,107 @@ export const WatchlistProvider = ({ children }) => {
       try {
         const token = localStorage.getItem('accessToken');
         if (token) {
+          setIsSyncing(true);
+          setSyncError(null);
+          
           const response = await userAPI.getWatchlist();
-          if (response.success && response.data.watchlist && response.data.watchlist.length > 0) {
+          if (response.success && response.data.watchlist) {
             // Update local state with backend data
-            setWatchlist(response.data.watchlist.map(movie => ({
+            const backendData = response.data.watchlist.map(movie => ({
               ...movie,
               genres: formatGenres(movie.genres || [])
-            })));
-            console.log('Loaded watchlist from backend:', response.data.watchlist.length, 'items');
+            }));
+            
+            isUpdatingFromBackend.current = true;
+            setWatchlist(backendData);
+            setLastBackendSync(new Date().toISOString());
+            console.log('Loaded watchlist from backend:', backendData.length, 'items');
+            
+            // Update localStorage with backend data
+            try {
+              localStorage.setItem('watchlist', JSON.stringify(backendData));
+            } catch (error) {
+              console.error('Error updating localStorage with backend data:', error);
+            }
           }
         }
       } catch (error) {
         console.error('Failed to load watchlist from backend:', error);
+        setSyncError(error.message);
         // Don't show error toast for background loading
+      } finally {
+        setIsSyncing(false);
+        setIsInitialized(true);
       }
     };
 
     loadFromBackend();
   }, []);
 
-  // Auto-sync with backend whenever watchlist changes
+  // Enhanced auto-sync with backend whenever watchlist changes
   useEffect(() => {
+    // Don't sync during initial load or when updating from backend
+    if (!isInitialized || isUpdatingFromBackend.current) {
+      isUpdatingFromBackend.current = false;
+      return;
+    }
+
+    // Don't sync if there are no changes
+    if (watchlist.length === 0 && !lastLocalChange.current) {
+      return;
+    }
+
     const autoSyncWithBackend = async () => {
       try {
-        // Only sync if we have items and user is authenticated
+        // Only sync if user is authenticated
         const token = localStorage.getItem('accessToken');
-        if (watchlist.length > 0 && token) {
-          await userAPI.syncWatchlist(watchlist);
-          console.log('Watchlist automatically synced with backend');
+        if (!token) {
+          console.log('User not authenticated, skipping backend sync');
+          return;
         }
+
+        // Check if we have pending changes
+        if (pendingChanges.current.size > 0) {
+          console.log('Skipping sync due to pending changes:', pendingChanges.current.size);
+          return;
+        }
+
+        setIsSyncing(true);
+        setSyncError(null);
+        
+        await userAPI.syncWatchlist(watchlist);
+        setLastBackendSync(new Date().toISOString());
+        console.log('Watchlist automatically synced with backend');
+        
+        // Clear any pending changes after successful sync
+        pendingChanges.current.clear();
+        
       } catch (error) {
         console.error('Auto-sync failed:', error);
+        setSyncError(error.message);
         // Don't show error toast for auto-sync failures
+      } finally {
+        setIsSyncing(false);
       }
     };
 
     // Debounce the sync to avoid too many API calls
-    const syncTimeout = setTimeout(autoSyncWithBackend, 1000);
+    const syncTimeout = setTimeout(autoSyncWithBackend, 1500);
     
     return () => clearTimeout(syncTimeout);
-  }, [watchlist]);
+  }, [watchlist, isInitialized]);
 
   // Save watchlist to localStorage whenever it changes
   useEffect(() => {
+    if (!isInitialized) return;
+    
     try {
       localStorage.setItem('watchlist', JSON.stringify(watchlist));
+      lastLocalChange.current = new Date().toISOString();
     } catch (error) {
       console.error('Error saving watchlist to localStorage:', error);
     }
-  }, [watchlist]);
+  }, [watchlist, isInitialized]);
 
   const validateMovieData = (movie) => {
     // Ensure all required fields are present
@@ -188,10 +250,15 @@ export const WatchlistProvider = ({ children }) => {
       return;
     }
 
+    // Mark this change as pending
+    const changeId = `add_${movie.id}_${Date.now()}`;
+    pendingChanges.current.add(changeId);
+
     setWatchlist(prev => {
       // Check if movie is already in watchlist
       if (prev.some(item => item.id === movie.id)) {
         console.log('Movie already in watchlist:', movie.title);
+        pendingChanges.current.delete(changeId);
         return prev;
       }
       
@@ -223,6 +290,10 @@ export const WatchlistProvider = ({ children }) => {
       const newWatchlist = [formattedMovie, ...prev];
       console.log('Added movie to watchlist:', formattedMovie.title);
       console.log('New watchlist length:', newWatchlist.length);
+      
+      // Remove the pending change after successful update
+      setTimeout(() => pendingChanges.current.delete(changeId), 100);
+      
       return newWatchlist;
     });
   };
@@ -230,12 +301,20 @@ export const WatchlistProvider = ({ children }) => {
   const removeFromWatchlist = useCallback((movieId) => {
     console.log('Removing movie from watchlist:', movieId);
     
+    // Mark this change as pending
+    const changeId = `remove_${movieId}_${Date.now()}`;
+    pendingChanges.current.add(changeId);
+    
     // Find the movie to be removed for undo functionality
     const movieToRemove = watchlist.find(movie => movie.id === movieId);
     
     setWatchlist(prev => {
       const newWatchlist = prev.filter(movie => movie.id !== movieId);
       console.log('Updated watchlist length:', newWatchlist.length);
+      
+      // Remove the pending change after successful update
+      setTimeout(() => pendingChanges.current.delete(changeId), 100);
+      
       return newWatchlist;
     });
 
@@ -247,12 +326,20 @@ export const WatchlistProvider = ({ children }) => {
 
   // Clear all items from the watchlist
   const clearWatchlist = () => {
+    // Mark this change as pending
+    const changeId = `clear_${Date.now()}`;
+    pendingChanges.current.add(changeId);
+    
     setWatchlist([]);
+    
     try {
       localStorage.setItem('watchlist', JSON.stringify([]));
     } catch (error) {
       console.error('Error clearing watchlist from localStorage:', error);
     }
+    
+    // Remove the pending change after successful update
+    setTimeout(() => pendingChanges.current.delete(changeId), 100);
   };
 
   // Restore item to watchlist (for undo functionality)
@@ -265,9 +352,115 @@ export const WatchlistProvider = ({ children }) => {
       return;
     }
     
+    // Mark this change as pending
+    const changeId = `restore_${movie.id}_${Date.now()}`;
+    pendingChanges.current.add(changeId);
+    
     // Add the movie back to the watchlist
-    setWatchlist(prev => [movie, ...prev]);
+    setWatchlist(prev => {
+      const newWatchlist = [movie, ...prev];
+      
+      // Remove the pending change after successful update
+      setTimeout(() => pendingChanges.current.delete(changeId), 100);
+      
+      return newWatchlist;
+    });
   }, [watchlist]);
+
+  // Enhanced sync with backend manually (for explicit sync operations)
+  const syncWithBackend = useCallback(async (force = false) => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+
+      // Don't sync if there are pending changes (unless forced)
+      if (!force && pendingChanges.current.size > 0) {
+        console.log('Skipping sync due to pending changes');
+        return { success: false, error: 'Pending changes detected' };
+      }
+
+      setIsSyncing(true);
+      setSyncError(null);
+      
+      await userAPI.syncWatchlist(watchlist);
+      setLastBackendSync(new Date().toISOString());
+      console.log('Watchlist manually synced with backend');
+      
+      // Clear any pending changes after successful sync
+      pendingChanges.current.clear();
+      
+      return { success: true };
+    } catch (error) {
+      console.error('Manual sync failed:', error);
+      setSyncError(error.message);
+      return { success: false, error: error.message };
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [watchlist]);
+
+  // Enhanced load from backend manually (for explicit refresh operations)
+  const loadFromBackend = useCallback(async (force = false) => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+
+      // Don't load if there are pending changes (unless forced)
+      if (!force && pendingChanges.current.size > 0) {
+        console.log('Skipping load due to pending changes');
+        return { success: false, error: 'Pending changes detected' };
+      }
+
+      setIsSyncing(true);
+      setSyncError(null);
+      
+      const response = await userAPI.getWatchlist();
+      if (response.success && response.data.watchlist) {
+        const backendData = response.data.watchlist.map(movie => ({
+          ...movie,
+          genres: formatGenres(movie.genres || [])
+        }));
+        
+        isUpdatingFromBackend.current = true;
+        setWatchlist(backendData);
+        setLastBackendSync(new Date().toISOString());
+        console.log('Watchlist manually loaded from backend:', backendData.length, 'items');
+        
+        // Update localStorage with backend data
+        try {
+          localStorage.setItem('watchlist', JSON.stringify(backendData));
+        } catch (error) {
+          console.error('Error updating localStorage with backend data:', error);
+        }
+        
+        return { success: true, data: backendData };
+      }
+      
+      return { success: false, error: 'Invalid response format' };
+    } catch (error) {
+      console.error('Manual load failed:', error);
+      setSyncError(error.message);
+      return { success: false, error: error.message };
+    } finally {
+      setIsSyncing(false);
+    }
+  }, []);
+
+  // Force sync to resolve conflicts
+  const forceSync = useCallback(async () => {
+    console.log('Force syncing watchlist to resolve conflicts');
+    return await syncWithBackend(true);
+  }, [syncWithBackend]);
+
+  // Force load from backend to resolve conflicts
+  const forceLoad = useCallback(async () => {
+    console.log('Force loading watchlist from backend to resolve conflicts');
+    return await loadFromBackend(true);
+  }, [loadFromBackend]);
 
   const isInWatchlist = (movieId) => {
     return watchlist.some(movie => movie.id === movieId);
@@ -275,11 +468,19 @@ export const WatchlistProvider = ({ children }) => {
 
   const value = {
     watchlist,
+    isInitialized,
+    isSyncing,
+    syncError,
+    lastBackendSync,
     addToWatchlist,
     removeFromWatchlist,
     restoreToWatchlist,
     clearWatchlist,
-    isInWatchlist
+    isInWatchlist,
+    syncWithBackend,
+    loadFromBackend,
+    forceSync,
+    forceLoad
   };
 
   return (

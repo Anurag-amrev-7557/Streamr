@@ -564,6 +564,199 @@ exports.syncViewingProgress = async (req, res) => {
   }
 };
 
+// Sync watch history from frontend
+exports.syncWatchHistory = async (req, res) => {
+  try {
+    const { watchHistory } = req.body;
+    
+    if (!Array.isArray(watchHistory)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Watch history must be an array'
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Sync the watch history using the enhanced method
+    await user.syncWatchHistory(watchHistory);
+
+    res.json({
+      success: true,
+      message: 'Watch history synced successfully',
+      data: {
+        watchHistory: user.watchHistory
+      }
+    });
+  } catch (error) {
+    console.error('Sync watch history error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error syncing watch history'
+    });
+  }
+};
+
+// Enhanced sync watchlist with conflict resolution
+exports.syncWatchlistEnhanced = async (req, res) => {
+  try {
+    const { watchlist, lastSync, clientVersion } = req.body;
+    
+    if (!Array.isArray(watchlist)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Watchlist must be an array'
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Check if there are conflicts by comparing timestamps
+    const serverLastModified = user.updatedAt;
+    const hasConflicts = lastSync && new Date(lastSync) < serverLastModified;
+
+    if (hasConflicts) {
+      // Return both server and client data for conflict resolution
+      return res.json({
+        success: true,
+        message: 'Conflicts detected, returning both versions',
+        data: {
+          watchlist: user.watchlist,
+          serverVersion: serverLastModified,
+          clientVersion: clientVersion || new Date().toISOString(),
+          conflicts: true
+        }
+      });
+    }
+
+    // No conflicts, proceed with sync
+    await user.syncWatchlist(watchlist);
+
+    res.json({
+      success: true,
+      message: 'Watchlist synced successfully',
+      data: {
+        watchlist: user.watchlist,
+        serverVersion: user.updatedAt,
+        conflicts: false
+      }
+    });
+  } catch (error) {
+    console.error('Enhanced sync watchlist error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error syncing watchlist'
+    });
+  }
+};
+
+// Enhanced sync watch history with conflict resolution
+exports.syncWatchHistoryEnhanced = async (req, res) => {
+  try {
+    const { watchHistory, lastSync, clientVersion } = req.body;
+    
+    if (!Array.isArray(watchHistory)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Watch history must be an array'
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Check if there are conflicts by comparing timestamps
+    const serverLastModified = user.updatedAt;
+    const hasConflicts = lastSync && new Date(lastSync) < serverLastModified;
+
+    if (hasConflicts) {
+      // Return both server and client data for conflict resolution
+      return res.json({
+        success: true,
+        message: 'Conflicts detected, returning both versions',
+        data: {
+          watchHistory: user.watchHistory,
+          serverVersion: serverLastModified,
+          clientVersion: clientVersion || new Date().toISOString(),
+          conflicts: true
+        }
+      });
+    }
+
+    // No conflicts, proceed with sync
+    await user.syncWatchHistory(watchHistory);
+
+    res.json({
+      success: true,
+      message: 'Watch history synced successfully',
+      data: {
+        watchHistory: user.watchHistory,
+        serverVersion: user.updatedAt,
+        conflicts: false
+      }
+    });
+  } catch (error) {
+    console.error('Enhanced sync watch history error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error syncing watch history'
+    });
+  }
+};
+
+// Get sync status for both watchlist and watch history
+exports.getSyncStatus = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        watchlist: {
+          count: user.watchlist.length,
+          lastModified: user.updatedAt,
+          version: user.updatedAt
+        },
+        watchHistory: {
+          count: user.watchHistory.length,
+          lastModified: user.updatedAt,
+          version: user.updatedAt
+        },
+        lastSync: user.updatedAt
+      }
+    });
+  } catch (error) {
+    console.error('Get sync status error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching sync status'
+    });
+  }
+};
+
 // Get user's watchlist
 exports.getWatchlist = async (req, res) => {
   try {
@@ -586,6 +779,32 @@ exports.getWatchlist = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching watchlist'
+    });
+  }
+};
+
+// Get user's watch history
+exports.getWatchHistory = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        watchHistory: user.watchHistory
+      }
+    });
+  } catch (error) {
+    console.error('Get watch history error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching watch history'
     });
   }
 };
@@ -789,6 +1008,75 @@ exports.clearViewingProgress = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error clearing viewing progress'
+    });
+  }
+};
+
+// Update watch history for a specific item
+exports.updateWatchHistory = async (req, res) => {
+  try {
+    const { contentId, progress } = req.body;
+    
+    if (!contentId || typeof progress !== 'number') {
+      return res.status(400).json({
+        success: false,
+        message: 'Content ID and progress are required'
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Update watch history using the enhanced method
+    await user.updateWatchHistory(contentId, progress);
+
+    res.json({
+      success: true,
+      message: 'Watch history updated successfully',
+      data: {
+        watchHistory: user.watchHistory
+      }
+    });
+  } catch (error) {
+    console.error('Update watch history error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating watch history'
+    });
+  }
+};
+
+// Clear watch history
+exports.clearWatchHistory = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Clear watch history using the enhanced method
+    await user.clearWatchHistory();
+
+    res.json({
+      success: true,
+      message: 'Watch history cleared successfully',
+      data: {
+        watchHistory: []
+      }
+    });
+  } catch (error) {
+    console.error('Clear watch history error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error clearing watch history'
     });
   }
 }; 

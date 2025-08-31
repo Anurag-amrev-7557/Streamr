@@ -158,6 +158,8 @@ const ActiveUsers = ({ className = '' }) => {
     };
   }, []);
 
+  const [showTooltip, setShowTooltip] = useState(false);
+
   // Don't show component if there's an error and no active users, but allow initial loading
   if (error && activeUsers === null && !isLoading) {
     return null;
@@ -173,8 +175,6 @@ const ActiveUsers = ({ className = '' }) => {
     const diffMinutes = Math.floor(diffSeconds / 60);
     return `${diffMinutes}m ago`;
   };
-
-  const [showTooltip, setShowTooltip] = useState(false);
 
   return (
     <motion.div
@@ -280,18 +280,18 @@ const ActiveUsers = ({ className = '' }) => {
             exit={{ opacity: 0, y: -5, scale: 0.9 }}
             transition={{ duration: 0.2 }}
           >
-        <div className="flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${error ? 'bg-red-400' : 'bg-green-400'}`} />
-          <span className="font-medium">
-            {error ? 'Connection error - showing last known count' : `Active users online${lastUpdate ? ` • Updated ${getTimeSinceUpdate()}` : ''}`}
-          </span>
-        </div>
-        <div className="absolute bottom-full left-4 w-0 h-0 border-l-4 border-r-4 border-b-4 border-transparent border-b-black/95" />
+            <div className="flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full ${error ? 'bg-red-400' : 'bg-green-400'}`} />
+              <span className="font-medium">
+                {error ? 'Connection error - showing last known count' : `Active users online${lastUpdate ? ` • Updated ${getTimeSinceUpdate()}` : ''}`}
+              </span>
+            </div>
+            <div className="absolute bottom-full left-4 w-0 h-0 border-l-4 border-r-4 border-b-4 border-transparent border-b-black/95" />
           </motion.div>
         )}
       </AnimatePresence>
     </motion.div>
   );
-  };
-  
-  export default ActiveUsers; 
+};
+
+export default ActiveUsers; 

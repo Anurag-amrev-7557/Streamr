@@ -1001,6 +1001,37 @@ export const userAPI = {
     }, { timeout });
   },
 
+  // Enhanced sync watchlist with conflict resolution
+  syncWatchlistEnhanced: async (watchlistData, lastSync = null) => {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+    
+    return fetchWithRetry(async () => {
+      const response = await fetch(`${getApiUrl()}/user/watchlist/sync/enhanced`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ 
+          watchlist: watchlistData,
+          lastSync,
+          clientVersion: new Date().toISOString()
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return response.json();
+    }, { timeout });
+  },
+
   // Add item to watchlist
   addToWatchlist: async (movieData) => {
     const { timeout } = getNetworkAwareConfig();
@@ -1169,6 +1200,167 @@ export const userAPI = {
     
     return fetchWithRetry(async () => {
       const response = await fetch(`${getApiUrl()}/user/viewing-progress`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return response.json();
+    }, { timeout });
+  },
+
+  // Watch History API methods
+  // Get user's watch history
+  getWatchHistory: async () => {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+    
+    return fetchWithRetry(async () => {
+      const response = await fetch(`${getApiUrl()}/user/watch-history`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return response.json();
+    }, { timeout });
+  },
+
+  // Sync entire watch history with backend
+  syncWatchHistory: async (watchHistoryData) => {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+    
+    return fetchWithRetry(async () => {
+      const response = await fetch(`${getApiUrl()}/user/watch-history/sync`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ watchHistory: watchHistoryData })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return response.json();
+    }, { timeout });
+  },
+
+  // Enhanced sync watch history with conflict resolution
+  syncWatchHistoryEnhanced: async (watchHistoryData, lastSync = null) => {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+    
+    return fetchWithRetry(async () => {
+      const response = await fetch(`${getApiUrl()}/user/watch-history/sync/enhanced`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ 
+          watchHistory: watchHistoryData,
+          lastSync,
+          clientVersion: new Date().toISOString()
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return response.json();
+    }, { timeout });
+  },
+
+  // Get sync status for both watchlist and watch history
+  getSyncStatus: async () => {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+    
+    return fetchWithRetry(async () => {
+      const response = await fetch(`${getApiUrl()}/user/sync-status`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return response.json();
+    }, { timeout });
+  },
+
+  // Update watch history for a specific item
+  updateWatchHistory: async (contentId, progress) => {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+    
+    return fetchWithRetry(async () => {
+      const response = await fetch(`${getApiUrl()}/user/watch-history`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ contentId, progress })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return response.json();
+    }, { timeout });
+  },
+
+  // Clear entire watch history
+  clearWatchHistory: async () => {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+    
+    return fetchWithRetry(async () => {
+      const response = await fetch(`${getApiUrl()}/user/watch-history`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`

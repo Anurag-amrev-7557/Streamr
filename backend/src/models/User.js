@@ -258,6 +258,16 @@ userSchema.methods.syncWatchlist = async function(watchlistData) {
   await this.save();
 };
 
+// Enhanced method to sync entire watch history
+userSchema.methods.syncWatchHistory = async function(watchHistoryData) {
+  this.watchHistory = watchHistoryData.map(item => ({
+    content: item.content,
+    progress: item.progress || 0,
+    lastWatched: item.lastWatched ? new Date(item.lastWatched) : new Date()
+  }));
+  await this.save();
+};
+
 // Enhanced method to update viewing progress
 userSchema.methods.updateViewingProgress = async function(progressData) {
   // Initialize viewingProgress if it's undefined
@@ -323,6 +333,12 @@ userSchema.methods.clearViewingProgress = async function() {
 // Method to clear watchlist
 userSchema.methods.clearWatchlist = async function() {
   this.watchlist = [];
+  await this.save();
+};
+
+// Method to clear watch history
+userSchema.methods.clearWatchHistory = async function() {
+  this.watchHistory = [];
   await this.save();
 };
 
