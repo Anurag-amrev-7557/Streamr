@@ -488,7 +488,7 @@ export const WishlistProvider = ({ children }) => {
           case 'rating':
             return (b.vote_average || 0) - (a.vote_average || 0);
           case 'date':
-            return new Date(b.release_date || b.first_air_date) - new Date(a.release_date || a.first_air_date);
+            return new Date(b.release_date || b.first_air_date) - new Date(a.release_date || b.first_air_date);
           case 'added':
             return new Date(b.addedAt || 0) - new Date(a.addedAt || 0);
           default:
