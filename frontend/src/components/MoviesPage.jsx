@@ -33,6 +33,7 @@ import RatingBadge from './RatingBadge';
 import enhancedLoadingService from '../services/enhancedLoadingService';
 import EnhancedLoadingIndicator from './EnhancedLoadingIndicator';
 import NetworkStatusBadge from './NetworkStatusBadge';
+import { useStreamingIconAnimation } from '../hooks/useStreamingIconAnimation';
 
 // Streaming service icons
 const StreamingIcons = {
@@ -719,6 +720,14 @@ const MoviesPage = () => {
   const [genreDropdownRef, setGenreDropdownRef] = useState(null);
   const [searchHistoryItems, setSearchHistoryItems] = useState([]);
   const [trendingSearches, setTrendingSearches] = useState([]);
+  
+  // Streaming icon animation hook with rubber band effect
+  const { 
+    getIconColor, 
+    getRubberBandTransition, 
+    getBackgroundTransition, 
+    getRubberBandVariants 
+  } = useStreamingIconAnimation(activeCategory);
   
   // 🚀 DEBUG: Log intersection observer state changes
   useEffect(() => {
@@ -3286,7 +3295,10 @@ const MoviesPage = () => {
 
                                     {/* Show streaming service icon if available */}
                                     {StreamingIcons[category.id] && (
-                    <span className="relative z-10 flex-shrink-0">
+                    <span 
+                      className="relative z-10 flex-shrink-0 streaming-icon-color-transition"
+                      style={{ color: getIconColor(category.id) }}
+                    >
                       {(() => {
                         try {
                           return StreamingIcons[category.id]();
@@ -3302,7 +3314,11 @@ const MoviesPage = () => {
                     <motion.div
                       layoutId="activeCategoryBackground"
                       className="absolute inset-0 bg-white rounded-full"
-                      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                      variants={getRubberBandVariants()}
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      transition={getBackgroundTransition()}
                     />
                   )}
                 </button>

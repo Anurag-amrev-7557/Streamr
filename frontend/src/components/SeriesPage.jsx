@@ -24,6 +24,7 @@ import { getTmdbImageUrl } from '../utils/imageUtils.js';
 import enhancedLoadingService from '../services/enhancedLoadingService';
 import EnhancedLoadingIndicator from './EnhancedLoadingIndicator';
 import NetworkStatusBadge from './NetworkStatusBadge';
+import { useStreamingIconAnimation } from '../hooks/useStreamingIconAnimation';
 
 // Streaming service icons
 const StreamingIcons = {
@@ -453,6 +454,14 @@ const SeriesPage = () => {
   const [retryCount, setRetryCount] = useState(0);
   const { watchlist, addToWatchlist, removeFromWatchlist } = useWatchlist();
   const [isMobile, setIsMobile] = useState(false);
+
+  // Streaming icon animation hook with rubber band effect
+  const { 
+    getIconColor, 
+    getRubberBandTransition, 
+    getBackgroundTransition, 
+    getRubberBandVariants 
+  } = useStreamingIconAnimation(activeCategory);
 
   const categories = [
     { id: 'popular', label: 'Popular', networkId: null },
@@ -1355,7 +1364,10 @@ const SeriesPage = () => {
                 >
                   {/* Show streaming service icon if available */}
                   {StreamingIcons[category.id] && (
-                    <span className="relative z-10 flex-shrink-0">
+                    <span 
+                      className="relative z-10 flex-shrink-0 streaming-icon-color-transition"
+                      style={{ color: getIconColor(category.id) }}
+                    >
                       {(() => {
                         try {
                           return StreamingIcons[category.id]();
@@ -1371,7 +1383,11 @@ const SeriesPage = () => {
                     <motion.div
                       layoutId="activeSeriesCategoryBackground"
                       className="absolute inset-0 bg-white rounded-full"
-                      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                      variants={getRubberBandVariants()}
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      transition={getBackgroundTransition()}
                     />
                   )}
                 </button>
