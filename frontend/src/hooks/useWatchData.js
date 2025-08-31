@@ -34,6 +34,11 @@ export const useWatchData = () => {
 
   // Load watchlist from backend
   const loadWatchlist = useCallback(async () => {
+    console.log('🔍 loadWatchlist called:', { 
+      isUserAuthenticated: isUserAuthenticated(), 
+      loadingRef: loadingRef.current 
+    });
+    
     if (!isUserAuthenticated() || loadingRef.current) return;
     
     try {
@@ -41,6 +46,7 @@ export const useWatchData = () => {
       setLoading(true);
       setError(null);
       
+      console.log('📋 Fetching watchlist from backend...');
       const response = await getWatchlist();
       if (mountedRef.current) {
         setWatchlist(response.data.watchlist || []);
@@ -329,6 +335,12 @@ export const useWatchData = () => {
 
   // Initialize data
   const initializeData = useCallback(async () => {
+    console.log('🔍 initializeData called:', { 
+      isUserAuthenticated: isUserAuthenticated(), 
+      isInitialized, 
+      isAuthenticated 
+    });
+    
     if (!isUserAuthenticated() || isInitialized) return;
     
     try {
@@ -346,7 +358,7 @@ export const useWatchData = () => {
     } catch (err) {
       console.error('Error initializing watch data:', err);
     }
-  }, [isUserAuthenticated, isInitialized, loadWatchlist, loadWatchHistory, loadWatchStats]);
+  }, [isUserAuthenticated, isInitialized, loadWatchlist, loadWatchHistory, loadWatchStats, isAuthenticated]);
 
   // Refresh all data
   const refreshData = useCallback(async () => {

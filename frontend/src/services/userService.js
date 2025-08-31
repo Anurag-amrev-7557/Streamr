@@ -2,7 +2,11 @@ import { getApiUrl } from '../config/api';
 
 // Helper function to get auth headers
 const getAuthHeaders = () => {
-  const token = localStorage.getItem('token');
+  const token = localStorage.getItem('accessToken');
+  console.log('🔑 Getting auth headers, token:', token ? 'Present' : 'Missing');
+  if (!token) {
+    console.warn('⚠️ No access token found in localStorage');
+  }
   return {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${token}`
@@ -61,10 +65,12 @@ export const removeFromWatchlist = async (contentId) => {
 export const getWatchlist = async () => {
   try {
     console.log('📋 Fetching watchlist...');
+    const headers = getAuthHeaders();
+    console.log('🔑 Request headers:', headers);
     
     const response = await fetch(`${getApiUrl()}/user/watchlist`, {
       method: 'GET',
-      headers: getAuthHeaders()
+      headers: headers
     });
 
     if (!response.ok) {
@@ -244,7 +250,7 @@ export const prepareContentData = (movie) => {
 
 // Helper function to check if user is authenticated
 export const isAuthenticated = () => {
-  const token = localStorage.getItem('token');
+  const token = localStorage.getItem('accessToken');
   const isAuth = !!token;
   console.log('🔑 Authentication check:', isAuth ? 'Authenticated' : 'Not authenticated');
   return isAuth;
