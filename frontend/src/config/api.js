@@ -35,6 +35,33 @@ export const getSocketUrl = () => {
   return API_CONFIG[`${API_CONFIG.mode}Socket`];
 };
 
+// Get the appropriate base URL for file uploads and static assets
+export const getBaseUrl = () => {
+  // Check for environment variable first (for deployment)
+  if (import.meta.env.VITE_BASE_URL) {
+    return import.meta.env.VITE_BASE_URL;
+  }
+  
+  // Fall back to config-based URL
+  return API_CONFIG[API_CONFIG.mode].replace('/api', '');
+};
+
+// Get the correct file URL for uploads
+export const getFileUrl = (filePath) => {
+  if (!filePath) return null;
+  
+  // If the path already starts with http, return as is
+  if (filePath.startsWith('http')) {
+    return filePath;
+  }
+  
+  // Remove leading slash if present
+  const cleanPath = filePath.startsWith('/') ? filePath.slice(1) : filePath;
+  
+  // Return the full URL
+  return `${getBaseUrl()}/${cleanPath}`;
+};
+
 // Check if we're using local backend
 export const isLocalBackend = () => {
   return API_CONFIG.mode === 'local';

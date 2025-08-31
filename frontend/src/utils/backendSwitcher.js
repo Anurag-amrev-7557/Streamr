@@ -1,124 +1,134 @@
-// Backend Switcher Utility
-import { switchBackendMode, getCurrentBackendMode, testBackendConnectivity } from '../config/api.js';
+import { switchBackendMode, getCurrentBackendMode, getApiUrl, getBaseUrl } from '../config/api';
 
+/**
+ * Utility class for managing backend configuration
+ */
 class BackendSwitcher {
-  constructor() {
-    this.currentMode = getCurrentBackendMode();
-    this.connectionStatus = null;
-  }
-
-  // Switch to local backend
-  async switchToLocal() {
-    try {
-      const success = switchBackendMode('local');
-      if (success) {
-        this.currentMode = 'local';
-        console.log('✅ Switched to local backend');
-        
-        // Test connectivity
-        const isConnected = await this.testConnection();
-        if (isConnected) {
-          console.log('✅ Local backend is accessible');
-        } else {
-          console.warn('⚠️ Local backend is not accessible. Make sure it\'s running on port 3001');
-        }
-        
-        return { success: true, mode: 'local', connected: isConnected };
-      }
-      return { success: false, error: 'Failed to switch to local backend' };
-    } catch (error) {
-      console.error('Error switching to local backend:', error);
-      return { success: false, error: error.message };
+  /**
+   * Switch to local backend for development
+   */
+  static switchToLocal() {
+    const success = switchBackendMode('local');
+    if (success) {
+      console.log('🔄 Switched to LOCAL backend');
+      console.log(`📍 API URL: ${getApiUrl()}`);
+      console.log(`📍 Base URL: ${getBaseUrl()}`);
+      console.log('💡 Note: Local uploads directory may be empty');
+      console.log('💡 Use /api/upload/proxy/:filename to fetch files from deployed backend');
     }
+    return success;
   }
 
-  // Switch to deployed backend
-  async switchToDeployed() {
-    try {
-      const success = switchBackendMode('deployed');
-      if (success) {
-        this.currentMode = 'deployed';
-        console.log('✅ Switched to deployed backend');
-        
-        // Test connectivity
-        const isConnected = await this.testConnection();
-        if (isConnected) {
-          console.log('✅ Deployed backend is accessible');
-        } else {
-          console.warn('⚠️ Deployed backend is not accessible. Check your internet connection');
-        }
-        
-        return { success: true, mode: 'deployed', connected: isConnected };
-      }
-      return { success: false, error: 'Failed to switch to deployed backend' };
-    } catch (error) {
-      console.error('Error switching to deployed backend:', error);
-      return { success: false, error: error.message };
+  /**
+   * Switch to deployed backend for production
+   */
+  static switchToDeployed() {
+    const success = switchBackendMode('deployed');
+    if (success) {
+      console.log('🔄 Switched to DEPLOYED backend');
+      console.log(`📍 API URL: ${getApiUrl()}`);
+      console.log(`📍 Base URL: ${getBaseUrl()}`);
+      console.log('💡 Note: All files and data will come from deployed backend');
     }
+    return success;
   }
 
-  // Test current backend connectivity
-  async testConnection() {
+  /**
+   * Get current backend status and configuration
+   */
+  static getStatus() {
+    const mode = getCurrentBackendMode();
+    const apiUrl = getApiUrl();
+    const baseUrl = getBaseUrl();
+    
+    return {
+      mode,
+      apiUrl,
+      baseUrl,
+      isLocal: mode === 'local',
+      isDeployed: mode === 'deployed',
+      uploadsUrl: `${baseUrl}/uploads`,
+      proxyUrl: mode === 'local' ? `${baseUrl}/api/upload/proxy` : null
+    };
+  }
+
+  /**
+   * Display current backend configuration in console
+   */
+  static logStatus() {
+    const status = this.getStatus();
+    
+    console.log('🔧 Backend Configuration:');
+    console.log(`   Mode: ${status.mode.toUpperCase()}`);
+    console.log(`   API URL: ${status.apiUrl}`);
+    console.log(`   Base URL: ${status.baseUrl}`);
+    console.log(`   Uploads: ${status.uploadsUrl}`);
+    
+    if (status.proxyUrl) {
+      console.log(`   Proxy: ${status.proxyUrl}/:filename`);
+      console.log('💡 Use proxy endpoint to fetch files from deployed backend when running locally');
+    }
+    
+    console.log('');
+  }
+
+  /**
+   * Test connectivity to current backend
+   */
+  static async testConnectivity() {
     try {
-      const isConnected = await testBackendConnectivity();
-      this.connectionStatus = isConnected;
-      return isConnected;
+      const response = await fetch(`${getApiUrl()}/health`);
+      const data = await response.json();
+      
+      console.log('✅ Backend connectivity test: SUCCESS');
+      console.log(`   Status: ${data.status}`);
+      console.log(`   Timestamp: ${data.timestamp}`);
+      
+      return true;
     } catch (error) {
-      console.error('Error testing backend connectivity:', error);
-      this.connectionStatus = false;
+      console.error('❌ Backend connectivity test: FAILED');
+      console.error(`   Error: ${error.message}`);
+      
       return false;
     }
   }
 
-  // Get current status
-  getStatus() {
-    return {
-      mode: this.currentMode,
-      connected: this.connectionStatus,
-      timestamp: new Date().toISOString()
-    };
+  /**
+   * Quick setup for development
+   */
+  static setupForDevelopment() {
+    console.log('🚀 Setting up for development...');
+    
+    // Switch to local backend
+    this.switchToLocal();
+    
+    // Log status
+    this.logStatus();
+    
+    // Test connectivity
+    this.testConnectivity();
+    
+    console.log('💡 Development setup complete!');
+    console.log('💡 If you need files from deployed backend, use the proxy endpoint');
   }
 
-  // Auto-switch based on connectivity
-  async autoSwitch() {
-    const localConnected = await this.testConnection();
+  /**
+   * Quick setup for production
+   */
+  static setupForProduction() {
+    console.log('🚀 Setting up for production...');
     
-    if (!localConnected && this.currentMode === 'local') {
-      console.log('🔄 Local backend not accessible, switching to deployed...');
-      return await this.switchToDeployed();
-    } else if (!localConnected && this.currentMode === 'deployed') {
-      console.log('🔄 Deployed backend not accessible, switching to local...');
-      return await this.switchToLocal();
-    }
+    // Switch to deployed backend
+    this.switchToDeployed();
     
-    return { success: true, mode: this.currentMode, connected: localConnected };
+    // Log status
+    this.logStatus();
+    
+    // Test connectivity
+    this.testConnectivity();
+    
+    console.log('💡 Production setup complete!');
   }
 }
 
-// Create singleton instance
-const backendSwitcher = new BackendSwitcher();
-
-// Export functions for easy use
-export const switchToLocalBackend = () => backendSwitcher.switchToLocal();
-export const switchToDeployedBackend = () => backendSwitcher.switchToDeployed();
-export const testBackendConnection = () => backendSwitcher.testConnection();
-export const getBackendStatus = () => backendSwitcher.getStatus();
-export const autoSwitchBackend = () => backendSwitcher.autoSwitch();
-
-// Make functions available globally for easy debugging
-if (typeof window !== 'undefined') {
-  window.switchToLocalBackend = switchToLocalBackend;
-  window.switchToDeployedBackend = switchToDeployedBackend;
-  window.testBackendConnection = testBackendConnection;
-  window.getBackendStatus = getBackendStatus;
-  window.autoSwitchBackend = autoSwitchBackend;
-  
-  console.log('🌐 Backend switcher available globally:');
-  console.log('- switchToLocalBackend()');
-  console.log('- switchToDeployedBackend()');
-  console.log('- testBackendConnection()');
-  console.log('- getBackendStatus()');
-  console.log('- autoSwitchBackend()');
-}
-
-export default backendSwitcher; 
+export default BackendSwitcher; 

@@ -13,6 +13,7 @@ const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/user');
 const tmdbRoutes = require('./routes/tmdb');
 const communityRoutes = require('./routes/community');
+const uploadRoutes = require('./routes/upload');
 const { createServer } = require('http');
 const socketIo = require('socket.io');
 const { authenticate } = require('./middleware/auth');
@@ -339,6 +340,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/user', authenticate, userRoutes);
 app.use('/api/tmdb', tmdbRoutes);
 app.use('/api/community', communityRoutes);
+app.use('/api/upload', uploadRoutes);
 
 // Health check endpoints
 app.get('/', (req, res) => {
