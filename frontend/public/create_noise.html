@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head><title>Create Noise</title></head>
+<body>
+<canvas id="canvas" width="100" height="100"></canvas>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const imageData = ctx.createImageData(100, 100);
+for(let i = 0; i < imageData.data.length; i += 4) {
+  const gray = Math.floor(Math.random() * 50) + 200;
+  imageData.data[i] = gray;
+  imageData.data[i+1] = gray;
+  imageData.data[i+2] = gray;
+  imageData.data[i+3] = 20;
+}
+ctx.putImageData(imageData, 0, 0);
+const link = document.createElement('a');
+link.download = 'noise.png';
+link.href = canvas.toDataURL();
+document.body.appendChild(link);
+console.log('Noise texture created');
+</script>
+</body>
+</html>

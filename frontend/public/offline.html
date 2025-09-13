@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Streamr - Offline</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #121417 0%, #1a1a1a 100%);
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .offline-container {
+            text-align: center;
+            max-width: 500px;
+            width: 100%;
+        }
+
+        .offline-icon {
+            font-size: 80px;
+            margin-bottom: 24px;
+            animation: pulse 2s infinite;
+        }
+
+        .offline-title {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .offline-message {
+            font-size: 18px;
+            color: #cbd5e1;
+            margin-bottom: 32px;
+            line-height: 1.6;
+        }
+
+        .offline-features {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 32px;
+            text-align: left;
+        }
+
+        .offline-features h3 {
+            font-size: 20px;
+            margin-bottom: 16px;
+            color: #e2e8f0;
+        }
+
+        .feature-list {
+            list-style: none;
+        }
+
+        .feature-list li {
+            padding: 8px 0;
+            color: #94a3b8;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .feature-list li::before {
+            content: "✓";
+            color: #10b981;
+            font-weight: bold;
+            font-size: 18px;
+        }
+
+        .retry-button {
+            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 16px 32px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-right: 16px;
+        }
+
+        .retry-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4);
+        }
+
+        .home-button {
+            background: transparent;
+            color: #94a3b8;
+            border: 2px solid #475569;
+            border-radius: 12px;
+            padding: 16px 32px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .home-button:hover {
+            background: #475569;
+            color: white;
+            border-color: #64748b;
+        }
+
+        .network-status {
+            margin-top: 24px;
+            padding: 16px;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 8px;
+            color: #fca5a5;
+        }
+
+        .cached-content {
+            margin-top: 24px;
+            padding: 16px;
+            background: rgba(34, 197, 94, 0.1);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            border-radius: 8px;
+            color: #86efac;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+            50% {
+                transform: scale(1.1);
+                opacity: 0.8;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .offline-title {
+                font-size: 24px;
+            }
+
+            .offline-message {
+                font-size: 16px;
+            }
+
+            .retry-button,
+            .home-button {
+                display: block;
+                width: 100%;
+                margin: 8px 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="offline-container">
+        <div class="offline-icon">📡</div>
+        <h1 class="offline-title">You're Offline</h1>
+        <p class="offline-message">
+            Don't worry! Streamr works offline too. While you're disconnected, you can still access your cached content and use many app features.
+        </p>
+
+        <div class="offline-features">
+            <h3>Available Offline:</h3>
+            <ul class="feature-list">
+                <li>Browse cached movies and TV shows</li>
+                <li>View your watchlist</li>
+                <li>Access search history</li>
+                <li>Read movie details and reviews</li>
+                <li>Use app navigation and settings</li>
+            </ul>
+        </div>
+
+        <div>
+            <button class="retry-button" onclick="retryConnection()">
+                🔄 Try Again
+            </button>
+            <button class="home-button" onclick="goHome()">
+                🏠 Go Home
+            </button>
+        </div>
+
+        <div class="network-status" id="networkStatus">
+            <strong>Network Status:</strong> Offline
+        </div>
+
+        <div class="cached-content" id="cachedContent">
+            <strong>Cached Content:</strong> Available
+        </div>
+    </div>
+
+    <script>
+        // Check network status
+        function updateNetworkStatus() {
+            const networkStatus = document.getElementById('networkStatus');
+            const cachedContent = document.getElementById('cachedContent');
+
+            if (navigator.onLine) {
+                networkStatus.innerHTML = '<strong>Network Status:</strong> Online';
+                networkStatus.style.background = 'rgba(34, 197, 94, 0.1)';
+                networkStatus.style.borderColor = 'rgba(34, 197, 94, 0.3)';
+                networkStatus.style.color = '#86efac';
+
+                // Redirect to main app after a short delay
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 2000);
+            } else {
+                networkStatus.innerHTML = '<strong>Network Status:</strong> Offline';
+                networkStatus.style.background = 'rgba(239, 68, 68, 0.1)';
+                networkStatus.style.borderColor = 'rgba(239, 68, 68, 0.3)';
+                networkStatus.style.color = '#fca5a5';
+            }
+        }
+
+        // Retry connection
+        function retryConnection() {
+            if (navigator.onLine) {
+                window.location.href = '/';
+            } else {
+                // Show retry animation
+                const retryBtn = document.querySelector('.retry-button');
+                retryBtn.innerHTML = '🔄 Checking...';
+                retryBtn.disabled = true;
+
+                setTimeout(() => {
+                    retryBtn.innerHTML = '🔄 Try Again';
+                    retryBtn.disabled = false;
+                    updateNetworkStatus();
+                }, 2000);
+            }
+        }
+
+        // Go to home (will show cached content if available)
+        function goHome() {
+            window.location.href = '/';
+        }
+
+        // Listen for network changes
+        window.addEventListener('online', updateNetworkStatus);
+        window.addEventListener('offline', updateNetworkStatus);
+
+        // Check if we have cached content
+        async function checkCachedContent() {
+            try {
+                if ('caches' in window) {
+                    const cache = await caches.open('streamr-static-v3');
+                    const keys = await cache.keys();
+
+                    if (keys.length > 0) {
+                        document.getElementById('cachedContent').innerHTML =
+                            `<strong>Cached Content:</strong> ${keys.length} items available`;
+                    }
+                }
+            } catch (error) {
+                console.log('Could not check cached content:', error);
+            }
+        }
+
+        // Initialize
+        updateNetworkStatus();
+        checkCachedContent();
+
+        // Auto-retry every 30 seconds
+        setInterval(() => {
+            if (navigator.onLine) {
+                retryConnection();
+            }
+        }, 30000);
+    </script>
+</body>
+</html> 
