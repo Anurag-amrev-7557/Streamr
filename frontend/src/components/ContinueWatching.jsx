@@ -620,7 +620,7 @@ const ContinueWatching = ({ onMovieSelect, isMobile }) => {
       if (memoryOptimizer.isMounted()) {
         refreshFromStorage();
       }
-    }, 1000); // 1 seconds
+    }, 30000); // 30 seconds
 
     // Cleanup is handled automatically by the memory optimizer
   }, [refreshFromStorage, memoryOptimizer]);

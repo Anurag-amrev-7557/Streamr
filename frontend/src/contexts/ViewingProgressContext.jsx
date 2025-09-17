@@ -206,7 +206,7 @@ export const ViewingProgressProvider = ({ children }) => {
           // Don't set sync error for background refresh
         }
       }
-    }, 1000); // 1 seconds
+    }, 30000); // 30 seconds
 
     return () => clearInterval(interval);
   }, [viewingProgress, isInitialized]);
@@ -231,7 +231,7 @@ export const ViewingProgressProvider = ({ children }) => {
     };
 
     // Debounce the sync to avoid too many API calls
-    const syncTimeout = setTimeout(autoSyncWithBackend, 1000);
+    const syncTimeout = setTimeout(autoSyncWithBackend, 30000);
     
     // Always save to localStorage
     try {
