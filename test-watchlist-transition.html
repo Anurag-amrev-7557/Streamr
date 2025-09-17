@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Watchlist Transition Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #0f1114;
+            color: white;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #333;
+            border-radius: 8px;
+        }
+        .success {
+            color: #4ade80;
+        }
+        .error {
+            color: #f87171;
+        }
+        .info {
+            color: #60a5fa;
+        }
+    </style>
+</head>
+<body>
+    <h1>Watchlist View Transition Test</h1>
+    
+    <div class="test-section">
+        <h2>Implementation Summary</h2>
+        <p class="info">✅ Updated watchlist page to use AnimatePresence with mode="wait"</p>
+        <p class="info">✅ Added proper key props for grid and list views</p>
+        <p class="info">✅ Updated transition timing to match episodes section (0.18s duration)</p>
+        <p class="info">✅ Simplified motion components for better performance</p>
+    </div>
+
+    <div class="test-section">
+        <h2>Key Changes Made</h2>
+        <ul>
+            <li class="success">Replaced complex layout animations with simple opacity transitions</li>
+            <li class="success">Used AnimatePresence mode="wait" for smooth view switching</li>
+            <li class="success">Added staggered animations for individual items (0.05s delay)</li>
+            <li class="success">Maintained consistent styling between grid and list views</li>
+            <li class="success">Removed unnecessary layoutId props that were causing conflicts</li>
+        </ul>
+    </div>
+
+    <div class="test-section">
+        <h2>Expected Behavior</h2>
+        <p class="info">When switching between grid and list view:</p>
+        <ul>
+            <li>Current view fades out smoothly (0.18s)</li>
+            <li>New view fades in smoothly (0.18s)</li>
+            <li>Individual items animate in with staggered delay</li>
+            <li>No jarring layout shifts or overlapping content</li>
+            <li>Consistent with episodes section behavior</li>
+        </ul>
+    </div>
+
+    <div class="test-section">
+        <h2>Testing Instructions</h2>
+        <ol>
+            <li>Navigate to the watchlist page</li>
+            <li>Add some movies/TV shows to your watchlist</li>
+            <li>Click the grid/list view toggle buttons</li>
+            <li>Observe the smooth transition animation</li>
+            <li>Compare with episodes section transitions</li>
+        </ol>
+    </div>
+
+    <script>
+        console.log('Watchlist transition test loaded');
+        console.log('Key implementation details:');
+        console.log('- AnimatePresence mode="wait"');
+        console.log('- Grid key: "watchlist-grid"');
+        console.log('- List key: "watchlist-list"');
+        console.log('- Transition duration: 0.18s');
+        console.log('- Stagger delay: 0.05s per item');
+    </script>
+</body>
+</html>

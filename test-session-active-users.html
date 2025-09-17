@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Session-Based Active Users Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        .indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        .connected { background-color: #4CAF50; }
+        .disconnected { background-color: #f44336; }
+        .count {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2196F3;
+        }
+        .timestamp {
+            color: #666;
+            font-size: 14px;
+        }
+        .controls {
+            margin: 20px 0;
+        }
+        button {
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #1976D2;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .log {
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .debug-info {
+            background-color: #e3f2fd;
+            border: 1px solid #2196F3;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Session-Based Active Users Test</h1>
+        
+        <div class="status">
+            <div id="connectionIndicator" class="indicator disconnected"></div>
+            <span id="connectionStatus">Disconnected</span>
+        </div>
+        
+        <div class="status">
+            <span>Active Users:</span>
+            <span id="activeUsersCount" class="count">--</span>
+        </div>
+        
+        <div class="timestamp" id="lastUpdate">Last update: Never</div>
+        
+        <div class="controls">
+            <button id="connectBtn" onclick="connect()">Connect</button>
+            <button id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
+            <button onclick="fetchCount()">Fetch Count</button>
+            <button onclick="clearLog()">Clear Log</button>
+        </div>
+        
+        <div id="debugInfo" class="debug-info" style="display: none;">
+            <strong>Debug Information:</strong>
+            <pre id="debugContent"></pre>
+        </div>
+        
+        <h3>Activity Log</h3>
+        <div id="log" class="log"></div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        let socket = null;
+        let isConnected = false;
+        
+        const BACKEND_URL = window.location.origin.replace('5173', '3001');
+        
+        function log(message) {
+            const logElement = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logElement.innerHTML += `[${timestamp}] ${message}\n`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+        
+        function updateStatus(connected) {
+            isConnected = connected;
+            const indicator = document.getElementById('connectionIndicator');
+            const status = document.getElementById('connectionStatus');
+            const connectBtn = document.getElementById('connectBtn');
+            const disconnectBtn = document.getElementById('disconnectBtn');
+            
+            if (connected) {
+                indicator.className = 'indicator connected';
+                status.textContent = 'Connected';
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+            } else {
+                indicator.className = 'indicator disconnected';
+                status.textContent = 'Disconnected';
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+            }
+        }
+        
+        function updateCount(data) {
+            document.getElementById('activeUsersCount').textContent = data.count;
+            document.getElementById('lastUpdate').textContent = `Last update: ${new Date(data.timestamp).toLocaleTimeString()}`;
+            
+            if (data.debug) {
+                document.getElementById('debugInfo').style.display = 'block';
+                document.getElementById('debugContent').textContent = JSON.stringify(data.debug, null, 2);
+            }
+        }
+        
+        function connect() {
+            if (socket) {
+                socket.disconnect();
+            }
+            
+            log('Connecting to backend...');
+            socket = io(BACKEND_URL, {
+                transports: ['websocket', 'polling'],
+                timeout: 5000
+            });
+            
+            socket.on('connect', () => {
+                log(`✅ Connected: ${socket.id}`);
+                updateStatus(true);
+            });
+            
+            socket.on('disconnect', (reason) => {
+                log(`❌ Disconnected: ${reason}`);
+                updateStatus(false);
+            });
+            
+            socket.on('connect_error', (error) => {
+                log(`❌ Connection error: ${error.message}`);
+                updateStatus(false);
+            });
+            
+            socket.on('activeUsers:update', (data) => {
+                log(`📈 Received update: ${data.count} active users`);
+                updateCount(data);
+            });
+        }
+        
+        function disconnect() {
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+            }
+        }
+        
+        async function fetchCount() {
+            try {
+                log('Fetching count from API...');
+                const response = await fetch(`${BACKEND_URL}/api/active-users`);
+                const data = await response.json();
+                
+                log(`📡 API Response: ${data.count} active users`);
+                updateCount(data);
+            } catch (error) {
+                log(`❌ API fetch failed: ${error.message}`);
+            }
+        }
+        
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+        
+        // Auto-connect on page load
+        window.addEventListener('load', () => {
+            log('Page loaded, ready to test');
+            fetchCount(); // Initial fetch
+        });
+        
+        // Periodic heartbeat to keep connection alive
+        setInterval(() => {
+            if (socket && isConnected) {
+                socket.emit('heartbeat');
+            }
+        }, 30000); // Every 30 seconds
+    </script>
+</body>
+</html>

@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manga Navigation Test</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #121417;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        .test-container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .scroll-area {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #333;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .nav-buttons {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            border-radius: 25px;
+            padding: 12px 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            transition: all 0.3s ease;
+            z-index: 50;
+        }
+        .nav-buttons.hidden {
+            opacity: 0;
+            transform: translateX(-50%) translateY(20px);
+            pointer-events: none;
+        }
+        .nav-button {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .nav-button:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: scale(1.05);
+        }
+        .chapter-info {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 12px;
+            padding: 4px 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+        }
+        .content {
+            height: 2000px;
+            background: linear-gradient(45deg, #1a1f24, #20262b);
+            padding: 20px;
+            margin: 10px 0;
+        }
+        .test-info {
+            background: #181c20;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border: 1px solid #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>Manga Navigation Test</h1>
+        
+        <div class="test-info">
+            <h3>Test Instructions:</h3>
+            <ol>
+                <li>Scroll down in the scroll area below</li>
+                <li>Notice the navigation buttons disappear when scrolling</li>
+                <li>Stop scrolling and wait 1 second</li>
+                <li>Notice the navigation buttons reappear</li>
+                <li>Test on mobile view (resize browser or use dev tools)</li>
+            </ol>
+        </div>
+
+        <div class="scroll-area" id="scrollArea">
+            <div class="content">
+                <h2>Scroll Test Content</h2>
+                <p>This simulates the manga reader scroll area. Scroll up and down to test the navigation button visibility behavior.</p>
+                <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.</p>
+                <p>Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
+                <p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+                <p>Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
+                <p>Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium.</p>
+                <p>Totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo.</p>
+                <p>Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos.</p>
+                <p>Qui ratione voluptatem sequi nesciunt neque porro quisquam est, qui dolorem ipsum quia dolor sit amet.</p>
+                <p>Consectetur, adipisci velit, sed quia non numquam eius modi tempora incidunt ut labore et dolore magnam aliquam quaerat voluptatem.</p>
+                <p>Ut enim ad minima veniam, quis nostrum exercitationem ullam corporis suscipit laboriosam, nisi ut aliquid ex ea commodi consequatur.</p>
+                <p>Quis autem vel eum iure reprehenderit qui in ea voluptate velit esse quam nihil molestiae consequatur.</p>
+                <p>Vel illum qui dolorem eum fugiat quo voluptas nulla pariatur at vero eos et accusamus et iusto odio dignissimos ducimus.</p>
+                <p>Qui blanditiis praesentium voluptatum deleniti atque corrupti quos dolores et quas molestias excepturi sint occaecati cupiditate non provident.</p>
+                <p>Similique sunt in culpa qui officia deserunt mollitia animi, id est laborum et dolorum fuga.</p>
+                <p>Et harum quidem rerum facilis est et expedita distinctio nam libero tempore, cum soluta nobis est eligendi optio cumque.</p>
+                <p>Nihil impedit quo minus id quod maxime placeat facere possimus, omnis voluptas assumenda est, omnis dolor repellendus.</p>
+                <p>Temporibus autem quibusdam et aut officiis debitis aut rerum necessitatibus saepe eveniet ut et voluptates repudiandae sint.</p>
+                <p>Et molestiae non recusandae itaque earum rerum hic tenetur a sapiente delectus, ut aut reiciendis voluptatibus maiores alias consequatur.</p>
+                <p>Aut perferendis doloribus asperiores repellat at vero eos et accusamus et iusto odio dignissimos ducimus qui blanditiis praesentium.</p>
+                <p>Voluptatum deleniti atque corrupti quos dolores et quas molestias excepturi sint occaecati cupiditate non provident.</p>
+            </div>
+        </div>
+
+        <div class="test-info">
+            <h3>Expected Behavior:</h3>
+            <ul>
+                <li>✅ Navigation buttons visible by default</li>
+                <li>✅ Buttons hide immediately when scrolling starts</li>
+                <li>✅ Buttons reappear 1 second after scrolling stops</li>
+                <li>✅ Smooth fade in/out transitions</li>
+                <li>✅ Mobile-optimized design (only visible on mobile screens)</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Navigation Buttons -->
+    <div class="nav-buttons" id="navButtons">
+        <button class="nav-button" onclick="alert('Previous Chapter')">
+            ← Prev
+        </button>
+        <div class="chapter-info">
+            1 / 10
+        </div>
+        <button class="nav-button" onclick="alert('Next Chapter')">
+            Next →
+        </button>
+    </div>
+
+    <script>
+        const scrollArea = document.getElementById('scrollArea');
+        const navButtons = document.getElementById('navButtons');
+        let scrollTimeout;
+
+        scrollArea.addEventListener('scroll', function() {
+            // Hide buttons when scrolling
+            navButtons.classList.add('hidden');
+            
+            // Clear existing timeout
+            clearTimeout(scrollTimeout);
+            
+            // Show buttons after scrolling stops
+            scrollTimeout = setTimeout(() => {
+                navButtons.classList.remove('hidden');
+            }, 1000);
+        });
+
+        // Test mobile detection
+        function isMobile() {
+            return window.innerWidth < 768;
+        }
+
+        // Show/hide based on screen size
+        function updateVisibility() {
+            if (isMobile()) {
+                navButtons.style.display = 'flex';
+            } else {
+                navButtons.style.display = 'none';
+            }
+        }
+
+        // Initial check
+        updateVisibility();
+        
+        // Update on resize
+        window.addEventListener('resize', updateVisibility);
+    </script>
+</body>
+</html>

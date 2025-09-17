@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Watchlist Sync Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .success { border-color: #4CAF50; background-color: #f1f8e9; }
+        .error { border-color: #f44336; background-color: #ffebee; }
+        .info { border-color: #2196F3; background-color: #e3f2fd; }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background-color: #45a049; }
+        button:disabled { background-color: #cccccc; cursor: not-allowed; }
+        .log {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 10px 0;
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .status.success { background-color: #d4edda; color: #155724; }
+        .status.error { background-color: #f8d7da; color: #721c24; }
+        .status.info { background-color: #d1ecf1; color: #0c5460; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Watchlist Sync Test</h1>
+        <p>This page tests the watchlist sync functionality with your backend.</p>
+        
+        <div class="test-section info">
+            <h3>📋 Test Instructions</h3>
+            <ol>
+                <li>Make sure you're logged into your Streamr app in another tab</li>
+                <li>Click "Check Authentication" to verify your login status</li>
+                <li>Click "Test Watchlist Sync" to add a test movie</li>
+                <li>Check the console and network tab for results</li>
+            </ol>
+        </div>
+
+        <div class="test-section">
+            <h3>🔐 Authentication Test</h3>
+            <button onclick="checkAuth()">Check Authentication</button>
+            <div id="authStatus" class="status"></div>
+            <div id="authLog" class="log"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>🎬 Watchlist Sync Test</h3>
+            <button onclick="testWatchlistSync()" id="syncBtn" disabled>Test Watchlist Sync</button>
+            <div id="syncStatus" class="status"></div>
+            <div id="syncLog" class="log"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>📊 Current State</h3>
+            <button onclick="checkCurrentState()">Check Current State</button>
+            <div id="stateLog" class="log"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>🔄 Manual Sync</h3>
+            <button onclick="manualSync()">Force Manual Sync</button>
+            <div id="manualSyncLog" class="log"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'https://streamr-jjj9.onrender.com/api';
+        let accessToken = null;
+
+        function log(elementId, message) {
+            const element = document.getElementById(elementId);
+            const timestamp = new Date().toLocaleTimeString();
+            element.textContent += `[${timestamp}] ${message}\n`;
+            element.scrollTop = element.scrollHeight;
+        }
+
+        function setStatus(elementId, message, type) {
+            const element = document.getElementById(elementId);
+            element.textContent = message;
+            element.className = `status ${type}`;
+        }
+
+        async function checkAuth() {
+            const authLog = document.getElementById('authLog');
+            const authStatus = document.getElementById('authStatus');
+            const syncBtn = document.getElementById('syncBtn');
+            
+            authLog.textContent = '';
+            log('authLog', '🔍 Checking authentication...');
+            
+            try {
+                // Check if we have a token in localStorage (from another tab)
+                accessToken = localStorage.getItem('accessToken');
+                
+                if (!accessToken) {
+                    setStatus('authStatus', '❌ No access token found. Please log in to your Streamr app first.', 'error');
+                    log('authLog', '❌ No access token found in localStorage');
+                    log('authLog', '💡 Make sure you are logged into your Streamr app in another tab');
+                    syncBtn.disabled = true;
+                    return;
+                }
+                
+                log('authLog', `✅ Access token found: ${accessToken.substring(0, 20)}...`);
+                
+                // Test the token with the backend
+                const response = await fetch(`${API_BASE}/user/profile`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    const userData = await response.json();
+                    setStatus('authStatus', '✅ Authentication successful!', 'success');
+                    log('authLog', `✅ Backend authentication successful`);
+                    log('authLog', `👤 User: ${userData.data?.name || 'Unknown'}`);
+                    log('authLog', `📧 Email: ${userData.data?.email || 'Unknown'}`);
+                    syncBtn.disabled = false;
+                } else {
+                    setStatus('authStatus', '❌ Authentication failed. Token may be expired.', 'error');
+                    log('authLog', `❌ Backend authentication failed: ${response.status}`);
+                    const errorData = await response.text();
+                    log('authLog', `Error details: ${errorData}`);
+                    syncBtn.disabled = true;
+                }
+                
+            } catch (error) {
+                setStatus('authStatus', '❌ Authentication check failed', 'error');
+                log('authLog', `❌ Error: ${error.message}`);
+                syncBtn.disabled = true;
+            }
+        }
+
+        async function testWatchlistSync() {
+            const syncLog = document.getElementById('syncLog');
+            const syncStatus = document.getElementById('syncStatus');
+            
+            syncLog.textContent = '';
+            setStatus('syncStatus', '🔄 Testing watchlist sync...', 'info');
+            
+            if (!accessToken) {
+                setStatus('syncStatus', '❌ No access token available', 'error');
+                log('syncLog', '❌ Please check authentication first');
+                return;
+            }
+            
+            const testMovie = {
+                id: Date.now(), // Use timestamp to ensure unique ID
+                title: 'Test Movie for Sync',
+                poster_path: '/test-poster.jpg',
+                backdrop_path: '/test-backdrop.jpg',
+                overview: 'This is a test movie to verify the sync fix',
+                type: 'movie',
+                year: '2024',
+                rating: 8.5,
+                genres: ['Action', 'Adventure'],
+                release_date: '2024-01-01',
+                duration: '2h 15m',
+                director: 'Test Director',
+                cast: ['Test Actor 1', 'Test Actor 2'],
+                addedAt: new Date().toISOString()
+            };
+            
+            log('syncLog', `🎬 Test movie data: ${JSON.stringify(testMovie, null, 2)}`);
+            log('syncLog', `🔄 Sending sync request to backend...`);
+            
+            try {
+                const response = await fetch(`${API_BASE}/user/watchlist/sync`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${accessToken}`
+                    },
+                    body: JSON.stringify({ watchlist: [testMovie] })
+                });
+                
+                log('syncLog', `📡 Response status: ${response.status}`);
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    setStatus('syncStatus', '✅ Watchlist sync successful!', 'success');
+                    log('syncLog', `✅ Sync successful!`);
+                    log('syncLog', `📊 Response: ${JSON.stringify(result, null, 2)}`);
+                    
+                    // Check if the movie was actually saved
+                    if (result.data && result.data.watchlist) {
+                        log('syncLog', `📝 Watchlist now contains ${result.data.watchlist.length} items`);
+                        if (result.data.watchlist.length > 0) {
+                            log('syncLog', `🎬 First item: ${result.data.watchlist[0].title}`);
+                        }
+                    }
+                } else {
+                    const errorData = await response.text();
+                    setStatus('syncStatus', `❌ Sync failed: ${response.status}`, 'error');
+                    log('syncLog', `❌ Sync failed with status ${response.status}`);
+                    log('syncLog', `Error details: ${errorData}`);
+                }
+                
+            } catch (error) {
+                setStatus('syncStatus', '❌ Sync request failed', 'error');
+                log('syncLog', `❌ Error: ${error.message}`);
+            }
+        }
+
+        async function checkCurrentState() {
+            const stateLog = document.getElementById('stateLog');
+            stateLog.textContent = '';
+            
+            if (!accessToken) {
+                log('stateLog', '❌ No access token available. Please check authentication first.');
+                return;
+            }
+            
+            log('stateLog', '🔍 Checking current watchlist state...');
+            
+            try {
+                const response = await fetch(`${API_BASE}/user/watchlist`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    log('stateLog', `✅ Current watchlist retrieved`);
+                    log('stateLog', `📊 Total items: ${result.data?.watchlist?.length || 0}`);
+                    
+                    if (result.data?.watchlist && result.data.watchlist.length > 0) {
+                        log('stateLog', `🎬 Items:`);
+                        result.data.watchlist.forEach((item, index) => {
+                            log('stateLog', `  ${index + 1}. ${item.title} (ID: ${item.id})`);
+                        });
+                    } else {
+                        log('stateLog', `📝 Watchlist is empty`);
+                    }
+                } else {
+                    const errorData = await response.text();
+                    log('stateLog', `❌ Failed to get watchlist: ${response.status}`);
+                    log('stateLog', `Error: ${errorData}`);
+                }
+                
+            } catch (error) {
+                log('stateLog', `❌ Error: ${error.message}`);
+            }
+        }
+
+        async function manualSync() {
+            const manualSyncLog = document.getElementById('manualSyncLog');
+            manualSyncLog.textContent = '';
+            
+            if (!accessToken) {
+                log('manualSyncLog', '❌ No access token available. Please check authentication first.');
+                return;
+            }
+            
+            log('manualSyncLog', '🔄 Testing manual sync with empty watchlist...');
+            
+            try {
+                const response = await fetch(`${API_BASE}/user/watchlist/sync`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${accessToken}`
+                    },
+                    body: JSON.stringify({ watchlist: [] })
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    log('manualSyncLog', `✅ Manual sync successful!`);
+                    log('syncLog', `📊 Response: ${JSON.stringify(result, null, 2)}`);
+                } else {
+                    const errorData = await response.text();
+                    log('manualSyncLog', `❌ Manual sync failed: ${response.status}`);
+                    log('manualSyncLog', `Error: ${errorData}`);
+                }
+                
+            } catch (error) {
+                log('manualSyncLog', `❌ Error: ${error.message}`);
+            }
+        }
+
+        // Auto-check auth on page load
+        window.addEventListener('load', () => {
+            log('authLog', '🚀 Page loaded. Click "Check Authentication" to begin testing.');
+        });
+    </script>
+</body>
+</html>

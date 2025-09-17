@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="512" height="512" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="512" fill="#121417"/>
+  <path 
+    fillRule="evenodd" 
+    clipRule="evenodd" 
+    d="M24 4H42V17.3333V30.6667H24V44H6V30.6667V17.3333H24V4Z" 
+    fill="white"
+    transform="scale(10.666666666666666)"
+  />
+</svg>
