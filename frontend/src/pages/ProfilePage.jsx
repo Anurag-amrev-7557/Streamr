@@ -758,7 +758,7 @@ const ProfilePage = () => {
                   onClick={() => handleMovieSelect(movie)}
                 >
                   {!loadedImages[movie.id] && (
-                    <div className="absolute inset-0 bg-[#1a1d21] animate-pulse" />
+                    <div className="absolute inset-0 bg-[#1a1d21]" />
                   )}
                   <img
                     src={getImageUrl(movie.poster_path)}
@@ -2069,7 +2069,7 @@ const ProfilePage = () => {
             <div className="lg:sticky lg:top-8 space-y-4 sm:space-y-6">
               <div className="hidden lg:block rounded-xl p-6 border border-white/10 bg-white/[0.03]">
                 {loading ? (
-                  <div className="flex items-center gap-4 animate-pulse">
+                  <div className="flex items-center gap-4">
                     <div className="w-16 h-16 rounded-full bg-white/5" />
                     <div className="flex-1 space-y-2">
                       <div className="h-4 bg-white/5 rounded w-2/3" />
@@ -2179,9 +2179,9 @@ const ProfilePage = () => {
 
             {loading ? (
               <div className="space-y-6">
-                <div className="bg-[#1a1d21] h-40 rounded-xl animate-pulse" />
-                <div className="bg-[#1a1d21] h-56 rounded-xl animate-pulse" />
-                <div className="bg-[#1a1d21] h-80 rounded-xl animate-pulse" />
+                <div className="bg-[#1a1d21] h-40 rounded-xl" />
+                <div className="bg-[#1a1d21] h-56 rounded-xl" />
+                <div className="bg-[#1a1d21] h-80 rounded-xl" />
               </div>
             ) : (
               <AnimatePresence mode="wait">
