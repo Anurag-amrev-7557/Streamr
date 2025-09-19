@@ -130,9 +130,9 @@ export const mangadexService = {
 			const attrs = m?.attributes || {};
 			const title = attrs?.title?.en || Object.values(attrs?.title || {})[0] || '';
 			// find cover filename from relationships
-			const coverRel = (m?.relationships || []).find(r => r?.type === 'cover_art');
-			const fileName = coverRel?.attributes?.fileName;
-			const coverUrl = (id && fileName) ? `https://uploads.mangadex.org/covers/${id}/${fileName}.256.jpg` : null;
+            const coverRel = (m?.relationships || []).find(r => r?.type === 'cover_art');
+            const fileName = coverRel?.attributes?.fileName;
+            const coverUrl = (id && fileName) ? `${getMangadexBase()}/cover/${id}/${fileName}?s=256` : null;
 			return {
 				id,
 				slug: id,
@@ -191,7 +191,7 @@ export const mangadexService = {
 		return urls;
 	},
 
-	// Comic chapters by manga id
+	// Comic chapters by manga id (normalized shape)
 	getComicChapters: async (id, options = {}) => {
 		if (!id) throw new Error('manga id is required');
 		const { limit = 100, page = 1, lang = 'en', chapOrder = 'asc' } = options;
@@ -205,7 +205,41 @@ export const mangadexService = {
 			'includes[]': ['scanlation_group', 'user']
 		};
 		const url = `${getMangadexBase()}/chapter${buildQuery(params)}`;
-		return fetchJsonCached(url, { timeout: getAdaptiveTimeoutMs(20000) }, { ttlMs: 120_000 });
+		const resp = await fetchJsonCached(url, { timeout: getAdaptiveTimeoutMs(20000) }, { ttlMs: 120_000 });
+		const list = Array.isArray(resp?.data) ? resp.data : [];
+		const mapped = list.map(ch => {
+			const a = ch?.attributes || {};
+			return {
+				id: ch?.id,
+				hid: ch?.id,
+				chap: a?.chapter || null,
+				vol: a?.volume || null,
+				lang: a?.translatedLanguage || null,
+				title: a?.title || '',
+				pages: a?.pages || 0,
+				created_at: a?.publishAt || a?.createdAt || null,
+				groups: (ch?.relationships || []).filter(r => r?.type === 'scanlation_group').map(g => ({ id: g?.id, name: g?.attributes?.name })).filter(g => g.name)
+			};
+		});
+		return { data: mapped, limit: resp?.limit, offset: resp?.offset, total: resp?.total };
+	},
+
+	// Volumes/chapters aggregate for a manga (grouped by volume)
+	getMangaAggregate: async (id, options = {}) => {
+		if (!id) throw new Error('manga id is required');
+		const { lang = 'en' } = options;
+		const url = `${getMangadexBase()}/manga/${encodeURIComponent(id)}/aggregate${buildQuery({ 'translatedLanguage[]': [lang] })}`;
+		const resp = await fetchJsonCached(url, { timeout: getAdaptiveTimeoutMs(15000) }, { ttlMs: 600_000 });
+		// Return as-is plus a lightweight normalized helper
+		const volumes = resp?.volumes || {};
+		const normalized = [];
+		Object.entries(volumes).forEach(([vol, vdata]) => {
+			const chs = vdata?.chapters || {};
+			Object.entries(chs).forEach(([chap, cdata]) => {
+				normalized.push({ vol, chap, count: cdata?.count, id: cdata?.id });
+			});
+		});
+		return { raw: resp, volumes, list: normalized };
 	},
 
 	// Comic info: accept UUID directly; if not UUID, treat as title and search first
@@ -245,7 +279,7 @@ export const mangadexService = {
 			'limit': limit,
 			'offset': Math.max(0, offset),
 			'includes[]': ['cover_art'],
-			'translatedLanguage[]': translatedLanguage,
+			'availableTranslatedLanguage[]': translatedLanguage,
 		};
 		if (Array.isArray(genres) && genres.length) params['includedTags[]'] = genres;
 		if (Array.isArray(excludes) && excludes.length) params['excludedTags[]'] = excludes;
@@ -258,9 +292,9 @@ export const mangadexService = {
 			const id = m?.id;
 			const attrs = m?.attributes || {};
 			const title = attrs?.title?.en || Object.values(attrs?.title || {})[0] || '';
-			const coverRel = (m?.relationships || []).find(r => r?.type === 'cover_art');
-			const fileName = coverRel?.attributes?.fileName;
-			const coverUrl = (id && fileName) ? `https://uploads.mangadex.org/covers/${id}/${fileName}.256.jpg` : null;
+            const coverRel = (m?.relationships || []).find(r => r?.type === 'cover_art');
+            const fileName = coverRel?.attributes?.fileName;
+            const coverUrl = (id && fileName) ? `${getMangadexBase()}/cover/${id}/${fileName}?s=256` : null;
 			return { id, slug: id, title, md_covers: coverUrl ? [{ url: coverUrl }] : [], comic: { slug: id, title } };
 		});
 	},

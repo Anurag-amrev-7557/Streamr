@@ -3,7 +3,7 @@
 // --- API Configuration Object ---
 const API_CONFIG = {
   // Set to 'local' for local development, 'deployed' for production backend
-  mode: 'local', // Default: use local backend for development
+  mode: 'deployed', // Default: use local backend for development
 
   // API URLs
   local: 'http://localhost:3001/api',
