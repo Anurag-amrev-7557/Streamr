@@ -130,15 +130,16 @@ export const mangadexService = {
 			const attrs = m?.attributes || {};
 			const title = attrs?.title?.en || Object.values(attrs?.title || {})[0] || '';
 			// find cover filename from relationships
-            const coverRel = (m?.relationships || []).find(r => r?.type === 'cover_art');
-            const fileName = coverRel?.attributes?.fileName;
-            const coverUrl = (id && fileName) ? `${getMangadexBase()}/cover/${id}/${fileName}?s=256` : null;
+			const coverRel = (m?.relationships || []).find(r => r?.type === 'cover_art');
+			const fileName = coverRel?.attributes?.fileName;
+			const proxyUrl = (id && fileName) ? `${getMangadexBase()}/cover/${id}/${fileName}?s=256` : null;
+			const directUrl = (id && fileName) ? `https://uploads.mangadex.org/covers/${id}/${fileName}.256.jpg` : null;
 			return {
 				id,
 				slug: id,
 				title,
 				cover: { b2key: null },
-				md_covers: fileName ? [{ b2key: null, url: coverUrl }] : [],
+				md_covers: fileName ? [{ b2key: null, url: proxyUrl, fallback: directUrl }] : [],
 				comic: { slug: id, title }
 			};
 		});
@@ -292,10 +293,11 @@ export const mangadexService = {
 			const id = m?.id;
 			const attrs = m?.attributes || {};
 			const title = attrs?.title?.en || Object.values(attrs?.title || {})[0] || '';
-            const coverRel = (m?.relationships || []).find(r => r?.type === 'cover_art');
-            const fileName = coverRel?.attributes?.fileName;
-            const coverUrl = (id && fileName) ? `${getMangadexBase()}/cover/${id}/${fileName}?s=256` : null;
-			return { id, slug: id, title, md_covers: coverUrl ? [{ url: coverUrl }] : [], comic: { slug: id, title } };
+			const coverRel = (m?.relationships || []).find(r => r?.type === 'cover_art');
+			const fileName = coverRel?.attributes?.fileName;
+			const proxyUrl = (id && fileName) ? `${getMangadexBase()}/cover/${id}/${fileName}?s=256` : null;
+			const directUrl = (id && fileName) ? `https://uploads.mangadex.org/covers/${id}/${fileName}.256.jpg` : null;
+			return { id, slug: id, title, md_covers: proxyUrl ? [{ url: proxyUrl, fallback: directUrl }] : [], comic: { slug: id, title } };
 		});
 	},
 

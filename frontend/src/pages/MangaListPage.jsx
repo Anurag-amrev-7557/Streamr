@@ -9,8 +9,9 @@ import EnhancedLoadingIndicator from '../components/EnhancedLoadingIndicator'
 
 
 // Optimized image with blur-up, async decoding, and responsive sizes
-const OptimizedImage = ({ src, alt, className, sizes, width = 400, height = 600, priority = false }) => {
+const OptimizedImage = ({ src, alt, className, sizes, width = 400, height = 600, priority = false, fallback }) => {
 	const [isLoaded, setIsLoaded] = useState(false)
+    const [currentSrc, setCurrentSrc] = useState(src)
 	if (!src) {
 		return (
 			<div className={`absolute inset-0 flex items-center justify-center text-white/40 text-xs ${className || ''}`}>No Image</div>
@@ -18,7 +19,7 @@ const OptimizedImage = ({ src, alt, className, sizes, width = 400, height = 600,
 	}
 	return (
 		<img
-			src={src}
+            src={currentSrc}
 			alt={alt}
 			loading={priority ? 'eager' : 'lazy'}
 			decoding="async"
@@ -27,25 +28,29 @@ const OptimizedImage = ({ src, alt, className, sizes, width = 400, height = 600,
 			width={width}
 			height={height}
 			className={`absolute inset-0 w-full h-full object-cover transition duration-300 ${isLoaded ? 'blur-0 opacity-100' : 'blur-sm opacity-80'} ${className || ''}`}
-			onLoad={() => setIsLoaded(true)}
+            onLoad={() => setIsLoaded(true)}
+            onError={() => { if (fallback && currentSrc !== fallback) setCurrentSrc(fallback) }}
 		/>
 	)
 }
 
 const MangaCardComponent = ({ item, onClick, priority = false }) => {
-	const cover = useMemo(() => {
-		const mdCoverUrl = item?.md_covers?.[0]?.url || item?.md_covers?.url;
-		if (mdCoverUrl) return mdCoverUrl;
-		const b2key = item?.comic?.md_covers?.[0]?.b2key || item?.md_covers?.[0]?.b2key || item?.cover?.b2key || item?.md_covers?.b2key;
-		return b2key ? `https://meo.comick.pictures/${b2key}` : null;
-	}, [item]);
+    const cover = useMemo(() => {
+        const md = item?.md_covers?.[0] || item?.md_covers;
+        const url = md?.url || null;
+        const fallback = md?.fallback || null;
+        if (url) return { url, fallback };
+        const b2key = item?.comic?.md_covers?.[0]?.b2key || item?.md_covers?.[0]?.b2key || item?.cover?.b2key || item?.md_covers?.b2key;
+        return b2key ? { url: `https://meo.comick.pictures/${b2key}`, fallback: null } : { url: null, fallback: null };
+    }, [item]);
 	const title = item?.title || item?.comic?.title || 'Untitled';
 	return (
 		<button onClick={onClick} className="group w-full text-left rounded-lg overflow-hidden bg-[#0f1216] hover:bg-[#14181d] transition-colors shadow-lg" style={{ contentVisibility: 'auto', containIntrinsicSize: '300px 450px' }}>
 			<div className="relative w-full bg-[#0b0f14]">
 				<div className="aspect-[2/3] w-full"></div>
-				<OptimizedImage
-					src={cover}
+                <OptimizedImage
+                    src={cover?.url}
+                    fallback={cover?.fallback}
 					alt={title}
 					priority={priority}
 					sizes="(min-width:1536px) 10vw, (min-width:1280px) 12vw, (min-width:1024px) 16vw, (min-width:768px) 20vw, (min-width:640px) 30vw, 45vw"
