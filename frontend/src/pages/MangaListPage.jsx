@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import comickService from '../services/comickService'
+import jikanService from '../services/jikanService'
 import { MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { motion, AnimatePresence } from 'framer-motion'
 import EnhancedSearchBar from '../components/EnhancedSearchBar'
@@ -34,12 +34,17 @@ const OptimizedImage = ({ src, alt, className, sizes, width = 400, height = 600,
 
 const MangaCardComponent = ({ item, onClick, priority = false }) => {
 	const cover = useMemo(() => {
-		const b2key = item?.comic?.md_covers?.[0]?.b2key || item?.md_covers?.[0]?.b2key || item?.cover?.b2key || item?.md_covers?.b2key;
-		if (!b2key) return null;
-		// Comick cover CDN pattern
-		return `https://meo.comick.pictures/${b2key}`;
+		// Prefer Jikan images if present
+		const ji = item?.images || item?.image || null
+		const jikanUrl = ji?.jpg?.large_image_url || ji?.jpg?.image_url || ji?.webp?.large_image_url || ji?.webp?.image_url
+		if (jikanUrl) return jikanUrl
+		// Fallback: any pre-normalized coverImage
+		if (item?.coverImage) return item.coverImage
+		// Legacy Comick cover
+		const b2key = item?.comic?.md_covers?.[0]?.b2key || item?.md_covers?.[0]?.b2key || item?.cover?.b2key || item?.md_covers?.b2key
+		return b2key ? `https://meo.comick.pictures/${b2key}` : null
 	}, [item]);
-	const title = item?.title || item?.comic?.title || 'Untitled';
+	const title = item?.title || item?.title_english || item?.title_japanese || item?.comic?.title || 'Untitled';
 	return (
 		<button onClick={onClick} className="group w-full text-left rounded-lg overflow-hidden bg-[#0f1216] hover:bg-[#14181d] transition-colors shadow-lg" style={{ contentVisibility: 'auto', containIntrinsicSize: '300px 450px' }}>
 			<div className="relative w-full bg-[#0b0f14]">
@@ -184,16 +189,15 @@ const MangaListPage = () => {
 		// Check if component is still mounted before making request
 		if (!isMountedRef.current) return
 		
-		comickService.getTop({ type: 'trending', comic_types: ['manga'], accept_mature_content: false })
+		jikanService.getTopManga({ page: 1, limit: PAGE_SIZE })
 			.then(data => {
 				if (!isMountedRef.current) return
-				console.debug('[MangaListPage] /top response raw:', data)
-				let list = Array.isArray(data) ? data : (data?.comics || data?.top || data?.data || data?.rows || [])
+				let list = Array.isArray(data) ? data : (data?.data || [])
 				console.debug('[MangaListPage] normalized list length:', list.length)
 				if (list.length === 0) {
-					return comickService.search({ sort: 'view', limit: PAGE_SIZE, country: ['jp'], content_rating: 'safe', showall: false }).then(sr => {
+					return jikanService.searchManga({ q: '', page: 1, limit: PAGE_SIZE, order_by: 'popularity', sort: 'desc', sfw: true }).then(sr => {
 						if (!isMountedRef.current) return
-						const sList = Array.isArray(sr) ? sr : (sr?.comics || sr?.data || sr?.results || sr?.result || [])
+						const sList = Array.isArray(sr) ? sr : (sr?.data || [])
 						console.debug('[MangaListPage] fallback search length:', sList.length)
 						setItems(sList)
 						setTrending(sList)
@@ -274,9 +278,9 @@ const MangaListPage = () => {
 				// Check if component is still mounted before making request
 				if (!isMountedRef.current) return
 				
-				const sr = await comickService.search({ q, page: 1, limit: PAGE_SIZE, content_rating: 'safe', showall: true, type: 'comic' })
+				const sr = await jikanService.searchManga({ q, page: 1, limit: PAGE_SIZE, order_by: 'popularity', sort: 'desc', sfw: true })
 				if (!isMountedRef.current) return
-				const sList = Array.isArray(sr) ? sr : (sr?.results || sr?.result || sr?.data || sr?.comics || [])
+				const sList = Array.isArray(sr) ? sr : (sr?.data || [])
 				setItems(sList)
 				setDataSource('search')
 				setPage(1)
@@ -434,11 +438,11 @@ const MangaListPage = () => {
 			let resp
 			const nextPage = page + 1
 			if (dataSource === 'search') {
-				resp = await comickService.search({ q: currentQuery, page: nextPage, limit: PAGE_SIZE, content_rating: 'safe', showall: true, type: 'comic' })
+				resp = await jikanService.searchManga({ q: currentQuery, page: nextPage, limit: PAGE_SIZE, order_by: 'popularity', sort: 'desc', sfw: true })
 			} else {
-				resp = await comickService.search({ sort: 'view', page: nextPage, limit: PAGE_SIZE, country: ['jp'], content_rating: 'safe', showall: false, type: 'comic' })
+				resp = await jikanService.getTopManga({ page: nextPage, limit: PAGE_SIZE })
 			}
-			const list = Array.isArray(resp) ? resp : (resp?.results || resp?.result || resp?.data || resp?.comics || [])
+			const list = Array.isArray(resp) ? resp : (resp?.data || [])
 			setItems(prev => appendUnique(prev, list))
 			setPage(nextPage)
 			setHasMore((list?.length || 0) >= PAGE_SIZE)
@@ -593,7 +597,7 @@ const MangaListPage = () => {
 					<div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 3xl:grid-cols-10 gap-4">
 						{items.map((item, idx) => (
 							<MangaCard key={item?.hid || item?.slug || idx} item={item} priority={idx < 12} onClick={() => {
-								const slug = item?.comic?.slug || item?.slug || item?.hid || item?.comic?.hid
+					const slug = item?.mal_id || item?.comic?.slug || item?.slug || item?.hid || item?.comic?.hid
 								if (slug) navigate(`/manga/${encodeURIComponent(slug)}`)
 							}} />
 						))}

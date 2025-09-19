@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react'
-import comickService from '../services/comickService'
+import jikanService from '../services/jikanService'
+import mangadexService from '../services/mangadexService'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -227,56 +228,35 @@ const MangaDetailsPage = () => {
 	const prefetchTimeoutRef = useRef(null)
 
 	const cover = useMemo(() => {
-		const b2key = info?.md_covers?.[0]?.b2key || info?.comic?.md_covers?.[0]?.b2key || info?.cover?.b2key
-		return b2key ? `https://meo.comick.pictures/${b2key}` : null
+		const ji = info?.images || info?.image || null
+		const url = ji?.jpg?.large_image_url || ji?.jpg?.image_url || ji?.webp?.large_image_url || ji?.webp?.image_url
+		return url || null
 	}, [info])
 
 	// Enhanced utility functions
 	const getCovers = useMemo(() => {
-		const covers = info?.md_covers || info?.comic?.md_covers || []
-		return covers.map(cover => ({
-			url: `https://meo.comick.pictures/${cover.b2key}`,
-			volume: cover.vol || 'Main',
-			description: cover.description || ''
-		}))
+		const ji = info?.images || null
+		const primary = ji?.jpg?.large_image_url || ji?.jpg?.image_url || ji?.webp?.large_image_url || ji?.webp?.image_url
+		return primary ? [{ url: primary, volume: 'Main', description: '' }] : []
 	}, [info])
 
 	const getGenres = useMemo(() => {
-		return info?.genres || info?.comic?.genres || []
+		return info?.genres || []
 	}, [info])
 
 	const getAuthors = useMemo(() => {
-		return info?.authors || info?.comic?.authors || []
+		return info?.authors || []
 	}, [info])
 
 	const getStatus = useMemo(() => {
-		const rawStatus = info?.status || info?.comic?.status
-		
-		// If status is already a readable string, return it
-		if (typeof rawStatus === 'string' && !/^\d+$/.test(rawStatus)) {
-			return rawStatus
-		}
-		
-		// Map numeric status codes to readable text
-		const statusMap = {
-			1: 'Ongoing',
-			2: 'Completed', 
-			3: 'Hiatus',
-			4: 'Cancelled',
-			5: 'Dropped'
-		}
-		
-		// Convert to number if it's a string number
-		const numericStatus = typeof rawStatus === 'string' ? parseInt(rawStatus, 10) : rawStatus
-		
-		return statusMap[numericStatus] || 'Unknown'
+		return info?.status || 'Unknown'
 	}, [info])
 
 	const getPublicationInfo = useMemo(() => {
 		return {
-			year: info?.year || info?.comic?.year,
-			country: info?.country || info?.comic?.country,
-			contentRating: info?.content_rating || info?.comic?.content_rating
+			year: info?.published?.prop?.from?.year || info?.year,
+			country: null,
+			contentRating: info?.rating || null
 		}
 	}, [info])
 
@@ -285,28 +265,16 @@ const MangaDetailsPage = () => {
 		return allChaptersMeta.length || chapters.length || 0
 	}, [allChaptersMeta.length, chapters.length])
 
-	const getViewCount = useMemo(() => {
-		return info?.views || info?.comic?.views || info?.total_views || 0
-	}, [info])
+	const getViewCount = useMemo(() => 0, [])
 
-	const getFollowCount = useMemo(() => {
-		return info?.follows || info?.comic?.follows || info?.total_follows || 0
-	}, [info])
+	const getFollowCount = useMemo(() => 0, [])
 
-	const getCommentCount = useMemo(() => {
-		return info?.comments || info?.comic?.comments || info?.total_comments || 0
-	}, [info])
+	const getCommentCount = useMemo(() => 0, [])
 
 	const getLastUpdated = useMemo(() => {
-		const lastUpdate = info?.last_chapter_date || info?.comic?.last_chapter_date || info?.updated_at
+		const lastUpdate = info?.published?.to || info?.published?.from
 		if (!lastUpdate) return null
-		
-		try {
-			const date = new Date(lastUpdate)
-			return isNaN(date.getTime()) ? null : date
-		} catch {
-			return null
-		}
+		try { const date = new Date(lastUpdate); return isNaN(date.getTime()) ? null : date } catch { return null }
 	}, [info])
 
 	const getDemographic = useMemo(() => {
@@ -328,21 +296,15 @@ const MangaDetailsPage = () => {
 		return ratingMap[rating] || rating
 	}, [info])
 
-	const getLanguage = useMemo(() => {
-		return info?.lang || info?.comic?.lang || info?.original_language || 'Unknown'
-	}, [info])
+	const getLanguage = useMemo(() => 'Unknown', [])
 
-	const getPublisher = useMemo(() => {
-		return info?.publisher || info?.comic?.publisher || null
-	}, [info])
+	const getPublisher = useMemo(() => null, [])
 
-	const getSerialization = useMemo(() => {
-		return info?.serialization || info?.comic?.serialization || null
-	}, [info])
+	const getSerialization = useMemo(() => null, [])
 
 	// Function to truncate description after "---"
 	const getTruncatedDescription = useMemo(() => {
-		const fullDescription = info?.desc || info?.comic?.desc || info?.description || 'No description available.'
+		const fullDescription = info?.synopsis || 'No description available.'
 		const separatorIndex = fullDescription.indexOf('---')
 		return separatorIndex !== -1 ? fullDescription.substring(0, separatorIndex).trim() : fullDescription
 	}, [info])
@@ -418,31 +380,26 @@ const MangaDetailsPage = () => {
 		setSelectedVolume('')
 		setSelectedChapter('')
 		
-		Promise.all([
-			comickService.getComicInfo(slug, { version: 'v1.0' }),
-		])
-			.then(([ci]) => {
+		Promise.resolve()
+			.then(async () => {
 				if (!isMountedRef.current) return
-				setInfo(ci)
-				const hid = ci?.hid || ci?.comic?.hid || ci?.id || ci?.slug
-				setComicHid(hid || null)
-				
-				// Debug: Log available fields to understand API response structure
-				console.log('Manga API Response:', ci)
+				const malId = slug
+				const ji = await jikanService.getMangaFullById(malId).catch(() => jikanService.getMangaById(malId))
+				const data = ji?.data || ji || null
+				setInfo(data)
+				// Map to MangaDex manga id via title search
+				let mdId = null
+				try {
+					const title = data?.title
+					if (title) {
+						const mdSearch = await mangadexService.searchManga({ title, limit: 1, availableTranslatedLanguage: ['en'] })
+						mdId = mdSearch?.data?.[0]?.id || null
+					}
+				} catch {}
+				setComicHid(mdId || null)
 				
 				// Try to extract rating from various possible fields
-				const possibleRatingFields = [
-					ci?.rating,
-					ci?.score,
-					ci?.vote_average,
-					ci?.average_rating,
-					ci?.user_rating,
-					ci?.comic?.rating,
-					ci?.comic?.score,
-					ci?.comic?.vote_average,
-					ci?.comic?.average_rating,
-					ci?.comic?.user_rating
-				]
+				const possibleRatingFields = [data?.score]
 				
 				const foundRating = possibleRatingFields.find(rating => 
 					rating !== null && rating !== undefined && !isNaN(parseFloat(rating)) && parseFloat(rating) > 0
@@ -562,58 +519,26 @@ const MangaDetailsPage = () => {
 		setSelectedVolume('')
 		setSelectedChapter('')
 		
-		// First, load English chapters if available, otherwise load with selected language
 		const primaryLang = selectedLang || 'en'
 		
 		const loadInitialChapters = async () => {
 			try {
-				// Parallel requests for better performance (cached)
-				const [chs, chsAll, chsPage2] = await Promise.all([
-					// Load chapters with primary language (English first, then selected) - larger batch
-					cachedApiCall(
-						`${comicHid}-${primaryLang}-page-1`,
-						() => comickService.getComicChapters(comicHid, { limit: 100, page: 1, lang: primaryLang })
-					),
-					// Load chapters without lang to derive language list - larger batch
-					cachedApiCall(
-						`${comicHid}-all-page-1`,
-						() => comickService.getComicChapters(comicHid, { limit: 100, page: 1 })
-					),
-					// Preload second page for primary language to get more content faster
-					cachedApiCall(
-						`${comicHid}-${primaryLang}-page-2`,
-						() => comickService.getComicChapters(comicHid, { limit: 100, page: 2, lang: primaryLang })
-					).catch(() => ({ chapters: [] }))
-				])
-				
+				// MangaDex feed
+				const feed = await mangadexService.getMangaFeed(comicHid, { limit: 100, translatedLanguage: [primaryLang], order: { chapter: 'desc' } })
 				if (!isMountedRef.current) return
-				
-				const list = Array.isArray(chs) ? chs : (chs?.chapters || chs?.data || chs?.result || [])
-				const listAll = Array.isArray(chsAll) ? chsAll : (chsAll?.chapters || chsAll?.data || chsAll?.result || [])
-				const listPage2 = Array.isArray(chsPage2) ? chsPage2 : (chsPage2?.chapters || chsPage2?.data || chsPage2?.result || [])
-				
-				// Combine first and second page for primary language
-				const combinedList = [...list, ...listPage2]
-				setChapters(combinedList)
-				
-				const langs = Array.from(new Set(listAll.map(c => (c?.lang || c?.language || '').trim()).filter(Boolean))).sort()
-				setAvailableLangs(langs)
-				
-				// Seed meta with all loaded data to improve perceived completeness
-				setAllChaptersMeta(prev => {
-					const seen = new Set(prev.map(c => c?.hid || c?.id || `${c?.vol}-${c?.chap}-${c?.lang}`))
-					const merged = [...prev]
-					
-					// Add all chapters from the combined list
-					for (const ch of [...listAll, ...combinedList]) {
-						const key = ch?.hid || ch?.id || `${ch?.vol}-${ch?.chap}-${ch?.lang}`
-						if (!seen.has(key)) {
-							seen.add(key)
-							merged.push(ch)
-						}
-					}
-					return merged
-				})
+				const mdChaps = feed?.data || []
+				// Normalize to existing shape expectations minimally
+				const normalized = mdChaps.map(ch => ({
+					id: ch?.id,
+					hid: ch?.id,
+					chap: ch?.attributes?.chapter,
+					vol: ch?.attributes?.volume,
+					title: ch?.attributes?.title,
+					lang: ch?.attributes?.translatedLanguage
+				}))
+				setChapters(normalized)
+				setAllChaptersMeta(normalized)
+				setAvailableLangs(Array.from(new Set(normalized.map(c => (c?.lang || '').trim()).filter(Boolean))).sort())
 			} catch (err) {
 				if (!isMountedRef.current) return
 				setError(err.message || 'Failed to load chapters')
@@ -886,11 +811,12 @@ const MangaDetailsPage = () => {
 			}
 		}
 		
-		schedule(() => {
-			if (isMountedRef.current) {
-				comickService.getChapterImages(hid).catch(() => {})
-			}
-		})
+				schedule(() => {
+					if (isMountedRef.current) {
+						// Best-effort prime At-Home metadata
+						mangadexService.getChapter(hid).catch(() => {})
+					}
+				})
 		
 		return () => {
 			if (prefetchTimeoutRef.current) {

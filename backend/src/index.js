@@ -13,6 +13,8 @@ const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/user');
 const tmdbRoutes = require('./routes/tmdb');
 const comickRoutes = require('./routes/comick'); 
+const jikanRoutes = require('./routes/jikan');
+const mangadexRoutes = require('./routes/mangadex');
 
 const communityRoutes = require('./routes/community');
 const uploadRoutes = require('./routes/upload');
@@ -110,7 +112,7 @@ app.use(helmet({
       scriptSrc: ["'self'", "'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "https:", "blob:"],
-      connectSrc: ["'self'", "https://api.themoviedb.org"],
+      connectSrc: ["'self'", "https://api.themoviedb.org", "https://api.jikan.moe", "https://api.mangadex.org"],
     },
   },
 }));
@@ -306,6 +308,9 @@ app.use('/api/upload', uploadRoutes);
 // Comick API proxy
 app.use('/api/comick', comickRoutes);
 app.use('/api/v1/comick', comickRoutes);
+// Jikan & MangaDex proxies
+app.use('/api/jikan', jikanRoutes);
+app.use('/api/mangadex', mangadexRoutes);
 
 // Active users API endpoint removed
 

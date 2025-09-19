@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { ArrowsPointingOutIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline'
 import { useParams, useNavigate } from 'react-router-dom'
-import comickService from '../services/comickService'
+import mangadexService from '../services/mangadexService'
 import EnhancedLoadingIndicator from '../components/EnhancedLoadingIndicator'
 import enhancedLoadingService from '../services/enhancedLoadingService'
 import { preloadImages } from '../services/imageOptimizationService'
@@ -166,37 +166,23 @@ const MangaReaderPage = () => {
 
 		const loadMangaData = async () => {
 			try {
-				// Get chapter info first to find the manga
-				const chapterInfo = await comickService.getChapterInfo(hid)
+				// Load MangaDex chapter to infer manga id via relationships
+				const ch = await mangadexService.getChapter(hid)
+				const relManga = (ch?.data?.relationships || []).find(r => r?.type === 'manga')
+				if (relManga?.id) setMangaId(relManga.id)
 				
-				// Extract manga slug from md_comics for navigation
-				if (chapterInfo?.chapter?.md_comics?.slug) {
-					setMangaSlug(chapterInfo.chapter.md_comics.slug)
+				// Load a small feed to derive prev/next
+				if (relManga?.id) {
+					const feed = await mangadexService.getMangaFeed(relManga.id, { limit: 100, translatedLanguage: ['en'], order: { chapter: 'asc' } })
+					const list = (feed?.data || []).map(c => ({
+						id: c?.id, hid: c?.id, chap: c?.attributes?.chapter, title: c?.attributes?.title
+					}))
+					setAllChapters(list)
+					const idx = list.findIndex(c => c.hid === hid)
+					setCurrentChapterIndex(idx)
+					setPrevChapter(idx > 0 ? list[idx - 1] : null)
+					setNextChapter(idx >= 0 && idx < list.length - 1 ? list[idx + 1] : null)
 				}
-				
-				// Try to get manga ID for potential future use
-				let comicHid = null
-				if (chapterInfo?.chapter?.md_comics?.id) {
-					comicHid = chapterInfo.chapter.md_comics.id
-					setMangaId(comicHid)
-				}
-				
-				// Use the next/prev data directly from chapter info if available
-				if (chapterInfo?.next || chapterInfo?.prev) {
-					setNextChapter(chapterInfo.next || null)
-					setPrevChapter(chapterInfo.prev || null)
-					setAllChapters(chapterInfo.chapters || [])
-					
-					// Find current chapter index in the chapters array
-					const currentIndex = (chapterInfo.chapters || []).findIndex(ch => ch.hid === hid)
-					setCurrentChapterIndex(currentIndex)
-					
-					// Skip manga info loading since we have the slug for navigation
-					
-					return
-				}
-				
-				// Skip the parallel loading since we're not using manga info
 				
 			} catch (error) {
 				console.error('Failed to load manga data for navigation:', error)
@@ -298,21 +284,27 @@ const MangaReaderPage = () => {
 					if (!isMountedRef.current) {
 						throw new Error('Component unmounted')
 					}
-					return comickService.getChapterImages(hid)
+					// MangaDex At-Home: get server then build page URLs
+					const atHome = await mangadexService.getAtHomeServer(hid)
+					const base = atHome?.baseUrl
+					const ch = await mangadexService.getChapter(hid)
+					const hash = ch?.data?.attributes?.hash
+					const data = ch?.data?.attributes?.data || []
+					const dataSaver = ch?.data?.attributes?.dataSaver || []
+					const files = data.length ? data : dataSaver
+					return {
+						success: true,
+						data: files.map(f => `${base}/data/${hash}/${f}`)
+					}
 				}
 				
 				const result = await enhancedLoadingService.retryWithBackoff(operation, 'chapter images')
 				
 				if (!isMountedRef.current) return
 				
-				if (result.success) {
-					const data = result.data
-					const list = data?.chapter?.images || data?.images || data || []
-					const normalized = list.map(img => 
-						typeof img === 'string' ? img : 
-						(img?.url || img?.img || img?.s3 || img?.b2key ? 
-							`https://meo.comick.pictures/${img?.b2key}` : null)
-					).filter(Boolean)
+					if (result.success) {
+						const data = result.data
+						const normalized = Array.isArray(data) ? data : []
 					
 					setImages(normalized)
 					setCurrentIndex(0)
