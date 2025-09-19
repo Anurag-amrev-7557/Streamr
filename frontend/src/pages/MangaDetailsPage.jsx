@@ -390,10 +390,34 @@ const MangaDetailsPage = () => {
 				// Map to MangaDex manga id via title search
 				let mdId = null
 				try {
-					const title = data?.title
-					if (title) {
-						const mdSearch = await mangadexService.searchManga({ title, limit: 1, availableTranslatedLanguage: ['en'] })
-						mdId = mdSearch?.data?.[0]?.id || null
+					// Try multiple titles from Jikan
+					const titleCandidates = []
+					if (data?.title) titleCandidates.push(data.title)
+					if (data?.title_english && data.title_english !== data.title) titleCandidates.push(data.title_english)
+					if (data?.title_japanese && data.title_japanese !== data.title) titleCandidates.push(data.title_japanese)
+					if (Array.isArray(data?.titles)) {
+						for (const t of data.titles) {
+							if (t?.title) titleCandidates.push(t.title)
+						}
+					}
+					const tried = new Set()
+					for (const t of titleCandidates) {
+						const key = String(t).trim().toLowerCase()
+						if (!key || tried.has(key)) continue
+						tried.add(key)
+						const mdSearch = await mangadexService.searchManga({ title: t, limit: 5 })
+						const candidates = mdSearch?.data || []
+						if (candidates.length) {
+							// pick best by matching year or closest title
+							const jYear = data?.published?.prop?.from?.year || data?.year
+							let best = candidates[0]
+							for (const c of candidates) {
+								const cYear = c?.attributes?.year
+								if (jYear && cYear && cYear === jYear) { best = c; break }
+							}
+							mdId = best?.id || null
+							if (mdId) break
+						}
 					}
 				} catch {}
 				setComicHid(mdId || null)
@@ -523,10 +547,60 @@ const MangaDetailsPage = () => {
 		
 		const loadInitialChapters = async () => {
 			try {
-				// MangaDex feed
-				const feed = await mangadexService.getMangaFeed(comicHid, { limit: 100, translatedLanguage: [primaryLang], order: { chapter: 'desc' } })
+				// Prefer aggregate to enumerate volumes/chapters reliably
+				try {
+					const agg = await mangadexService.getAggregate(comicHid, { translatedLanguage: [primaryLang] })
+					const volumesObj = agg?.volumes || {}
+					const volKeys = Object.keys(volumesObj).filter(v => v && v !== 'none')
+					const flat = []
+					for (const v of volKeys) {
+						const chaptersObj = volumesObj[v]?.chapters || {}
+						for (const chNum of Object.keys(chaptersObj)) {
+							const chInfo = chaptersObj[chNum]
+							const firstId = (chInfo?.chapter || chInfo)?.id || chInfo?.id
+							flat.push({ id: firstId, hid: firstId, vol: v, chap: chNum, title: '', lang: primaryLang })
+						}
+					}
+					if (flat.length) {
+						flat.sort((a,b)=> (parseFloat(a.vol)||0)-(parseFloat(b.vol)||0) || (parseFloat(a.chap)||0)-(parseFloat(b.chap)||0))
+						setChapters(flat)
+						setAllChaptersMeta(flat)
+						setAvailableLangs(prev => prev.length ? prev : [primaryLang])
+						return
+					}
+				} catch {}
+				// MangaDex feed for selected language (may be sparse)
+				let feed = await mangadexService.getMangaFeed(comicHid, { limit: 100, translatedLanguage: [primaryLang], order: { chapter: 'asc' } })
 				if (!isMountedRef.current) return
-				const mdChaps = feed?.data || []
+				let mdChaps = feed?.data || []
+				// Always fetch a comprehensive all-language list deeply to build complete volumes/chapters
+				const pageSize = 100
+				let offset = 0
+				let all = []
+				while (offset < 5000) {
+					const resp = await mangadexService.getMangaFeed(comicHid, { limit: pageSize, order: { chapter: 'asc' }, offset })
+					const chunk = resp?.data || []
+					all = all.concat(chunk)
+					if (!chunk.length || chunk.length < pageSize) break
+					offset += pageSize
+				}
+				const normalizedAll = all.map(ch => ({
+					id: ch?.id,
+					hid: ch?.id,
+					chap: ch?.attributes?.chapter,
+					vol: ch?.attributes?.volume,
+					title: ch?.attributes?.title,
+					lang: ch?.attributes?.translatedLanguage
+				})).filter(c => c.hid)
+				// Dedup all-language list
+				const dedupAll = []
+				const seenAll = new Set()
+				for (const ch of normalizedAll) { if (!seenAll.has(ch.hid)) { seenAll.add(ch.hid); dedupAll.push(ch) } }
+				setAllChaptersMeta(dedupAll)
+				// Update available languages from comprehensive list
+				const langsSetAll = new Set(dedupAll.map(c => (c?.lang || '').trim()).filter(Boolean))
+				const langsAll = Array.from(langsSetAll).sort((a,b)=> a==='en'?-1:b==='en'?1:a.localeCompare(b))
+				setAvailableLangs(prev => prev.length ? prev : langsAll)
 				// Normalize to existing shape expectations minimally
 				const normalized = mdChaps.map(ch => ({
 					id: ch?.id,
@@ -536,9 +610,23 @@ const MangaDetailsPage = () => {
 					title: ch?.attributes?.title,
 					lang: ch?.attributes?.translatedLanguage
 				}))
-				setChapters(normalized)
-				setAllChaptersMeta(normalized)
-				setAvailableLangs(Array.from(new Set(normalized.map(c => (c?.lang || '').trim()).filter(Boolean))).sort())
+				// Deduplicate by id
+				const uniqueById = []
+				const seenIds = new Set()
+				for (const ch of normalized) {
+					if (!ch?.hid || seenIds.has(ch.hid)) continue
+					seenIds.add(ch.hid)
+					uniqueById.push(ch)
+				}
+				setChapters(uniqueById.length ? uniqueById : dedupAll)
+				const langsSet = new Set(normalized.map(c => (c?.lang || '').trim()).filter(Boolean))
+				// Ensure the current primary language appears first if present
+				const langs = Array.from(langsSet).sort((a, b) => (a === primaryLang ? -1 : b === primaryLang ? 1 : a.localeCompare(b)))
+				setAvailableLangs(langs)
+				// If current selected language is not available, reset to show all
+				if (selectedLang && !langs.includes(selectedLang)) {
+					setSelectedLang('')
+				}
 			} catch (err) {
 				if (!isMountedRef.current) return
 				setError(err.message || 'Failed to load chapters')
@@ -587,136 +675,43 @@ const MangaDetailsPage = () => {
 		setLoadingAllVolumes(true)
 		const fetchAllLanguagesOptimized = async () => {
 			try {
-				// First, get all available languages with a larger batch (cached)
-				const langResp = await cachedApiCall(
-					`langs-${comicHid}`,
-					() => comickService.getComicChapters(comicHid, { limit: 100, page: 1 })
-				)
-				const langList = Array.isArray(langResp) ? langResp : (langResp?.chapters || langResp?.data || langResp?.result || [])
-				const availableLangs = Array.from(new Set(langList.map(c => (c?.lang || c?.language || '').trim()).filter(Boolean)))
-				
-				// Sort languages with English first, then others alphabetically
-				const sortedLangs = availableLangs.sort((a, b) => {
-					if (a === 'en') return -1
-					if (b === 'en') return 1
-					return a.localeCompare(b)
+				const pageSize = 100
+				let offset = 0
+				let all = []
+				for (let i = 0; i < 5; i++) {
+					const resp = await mangadexService.getMangaFeed(comicHid, { limit: pageSize, order: { chapter: 'desc' }, offset })
+					const chunk = resp?.data || []
+					all = all.concat(chunk)
+					if (!chunk.length || chunk.length < pageSize) break
+					offset += pageSize
+				}
+				const normalized = all.map(ch => ({
+					id: ch?.id,
+					hid: ch?.id,
+					chap: ch?.attributes?.chapter,
+					vol: ch?.attributes?.volume,
+					title: ch?.attributes?.title,
+					lang: ch?.attributes?.translatedLanguage
+				}))
+				setAllChaptersMeta(prev => {
+					const seen = new Set(prev.map(c => c?.hid || c?.id))
+					const merged = [...prev]
+					for (const ch of normalized) {
+						const key = ch?.hid || ch?.id
+						if (key && !seen.has(key)) { seen.add(key); merged.push(ch) }
+					}
+					return merged
 				})
-				
-				// Helper function to fetch all pages for a single language in parallel
-				const fetchLanguagePages = async (lang) => {
-					if (!isMountedRef.current) return []
-					
-					const pageSize = 100 // Increased batch size
-					const maxPages = 100 // Reduced max pages since we're using larger batches
-					const allChapters = []
-					
-					// First, try to get a rough estimate of total pages by fetching page 1 (cached)
-					const firstPageResp = await cachedApiCall(
-						`${comicHid}-${lang}-page-1`,
-						() => comickService.getComicChapters(comicHid, { 
-							limit: pageSize, 
-							page: 1, 
-							lang: lang 
-						})
-					)
-					
-					if (!isMountedRef.current) return []
-					
-					const firstPageList = Array.isArray(firstPageResp) ? firstPageResp : (firstPageResp?.chapters || firstPageResp?.data || firstPageResp?.result || [])
-					if (!Array.isArray(firstPageList) || firstPageList.length === 0) return []
-					
-					allChapters.push(...firstPageList)
-					
-					// If first page is full, estimate total pages and fetch in parallel
-					if (firstPageList.length === pageSize) {
-						// Create parallel requests for multiple pages at once (cached)
-						const parallelRequests = []
-						for (let pageNum = 2; pageNum <= Math.min(maxPages, 10); pageNum++) {
-							parallelRequests.push(
-								cachedApiCall(
-									`${comicHid}-${lang}-page-${pageNum}`,
-									() => comickService.getComicChapters(comicHid, { 
-										limit: pageSize, 
-										page: pageNum, 
-										lang: lang 
-									})
-								).catch(() => ({ chapters: [] })) // Handle individual failures gracefully
-							)
-						}
-						
-						// Execute parallel requests
-						const responses = await Promise.all(parallelRequests)
-						
-						if (isMountedRef.current) {
-							for (const resp of responses) {
-								const list = Array.isArray(resp) ? resp : (resp?.chapters || resp?.data || resp?.result || [])
-								if (Array.isArray(list) && list.length > 0) {
-									allChapters.push(...list)
-								}
-							}
-						}
-					}
-					
-					return allChapters
-				}
-				
-				// Process languages in parallel batches for better performance
-				const languageBatches = []
-				const batchSize = 3 // Process 3 languages at a time
-				
-				for (let i = 0; i < sortedLangs.length; i += batchSize) {
-					languageBatches.push(sortedLangs.slice(i, i + batchSize))
-				}
-				
-				// Process each batch of languages in parallel
-				for (const batch of languageBatches) {
-					if (!isMountedRef.current) return
-					
-					// Update progress for current batch
-					setLoadingProgress(prev => ({
-						...prev,
-						currentLang: batch.join(', '),
-						total: sortedLangs.length
-					}))
-					
-					const batchPromises = batch.map(lang => fetchLanguagePages(lang))
-					const batchResults = await Promise.all(batchPromises)
-					
-					if (isMountedRef.current) {
-						// Merge all chapters from this batch
-						const batchChapters = batchResults.flat()
-						
-						setAllChaptersMeta(prev => {
-							const seen = new Set(prev.map(c => c?.hid || c?.id || `${c?.vol}-${c?.chap}-${c?.lang}`))
-							const merged = [...prev]
-							for (const ch of batchChapters) {
-								const key = ch?.hid || ch?.id || `${ch?.vol}-${ch?.chap}-${ch?.lang}`
-								if (!seen.has(key)) { 
-									seen.add(key)
-									merged.push(ch) 
-								}
-							}
-							return merged
-						})
-						
-						// Update progress
-						setLoadingProgress(prev => ({
-							...prev,
-							loaded: prev.loaded + batch.length
-						}))
-					}
-					
-					// Small delay between batches to prevent overwhelming the API
-					if (isMountedRef.current && batch !== languageBatches[languageBatches.length - 1]) {
-						await new Promise(resolve => setTimeout(resolve, 50)) // Reduced delay
-					}
-				}
+				// Update available languages if empty
+				setAvailableLangs(prev => {
+					if (prev && prev.length) return prev
+					const langs = Array.from(new Set(normalized.map(c => (c?.lang || '').trim()).filter(Boolean))).sort((a,b)=>a==="en"?-1:b==="en"?1:a.localeCompare(b))
+					return langs
+				})
 			} catch (error) {
 				console.warn('Background chapter loading error:', error)
 			} finally {
-				if (isMountedRef.current) {
-					setLoadingAllVolumes(false)
-				}
+				if (isMountedRef.current) setLoadingAllVolumes(false)
 			}
 		}
 		fetchAllLanguagesOptimized()

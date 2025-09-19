@@ -278,7 +278,7 @@ const MangaListPage = () => {
 				// Check if component is still mounted before making request
 				if (!isMountedRef.current) return
 				
-				const sr = await jikanService.searchManga({ q, page: 1, limit: PAGE_SIZE, order_by: 'popularity', sort: 'desc', sfw: true })
+				const sr = await jikanService.searchManga({ q, page: 1, limit: PAGE_SIZE, order_by: 'members', sort: 'desc', sfw: true })
 				if (!isMountedRef.current) return
 				const sList = Array.isArray(sr) ? sr : (sr?.data || [])
 				setItems(sList)
@@ -438,9 +438,18 @@ const MangaListPage = () => {
 			let resp
 			const nextPage = page + 1
 			if (dataSource === 'search') {
-				resp = await jikanService.searchManga({ q: currentQuery, page: nextPage, limit: PAGE_SIZE, order_by: 'popularity', sort: 'desc', sfw: true })
+				resp = await jikanService.searchManga({ q: currentQuery, page: nextPage, limit: PAGE_SIZE, order_by: 'members', sort: 'desc', sfw: true })
 			} else {
-				resp = await jikanService.getTopManga({ page: nextPage, limit: PAGE_SIZE })
+				// If rate-limited at high pages, switch to search fallback to distribute load
+				try {
+					resp = await jikanService.getTopManga({ page: nextPage, limit: PAGE_SIZE })
+				} catch (e) {
+					if ((e.message || '').includes('Jikan 429')) {
+						resp = await jikanService.searchManga({ q: '', page: nextPage, limit: PAGE_SIZE, order_by: 'members', sort: 'desc', sfw: true })
+					} else {
+						throw e
+					}
+				}
 			}
 			const list = Array.isArray(resp) ? resp : (resp?.data || [])
 			setItems(prev => appendUnique(prev, list))

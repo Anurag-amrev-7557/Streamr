@@ -878,7 +878,7 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
       { key: 'watchlist', to: '/watchlist', label: 'My List' },
       { key: 'manga', to: '/manga', label: 'Manga' },
       { key: 'community', to: '/community', label: 'Community' },
-      { key: 'donate', to: '/donate', label: 'Donate' },
+      { key: 'donate', to: '/donate', label: 'Support' },
     ];
 
     return links.filter(l => !visibility[l.key]);
@@ -3241,7 +3241,7 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
                   <path d="M12.001 4.529c2.349-2.532 6.213-2.532 8.562 0 2.348 2.531 2.348 6.635 0 9.166l-7.07 7.622a2.1 2.1 0 01-3 0l-7.07-7.622c-2.348-2.531-2.348-6.635 0-9.166 2.349-2.532 6.213-2.532 8.562 0l1.016 1.095 1-1.095z" />
                 </svg>
               </div>
-              <span className="font-medium tracking-wide text-sm sm:text-base">Donate</span>
+              <span className="font-medium tracking-wide text-sm sm:text-base">Support</span>
             </span>
             <span className={`absolute -bottom-1 left-0 h-0.5 bg-gradient-to-r from-white/90 via-white/60 to-white/30 transition-all duration-500 ${location.pathname === '/donate' ? 'w-full' : 'w-0 group-hover:w-full'}`} />
           </Link>
@@ -4155,7 +4155,7 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
                             <path d="M12.001 4.529c2.349-2.532 6.213-2.532 8.562 0 2.348 2.531 2.348 6.635 0 9.166l-7.07 7.622a2.1 2.1 0 01-3 0l-7.07-7.622c-2.348-2.531-2.348-6.635 0-9.166 2.349-2.532 6.213-2.532 8.562 0l1.016 1.095 1-1.095z" />
                           </svg>
                         </div>
-                        <span className="flex-1 font-medium">Donate</span>
+                        <span className="flex-1 font-medium">Support</span>
                       </Link>
 
                       <div className="h-px bg-white/10 my-2" />
@@ -4284,7 +4284,7 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                           <path d="M12.001 4.529c2.349-2.532 6.213-2.532 8.562 0 2.348 2.531 2.348 6.635 0 9.166l-7.07 7.622a2.1 2.1 0 01-3 0l-7.07-7.622c-2.348-2.531-2.348-6.635 0-9.166 2.349-2.532 6.213-2.532 8.562 0l1.016 1.095 1-1.095z" />
                         </svg>
-                        <span className="font-medium">Donate</span>
+                        <span className="font-medium">Support</span>
                       </Link>
                       <button
                         onClick={() => { logout(); setIsMenuOpen(false); }}
@@ -4330,7 +4330,7 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                           <path d="M12.001 4.529c2.349-2.532 6.213-2.532 8.562 0 2.348 2.531 2.348 6.635 0 9.166l-7.07 7.622a2.1 2.1 0 01-3 0l-7.07-7.622c-2.348-2.531-2.348-6.635 0-9.166 2.349-2.532 6.213-2.532 8.562 0l1.016 1.095 1-1.095z" />
                         </svg>
-                        <span className="font-medium">Donate</span>
+                        <span className="font-medium">Support</span>
                       </Link>
                     </>
                   )}

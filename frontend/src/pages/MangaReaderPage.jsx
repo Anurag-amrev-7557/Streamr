@@ -285,16 +285,23 @@ const MangaReaderPage = () => {
 						throw new Error('Component unmounted')
 					}
 					// MangaDex At-Home: get server then build page URLs
-					const atHome = await mangadexService.getAtHomeServer(hid)
+					// Try port 443 first (some networks require it), then default
+					let atHome
+					try {
+						atHome = await mangadexService.getAtHomeServer(hid, { forcePort443: true })
+					} catch {
+						atHome = await mangadexService.getAtHomeServer(hid)
+					}
 					const base = atHome?.baseUrl
 					const ch = await mangadexService.getChapter(hid)
 					const hash = ch?.data?.attributes?.hash
 					const data = ch?.data?.attributes?.data || []
 					const dataSaver = ch?.data?.attributes?.dataSaver || []
+					const useSaver = !data.length && dataSaver.length > 0
 					const files = data.length ? data : dataSaver
 					return {
 						success: true,
-						data: files.map(f => `${base}/data/${hash}/${f}`)
+						data: files.map(f => `${base}/${useSaver ? 'data-saver' : 'data'}/${hash}/${f}`)
 					}
 				}
 				

@@ -22,6 +22,9 @@ const responseCache = new Map();
 const inFlight = new Map();
 const nowMs = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let lastRequestAt = 0;
+
 const fetchJsonCached = async (url, options = {}, { ttlMs = 0 } = {}) => {
   const key = `GET ${url}`;
   const n = nowMs();
@@ -33,12 +36,29 @@ const fetchJsonCached = async (url, options = {}, { ttlMs = 0 } = {}) => {
   }
   const p = (async () => {
     try {
-      const res = await fetch(url, { ...options, headers: { accept: 'application/json', ...(options.headers || {}) } });
-      if (!res.ok) {
-        const t = await res.text().catch(() => '');
-        throw new Error(`Jikan ${res.status}: ${t || res.statusText}`);
+      // Retry on 429/503 with exponential backoff and respect Retry-After
+      let attempt = 0;
+      while (true) {
+        // Client-side throttle to ~3 req/sec
+        const now = Date.now();
+        const delta = now - lastRequestAt;
+        if (delta < 350) {
+          await sleep(350 - delta);
+        }
+        const res = await fetch(url, { ...options, headers: { accept: 'application/json', ...(options.headers || {}) } });
+        lastRequestAt = Date.now();
+        if (res.ok) return res.json();
+        const status = res.status;
+        const bodyText = await res.text().catch(() => '');
+        if ((status === 429 || status === 503) && attempt < 3) {
+          const retryAfter = res.headers.get('retry-after');
+          const waitMs = retryAfter ? Math.min(5000, (parseFloat(retryAfter) || 1) * 1000) : (500 * Math.pow(2, attempt));
+          attempt += 1;
+          await sleep(waitMs);
+          continue;
+        }
+        throw new Error(`Jikan ${status}: ${bodyText || res.statusText}`);
       }
-      return res.json();
     } finally {
       inFlight.delete(key);
     }
