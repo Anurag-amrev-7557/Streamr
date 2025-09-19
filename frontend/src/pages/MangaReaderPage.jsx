@@ -17,6 +17,7 @@ const MangaReaderPage = () => {
 	const [fitWidth, setFitWidth] = useState(true)
 	const [currentIndex, setCurrentIndex] = useState(0)
 	const [retryCount, setRetryCount] = useState(0)
+	const [debugInfo, setDebugInfo] = useState(null)
 	const [imageLoadingStates, setImageLoadingStates] = useState({})
 	const [preloadedImages, setPreloadedImages] = useState(new Set())
 	const [networkProfile, setNetworkProfile] = useState('fast')
@@ -171,17 +172,36 @@ const MangaReaderPage = () => {
 				const relManga = (ch?.data?.relationships || []).find(r => r?.type === 'manga')
 				if (relManga?.id) setMangaId(relManga.id)
 				
-				// Load a small feed to derive prev/next
+				// Build comprehensive chapter list using aggregate (all languages) for robust navigation and fallbacks
 				if (relManga?.id) {
-					const feed = await mangadexService.getMangaFeed(relManga.id, { limit: 100, translatedLanguage: ['en'], order: { chapter: 'asc' } })
-					const list = (feed?.data || []).map(c => ({
-						id: c?.id, hid: c?.id, chap: c?.attributes?.chapter, title: c?.attributes?.title
-					}))
-					setAllChapters(list)
-					const idx = list.findIndex(c => c.hid === hid)
+					let chaptersList = []
+					try {
+						const aggAll = await mangadexService.getAggregate(relManga.id)
+						const vols = aggAll?.volumes || {}
+						for (const v of Object.keys(vols)) {
+							const chs = vols[v]?.chapters || {}
+							for (const num of Object.keys(chs)) {
+								const info = chs[num]
+								const firstId = (info?.chapter || info)?.id || info?.id
+								chaptersList.push({ id: firstId, hid: firstId, chap: num })
+							}
+						}
+					} catch {}
+					// Fallback to feed if aggregate fails
+					if (!chaptersList.length) {
+						const feed = await mangadexService.getMangaFeed(relManga.id, { limit: 100, order: { chapter: 'asc' } })
+						chaptersList = (feed?.data || []).map(c => ({ id: c?.id, hid: c?.id, chap: c?.attributes?.chapter }))
+					}
+					// Sort by numeric chapter
+					chaptersList.sort((a,b) => (parseFloat(a.chap)||0) - (parseFloat(b.chap)||0))
+					// Dedup by id
+					const seen = new Set(); const uniq = []
+					for (const it of chaptersList) { if (!seen.has(it.hid)) { seen.add(it.hid); uniq.push(it) } }
+					setAllChapters(uniq)
+					const idx = uniq.findIndex(c => c.hid === hid)
 					setCurrentChapterIndex(idx)
-					setPrevChapter(idx > 0 ? list[idx - 1] : null)
-					setNextChapter(idx >= 0 && idx < list.length - 1 ? list[idx + 1] : null)
+					setPrevChapter(idx > 0 ? uniq[idx - 1] : null)
+					setNextChapter(idx >= 0 && idx < uniq.length - 1 ? uniq[idx + 1] : null)
 				}
 				
 			} catch (error) {
@@ -299,10 +319,19 @@ const MangaReaderPage = () => {
 					const dataSaver = ch?.data?.attributes?.dataSaver || []
 					const useSaver = !data.length && dataSaver.length > 0
 					const files = data.length ? data : dataSaver
-					return {
-						success: true,
-						data: files.map(f => `${base}/${useSaver ? 'data-saver' : 'data'}/${hash}/${f}`)
-					}
+					console.debug('[MangaReader] AtHome base:', base, 'hash:', hash, 'pages:', data.length, 'pagesSaver:', dataSaver.length)
+					setDebugInfo({ base, hash, pages: data.length, pagesSaver: dataSaver.length })
+					const directUrls = files.map(f => `${base}/${useSaver ? 'data-saver' : 'data'}/${hash}/${f}`)
+					const proxied = directUrls.map(u => {
+						try {
+							const apiBase = new URL(import.meta.env.VITE_API_URL || '/api', window.location.origin)
+							const prefix = apiBase.pathname.replace(/\/$/, '')
+							return `${apiBase.origin}${prefix}/v1/mangadex/proxy-image?url=${encodeURIComponent(u)}`
+						} catch {
+							return `/api/v1/mangadex/proxy-image?url=${encodeURIComponent(u)}`
+						}
+					})
+					return { success: true, data: proxied }
 				}
 				
 				const result = await enhancedLoadingService.retryWithBackoff(operation, 'chapter images')
@@ -311,9 +340,38 @@ const MangaReaderPage = () => {
 				
 					if (result.success) {
 						const data = result.data
-						const normalized = Array.isArray(data) ? data : []
+					const normalized = Array.isArray(data) ? data : []
 					
 					setImages(normalized)
+					if (normalized.length === 0) {
+						try {
+							const current = allChapters.find(c => c.hid === hid)
+							const chapNum = current?.chap
+							if (chapNum) {
+								const candidates = allChapters.filter(c => c.chap === chapNum && c.hid !== hid)
+								for (const cand of candidates) {
+									try {
+										let atHome2
+										try { atHome2 = await mangadexService.getAtHomeServer(cand.hid, { forcePort443: true }) } catch { atHome2 = await mangadexService.getAtHomeServer(cand.hid) }
+										const base2 = atHome2?.baseUrl
+										const ch2 = await mangadexService.getChapter(cand.hid)
+										const hash2 = ch2?.data?.attributes?.hash
+										const d2 = ch2?.data?.attributes?.data || []
+										const ds2 = ch2?.data?.attributes?.dataSaver || []
+										const useSaver2 = !d2.length && ds2.length > 0
+										const files2 = d2.length ? d2 : ds2
+										if (files2.length > 0) {
+											const urls2 = files2.map(f => `${base2}/${useSaver2 ? 'data-saver' : 'data'}/${hash2}/${f}`)
+											setImages(urls2)
+											setError('')
+											return
+										}
+									} catch {}
+								}
+							}
+						} catch {}
+						setError('No pages available for this chapter from MangaDex.')
+					}
 					setCurrentIndex(0)
 					
 					// Initialize image loading states
@@ -515,7 +573,6 @@ const MangaReaderPage = () => {
 					onLoadStart={() => handleImageLoadStart(index)}
 					onLoad={() => handleImageLoad(index)}
 					onError={() => handleImageError(index)}
-					crossOrigin="anonymous"
 				/>
 			</div>
 		)

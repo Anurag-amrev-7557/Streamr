@@ -47,4 +47,37 @@ router.get('/*', async (req, res) => {
 
 module.exports = router;
 
+// Image proxy to mitigate client-side blocking/CORS issues
+router.get('/proxy-image', async (req, res) => {
+  try {
+    const target = req.query.url;
+    if (!target || !/^https?:\/\//i.test(target)) {
+      return res.status(400).json({ error: 'Invalid url' });
+    }
+    const upstream = await fetch(target, {
+      method: 'GET',
+      headers: {
+        'accept': 'image/avif,image/webp,image/*,*/*;q=0.8',
+        'user-agent': 'Streamr/1.0 (+https://streamr-see.web.app)'
+      }
+    });
+    if (!upstream.ok) {
+      const text = await upstream.text().catch(() => '');
+      return res.status(upstream.status).send(text);
+    }
+    const ct = upstream.headers.get('content-type') || 'image/jpeg';
+    res.setHeader('Content-Type', ct);
+    if (process.env.NODE_ENV === 'production') {
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+    } else {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+    const buffer = Buffer.from(await upstream.arrayBuffer());
+    return res.status(200).send(buffer);
+  } catch (e) {
+    console.error('MangaDex image proxy error:', e);
+    return res.status(502).json({ error: 'Bad Gateway', message: 'Failed to fetch image' });
+  }
+});
+
 

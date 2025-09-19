@@ -551,14 +551,14 @@ const MangaDetailsPage = () => {
 				try {
 					const agg = await mangadexService.getAggregate(comicHid, { translatedLanguage: [primaryLang] })
 					const volumesObj = agg?.volumes || {}
-					const volKeys = Object.keys(volumesObj).filter(v => v && v !== 'none')
+					const volKeys = Object.keys(volumesObj)
 					const flat = []
 					for (const v of volKeys) {
 						const chaptersObj = volumesObj[v]?.chapters || {}
 						for (const chNum of Object.keys(chaptersObj)) {
 							const chInfo = chaptersObj[chNum]
 							const firstId = (chInfo?.chapter || chInfo)?.id || chInfo?.id
-							flat.push({ id: firstId, hid: firstId, vol: v, chap: chNum, title: '', lang: primaryLang })
+							flat.push({ id: firstId, hid: firstId, vol: v === 'none' ? '' : v, chap: chNum, title: '', lang: primaryLang })
 						}
 					}
 					if (flat.length) {
@@ -567,6 +567,28 @@ const MangaDetailsPage = () => {
 						setAllChaptersMeta(flat)
 						setAvailableLangs(prev => prev.length ? prev : [primaryLang])
 						return
+					}
+				} catch {}
+
+				// Aggregate without language to enumerate all volumes/chapters comprehensively
+				try {
+					const aggAll = await mangadexService.getAggregate(comicHid)
+					const volumesObjAll = aggAll?.volumes || {}
+					const flatAll = []
+					for (const v of Object.keys(volumesObjAll)) {
+						const chaptersObj = volumesObjAll[v]?.chapters || {}
+						for (const chNum of Object.keys(chaptersObj)) {
+							const chInfo = chaptersObj[chNum]
+							const firstId = (chInfo?.chapter || chInfo)?.id || chInfo?.id
+							flatAll.push({ id: firstId, hid: firstId, vol: v === 'none' ? '' : v, chap: chNum, title: '', lang: '' })
+						}
+					}
+					if (flatAll.length) {
+						flatAll.sort((a,b)=> (parseFloat(a.vol)||0)-(parseFloat(b.vol)||0) || (parseFloat(a.chap)||0)-(parseFloat(b.chap)||0))
+						// Dedup by id
+						const seen = new Set(); const uniq = []
+						for (const ch of flatAll) { if (!seen.has(ch.hid)) { seen.add(ch.hid); uniq.push(ch) } }
+						setAllChaptersMeta(uniq)
 					}
 				} catch {}
 				// MangaDex feed for selected language (may be sparse)
@@ -717,16 +739,20 @@ const MangaDetailsPage = () => {
 		fetchAllLanguagesOptimized()
 	}, [comicHid])
 
-	// Derive available volumes/chapters from aggregated meta (fallback to current page if meta not ready)
+	// Derive available volumes/chapters
 	useEffect(() => {
+		// Always derive the volumes list from the comprehensive meta (all languages)
 		const volumeSourceRaw = allChaptersMeta.length ? allChaptersMeta : chapters
-		const volumeSource = selectedLang
-			? volumeSourceRaw.filter(c => (c?.lang || c?.language || '').trim() === selectedLang)
-			: volumeSourceRaw
-		const vols = Array.from(new Set(volumeSource.map(c => (c?.vol ?? '').toString()).filter(v => v && v !== 'null' && v !== 'undefined')))
+		const vols = Array.from(new Set(volumeSourceRaw
+			.map(c => (c?.vol ?? '').toString())
+			.filter(v => v !== 'null' && v !== 'undefined')))
+			.map(v => v === '' ? '0' : v)
 		vols.sort((a, b) => (parseFloat(a) || 0) - (parseFloat(b) || 0))
-		setAvailableVolumes(vols)
+		// Map '0' back to empty label for UI, keep numeric order
+		const normalizedVols = vols.map(v => v === '0' ? '' : v)
+		setAvailableVolumes(normalizedVols)
 
+		// Chapters list respects current language + selected volume
 		const chapterSourceRaw = allChaptersMeta.length ? allChaptersMeta : chapters
 		const chapterSourceLang = selectedLang
 			? chapterSourceRaw.filter(c => (c?.lang || c?.language || '').trim() === selectedLang)
@@ -734,7 +760,9 @@ const MangaDetailsPage = () => {
 		const sourceForChapters = selectedVolume
 			? chapterSourceLang.filter(c => String(c?.vol ?? '') === String(selectedVolume))
 			: chapterSourceLang
-		const chaps = Array.from(new Set(sourceForChapters.map(c => (c?.chap ?? '').toString()).filter(v => v && v !== 'null' && v !== 'undefined')))
+		const chaps = Array.from(new Set(sourceForChapters
+			.map(c => (c?.chap ?? '').toString())
+			.filter(v => v && v !== 'null' && v !== 'undefined')))
 		chaps.sort((a, b) => (parseFloat(a) || 0) - (parseFloat(b) || 0))
 		setAvailableChapters(chaps)
 		if (selectedChapter && !chaps.includes(selectedChapter)) setSelectedChapter('')
@@ -780,6 +808,16 @@ const MangaDetailsPage = () => {
 
 		return filtered
 	}, [allChaptersMeta, selectedLang, selectedVolume, selectedChapter, showOnlyUnread, debouncedSearch, sortOrder, isChapterRead])
+
+	// Auto-clear language filter when it hides a large portion of available chapters
+	useEffect(() => {
+		if (!selectedLang) return
+		const total = allChaptersMeta.length
+		const visible = displayedChapters.length
+		if (total >= 10 && visible > 0 && visible <= Math.max(3, Math.floor(total * 0.3))) {
+			setSelectedLang('')
+		}
+	}, [selectedLang, displayedChapters.length, allChaptersMeta.length])
 
 	// FIXED: Prefetch images with memory leak prevention
 	useEffect(() => {
