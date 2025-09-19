@@ -182,7 +182,7 @@ const MangaReaderPage = () => {
 							const chs = vols[v]?.chapters || {}
 							for (const num of Object.keys(chs)) {
 								const info = chs[num]
-								const firstId = (info?.chapter || info)?.id || info?.id
+								const firstId = info?.id || (info?.chapter && info.chapter.id) || null
 								chaptersList.push({ id: firstId, hid: firstId, chap: num })
 							}
 						}

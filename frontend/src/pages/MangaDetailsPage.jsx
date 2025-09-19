@@ -222,6 +222,7 @@ const MangaDetailsPage = () => {
 	const [userRating, setUserRating] = useState(0)
 	const [showCoverGallery, setShowCoverGallery] = useState(false)
 	const [mangaRating, setMangaRating] = useState(null)
+	const [debugCounts, setDebugCounts] = useState(null)
 	
 	// FIXED: Add mounted ref and cleanup refs for memory leak prevention
 	const isMountedRef = useRef(true)
@@ -562,10 +563,12 @@ const MangaDetailsPage = () => {
 						}
 					}
 					if (flat.length) {
+						console.log('[MangaDetails] Aggregate(lang) volumes:', volKeys.length, 'chapters:', flat.length)
 						flat.sort((a,b)=> (parseFloat(a.vol)||0)-(parseFloat(b.vol)||0) || (parseFloat(a.chap)||0)-(parseFloat(b.chap)||0))
 						setChapters(flat)
 						setAllChaptersMeta(flat)
 						setAvailableLangs(prev => prev.length ? prev : [primaryLang])
+						setDebugCounts(prev => ({ ...(prev||{}), aggVolsLang: volKeys.length, aggChLang: flat.length }))
 						return
 					}
 				} catch {}
@@ -584,17 +587,20 @@ const MangaDetailsPage = () => {
 						}
 					}
 					if (flatAll.length) {
+						console.log('[MangaDetails] Aggregate(all) volumes:', Object.keys(volumesObjAll).length, 'chapters:', flatAll.length)
 						flatAll.sort((a,b)=> (parseFloat(a.vol)||0)-(parseFloat(b.vol)||0) || (parseFloat(a.chap)||0)-(parseFloat(b.chap)||0))
 						// Dedup by id
 						const seen = new Set(); const uniq = []
 						for (const ch of flatAll) { if (!seen.has(ch.hid)) { seen.add(ch.hid); uniq.push(ch) } }
 						setAllChaptersMeta(uniq)
+						setDebugCounts(prev => ({ ...(prev||{}), aggVolsAll: Object.keys(volumesObjAll).length, aggChAll: uniq.length }))
 					}
 				} catch {}
 				// MangaDex feed for selected language (may be sparse)
 				let feed = await mangadexService.getMangaFeed(comicHid, { limit: 100, translatedLanguage: [primaryLang], order: { chapter: 'asc' } })
 				if (!isMountedRef.current) return
 				let mdChaps = feed?.data || []
+				console.log('[MangaDetails] Feed(lang) batch size:', mdChaps.length)
 				// Always fetch a comprehensive all-language list deeply to build complete volumes/chapters
 				const pageSize = 100
 				let offset = 0
@@ -606,6 +612,7 @@ const MangaDetailsPage = () => {
 					if (!chunk.length || chunk.length < pageSize) break
 					offset += pageSize
 				}
+				console.log('[MangaDetails] Feed(all) total items:', all.length)
 				const normalizedAll = all.map(ch => ({
 					id: ch?.id,
 					hid: ch?.id,
@@ -641,6 +648,7 @@ const MangaDetailsPage = () => {
 					uniqueById.push(ch)
 				}
 				setChapters(uniqueById.length ? uniqueById : dedupAll)
+				setDebugCounts(prev => ({ ...(prev||{}), feedLang: mdChaps.length, feedAll: dedupAll.length }))
 				const langsSet = new Set(normalized.map(c => (c?.lang || '').trim()).filter(Boolean))
 				// Ensure the current primary language appears first if present
 				const langs = Array.from(langsSet).sort((a, b) => (a === primaryLang ? -1 : b === primaryLang ? 1 : a.localeCompare(b)))
@@ -769,14 +777,16 @@ const MangaDetailsPage = () => {
 	}, [chapters, allChaptersMeta, selectedVolume, selectedLang])
 
 
-	// Apply filters to displayed list (always use allChaptersMeta for complete data)
+	// Apply filters to displayed list (defer while loading all volumes)
 	const displayedChapters = useMemo(() => {
-		// Always use allChaptersMeta as the source for complete chapter data
-		const baseRaw = allChaptersMeta.length ? allChaptersMeta : chapters
+		const baseAll = allChaptersMeta.length ? allChaptersMeta : chapters
+		if (loadingAllVolumes) {
+			// Do not apply any filters while volumes are still loading
+			return baseAll
+		}
 		const baseLang = selectedLang
-			? baseRaw.filter(c => (c?.lang || c?.language || '').trim() === selectedLang)
-			: baseRaw
-		
+			? baseAll.filter(c => (c?.lang || c?.language || '').trim() === selectedLang)
+			: baseAll
 		let filtered = baseLang.filter(c => {
 			if (selectedVolume && String(c?.vol ?? '') !== String(selectedVolume)) return false
 			if (selectedChapter && String(c?.chap ?? '') !== String(selectedChapter)) return false
@@ -786,28 +796,20 @@ const MangaDetailsPage = () => {
 				const chapterTitle = (c?.title || '').toLowerCase()
 				const chapterNum = String(c?.chap || '').toLowerCase()
 				const volumeNum = String(c?.vol || '').toLowerCase()
-				if (!chapterTitle.includes(searchTerm) && 
-					!chapterNum.includes(searchTerm) && 
-					!volumeNum.includes(searchTerm)) return false
+				if (!chapterTitle.includes(searchTerm) && !chapterNum.includes(searchTerm) && !volumeNum.includes(searchTerm)) return false
 			}
 			return true
 		})
-
-		// Sort chapters
 		filtered.sort((a, b) => {
 			const aVol = parseFloat(a?.vol || 0)
 			const bVol = parseFloat(b?.vol || 0)
 			const aChap = parseFloat(a?.chap || 0)
 			const bChap = parseFloat(b?.chap || 0)
-			
-			if (aVol !== bVol) {
-				return sortOrder === 'asc' ? aVol - bVol : bVol - aVol
-			}
+			if (aVol !== bVol) return sortOrder === 'asc' ? aVol - bVol : bVol - aVol
 			return sortOrder === 'asc' ? aChap - bChap : bChap - aChap
 		})
-
 		return filtered
-	}, [allChaptersMeta, selectedLang, selectedVolume, selectedChapter, showOnlyUnread, debouncedSearch, sortOrder, isChapterRead])
+	}, [allChaptersMeta, chapters, loadingAllVolumes, selectedLang, selectedVolume, selectedChapter, showOnlyUnread, debouncedSearch, sortOrder, isChapterRead])
 
 	// Auto-clear language filter when it hides a large portion of available chapters
 	useEffect(() => {
