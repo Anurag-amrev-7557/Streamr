@@ -1241,7 +1241,7 @@ export const userAPI = {
   },
 
   // Sync entire watch history with backend
-  syncWatchHistory: async (watchHistoryData) => {
+  syncWatchHistory: async (watchHistoryData, lastSyncTimestamp = null) => {
     const { timeout } = getNetworkAwareConfig();
     const token = localStorage.getItem('accessToken');
     
@@ -1256,7 +1256,37 @@ export const userAPI = {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ watchHistory: watchHistoryData })
+        body: JSON.stringify({ 
+          watchHistory: watchHistoryData,
+          lastSyncTimestamp 
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return response.json();
+    }, { timeout });
+  },
+
+  // Process batch operations for watch history
+  processBatchWatchHistory: async (operations) => {
+    const { timeout } = getNetworkAwareConfig();
+    const token = localStorage.getItem('accessToken');
+    
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+    
+    return fetchWithRetry(async () => {
+      const response = await fetch(`${getApiUrl()}/user/watch-history/batch`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ operations })
       });
       
       if (!response.ok) {
@@ -1504,4 +1534,4 @@ export const userAPI = {
       return response.json();
     }, { timeout });
   }
-}; 
+};

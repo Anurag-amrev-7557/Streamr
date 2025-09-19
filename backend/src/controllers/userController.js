@@ -567,7 +567,7 @@ exports.syncViewingProgress = async (req, res) => {
 // Sync watch history from frontend
 exports.syncWatchHistory = async (req, res) => {
   try {
-    const { watchHistory } = req.body;
+    const { watchHistory, lastSyncTimestamp } = req.body;
     
     if (!Array.isArray(watchHistory)) {
       return res.status(400).json({
@@ -575,6 +575,29 @@ exports.syncWatchHistory = async (req, res) => {
         message: 'Watch history must be an array'
       });
     }
+
+    // Validate watch history entries
+    const validatedHistory = watchHistory.filter(item => {
+      // Basic validation
+      if (!item || !item.content) return false;
+      
+      // Validate progress is a number between 0-100
+      if (typeof item.progress !== 'number' || item.progress < 0 || item.progress > 100) {
+        item.progress = Math.max(0, Math.min(100, item.progress || 0));
+      }
+      
+      // Ensure lastWatched is a valid date
+      if (!item.lastWatched) {
+        item.lastWatched = new Date().toISOString();
+      }
+      
+      // Ensure syncTimestamp exists
+      if (!item.syncTimestamp) {
+        item.syncTimestamp = item.lastWatched;
+      }
+      
+      return true;
+    });
 
     const user = await User.findById(req.user.id);
     if (!user) {
@@ -585,13 +608,17 @@ exports.syncWatchHistory = async (req, res) => {
     }
 
     // Sync the watch history using the enhanced method
-    await user.syncWatchHistory(watchHistory);
+    await user.syncWatchHistory(validatedHistory);
 
+    // Return the server timestamp for future sync operations
+    const serverTimestamp = new Date().toISOString();
+    
     res.json({
       success: true,
       message: 'Watch history synced successfully',
       data: {
-        watchHistory: user.watchHistory
+        watchHistory: user.watchHistory,
+        serverTimestamp
       }
     });
   } catch (error) {
@@ -717,6 +744,132 @@ exports.syncWatchHistoryEnhanced = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error syncing watch history'
+    });
+  }
+};
+
+// Process batch operations for offline queue
+exports.processBatchWatchHistory = async (req, res) => {
+  try {
+    const { operations, lastSyncTimestamp } = req.body;
+    
+    if (!Array.isArray(operations)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Operations must be an array'
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Get current watch history
+    let currentWatchHistory = user.watchHistory || [];
+    
+    // Process each operation in sequence
+    for (const operation of operations) {
+      const { type, contentId, progress, timestamp } = operation;
+      
+      if (!type) continue;
+      
+      switch (type) {
+        case 'add':
+          if (!contentId) continue;
+          
+          // Find if item already exists
+          const existingAddIndex = currentWatchHistory.findIndex(
+            item => item.content && item.content.toString() === contentId.toString()
+          );
+          
+          if (existingAddIndex > -1) {
+            // Update existing item
+            currentWatchHistory[existingAddIndex] = {
+              ...currentWatchHistory[existingAddIndex],
+              progress: progress || 0,
+              lastWatched: timestamp || new Date().toISOString(),
+              syncTimestamp: timestamp || new Date().toISOString()
+            };
+          } else {
+            // Add new item
+            currentWatchHistory.push({
+              content: contentId,
+              progress: progress || 0,
+              lastWatched: timestamp || new Date().toISOString(),
+              syncTimestamp: timestamp || new Date().toISOString()
+            });
+          }
+          break;
+          
+        case 'update':
+          if (!contentId) continue;
+          
+          // Find if item exists
+          const existingUpdateIndex = currentWatchHistory.findIndex(
+            item => item.content && item.content.toString() === contentId.toString()
+          );
+          
+          if (existingUpdateIndex > -1) {
+            // Update existing item
+            currentWatchHistory[existingUpdateIndex] = {
+              ...currentWatchHistory[existingUpdateIndex],
+              progress: progress || currentWatchHistory[existingUpdateIndex].progress,
+              lastWatched: timestamp || new Date().toISOString(),
+              syncTimestamp: timestamp || new Date().toISOString()
+            };
+          }
+          break;
+          
+        case 'remove':
+          if (!contentId) continue;
+          
+          // Remove item
+          currentWatchHistory = currentWatchHistory.filter(
+            item => !item.content || item.content.toString() !== contentId.toString()
+          );
+          break;
+          
+        case 'sync':
+          // Full sync operation - handled by syncWatchHistory method
+          if (operation.data && Array.isArray(operation.data)) {
+            await user.syncWatchHistory(operation.data);
+            currentWatchHistory = user.watchHistory;
+          }
+          break;
+          
+        default:
+          // Unknown operation type
+          continue;
+      }
+    }
+    
+    // Save the final state if not already saved by a sync operation
+    if (operations.every(op => op.type !== 'sync')) {
+      user.watchHistory = currentWatchHistory;
+      await user.save();
+    }
+    
+    // Return the server timestamp for future sync operations
+    const serverTimestamp = new Date().toISOString();
+    
+    res.json({
+      success: true,
+      message: 'Batch operations processed successfully',
+      data: {
+        watchHistory: user.watchHistory,
+        serverTimestamp,
+        operationsProcessed: operations.length
+      }
+    });
+  } catch (error) {
+    console.error('Process batch watch history error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error processing batch operations'
     });
   }
 };
@@ -1265,4 +1418,4 @@ exports.clearWishlist = async (req, res) => {
       message: 'Error clearing wishlist'
     });
   }
-}; 
+};

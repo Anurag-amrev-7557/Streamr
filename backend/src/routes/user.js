@@ -119,6 +119,11 @@ router.post('/watch-history/sync', rateLimiters.general, authenticate, userContr
 // @access  Private
 router.post('/watch-history/sync/enhanced', rateLimiters.general, authenticate, userController.syncWatchHistoryEnhanced);
 
+// @route   POST /api/user/watch-history/batch
+// @desc    Process batch operations for offline queue
+// @access  Private
+router.post('/watch-history/batch', rateLimiters.general, authenticate, userController.processBatchWatchHistory);
+
 // @route   PUT /api/user/watch-history
 // @desc    Update watch history for a specific item
 // @access  Private
@@ -166,4 +171,4 @@ router.post('/2fa/backup-codes/regenerate', rateLimiters.general, authenticate, 
 // @access  Private
 router.post('/2fa/backup-codes/verify', rateLimiters.general, authenticate, userController.verifyBackupCode);
 
-module.exports = router; 
+module.exports = router;

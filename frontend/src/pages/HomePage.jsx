@@ -2888,10 +2888,19 @@ const HeroSection = memo(({ featuredContent, trendingMovies, onMovieSelect, onGe
   const isResumeAvailable = useMemo(() => {
     if (!featuredContent || !featuredContent.id || !viewingProgress) return false;
     const contentType = featuredContent.type || featuredContent.media_type || featuredContent.mediaType || 'movie';
+    
+    // Check if the content is in the continue watching section
     if (contentType === 'movie') {
-      const progressEntry = viewingProgress[`movie_${featuredContent.id}`];
+      const contentKey = `movie_${featuredContent.id}`;
+      // If the content is in viewingProgress at all, it's in continue watching
+      if (viewingProgress[contentKey]) {
+        return true;
+      }
+      // Fallback to original logic
+      const progressEntry = viewingProgress[contentKey];
       return !!(progressEntry && typeof progressEntry.progress === 'number' && progressEntry.progress > 0);
     }
+    
     // For TV, check if any episode for this show has progress > 0
     const tvKeyPrefix = `tv_${featuredContent.id}_`;
     return Object.entries(viewingProgress).some(([key, data]) =>

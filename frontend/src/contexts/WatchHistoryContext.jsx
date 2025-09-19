@@ -26,11 +26,20 @@ export const useWatchHistorySafe = () => {
 };
 
 const WATCH_HISTORY_STORAGE_KEY = 'watchHistory';
-const WATCH_HISTORY_VERSION = 1;
+const WATCH_HISTORY_VERSION = 2;
+const WATCH_HISTORY_LAST_SYNC_KEY = 'watchHistoryLastSync';
+const WATCH_HISTORY_OFFLINE_QUEUE_KEY = 'watchHistoryOfflineQueue';
 
-function migrateWatchHistory(data) {
-  // For future schema migrations
-  // Currently, just return as is
+function migrateWatchHistory(data, version) {
+  // Handle migrations based on version
+  if (!version || version < 2) {
+    // Migrate to version 2: Add timestamps to all entries if missing
+    return data.map(item => ({
+      ...item,
+      lastWatched: item.lastWatched || new Date().toISOString(),
+      syncTimestamp: item.syncTimestamp || new Date().toISOString()
+    }));
+  }
   return data;
 }
 
@@ -40,7 +49,7 @@ function getLocalWatchHistory() {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
-      return migrateWatchHistory(parsed);
+      return migrateWatchHistory(parsed, WATCH_HISTORY_VERSION);
     }
     return [];
   } catch (e) {
@@ -52,8 +61,47 @@ function getLocalWatchHistory() {
 function setLocalWatchHistory(history) {
   try {
     localStorage.setItem(WATCH_HISTORY_STORAGE_KEY, JSON.stringify(history));
+    // Update last sync timestamp
+    localStorage.setItem(WATCH_HISTORY_LAST_SYNC_KEY, new Date().toISOString());
   } catch (e) {
     console.error('Failed to save watch history to localStorage:', e);
+  }
+}
+
+function getOfflineQueue() {
+  try {
+    const raw = localStorage.getItem(WATCH_HISTORY_OFFLINE_QUEUE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    console.error('Failed to parse offline queue:', e);
+    return [];
+  }
+}
+
+function addToOfflineQueue(operation) {
+  try {
+    const queue = getOfflineQueue();
+    queue.push({
+      ...operation,
+      timestamp: new Date().toISOString()
+    });
+    localStorage.setItem(WATCH_HISTORY_OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+    return true;
+  } catch (e) {
+    console.error('Failed to add to offline queue:', e);
+    return false;
+  }
+}
+
+function clearOfflineQueue() {
+  try {
+    localStorage.removeItem(WATCH_HISTORY_OFFLINE_QUEUE_KEY);
+    return true;
+  } catch (e) {
+    console.error('Failed to clear offline queue:', e);
+    return false;
   }
 }
 
@@ -64,11 +112,14 @@ export const WatchHistoryProvider = ({ children }) => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState(null);
   const [lastConflict, setLastConflict] = useState(null);
+  const [offlineMode, setOfflineMode] = useState(false);
+  const [pendingOfflineOperations, setPendingOfflineOperations] = useState([]);
 
   // Refs to track changes and prevent infinite loops
   const isUpdatingFromBackend = useRef(false);
   const pendingChanges = useRef(new Set());
   const lastLocalChange = useRef(null);
+  const networkStatus = useRef('online');
 
   // For optimistic UI: track last mutation for rollback
   const lastMutation = useRef(null);
@@ -94,22 +145,102 @@ export const WatchHistoryProvider = ({ children }) => {
     }
     return true;
   };
+  
+  // --- Utility: Merge watch histories with timestamp-based conflict resolution ---
+  const mergeWatchHistories = (local, remote) => {
+    // Create a map for faster lookups
+    const contentMap = new Map();
+    
+    // Add all local items to the map
+    local.forEach(item => {
+      contentMap.set(item.content, {
+        ...item,
+        source: 'local',
+        timestamp: new Date(item.lastWatched).getTime()
+      });
+    });
+    
+    // Merge remote items, keeping the most recent version based on lastWatched timestamp
+    remote.forEach(item => {
+      const existingItem = contentMap.get(item.content);
+      const remoteTimestamp = new Date(item.lastWatched).getTime();
+      
+      if (!existingItem || remoteTimestamp > existingItem.timestamp) {
+        contentMap.set(item.content, {
+          ...item,
+          source: 'remote',
+          timestamp: remoteTimestamp
+        });
+      }
+    });
+    
+    // Convert map back to array and remove the temporary fields
+    return Array.from(contentMap.values()).map(({ source, timestamp, ...item }) => item);
+  };
+  
+  // --- Utility: Check network status ---
+  const checkNetworkStatus = () => {
+    return navigator.onLine;
+  };
+
+  // --- Network status detection ---
+  useEffect(() => {
+    const handleOnline = () => {
+      console.log('Network is online, processing offline queue...');
+      networkStatus.current = 'online';
+      setOfflineMode(false);
+      
+      // Process offline queue when back online
+      const offlineQueue = getOfflineQueue();
+      if (offlineQueue.length > 0) {
+        setPendingOfflineOperations(offlineQueue);
+      }
+    };
+    
+    const handleOffline = () => {
+      console.log('Network is offline, enabling offline mode...');
+      networkStatus.current = 'offline';
+      setOfflineMode(true);
+    };
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    // Initial check
+    setOfflineMode(!navigator.onLine);
+    networkStatus.current = navigator.onLine ? 'online' : 'offline';
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // --- Load from backend and localStorage on mount ---
   useEffect(() => {
     let didCancel = false;
     const load = async () => {
       // Try backend first, then fallback to localStorage
-      const backendResult = await loadFromBackend(true);
-      if (!backendResult.success) {
-        // fallback to localStorage
+      if (navigator.onLine) {
+        const backendResult = await loadFromBackend(true);
+        if (!backendResult.success) {
+          // fallback to localStorage
+          const local = getLocalWatchHistory();
+          if (!didCancel) {
+            setWatchHistory(local);
+            setIsInitialized(true);
+          }
+        } else {
+          setIsInitialized(true);
+        }
+      } else {
+        // Offline mode - use localStorage only
         const local = getLocalWatchHistory();
         if (!didCancel) {
           setWatchHistory(local);
           setIsInitialized(true);
+          setOfflineMode(true);
         }
-      } else {
-        setIsInitialized(true);
       }
     };
     load();
@@ -212,13 +343,54 @@ export const WatchHistoryProvider = ({ children }) => {
         const token = localStorage.getItem('accessToken');
         if (!token) return;
         if (pendingChanges.current.size > 0) return;
+        
+        // Skip sync if offline
+        if (!navigator.onLine) {
+          console.log('Offline mode: Skipping backend sync, saving to queue');
+          addToOfflineQueue({
+            type: 'sync',
+            data: watchHistory
+          });
+          return;
+        }
+        
         setIsSyncing(true);
         setSyncError(null);
-        await userAPI.syncWatchHistory(watchHistory);
-        setLastBackendSync(new Date().toISOString());
-        pendingChanges.current.clear();
+        
+        // Get the latest backend data first for proper merging
+        const response = await userAPI.getWatchHistory();
+        if (response.success && response.data.watchHistory) {
+          const backendData = response.data.watchHistory;
+          
+          // Merge local and remote data with timestamp-based conflict resolution
+          const mergedData = mergeWatchHistories(watchHistory, backendData);
+          
+          // Only sync if there are differences after merging
+          if (!areHistoriesEqual(watchHistory, mergedData)) {
+            // Update local state with merged data
+            isUpdatingFromBackend.current = true;
+            setWatchHistory(mergedData);
+            
+            // Sync merged data to backend
+            await userAPI.syncWatchHistory(mergedData);
+            setLastBackendSync(new Date().toISOString());
+            pendingChanges.current.clear();
+          }
+        } else {
+          // If we can't get backend data, just sync current state
+          await userAPI.syncWatchHistory(watchHistory);
+          setLastBackendSync(new Date().toISOString());
+          pendingChanges.current.clear();
+        }
       } catch (error) {
         setSyncError(error.message);
+        // If sync fails due to network issues, add to offline queue
+        if (!navigator.onLine) {
+          addToOfflineQueue({
+            type: 'sync',
+            data: watchHistory
+          });
+        }
       } finally {
         setIsSyncing(false);
       }
@@ -237,6 +409,43 @@ export const WatchHistoryProvider = ({ children }) => {
     // eslint-disable-next-line
   }, [watchHistory, isInitialized]);
 
+  // --- Process offline queue when back online ---
+  useEffect(() => {
+    if (offlineMode || pendingOfflineOperations.length === 0 || isSyncing) return;
+    
+    const processOfflineQueue = async () => {
+      try {
+        setIsSyncing(true);
+        console.log(`Processing ${pendingOfflineOperations.length} offline operations...`);
+        
+        // Use the batch processing endpoint to handle all operations at once
+        const response = await userAPI.processBatchWatchHistory(pendingOfflineOperations);
+        
+        if (response.success && response.data.watchHistory) {
+          // Update local state with the latest server state
+          isUpdatingFromBackend.current = true;
+          setWatchHistory(response.data.watchHistory);
+          setLocalWatchHistory(response.data.watchHistory);
+          setLastBackendSync(new Date().toISOString());
+        }
+        
+        // Clear the offline queue
+        clearOfflineQueue();
+        setPendingOfflineOperations([]);
+        
+        console.log('Offline queue processed successfully');
+      } catch (error) {
+        console.error('Failed to process offline queue:', error);
+        setSyncError(error.message);
+        // Keep the queue for retry later
+      } finally {
+        setIsSyncing(false);
+      }
+    };
+    
+    processOfflineQueue();
+  }, [offlineMode, pendingOfflineOperations, isSyncing, watchHistory]);
+
   // --- Add item to watch history (Optimistic) ---
   const addToWatchHistory = useCallback(
     async (contentId, progress = 0) => {
@@ -253,6 +462,7 @@ export const WatchHistoryProvider = ({ children }) => {
             ...updated[existingIndex],
             progress,
             lastWatched: now,
+            syncTimestamp: now
           };
           return updated;
         } else {
@@ -262,6 +472,7 @@ export const WatchHistoryProvider = ({ children }) => {
               content: contentId,
               progress,
               lastWatched: now,
+              syncTimestamp: now
             },
           ];
         }
@@ -274,6 +485,17 @@ export const WatchHistoryProvider = ({ children }) => {
       try {
         const token = localStorage.getItem('accessToken');
         if (token) {
+          if (!navigator.onLine) {
+            // Store operation in offline queue
+            addToOfflineQueue({
+              type: 'add',
+              contentId,
+              progress,
+              timestamp: now
+            });
+            return;
+          }
+          
           // Use the latest state for sync
           const updatedHistory = getLocalWatchHistory();
           await userAPI.syncWatchHistory(updatedHistory);
@@ -281,6 +503,15 @@ export const WatchHistoryProvider = ({ children }) => {
         }
       } catch (error) {
         setSyncError(error.message);
+        // If sync fails due to network issues, add to offline queue
+        if (!navigator.onLine) {
+          addToOfflineQueue({
+            type: 'add',
+            contentId,
+            progress,
+            timestamp: now
+          });
+        }
       } finally {
         setTimeout(() => {
           pendingChanges.current.delete(changeId);
@@ -296,6 +527,7 @@ export const WatchHistoryProvider = ({ children }) => {
       if (!contentId || typeof progress !== 'number') return;
       const changeId = `update_${contentId}_${Date.now()}`;
       pendingChanges.current.add(changeId);
+      const now = new Date().toISOString();
 
       setWatchHistory((prev) => {
         const existingIndex = prev.findIndex((item) => item.content === contentId);
@@ -304,7 +536,8 @@ export const WatchHistoryProvider = ({ children }) => {
           updated[existingIndex] = {
             ...updated[existingIndex],
             progress,
-            lastWatched: new Date().toISOString(),
+            lastWatched: now,
+            syncTimestamp: now
           };
           return updated;
         }
@@ -318,12 +551,32 @@ export const WatchHistoryProvider = ({ children }) => {
       try {
         const token = localStorage.getItem('accessToken');
         if (token) {
+          if (!navigator.onLine) {
+            // Store operation in offline queue
+            addToOfflineQueue({
+              type: 'update',
+              contentId,
+              progress,
+              timestamp: now
+            });
+            return;
+          }
+          
           const updatedHistory = getLocalWatchHistory();
           await userAPI.syncWatchHistory(updatedHistory);
           setLastBackendSync(new Date().toISOString());
         }
       } catch (error) {
         setSyncError(error.message);
+        // If sync fails due to network issues, add to offline queue
+        if (!navigator.onLine) {
+          addToOfflineQueue({
+            type: 'update',
+            contentId,
+            progress,
+            timestamp: now
+          });
+        }
       } finally {
         setTimeout(() => {
           pendingChanges.current.delete(changeId);
@@ -407,12 +660,36 @@ export const WatchHistoryProvider = ({ children }) => {
         }
         setIsSyncing(true);
         setSyncError(null);
-        await userAPI.syncWatchHistory(getLocalWatchHistory());
+        
+        // Check if we're online
+        if (!navigator.onLine) {
+          throw new Error('You are offline. Changes will sync when connection is restored.');
+        }
+        
+        // Pass the current timestamp for conflict resolution
+        const response = await userAPI.syncWatchHistory(getLocalWatchHistory());
+        if (response && response.watchHistory) {
+          // Update local state with the server state
+          isUpdatingFromBackend.current = true;
+          setWatchHistory(response.watchHistory);
+          setLocalWatchHistory(response.watchHistory);
+        }
+        
         setLastBackendSync(new Date().toISOString());
         pendingChanges.current.clear();
         return { success: true };
       } catch (error) {
         setSyncError(error.message);
+        
+        // If we're offline, add to offline queue
+        if (!navigator.onLine) {
+          addToOfflineQueue({
+            type: 'sync',
+            data: getLocalWatchHistory(),
+            timestamp: new Date().toISOString()
+          });
+        }
+        
         return { success: false, error: error.message };
       } finally {
         setIsSyncing(false);

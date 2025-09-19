@@ -393,6 +393,86 @@ userSchema.methods.updateWatchHistory = async function(contentId, progress) {
   await this.save();
 };
 
+// Enhanced method to sync watch history with timestamp-based conflict resolution
+userSchema.methods.syncWatchHistory = async function(watchHistory) {
+  if (!Array.isArray(watchHistory)) {
+    throw new Error('Watch history must be an array');
+  }
+  
+  // If no existing watch history, simply replace
+  if (!this.watchHistory || this.watchHistory.length === 0) {
+    this.watchHistory = watchHistory;
+    await this.save();
+    return;
+  }
+  
+  // Create a map of existing items for faster lookup
+  const existingMap = new Map();
+  this.watchHistory.forEach(item => {
+    if (item.content) {
+      existingMap.set(item.content.toString(), item);
+    }
+  });
+  
+  // Process incoming items with timestamp-based conflict resolution
+  const updatedHistory = [...this.watchHistory];
+  
+  watchHistory.forEach(incomingItem => {
+    if (!incomingItem.content) return;
+    
+    const contentId = incomingItem.content.toString();
+    const existingItem = existingMap.get(contentId);
+    
+    // If item doesn't exist, add it
+    if (!existingItem) {
+      updatedHistory.push(incomingItem);
+      return;
+    }
+    
+    // If incoming item has syncTimestamp, use it for conflict resolution
+    if (incomingItem.syncTimestamp) {
+      const incomingTimestamp = new Date(incomingItem.syncTimestamp);
+      const existingTimestamp = existingItem.lastWatched || new Date(0);
+      
+      // Only update if incoming is newer
+      if (incomingTimestamp > existingTimestamp) {
+        const index = updatedHistory.findIndex(item => 
+          item.content && item.content.toString() === contentId
+        );
+        if (index !== -1) {
+          updatedHistory[index] = {
+            ...existingItem,
+            progress: incomingItem.progress,
+            lastWatched: incomingItem.lastWatched || new Date(),
+            syncTimestamp: incomingItem.syncTimestamp
+          };
+        }
+      }
+    } 
+    // Fall back to lastWatched for older clients
+    else if (incomingItem.lastWatched) {
+      const incomingTimestamp = new Date(incomingItem.lastWatched);
+      const existingTimestamp = existingItem.lastWatched || new Date(0);
+      
+      if (incomingTimestamp > existingTimestamp) {
+        const index = updatedHistory.findIndex(item => 
+          item.content && item.content.toString() === contentId
+        );
+        if (index !== -1) {
+          updatedHistory[index] = {
+            ...existingItem,
+            progress: incomingItem.progress,
+            lastWatched: incomingItem.lastWatched
+          };
+        }
+      }
+    }
+  });
+  
+  this.watchHistory = updatedHistory;
+  await this.save();
+};
+
 const User = mongoose.model('User', userSchema);
 
 module.exports = User;

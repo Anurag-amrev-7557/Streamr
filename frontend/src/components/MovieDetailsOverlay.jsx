@@ -2706,11 +2706,25 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   const isResumeAvailable = useMemo(() => {
     if (!movie || !movie.id || !viewingProgress) return false;
     const contentType = movie.type || movie.media_type || 'movie';
-    // Movie: resume if any progress > 0 and < 100
+    
+    // Check if the content is in the continue watching section
+    const contentKey = contentType === 'movie' 
+      ? `movie_${movie.id}` 
+      : (contentType === 'tv' && movie.season && movie.episode) 
+        ? `tv_${movie.id}_${movie.season}_${movie.episode}` 
+        : null;
+    
+    // If the content is in viewingProgress at all, it's in continue watching
+    if (contentKey && viewingProgress[contentKey]) {
+      return true;
+    }
+    
+    // Movie: resume if any progress > 0 and < 100 (fallback to original logic)
     if (contentType === 'movie') {
       const entry = viewingProgress[`movie_${movie.id}`];
       return !!(entry && typeof entry.progress === 'number' && entry.progress > 0 && entry.progress < 100);
     }
+    
     // TV: check specific episode if provided
     if (contentType === 'tv') {
       const season = movie.season;
