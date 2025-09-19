@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { ArrowsPointingOutIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline'
 import { useParams, useNavigate } from 'react-router-dom'
-import comickService from '../services/comickService'
+import mangaService from '../services/mangaService'
 import EnhancedLoadingIndicator from '../components/EnhancedLoadingIndicator'
 import enhancedLoadingService from '../services/enhancedLoadingService'
 import { preloadImages } from '../services/imageOptimizationService'
@@ -167,7 +167,7 @@ const MangaReaderPage = () => {
 		const loadMangaData = async () => {
 			try {
 				// Get chapter info first to find the manga
-				const chapterInfo = await comickService.getChapterInfo(hid)
+                const chapterInfo = await mangaService.getChapterInfo(hid)
 				
 				// Extract manga slug from md_comics for navigation
 				if (chapterInfo?.chapter?.md_comics?.slug) {
@@ -298,7 +298,7 @@ const MangaReaderPage = () => {
 					if (!isMountedRef.current) {
 						throw new Error('Component unmounted')
 					}
-					return comickService.getChapterImages(hid)
+                    return mangaService.getChapterImages(hid)
 				}
 				
 				const result = await enhancedLoadingService.retryWithBackoff(operation, 'chapter images')

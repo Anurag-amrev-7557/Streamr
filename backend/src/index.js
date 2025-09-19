@@ -13,6 +13,7 @@ const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/user');
 const tmdbRoutes = require('./routes/tmdb');
 const comickRoutes = require('./routes/comick'); 
+const mangadexRoutes = require('./routes/mangadex');
 
 const communityRoutes = require('./routes/community');
 const uploadRoutes = require('./routes/upload');
@@ -306,6 +307,10 @@ app.use('/api/upload', uploadRoutes);
 // Comick API proxy
 app.use('/api/comick', comickRoutes);
 app.use('/api/v1/comick', comickRoutes);
+
+// MangaDex API proxy
+app.use('/api/mangadex', mangadexRoutes);
+app.use('/api/v1/mangadex', mangadexRoutes);
 
 // Active users API endpoint removed
 

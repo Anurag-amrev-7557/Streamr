@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react'
-import comickService from '../services/comickService'
+import mangaService from '../services/mangaService'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -419,7 +419,7 @@ const MangaDetailsPage = () => {
 		setSelectedChapter('')
 		
 		Promise.all([
-			comickService.getComicInfo(slug, { version: 'v1.0' }),
+			mangaService.getComicInfo(slug, { version: 'v1.0' }),
 		])
 			.then(([ci]) => {
 				if (!isMountedRef.current) return
@@ -572,17 +572,17 @@ const MangaDetailsPage = () => {
 					// Load chapters with primary language (English first, then selected) - larger batch
 					cachedApiCall(
 						`${comicHid}-${primaryLang}-page-1`,
-						() => comickService.getComicChapters(comicHid, { limit: 100, page: 1, lang: primaryLang })
+						() => mangaService.getComicChapters(comicHid, { limit: 100, page: 1, lang: primaryLang })
 					),
 					// Load chapters without lang to derive language list - larger batch
 					cachedApiCall(
 						`${comicHid}-all-page-1`,
-						() => comickService.getComicChapters(comicHid, { limit: 100, page: 1 })
+						() => mangaService.getComicChapters(comicHid, { limit: 100, page: 1 })
 					),
 					// Preload second page for primary language to get more content faster
 					cachedApiCall(
 						`${comicHid}-${primaryLang}-page-2`,
-						() => comickService.getComicChapters(comicHid, { limit: 100, page: 2, lang: primaryLang })
+						() => mangaService.getComicChapters(comicHid, { limit: 100, page: 2, lang: primaryLang })
 					).catch(() => ({ chapters: [] }))
 				])
 				
@@ -665,7 +665,7 @@ const MangaDetailsPage = () => {
 				// First, get all available languages with a larger batch (cached)
 				const langResp = await cachedApiCall(
 					`langs-${comicHid}`,
-					() => comickService.getComicChapters(comicHid, { limit: 100, page: 1 })
+					() => mangaService.getComicChapters(comicHid, { limit: 100, page: 1 })
 				)
 				const langList = Array.isArray(langResp) ? langResp : (langResp?.chapters || langResp?.data || langResp?.result || [])
 				const availableLangs = Array.from(new Set(langList.map(c => (c?.lang || c?.language || '').trim()).filter(Boolean)))
@@ -688,7 +688,7 @@ const MangaDetailsPage = () => {
 					// First, try to get a rough estimate of total pages by fetching page 1 (cached)
 					const firstPageResp = await cachedApiCall(
 						`${comicHid}-${lang}-page-1`,
-						() => comickService.getComicChapters(comicHid, { 
+						() => mangaService.getComicChapters(comicHid, { 
 							limit: pageSize, 
 							page: 1, 
 							lang: lang 
@@ -710,7 +710,7 @@ const MangaDetailsPage = () => {
 							parallelRequests.push(
 								cachedApiCall(
 									`${comicHid}-${lang}-page-${pageNum}`,
-									() => comickService.getComicChapters(comicHid, { 
+									() => mangaService.getComicChapters(comicHid, { 
 										limit: pageSize, 
 										page: pageNum, 
 										lang: lang 
@@ -888,7 +888,7 @@ const MangaDetailsPage = () => {
 		
 		schedule(() => {
 			if (isMountedRef.current) {
-				comickService.getChapterImages(hid).catch(() => {})
+				mangaService.getChapterImages(hid).catch(() => {})
 			}
 		})
 		

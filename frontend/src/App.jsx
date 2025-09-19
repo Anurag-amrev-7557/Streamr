@@ -562,7 +562,9 @@ const AppRoutes = () => {
 
         {/* Protected Routes */}
         <Route path="/profile" element={
+          <ProtectedRoute>
             <ProfilePage />
+          </ProtectedRoute>
         } />
         <Route path="/watchlist" element={<WatchlistPage />} />
 
