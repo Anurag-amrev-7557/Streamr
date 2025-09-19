@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import mangaService from '../services/mangaService'
+import comickService from '../services/comickService'
 import { MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { motion, AnimatePresence } from 'framer-motion'
 import EnhancedSearchBar from '../components/EnhancedSearchBar'
@@ -9,9 +9,8 @@ import EnhancedLoadingIndicator from '../components/EnhancedLoadingIndicator'
 
 
 // Optimized image with blur-up, async decoding, and responsive sizes
-const OptimizedImage = ({ src, alt, className, sizes, width = 400, height = 600, priority = false, fallback }) => {
+const OptimizedImage = ({ src, alt, className, sizes, width = 400, height = 600, priority = false }) => {
 	const [isLoaded, setIsLoaded] = useState(false)
-    const [currentSrc, setCurrentSrc] = useState(src)
 	if (!src) {
 		return (
 			<div className={`absolute inset-0 flex items-center justify-center text-white/40 text-xs ${className || ''}`}>No Image</div>
@@ -19,7 +18,7 @@ const OptimizedImage = ({ src, alt, className, sizes, width = 400, height = 600,
 	}
 	return (
 		<img
-            src={currentSrc}
+			src={src}
 			alt={alt}
 			loading={priority ? 'eager' : 'lazy'}
 			decoding="async"
@@ -28,29 +27,25 @@ const OptimizedImage = ({ src, alt, className, sizes, width = 400, height = 600,
 			width={width}
 			height={height}
 			className={`absolute inset-0 w-full h-full object-cover transition duration-300 ${isLoaded ? 'blur-0 opacity-100' : 'blur-sm opacity-80'} ${className || ''}`}
-            onLoad={() => setIsLoaded(true)}
-            onError={() => { if (fallback && currentSrc !== fallback) setCurrentSrc(fallback) }}
+			onLoad={() => setIsLoaded(true)}
 		/>
 	)
 }
 
 const MangaCardComponent = ({ item, onClick, priority = false }) => {
-    const cover = useMemo(() => {
-        const md = item?.md_covers?.[0] || item?.md_covers;
-        const url = md?.url || null;
-        const fallback = md?.fallback || null;
-        if (url) return { url, fallback };
-        const b2key = item?.comic?.md_covers?.[0]?.b2key || item?.md_covers?.[0]?.b2key || item?.cover?.b2key || item?.md_covers?.b2key;
-        return b2key ? { url: `https://meo.comick.pictures/${b2key}`, fallback: null } : { url: null, fallback: null };
-    }, [item]);
+	const cover = useMemo(() => {
+		const b2key = item?.comic?.md_covers?.[0]?.b2key || item?.md_covers?.[0]?.b2key || item?.cover?.b2key || item?.md_covers?.b2key;
+		if (!b2key) return null;
+		// Comick cover CDN pattern
+		return `https://meo.comick.pictures/${b2key}`;
+	}, [item]);
 	const title = item?.title || item?.comic?.title || 'Untitled';
 	return (
 		<button onClick={onClick} className="group w-full text-left rounded-lg overflow-hidden bg-[#0f1216] hover:bg-[#14181d] transition-colors shadow-lg" style={{ contentVisibility: 'auto', containIntrinsicSize: '300px 450px' }}>
 			<div className="relative w-full bg-[#0b0f14]">
 				<div className="aspect-[2/3] w-full"></div>
-                <OptimizedImage
-                    src={cover?.url}
-                    fallback={cover?.fallback}
+				<OptimizedImage
+					src={cover}
 					alt={title}
 					priority={priority}
 					sizes="(min-width:1536px) 10vw, (min-width:1280px) 12vw, (min-width:1024px) 16vw, (min-width:768px) 20vw, (min-width:640px) 30vw, 45vw"
@@ -189,14 +184,14 @@ const MangaListPage = () => {
 		// Check if component is still mounted before making request
 		if (!isMountedRef.current) return
 		
-        mangaService.getTop({ type: 'trending', comic_types: ['manga'], accept_mature_content: false })
+		comickService.getTop({ type: 'trending', comic_types: ['manga'], accept_mature_content: false })
 			.then(data => {
 				if (!isMountedRef.current) return
 				console.debug('[MangaListPage] /top response raw:', data)
 				let list = Array.isArray(data) ? data : (data?.comics || data?.top || data?.data || data?.rows || [])
 				console.debug('[MangaListPage] normalized list length:', list.length)
 				if (list.length === 0) {
-                    return mangaService.search({ sort: 'view', limit: PAGE_SIZE, country: ['jp'], content_rating: 'safe', showall: false }).then(sr => {
+					return comickService.search({ sort: 'view', limit: PAGE_SIZE, country: ['jp'], content_rating: 'safe', showall: false }).then(sr => {
 						if (!isMountedRef.current) return
 						const sList = Array.isArray(sr) ? sr : (sr?.comics || sr?.data || sr?.results || sr?.result || [])
 						console.debug('[MangaListPage] fallback search length:', sList.length)
@@ -279,7 +274,7 @@ const MangaListPage = () => {
 				// Check if component is still mounted before making request
 				if (!isMountedRef.current) return
 				
-                const sr = await mangaService.search({ q, page: 1, limit: PAGE_SIZE, content_rating: 'safe', showall: true, type: 'comic' })
+				const sr = await comickService.search({ q, page: 1, limit: PAGE_SIZE, content_rating: 'safe', showall: true, type: 'comic' })
 				if (!isMountedRef.current) return
 				const sList = Array.isArray(sr) ? sr : (sr?.results || sr?.result || sr?.data || sr?.comics || [])
 				setItems(sList)
@@ -366,7 +361,7 @@ const MangaListPage = () => {
 			if (!isMountedRef.current) return
 			
 			try {
-                const titles = await mangaService.getTitleSuggestions(q, { limit: 10 })
+				const titles = await comickService.getTitleSuggestions(q, { limit: 10 })
 				if (!isMountedRef.current) return
 				const server = (titles || []).map(t => ({ type: 'server', label: t, value: t }))
 				setServerSugg(server)
@@ -439,9 +434,9 @@ const MangaListPage = () => {
 			let resp
 			const nextPage = page + 1
 			if (dataSource === 'search') {
-                resp = await mangaService.search({ q: currentQuery, page: nextPage, limit: PAGE_SIZE, content_rating: 'safe', showall: true, type: 'comic' })
+				resp = await comickService.search({ q: currentQuery, page: nextPage, limit: PAGE_SIZE, content_rating: 'safe', showall: true, type: 'comic' })
 			} else {
-                resp = await mangaService.search({ sort: 'view', page: nextPage, limit: PAGE_SIZE, country: ['jp'], content_rating: 'safe', showall: false, type: 'comic' })
+				resp = await comickService.search({ sort: 'view', page: nextPage, limit: PAGE_SIZE, country: ['jp'], content_rating: 'safe', showall: false, type: 'comic' })
 			}
 			const list = Array.isArray(resp) ? resp : (resp?.results || resp?.result || resp?.data || resp?.comics || [])
 			setItems(prev => appendUnique(prev, list))
@@ -534,7 +529,7 @@ const MangaListPage = () => {
 				await Promise.all(head.map(it => {
 					const slug = it?.comic?.slug || it?.slug || it?.hid
 					if (!slug || !isMountedRef.current) return Promise.resolve()
-                    return mangaService.getComicInfo(slug, { version: 'v1.0' }).catch(() => {})
+					return comickService.getComicInfo(slug, { version: 'v1.0' }).catch(() => {})
 				}))
 			} catch {}
 		})
@@ -619,4 +614,10 @@ const MangaListPage = () => {
 	)
 }
 
-export default MangaListPage
+// Memoize the component to prevent unnecessary re-renders
+const MemoizedMangaListPage = React.memo(MangaListPage, (prevProps, nextProps) => {
+	// Only re-render if essential props change
+	return true // No props to compare, so always return true to prevent re-renders
+});
+
+export default MemoizedMangaListPage
