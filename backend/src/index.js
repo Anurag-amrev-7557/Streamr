@@ -311,6 +311,9 @@ app.use('/api/v1/comick', comickRoutes);
 // Jikan & MangaDex proxies
 app.use('/api/jikan', jikanRoutes);
 app.use('/api/mangadex', mangadexRoutes);
+// Versioned mounts to match frontend getApiEndpoint
+app.use('/api/v1/jikan', jikanRoutes);
+app.use('/api/v1/mangadex', mangadexRoutes);
 
 // Active users API endpoint removed
 
