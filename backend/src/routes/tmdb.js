@@ -4,6 +4,7 @@ const https = require('https');
 const { request } = require('undici');
 const router = express.Router();
 const { rateLimiters } = require('../middleware/rateLimit');
+const { cacheMiddleware } = require('../middleware/cache');
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
@@ -163,7 +164,7 @@ router.get('/image/*', async (req, res) => {
 });
 
 // Trending movies endpoint
-router.get('/trending', rateLimiters.tmdb, async (req, res) => {
+router.get('/trending', rateLimiters.tmdb, cacheMiddleware(600), async (req, res) => {
   try {
     console.log('Trending endpoint called with query:', req.query);
     
@@ -309,7 +310,7 @@ router.get('/trending', rateLimiters.tmdb, async (req, res) => {
 });
 
 // Popular movies endpoint
-router.get('/popular', rateLimiters.tmdb, async (req, res) => {
+router.get('/popular', rateLimiters.tmdb, cacheMiddleware(600), async (req, res) => {
   try {
     console.log('Popular endpoint called with query:', req.query);
     
@@ -438,7 +439,7 @@ router.get('/popular', rateLimiters.tmdb, async (req, res) => {
 });
 
 // Top rated movies endpoint
-router.get('/top-rated', rateLimiters.tmdb, async (req, res) => {
+router.get('/top-rated', rateLimiters.tmdb, cacheMiddleware(600), async (req, res) => {
   try {
     console.log('Top-rated endpoint called with query:', req.query);
     
@@ -721,4 +722,4 @@ router.get('/proxy/*', async (req, res) => {
   }
 });
 
-module.exports = router; 
+module.exports = router;

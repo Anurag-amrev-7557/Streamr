@@ -312,17 +312,43 @@ const EnhancedDropdown = ({
         className={`
           enhanced-dropdown-button flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium 
           transition-all duration-300 focus:outline-none focus:ring-0 active:outline-none active:ring-0
-          ${selectedValue && !multiSelect ? 'bg-white text-black shadow-lg' : 'bg-[#1a1a1a] text-gray-400 hover:text-white'}
+          ${isOpen ? 'text-black' : 'text-gray-400 hover:text-white'} 
+          bg-[#1a1a1a]
           ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+          relative overflow-hidden
         `}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-label={placeholder}
       >
-        {icon && <span className="flex-shrink-0">{icon}</span>}
-        {renderSelectedContent()}
+        <AnimatePresence>
+          {isOpen ? (
+            <motion.div
+              key="dropdown-bg-open"
+              layoutId="activeDropdownBg"
+              className="absolute inset-0 bg-white rounded-full z-0"
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.8, opacity: 0 }}
+              transition={{
+                duration: 0.2,
+                ease: [0.4, 0, 0.2, 1]
+              }}
+            />
+          ) : (
+            <motion.div
+              key="dropdown-bg-hover"
+              className="absolute inset-0 rounded-full z-0"
+              initial={{ backgroundColor: 'rgba(255,255,255,0)' }}
+              whileHover={{ backgroundColor: 'rgba(255,255,255,0.13)' }}
+              transition={{ duration: 0.2 }}
+            />
+          )}
+        </AnimatePresence>
+        {icon && <span className="flex-shrink-0 relative z-10">{icon}</span>}
+        <span className="relative z-10">{renderSelectedContent()}</span>
         <svg
-          className={`w-4 h-4 transition-transform duration-200 flex-shrink-0 ${
+          className={`w-4 h-4 transition-transform duration-200 flex-shrink-0 relative z-10 ${
             isOpen ? 'rotate-180' : ''
           }`}
           fill="none"
@@ -332,16 +358,20 @@ const EnhancedDropdown = ({
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
         {showClear && selectedValue && (
-          <button
-            type="button"
-            onClick={handleClear}
-            className="enhanced-dropdown-button ml-1 p-1 hover:bg-gray-800 rounded-full transition-colors focus:outline-none focus:ring-0 active:outline-none active:ring-0"
+          <span
+            onClick={(e) => {
+              e.stopPropagation();
+              handleClear(e);
+            }}
+            className="enhanced-dropdown-button ml-1 p-1 hover:bg-gray-800 rounded-full transition-colors focus:outline-none focus:ring-0 active:outline-none active:ring-0 cursor-pointer"
             aria-label="Clear selection"
+            role="button"
+            tabIndex={0}
           >
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
-          </button>
+          </span>
         )}
       </motion.button>
 

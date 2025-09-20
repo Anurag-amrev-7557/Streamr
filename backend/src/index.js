@@ -29,13 +29,14 @@ const mongoSanitize = require('express-mongo-sanitize');
 const xss = require('xss-clean');
 const winston = require('winston');
 const signature = require('cookie-signature');
+const { rateLimiters } = require('./middleware/rateLimit');
 
 const app = express();
 const server = createServer(app);
 
 const frontendPath = path.join(__dirname, '../../frontend/dist');
 
-// Initialize Socket.IO with CORS
+// Initialize Socket.IO with CORS and high traffic optimizations
 const io = socketIo(server, {
   cors: {
     origin: ['https://streamr-see.web.app', 'http://localhost:5173', 'http://127.0.0.1:5173'],
@@ -44,11 +45,24 @@ const io = socketIo(server, {
     allowedHeaders: ['Content-Type', 'Authorization']
   },
   transports: ['websocket', 'polling'],
-  pingTimeout: 60000,
-  pingInterval: 25000,
-  upgradeTimeout: 30000,
+  pingTimeout: 30000, // Reduced timeout for faster resource recovery
+  pingInterval: 15000, // More frequent pings to detect disconnections faster
+  upgradeTimeout: 15000, // Faster upgrade timeout
   allowUpgrades: true,
-  cookie: false
+  cookie: false,
+  connectTimeout: 15000, // Faster connection timeout
+  maxHttpBufferSize: 1e6, // 1MB max payload size
+  perMessageDeflate: {
+    threshold: 1024 // Only compress messages larger than 1KB
+  },
+  httpCompression: {
+    threshold: 1024 // Only compress HTTP requests larger than 1KB
+  },
+  serveClient: false, // Don't serve client files to save resources
+  // High traffic optimizations
+  cleanupEmptyChildNamespaces: true,
+  destroyUpgrade: true, // Clean up upgrade requests
+  parser: require('socket.io-msgpack-parser') // More efficient binary protocol
 });
 
 // Create community namespace
@@ -65,6 +79,20 @@ const allowedOrigins = [
   'http://127.0.0.1:5173',
   'http://127.0.0.1:3000'
 ];
+
+// Enable compression for all responses
+app.use(compression({
+  level: 6, // Balanced compression level
+  threshold: 1024, // Only compress responses larger than 1KB
+  filter: (req, res) => {
+    // Don't compress responses with this header
+    if (req.headers['x-no-compression']) {
+      return false;
+    }
+    // Use compression filter function from the module
+    return compression.filter(req, res);
+  }
+}));
 
 // CORS middleware: allow deployed and local frontends
 app.use(cors({
@@ -157,9 +185,6 @@ app.use(mongoSanitize());
 // Sanitize data against XSS
 app.use(xss());
 
-// Import custom rate limiters
-const { rateLimiters } = require('./middleware/rateLimit');
-
 // Apply general rate limiting to all routes
 app.use('/api', rateLimiters.general);
 
@@ -243,17 +268,24 @@ io.use(async (socket, next) => {
       return next();
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.userId);
-    
-    if (!user) {
-      // Allow anonymous connections
-      socket.user = null;
-      return next();
-    }
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      // Use lean() to get plain JS object instead of Mongoose document (reduces memory)
+      const user = await User.findById(decoded.userId).lean().select('_id username email profilePicture');
+      
+      if (!user) {
+        // Allow anonymous connections
+        socket.user = null;
+        return next();
+      }
 
-    socket.user = user;
-    next();
+      socket.user = user;
+      next();
+    } catch (tokenError) {
+      // Token verification failed
+      socket.user = null;
+      next();
+    }
   } catch (error) {
     // Allow anonymous connections
     socket.user = null;
@@ -268,34 +300,44 @@ io.use(async (socket, next) => {
 communityNamespace.on('connection', (socket) => {
   console.log('User connected to community namespace:', socket.id);
 
-
   // Join community room
   socket.join('community');
 
-  // Handle discussion creation
-  socket.on('discussion:create', (discussion) => {
-    communityNamespace.to('community').emit('discussion:new', discussion);
-  });
+  // Store event listeners to properly remove them later
+  const eventHandlers = {
+    'discussion:create': (discussion) => {
+      communityNamespace.to('community').emit('discussion:new', discussion);
+    },
+    'reply:create': (data) => {
+      communityNamespace.to('community').emit('reply:new', data);
+    },
+    'discussion:like': (data) => {
+      communityNamespace.to('community').emit('discussion:liked', data);
+    },
+    'reply:like': (data) => {
+      communityNamespace.to('community').emit('reply:liked', data);
+    }
+  };
 
-  // Handle reply creation
-  socket.on('reply:create', (data) => {
-    communityNamespace.to('community').emit('reply:new', data);
-  });
-
-  // Handle discussion like
-  socket.on('discussion:like', (data) => {
-    communityNamespace.to('community').emit('discussion:liked', data);
-  });
-
-  // Handle reply like
-  socket.on('reply:like', (data) => {
-    communityNamespace.to('community').emit('reply:liked', data);
+  // Register event handlers
+  Object.entries(eventHandlers).forEach(([event, handler]) => {
+    socket.on(event, handler);
   });
 
   socket.on('disconnect', () => {
     console.log('User disconnected from community namespace:', socket.id);
-    // NOTE: Do NOT remove user from active users here - this is already handled in the global namespace
-    // Removing here would cause premature removal since the user might still be connected to the global namespace
+    
+    // Clean up all event listeners to prevent memory leaks
+    Object.keys(eventHandlers).forEach(event => {
+      socket.removeAllListeners(event);
+    });
+    
+    // Leave all rooms
+    socket.leaveAll?.() || Object.keys(socket.rooms || {}).forEach(room => {
+      if (room !== socket.id) {
+        socket.leave(room);
+      }
+    });
   });
 });
 
@@ -341,12 +383,24 @@ app.use((err, req, res, next) => {
   });
 });
 
-// MongoDB connection options
+// MongoDB connection options with memory leak prevention and high traffic optimizations
 const mongooseOptions = {
   useNewUrlParser: true,
   useUnifiedTopology: true,
   serverSelectionTimeoutMS: 5000,
   socketTimeoutMS: 45000,
+  maxPoolSize: 50, // Increased for high traffic
+  minPoolSize: 5,  // Increased for high traffic
+  maxIdleTimeMS: 30000, // Close idle connections after 30 seconds
+  family: 4, // Use IPv4, avoid issues with IPv6
+  connectTimeoutMS: 10000,
+  heartbeatFrequencyMS: 10000,
+  autoIndex: false, // Don't build indexes automatically in production
+  compressors: "zlib", // Enable compression for MongoDB traffic
+  zlibCompressionLevel: 6, // Balance between compression ratio and CPU usage
+  retryWrites: true,
+  w: "majority", // Write concern for data durability
+  readPreference: "secondaryPreferred" // Read from secondaries when possible
 };
 
 // Connect to MongoDB
@@ -391,4 +445,4 @@ process.on('SIGINT', async () => {
 });
 
 // Make io instance available to routes
-app.set('io', communityNamespace); 
+app.set('io', communityNamespace);

@@ -231,8 +231,61 @@ class PortalManagerService {
         });
         
         this.metrics.memoryLeaksDetected++;
+        
+        // Automatically clean up inactive portals to reduce memory usage
+        this.cleanupInactivePortals();
       }
     }
+  }
+  
+  /**
+   * Update the last interaction time for a portal
+   * @param {string} id - Portal ID
+   */
+  updatePortalInteraction(id) {
+    const portalInfo = this.portals.get(id);
+    if (portalInfo) {
+      portalInfo.lastInteraction = Date.now();
+      
+      if (this.debugMode) {
+        console.debug(`[PortalManagerService] Updated interaction time for portal: ${id}`);
+      }
+    }
+  }
+  
+  /**
+   * Clean up inactive portals to reduce memory usage
+   */
+  cleanupInactivePortals() {
+    const now = Date.now();
+    const inactiveThreshold = 5 * 60 * 1000; // 5 minutes
+    let cleanedCount = 0;
+    
+    // Find portals that haven't been used for a while
+    Array.from(this.portals.entries()).forEach(([id, portalInfo]) => {
+      if (portalInfo && portalInfo.lastInteraction) {
+        const inactiveDuration = now - portalInfo.lastInteraction;
+        
+        // Clean up portals that haven't been interacted with for the threshold time
+        if (inactiveDuration > inactiveThreshold && !portalInfo.isPinned) {
+          this.removePortal(id, true);
+          cleanedCount++;
+        }
+      }
+    });
+    
+    // Clean up performance metrics for portals that no longer exist
+    Array.from(this.performanceMetrics.keys()).forEach(id => {
+      if (!this.portals.has(id)) {
+        this.performanceMetrics.delete(id);
+      }
+    });
+    
+    if (cleanedCount > 0 && this.debugMode) {
+      console.info(`[PortalManagerService] Memory optimization: cleaned up ${cleanedCount} inactive portals`);
+    }
+    
+    return cleanedCount;
   }
 
   /**
@@ -319,6 +372,7 @@ class PortalManagerService {
       group,
       options,
       createdAt: Date.now(),
+      lastInteraction: Date.now(), // Track last interaction time
       isActive: true,
       
       // Enhanced portal creation
@@ -544,8 +598,14 @@ class PortalManagerService {
   }
 
   bringPortalToFront(id) {
-    const newZIndex = this.getNextZIndex();
-    this.updatePortalZIndex(id, newZIndex);
+    const portalInfo = this.portals.get(id);
+    if (portalInfo) {
+      // Update last interaction time
+      this.updatePortalInteraction(id);
+      
+      const newZIndex = this.getNextZIndex();
+      this.updatePortalZIndex(id, newZIndex);
+    }
   }
 
   sendPortalToBack(id) {

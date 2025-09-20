@@ -326,11 +326,10 @@ class PortalAnimationService {
   styleFromMotion(motionProps) {
     const style = {};
     
-    // Add null check for motionProps and provide default empty object
+    // Silently handle undefined or null motionProps by using an empty object
+    // This prevents the warning from being logged when undefined values are passed
     if (!motionProps || typeof motionProps !== 'object') {
-      // Instead of just warning, provide a default empty object
-      console.warn('[PortalAnimationService] Invalid motionProps provided to styleFromMotion:', motionProps);
-      motionProps = {}; // Set default empty object to prevent undefined errors
+      return style; // Return empty style object without warning
     }
     
     if (motionProps.opacity !== undefined) {
