@@ -47,10 +47,47 @@ export const isYouTubeError = (error) => {
 
 /**
  * Handle YouTube player errors gracefully
- * @param {Error} error - The error to handle
+ * @param {Error|Object} error - The error to handle
  * @param {boolean} isDevelopment - Whether we're in development mode
  */
 export const handleYouTubeError = (error, isDevelopment = false) => {
+  // Handle YouTube API error codes
+  if (error && typeof error === 'object') {
+    const errorCode = error.data || error.code || error.error;
+    
+    // Error 150: Video owner has restricted embedding
+    if (errorCode === 150) {
+      if (isDevelopment) {
+        console.debug('YouTube player: Video embedding restricted by owner (error 150)');
+      }
+      return true; // Error was handled
+    }
+    
+    // Error 101: Video owner has restricted embedding
+    if (errorCode === 101) {
+      if (isDevelopment) {
+        console.debug('YouTube player: Video embedding restricted by owner (error 101)');
+      }
+      return true; // Error was handled
+    }
+    
+    // Error 2: Invalid video ID
+    if (errorCode === 2) {
+      if (isDevelopment) {
+        console.debug('YouTube player: Invalid video ID (error 2)');
+      }
+      return true; // Error was handled
+    }
+    
+    // Error 5: HTML5 player error
+    if (errorCode === 5) {
+      if (isDevelopment) {
+        console.debug('YouTube player: HTML5 player error (error 5)');
+      }
+      return true; // Error was handled
+    }
+  }
+  
   if (isYouTubeError(error)) {
     if (isDevelopment) {
       console.debug('YouTube player: Ad blocker detected (normal behavior)');

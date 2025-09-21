@@ -248,7 +248,11 @@ export const WishlistProvider = ({ children }) => {
   useEffect(() => {
     if (!isInitialized || isUpdatingFromBackend.current) return;
 
+    let isMounted = true;
+
     const syncTimeout = setTimeout(async () => {
+      if (!isMounted) return;
+      
       try {
         const token = localStorage.getItem('accessToken');
         if (!token) return;
@@ -270,11 +274,16 @@ export const WishlistProvider = ({ children }) => {
         console.error('❌ Error syncing wishlist to backend:', error);
         setSyncError(error.message);
       } finally {
-        setIsSyncing(false);
+        if (isMounted) {
+          setIsSyncing(false);
+        }
       }
     }, 2000); // 2 second delay
 
-    return () => clearTimeout(syncTimeout);
+    return () => {
+      isMounted = false;
+      clearTimeout(syncTimeout);
+    };
   }, [wishlist, isInitialized]);
 
   // Add movie to wishlist
@@ -294,6 +303,7 @@ export const WishlistProvider = ({ children }) => {
       // Format movie data
       const formattedMovie = {
         ...movie,
+        title: movie.title || movie.name || movie.original_title || movie.original_name || (movie.media_type === 'tv' ? 'Unknown Series' : 'Unknown Movie'),
         genres: formatGenres(movie.genres || movie.genre_ids || []),
         addedAt: new Date().toISOString()
       };

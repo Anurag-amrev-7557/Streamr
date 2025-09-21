@@ -1200,8 +1200,7 @@ const SeriesPage = () => {
 
     try {
       setIsSearching(true);
-      const data = await searchMovies(query, pageNum, { searchType: 'tv' });
-
+      const data = await searchMovies(query, pageNum, { searchType: 'multi' });
       // Validate and transform search results to ensure they have the correct structure
       const validatedResults = (data.results || [])
         .filter(result => {
@@ -1265,36 +1264,80 @@ const SeriesPage = () => {
     } finally {
       setIsSearching(false);
     }
-  }, [searchResults]); // Added dependency array to prevent infinite loops
+  }, []); // Removed searchResults dependency to prevent infinite loops
 
-  const debouncedSearch = React.useMemo(() => debounce((query) => {
-    setSearchPage(1);
-    searchSeries(query, 1);
-  }, 500), []);
+  // Remove the separate debounced search - EnhancedSearchBar handles this
 
-  useEffect(() => {
-    return () => {
-      if (debouncedSearch && typeof debouncedSearch.cancel === 'function') {
-        debouncedSearch.cancel();
+  // Load more search results function similar to MoviesPage
+  const loadMoreSearchResults = useCallback(async () => {
+    if (!searchQuery.trim() || !hasMoreSearchResults || isSearching) return;
+
+    try {
+      setIsSearching(true);
+      const nextPage = searchPage + 1;
+      const data = await searchMovies(searchQuery, nextPage, { searchType: 'multi' });
+
+      if (data.results) {
+        const validatedResults = (data.results || [])
+          .filter(result => !result?.media_type || result.media_type === 'tv')
+          .map(result => {
+            if (!result || typeof result !== 'object') return null;
+            
+            return {
+              id: result.id || result.movie_id || result.tv_id,
+              name: result.name || result.title || 'Unknown Title',
+              title: result.title || result.name || 'Unknown Title',
+              poster_path: result.poster_path || result.poster || '',
+              backdrop_path: result.backdrop_path || result.backdrop || '',
+              overview: result.overview || result.description || '',
+              first_air_date: result.first_air_date || result.release_date || '',
+              release_date: result.release_date || result.first_air_date || '',
+              vote_average: result.vote_average || result.rating || 0,
+              vote_count: result.vote_count || 0,
+              popularity: result.popularity || 0,
+              genre_ids: result.genre_ids || result.genres || [],
+              media_type: result.media_type || 'tv',
+              original_language: result.original_language || 'en',
+              original_name: result.original_name || result.original_title || '',
+              original_title: result.original_title || result.original_name || '',
+              adult: result.adult || false,
+              video: result.video || false,
+              known_for_department: result.known_for_department || '',
+              profile_path: result.profile_path || '',
+              known_for: result.known_for || []
+            };
+          }).filter(Boolean);
+
+        setSearchResults(prev => {
+          const existingIds = new Set(prev.map(series => series.id));
+          const uniqueNewResults = validatedResults.filter(newSeries => !existingIds.has(newSeries.id));
+          const updatedResults = [...prev, ...uniqueNewResults];
+          
+          // Memory optimization: Limit search results array size
+          const MAX_SEARCH_RESULTS = 200;
+          if (updatedResults.length > MAX_SEARCH_RESULTS) {
+            return updatedResults.slice(-MAX_SEARCH_RESULTS);
+          }
+          
+          return updatedResults;
+        });
+        setHasMoreSearchResults(data.page < data.total_pages);
+        setSearchPage(nextPage);
       }
-    };
-  }, [debouncedSearch]);
-
-  const handleSearchChange = (e) => {
-    const query = e.target.value;
-    setSearchQuery(query);
-    debouncedSearch(query);
-  };
+    } catch (error) {
+      console.error('Error loading more search results:', error);
+    } finally {
+      setIsSearching(false);
+    }
+  }, [searchQuery, hasMoreSearchResults, isSearching, searchPage]);
 
   // FIXED: Search intersection observer effect without infinite loops
   useEffect(() => {
-    if (inView && hasMoreSearchResults && !isSearching && searchQuery) {
+    if (inView && hasMoreSearchResults && !isSearching && searchQuery.trim()) {
       // FIXED: Use a timeout to prevent rapid successive calls
       const timeoutId = setTimeout(() => {
         if (isMountedRef.current) {
-          const nextPage = searchPage + 1;
-          setSearchPage(nextPage);
-          searchSeries(searchQuery, nextPage);
+          loadMoreSearchResults();
         }
       }, 100);
       
@@ -1302,9 +1345,9 @@ const SeriesPage = () => {
         clearTimeout(timeoutId);
       };
     }
-  }, [inView, hasMoreSearchResults, isSearching, searchQuery, searchPage]); // FIXED: Removed searchSeries dependency to prevent infinite loop
+  }, [inView, hasMoreSearchResults, isSearching, searchQuery, loadMoreSearchResults]); // FIXED: Use loadMoreSearchResults instead of searchSeries
 
-  const filterSeries = (seriesToFilter) => {
+  const filterSeries = useCallback((seriesToFilter) => {
     return seriesToFilter.filter(series => {
       // Ensure we're working with a valid series object
       if (!series || typeof series !== 'object') {
@@ -1321,9 +1364,9 @@ const SeriesPage = () => {
       
       return matchesGenre && matchesYear;
     });
-  };
+  }, [selectedGenre, selectedYear]);
 
-  const getDisplaySeries = () => {
+  const getDisplaySeries = useCallback(() => {
     const seriesToFilter = searchQuery ? searchResults : series;
     
     // Ensure we have valid arrays to work with
@@ -1333,7 +1376,7 @@ const SeriesPage = () => {
     }
     
     return filterSeries(seriesToFilter);
-  };
+  }, [searchQuery, searchResults, series, selectedGenre, selectedYear]);
 
   // Update the initial category
   useEffect(() => {
@@ -1382,7 +1425,13 @@ const SeriesPage = () => {
                 initialValue={searchQuery}
                 onSearch={(query) => {
                   setSearchQuery(query);
-                  searchSeries(query, 1);
+                  if (query.trim() && query.length >= 2) {
+                    setSearchPage(1);
+                    searchSeries(query, 1);
+                  } else {
+                    setSearchResults([]);
+                    setHasMoreSearchResults(false);
+                  }
                 }}
                 onSearchSubmit={(query) => {
                   // Only add to history when search is actually submitted
@@ -1554,6 +1603,16 @@ const SeriesPage = () => {
             className="mt-8"
             hasContent={series.length > 0 || searchResults.length > 0}
           />
+        ) : (isSearching && searchResults.length === 0) ? (
+          <EnhancedLoadingIndicator
+            isLoading={true}
+            error={null}
+            retryCount={0}
+            onRetry={() => {}}
+            context="searching TV series"
+            className="mt-8"
+            hasContent={false}
+          />
         ) : (
           <motion.div 
             className="mt-8"
@@ -1641,36 +1700,7 @@ const SeriesPage = () => {
           </motion.div>
         )}
 
-        {/* Show loading spinner for search */}
-        {isSearching && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.3 }}
-            className="flex justify-center py-8"
-          >
-            <div className="flex items-center space-x-3">
-              <div className="flex space-x-1">
-                <motion.div
-                  className="w-2 h-2 bg-white/40 rounded-full"
-                  animate={{ opacity: [0.4, 1, 0.4] }}
-                  transition={{ duration: 1.4, repeat: Infinity, delay: 0 }}
-                />
-                <motion.div
-                  className="w-2 h-2 bg-white/40 rounded-full"
-                  animate={{ opacity: [0.4, 1, 0.4] }}
-                  transition={{ duration: 1.4, repeat: Infinity, delay: 0.2 }}
-                />
-                <motion.div
-                  className="w-2 h-2 bg-white/40 rounded-full"
-                  animate={{ opacity: [0.4, 1, 0.4] }}
-                  transition={{ duration: 1.4, repeat: Infinity, delay: 0.4 }}
-                />
-              </div>
-              <span className="text-white/50 text-sm font-light">Searching...</span>
-            </div>
-          </motion.div>
-        )}
+        {/* Search loading is now handled in the main conditional logic above */}
 
         {!loading && !isSearching && ((searchQuery && hasMoreSearchResults) || (!searchQuery && hasMore)) && (
           <div ref={loadMoreRef} className="h-10" />

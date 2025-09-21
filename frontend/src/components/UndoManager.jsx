@@ -74,12 +74,15 @@ const UndoManager = () => {
     }));
 
     // Remove after the exit animation completes
-    setTimeout(() => {
+    const timeoutId = setTimeout(() => {
       setActiveToasts(prev => prev.filter(toast => {
         const key = `${toast.section}-${toast.deletedAt || '0'}`;
         return key !== keyToRemove;
       }));
     }, 300);
+    
+    // Store timeout ID for potential cleanup (though this function doesn't have cleanup)
+    // The timeout will be cleared when the component unmounts via the main cleanup
   };
 
   if (activeToasts.length === 0) return null;

@@ -348,7 +348,7 @@ export const usePortal = (id, options = {}) => {
       analyticsRef.current = null;
       stateRef.current = null;
     };
-  }, [id, zIndex, accessibility, stacking, cleanup, debug, priority, group, animationType, analytics, statePersistence, theme, onFocus, onBlur, onEscape]);
+  }, [id]); // Simplified dependencies to prevent unnecessary re-renders
 
   // Enhanced portal creation function with analytics
   const createPortalContent = useCallback((content) => {

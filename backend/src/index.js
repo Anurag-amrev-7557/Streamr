@@ -303,6 +303,12 @@ communityNamespace.on('connection', (socket) => {
   // Join community room
   socket.join('community');
 
+  // Join user-specific room for real-time sync if authenticated
+  if (socket.user && socket.user._id) {
+    socket.join(`user_${socket.user._id}`);
+    console.log(`User ${socket.user._id} joined user room for real-time sync`);
+  }
+
   // Store event listeners to properly remove them later
   const eventHandlers = {
     'discussion:create': (discussion) => {
@@ -340,6 +346,9 @@ communityNamespace.on('connection', (socket) => {
     });
   });
 });
+
+// Make io available to routes for real-time updates
+app.set('io', io);
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -432,16 +441,57 @@ mongoose.connection.on('disconnected', () => {
   console.log('MongoDB disconnected');
 });
 
-// Handle process termination
-process.on('SIGINT', async () => {
+// Handle process termination with comprehensive cleanup
+const gracefulShutdown = async (signal) => {
+  console.log(`\n${signal} received. Starting graceful shutdown...`);
+  
   try {
-    await mongoose.connection.close();
-    console.log('MongoDB connection closed through app termination');
+    // Close Socket.IO server
+    if (io) {
+      console.log('Closing Socket.IO server...');
+      io.close(() => {
+        console.log('Socket.IO server closed');
+      });
+    }
+    
+    // Close HTTP server
+    if (server) {
+      console.log('Closing HTTP server...');
+      server.close(() => {
+        console.log('HTTP server closed');
+      });
+    }
+    
+    // Close MongoDB connection
+    if (mongoose.connection.readyState === 1) {
+      console.log('Closing MongoDB connection...');
+      await mongoose.connection.close();
+      console.log('MongoDB connection closed');
+    }
+    
+    console.log('Graceful shutdown completed');
     process.exit(0);
   } catch (err) {
-    console.error('Error during MongoDB disconnection:', err);
+    console.error('Error during graceful shutdown:', err);
     process.exit(1);
   }
+};
+
+// Handle different termination signals
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGUSR2', () => gracefulShutdown('SIGUSR2')); // For nodemon
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+  gracefulShutdown('uncaughtException');
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  gracefulShutdown('unhandledRejection');
 });
 
 // Make io instance available to routes

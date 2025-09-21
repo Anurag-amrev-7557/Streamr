@@ -250,6 +250,16 @@ const StreamingPlayer = ({
               if (latestContent.type === 'movie') {
                 updateProgress(latestContent.id, 'movie', null, null, progress);
               } else if (latestContent.type === 'tv') {
+                // Validate that we have season and episode data
+                if (!latestContent.season || !latestContent.episode) {
+                  console.warn('⚠️ StreamingPlayer: Cannot update TV progress - missing season or episode data', {
+                    content: latestContent,
+                    season: latestContent.season,
+                    episode: latestContent.episode
+                  });
+                  return;
+                }
+                
                 updateProgress(
                   latestContent.id,
                   'tv',

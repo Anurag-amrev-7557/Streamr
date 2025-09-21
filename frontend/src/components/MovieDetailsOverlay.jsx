@@ -1219,7 +1219,10 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   // 🚀 FIXED: Enhanced cleanup on unmount with memory leak prevention
   useEffect(() => {
     return () => {
-      // Clear timeouts
+      // Mark component as unmounted first to prevent any new operations
+      isMountedRef.current = false;
+      
+      // Clear all timeouts and intervals
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
@@ -1232,23 +1235,32 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         clearTimeout(retryTimeoutRef.current);
         retryTimeoutRef.current = null;
       }
-      
-      // Clear share regeneration timeout
       if (shareRegenTimeoutRef.current) {
         clearTimeout(shareRegenTimeoutRef.current);
         shareRegenTimeoutRef.current = null;
       }
       
-      // Portal cleanup is now handled by the usePortal hook
+      // Clear any pending animation frames
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
       
-      // Mark component as unmounted
-      isMountedRef.current = false;
+      // Clear any pending promises
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      
+      // Portal cleanup is handled by the usePortal hook
     };
   }, []);
   const [shareConfig, setShareConfig] = useState(getDefaultShareConfig());
 
   const shareRegenTimeoutRef = useRef(null);
   const prevShareUrlRef = useRef(null);
+  const animationFrameRef = useRef(null);
+  const abortControllerRef = useRef(null);
 
   // 🚀 FIXED: Enhanced memory optimization with comprehensive cleanup
   useEffect(() => {
@@ -2523,7 +2535,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         setTimeout(prefetchSimilar, 1000);
       }
     }
-  }, [movie?.id, similarMoviesPage, hasMoreSimilar, isSimilarLoadingMore, similarMovies.length, similarLimit]); // Added all necessary dependencies
+  }, [movie?.id]); // Simplified dependencies to prevent infinite loops
 
   // Removed duplicate similar movies loading effect to prevent infinite loops
 
@@ -2663,7 +2675,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         observer = null;
       }
     };
-  }, [loading, hasMoreSimilar, movie?.id, similarMoviesPage, isSimilarLoadingMore]); // Removed loadMoreSimilar dependency
+  }, [loading, hasMoreSimilar, movie?.id]); // Simplified dependencies to prevent infinite loops
 
   // 🚀 FIXED: Memoize click outside and escape handlers with stable references
   const handleClickOutside = useCallback((event) => {
@@ -2931,7 +2943,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         unregisterCleanup();
       }
     };
-  }, [movie?.id, movie?.media_type, movie?.type, fetchMovieData]); // Removed loading dependency to prevent infinite loops
+  }, [movie?.id, movie?.media_type, movie?.type]); // Removed fetchMovieData dependency to prevent infinite loops
 
   // 🎯 FIXED: Enhanced retry handler with infinite loop prevention
   const handleRetry = useCallback(() => {
@@ -2961,7 +2973,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       const retryDuration = performance.now() - retryStartTime;
      
     });
-  }, [movie?.id, movie?.media_type, movie?.type, fetchMovieData]);
+  }, [movie?.id, movie?.media_type, movie?.type]);
 
   // 🆕 FIXED: Performance-optimized error boundary with adaptive retry and infinite loop prevention
   const handleOptimizedRetry = useCallback(() => {
@@ -2978,112 +2990,15 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     
     // Simplified retry logic - call fetchMovieData directly to avoid circular dependency
     fetchMovieData(0);
-  }, [movie?.id, movie?.media_type, movie?.type, fetchMovieData]);
+  }, [movie?.id, movie?.media_type, movie?.type]);
 
-  // 🧹 Ultra-Comprehensive cleanup with enhanced memory leak prevention and performance optimization
+  // 🚀 FIXED: Simple and effective cleanup with proper memory management
   useEffect(() => {
-    // Track unmount for diagnostics
-    let isUnmounted = false;
-    let cleanupTimers = [];
-    let cleanupAnimationFrames = [];
-    let cleanupAbortControllers = [];
-    let cleanupEventListeners = [];
-    let cleanupPromises = [];
-
-    // Helper: Log state reset for debugging
-    const logReset = (name) => {
-      if (process.env.NODE_ENV === "development") {
-        console.debug(`[MovieDetailsOverlay] Resetting: ${name}`);
-      }
-    };
-
-    // 🚀 FIXED: Enhanced safe state setter with aggressive memory optimization
-    const safeSet = (setter, value, name) => {
-      if (isUnmounted) return;
-      try {
-        setter(value);
-        logReset(name);
-        
-        // Note: Force garbage collection removed to prevent memory leaks
-        // Let the browser handle memory management naturally
-      } catch (e) {
-         
-        console.warn(`[MovieDetailsOverlay] Failed to reset ${name}:`, e);
-      }
-    };
-
-    // Helper: Add cleanup timer with validation
-    const addCleanupTimer = (timerId) => {
-      if (timerId && typeof timerId === 'number') {
-        cleanupTimers.push(timerId);
-      }
-    };
-
-    // Helper: Add cleanup animation frame with validation
-    const addCleanupAnimationFrame = (frameId) => {
-      if (frameId && typeof frameId === 'number') {
-        cleanupAnimationFrames.push(frameId);
-      }
-    };
-
-    // Helper: Add cleanup abort controller with validation
-    const addCleanupAbortController = (controller) => {
-      if (controller && typeof controller.abort === 'function') {
-        cleanupAbortControllers.push(controller);
-      }
-    };
-
-    // Helper: Add cleanup event listener with validation
-    const addCleanupEventListener = (target, type, handler) => {
-      if (target && type && handler) {
-        cleanupEventListeners.push({ target, type, handler });
-      }
-    };
-
-    // Helper: Add cleanup promise with validation
-    const addCleanupPromise = (promise) => {
-      if (promise && typeof promise.then === 'function') {
-        cleanupPromises.push(promise);
-      }
-    };
-    // 🚀 FIXED: Enhanced cleanup function with optimized state reset
-    const cleanup = () => {
-      isUnmounted = true;
-
-      // Reset all state variables to prevent memory leaks with enhanced validation
-      safeSet(setMovieDetails, null, "movieDetails");
-      safeSet(setCredits, null, "credits");
-      safeSet(setVideos, null, "videos");
-      safeSet(setSimilarMovies, [], "similarMovies");
-      safeSet(setLoading, true, "loading");
-      safeSet(setError, null, "error");
-      safeSet(setShowTrailer, false, "showTrailer");
-      safeSet(setRetryCount, 0, "retryCount");
-
-      // Reset UI states with enhanced cleanup
-      safeSet(setShowAllCast, false, "showAllCast");
-      safeSet(setCastLimit, 20, "castLimit");
-      safeSet(setSimilarLimit, 20, "similarLimit");
-      safeSet(setScrollY, 0, "scrollY");
-      safeSet(setCastSearchTerm, "", "castSearchTerm");
-      safeSet(setCastRowsShown, 1, "castRowsShown");
-
-      // 🚀 FIXED: Enhanced timer cleanup with validation and optimization
-      cleanupTimers.forEach(timerId => {
-        try {
-          if (typeof timerId === 'number') {
-            clearTimeout(timerId);
-            clearInterval(timerId);
-          }
-        } catch (e) {
-           
-          console.warn("[MovieDetailsOverlay] Failed to clear timer:", timerId, e);
-        }
-      });
-      cleanupTimers = [];
-      logReset("cleanupTimers");
-
-      // Clear only the timers we actually created to prevent memory leaks
+    return () => {
+      // Mark as unmounted first to prevent any new operations
+      isMountedRef.current = false;
+      
+      // Clear all timers and intervals
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
@@ -3092,104 +3007,46 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
-
-      // 🚀 FIXED: Enhanced animation frame cleanup with validation and optimization
-      cleanupAnimationFrames.forEach(frameId => {
-        try {
-          if (typeof frameId === 'number') {
-            cancelAnimationFrame(frameId);
-          }
-        } catch (e) {
-           
-          console.warn("[MovieDetailsOverlay] Failed to cancel animation frame:", frameId, e);
-        }
-      });
-      cleanupAnimationFrames = [];
-      logReset("cleanupAnimationFrames");
-
-      // 🚀 FIXED: Enhanced abort controller cleanup with validation and optimization
-      cleanupAbortControllers.forEach(controller => {
-        try {
-          if (controller && typeof controller.abort === 'function') {
-            controller.abort();
-          }
-        } catch (e) {
-           
-          console.warn("[MovieDetailsOverlay] Failed to abort controller:", e);
-        }
-      });
-      cleanupAbortControllers = [];
-      logReset("cleanupAbortControllers");
-
-      // Enhanced event listener cleanup with validation
-      cleanupEventListeners.forEach(({ target, type, handler }) => {
-        try {
-          if (target && typeof target.removeEventListener === 'function') {
-            target.removeEventListener(type, handler);
-          }
-        } catch (e) {
-           
-          console.warn("[MovieDetailsOverlay] Failed to remove event listener:", type, e);
-        }
-      });
-      cleanupEventListeners = [];
-      logReset("cleanupEventListeners");
-
-      // Enhanced promise cleanup with validation
-      cleanupPromises.forEach(promise => {
-        try {
-          if (promise && typeof promise.cancel === 'function') {
-            promise.cancel();
-          }
-        } catch (e) {
-           
-          console.warn("[MovieDetailsOverlay] Failed to cancel promise:", e);
-        }
-      });
-      cleanupPromises = [];
-      logReset("cleanupPromises");
-
-      // Enhanced scroll container cleanup
-      if (scrollContainerRef.current) {
-        try {
-          scrollContainerRef.current.scrollTop = 0;
-          scrollContainerRef.current.scrollLeft = 0;
-          logReset("scrollContainerRef.scrollTop");
-        } catch (e) {
-           
-          console.warn("[MovieDetailsOverlay] Failed to reset scrollContainerRef:", e);
-        }
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
       }
-
-
-
-
-
-        // 🚀 SIMPLIFIED: Basic cleanup without memory monitoring
-        try {
-          // Clear any remaining DOM references safely
-          [overlayRef, contentRef, playerRef, similarLoaderRef, scrollContainerRef].forEach(ref => {
-            if (ref.current) {
-              ref.current = null;
-            }
-          });
-          
-        } catch (e) {
-          console.warn("[MovieDetailsOverlay] Failed to perform cleanup:", e);
-        }
-
-
-
-      // Diagnostics: Log cleanup completion
-      if (process.env.NODE_ENV === "development") {
-         
-        console.debug("[MovieDetailsOverlay] Cleanup complete.");
+      if (shareRegenTimeoutRef.current) {
+        clearTimeout(shareRegenTimeoutRef.current);
+        shareRegenTimeoutRef.current = null;
+      }
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
       }
     };
+  }, []);
 
-    // Return cleanup function for React to execute on unmount
-    return cleanup;
-  }, [movie?.id, movie?.media_type, movie?.type]); // Include movie dependencies to ensure proper cleanup on movie change
+  // 🚀 PERFORMANCE: Monitor component performance and memory usage
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      const observer = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          if (entry.entryType === 'measure' && entry.duration > 100) {
+            console.warn('[MovieDetailsOverlay] Slow operation detected:', entry.name, entry.duration + 'ms');
+          }
+        }
+      });
+      observer.observe({ entryTypes: ['measure'] });
+      
+      return () => observer.disconnect();
+    }
+  }, []);
+
+
+
+
+
+
 
   // 🚀 FIXED: Ultra-enhanced scroll lock with memory leak prevention
   useEffect(() => {
@@ -4267,10 +4124,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         });
     }, [movie?.id, isEpisodesLoading]); // Removed fetchExtraInfo dependency
 
-  // Debug: Monitor movieDetails changes
-  useEffect(() => {
-   
-  }, [movieDetails]);
+  // Debug: Monitor movieDetails changes - removed to prevent unnecessary re-renders
   // 🚀 PERFORMANCE OPTIMIZED: Early similar content preloading effect
   useEffect(() => {
     if (!movie?.id || !movie?.type) return;

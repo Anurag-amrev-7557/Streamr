@@ -8,6 +8,7 @@ import React, {
   useMemo,
 } from 'react';
 import { useUndoSafe } from './UndoContext';
+import { useSocket } from './SocketContext';
 import { userAPI } from '../services/api';
 import { getApiUrl } from '../config/api';
 
@@ -185,7 +186,10 @@ export const WatchHistoryProvider = ({ children }) => {
 
   // --- Network status detection ---
   useEffect(() => {
+    let isMounted = true;
+    
     const handleOnline = () => {
+      if (!isMounted) return;
       console.log('Network is online, processing offline queue...');
       networkStatus.current = 'online';
       setOfflineMode(false);
@@ -198,6 +202,7 @@ export const WatchHistoryProvider = ({ children }) => {
     };
     
     const handleOffline = () => {
+      if (!isMounted) return;
       console.log('Network is offline, enabling offline mode...');
       networkStatus.current = 'offline';
       setOfflineMode(true);
@@ -211,9 +216,50 @@ export const WatchHistoryProvider = ({ children }) => {
     networkStatus.current = navigator.onLine ? 'online' : 'offline';
     
     return () => {
+      isMounted = false;
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
+  }, []);
+
+  // --- Load from backend for sync (used by effects) ---
+  const loadFromBackendForSync = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      if (!token) return;
+      try {
+        const authCheck = await fetch(`${getApiUrl()}/user/profile`, {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!authCheck.ok) {
+          localStorage.removeItem('accessToken');
+          return;
+        }
+      } catch {
+        return;
+      }
+      setIsSyncing(true);
+      setSyncError(null);
+      const response = await userAPI.getWatchHistory();
+      if (response.success && response.data.watchHistory) {
+        const backendData = response.data.watchHistory;
+        isUpdatingFromBackend.current = true;
+        setWatchHistory(backendData);
+        setLastBackendSync(new Date().toISOString());
+        setLocalWatchHistory(backendData);
+      }
+    } catch (error) {
+      if (
+        error.message &&
+        (error.message.includes('401') || error.message.includes('Unauthorized'))
+      ) {
+        localStorage.removeItem('accessToken');
+      }
+      setSyncError(error.message);
+    } finally {
+      setIsSyncing(false);
+    }
   }, []);
 
   // --- Load from backend and localStorage on mount ---
@@ -252,9 +298,12 @@ export const WatchHistoryProvider = ({ children }) => {
 
   // --- Listen for authentication token changes and reload watch history ---
   useEffect(() => {
+    let timeoutId = null;
+    let authTimeoutId = null;
+    
     const handleStorageChange = (e) => {
       if (e.key === 'accessToken') {
-        setTimeout(() => {
+        timeoutId = setTimeout(() => {
           loadFromBackendForSync();
         }, 100);
       }
@@ -273,7 +322,7 @@ export const WatchHistoryProvider = ({ children }) => {
     window.addEventListener('storage', handleStorageChange);
 
     const handleAuthChange = () => {
-      setTimeout(() => {
+      authTimeoutId = setTimeout(() => {
         loadFromBackendForSync();
       }, 100);
     };
@@ -281,52 +330,86 @@ export const WatchHistoryProvider = ({ children }) => {
     window.addEventListener('auth-changed', handleAuthChange);
 
     return () => {
+      // Clear any pending timeouts
+      if (timeoutId) clearTimeout(timeoutId);
+      if (authTimeoutId) clearTimeout(authTimeoutId);
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('auth-changed', handleAuthChange);
     };
     // eslint-disable-next-line
-  }, []);
+  }, [loadFromBackendForSync]);
 
-  // --- Periodic refresh from backend (every 30 seconds) ---
+  // Get socket context for real-time updates (with error handling)
+  let socketContext = null;
+  try {
+    socketContext = useSocket();
+  } catch (error) {
+    console.log('Socket context not available, using polling fallback');
+  }
+
+  // Real-time WebSocket sync for watch history
   useEffect(() => {
-    const interval = setInterval(async () => {
-      const token = localStorage.getItem('accessToken');
-      if (!token || !isInitialized || isSyncing) return;
-      try {
-        const authCheck = await fetch(`${getApiUrl()}/user/profile`, {
-          method: 'GET',
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!authCheck.ok) {
-          localStorage.removeItem('accessToken');
-          return;
-        }
-      } catch {
-        return;
-      }
-      try {
-        const response = await userAPI.getWatchHistory();
-        if (response.success && response.data.watchHistory) {
-          const backendData = response.data.watchHistory;
-          if (!areHistoriesEqual(watchHistory, backendData)) {
+    if (socketContext && socketContext.addListener) {
+      // Listen for real-time watch history updates
+      const removeListener = socketContext.addListener('watchHistory:updated', (data) => {
+        if (data.userId && data.watchHistory) {
+          console.log('Received real-time watch history update:', data.watchHistory.length, 'items');
+          
+          // Only update if the data is different
+          if (!areHistoriesEqual(watchHistory, data.watchHistory)) {
+            console.log('Watch history data changed via WebSocket, updating local state');
             isUpdatingFromBackend.current = true;
-            setWatchHistory(backendData);
-            setLastBackendSync(new Date().toISOString());
-            setLocalWatchHistory(backendData);
+            setWatchHistory(data.watchHistory);
+            setLastBackendSync(data.serverTimestamp || new Date().toISOString());
+            setLocalWatchHistory(data.watchHistory);
           }
         }
-      } catch (error) {
-        if (
-          error.message &&
-          (error.message.includes('401') || error.message.includes('Unauthorized'))
-        ) {
-          localStorage.removeItem('accessToken');
+      });
+
+      return () => {
+        if (removeListener) removeListener();
+      };
+    } else {
+      // Fallback to periodic refresh if WebSocket is not available
+      const interval = setInterval(async () => {
+        const token = localStorage.getItem('accessToken');
+        if (!token || !isInitialized || isSyncing) return;
+        try {
+          const authCheck = await fetch(`${getApiUrl()}/user/profile`, {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!authCheck.ok) {
+            localStorage.removeItem('accessToken');
+            return;
+          }
+        } catch {
+          return;
         }
-      }
-    }, 1000);
-    return () => clearInterval(interval);
+        try {
+          const response = await userAPI.getWatchHistory();
+          if (response.success && response.data.watchHistory) {
+            const backendData = response.data.watchHistory;
+            if (!areHistoriesEqual(watchHistory, backendData)) {
+              isUpdatingFromBackend.current = true;
+              setWatchHistory(backendData);
+              setLastBackendSync(new Date().toISOString());
+              setLocalWatchHistory(backendData);
+            }
+          }
+        } catch (error) {
+          if (
+            error.message &&
+            (error.message.includes('401') || error.message.includes('Unauthorized'))
+          ) {
+            localStorage.removeItem('accessToken');
+          }
+        }
+      }, 30000); // 30 seconds
+      return () => clearInterval(interval);
+    }
     // eslint-disable-next-line
-  }, [watchHistory, isInitialized, isSyncing]);
+  }, [watchHistory, isInitialized, isSyncing, socketContext]);
 
   // --- Enhanced auto-sync with backend and save to localStorage whenever watch history changes ---
   useEffect(() => {
@@ -338,7 +421,11 @@ export const WatchHistoryProvider = ({ children }) => {
       return;
     }
 
+    let isMounted = true;
+
     const autoSyncWithBackend = async () => {
+      if (!isMounted) return;
+      
       try {
         const token = localStorage.getItem('accessToken');
         if (!token) return;
@@ -392,11 +479,13 @@ export const WatchHistoryProvider = ({ children }) => {
           });
         }
       } finally {
-        setIsSyncing(false);
+        if (isMounted) {
+          setIsSyncing(false);
+        }
       }
     };
 
-    const syncTimeout = setTimeout(autoSyncWithBackend, 1200);
+    const syncTimeout = setTimeout(autoSyncWithBackend, 1000);
 
     try {
       setLocalWatchHistory(watchHistory);
@@ -405,7 +494,10 @@ export const WatchHistoryProvider = ({ children }) => {
       // Already logged in setLocalWatchHistory
     }
 
-    return () => clearTimeout(syncTimeout);
+    return () => {
+      isMounted = false;
+      clearTimeout(syncTimeout);
+    };
     // eslint-disable-next-line
   }, [watchHistory, isInitialized]);
 
@@ -728,46 +820,6 @@ export const WatchHistoryProvider = ({ children }) => {
     },
     []
   );
-
-  // --- Load from backend for sync (used by effects) ---
-  const loadFromBackendForSync = useCallback(async () => {
-    try {
-      const token = localStorage.getItem('accessToken');
-      if (!token) return;
-      try {
-        const authCheck = await fetch(`${getApiUrl()}/user/profile`, {
-          method: 'GET',
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!authCheck.ok) {
-          localStorage.removeItem('accessToken');
-          return;
-        }
-      } catch {
-        return;
-      }
-      setIsSyncing(true);
-      setSyncError(null);
-      const response = await userAPI.getWatchHistory();
-      if (response.success && response.data.watchHistory) {
-        const backendData = response.data.watchHistory;
-        isUpdatingFromBackend.current = true;
-        setWatchHistory(backendData);
-        setLastBackendSync(new Date().toISOString());
-        setLocalWatchHistory(backendData);
-      }
-    } catch (error) {
-      if (
-        error.message &&
-        (error.message.includes('401') || error.message.includes('Unauthorized'))
-      ) {
-        localStorage.removeItem('accessToken');
-      }
-      setSyncError(error.message);
-    } finally {
-      setIsSyncing(false);
-    }
-  }, []);
 
   // --- Force sync/load for conflict resolution ---
   const forceSync = useCallback(async () => {

@@ -1,7 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useUndoSafe } from './UndoContext';
+import { useSocket } from './SocketContext';
 import { userAPI } from '../services/api';
 import { getApiUrl } from '../config/api';
+import { generateProgressKey } from '../utils/progressKeyUtils';
 
 const ViewingProgressContext = createContext();
 
@@ -21,6 +23,53 @@ export const ViewingProgressProvider = ({ children }) => {
   // Get undo context safely
   const undoContext = useUndoSafe();
 
+  // Define loadFromBackend function that can be used by other useEffects
+  const loadFromBackendForSync = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        console.log('No access token found, skipping backend viewing progress load');
+        return;
+      }
+      
+      // Check if token is valid by making a simple auth check using profile endpoint
+      try {
+        const authCheck = await fetch(`${getApiUrl()}/user/profile`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        if (!authCheck.ok) {
+          console.log('Token validation failed, clearing token and skipping backend load');
+          localStorage.removeItem('accessToken');
+          return;
+        }
+      } catch (authError) {
+        console.log('Token validation error, skipping backend load:', authError);
+        return;
+      }
+      
+      const response = await userAPI.getViewingProgress();
+      if (response.success && response.data.viewingProgress) {
+        // Update local state with backend data
+        setViewingProgress(response.data.viewingProgress);
+        console.log('Loaded viewing progress from backend:', Object.keys(response.data.viewingProgress).length, 'items');
+      }
+    } catch (error) {
+      console.error('Failed to load viewing progress from backend:', error);
+      
+      // Check if it's an authentication error
+      if (error.message && (error.message.includes('401') || error.message.includes('Unauthorized'))) {
+        console.log('Authentication error, clearing token and using local data');
+        localStorage.removeItem('accessToken');
+      }
+      
+      // Fall back to localStorage
+    }
+  }, []);
+
   // Load viewing progress from backend and localStorage on mount - OPTIMIZED
   useEffect(() => {
     const loadFromLocalStorage = () => {
@@ -33,18 +82,33 @@ export const ViewingProgressProvider = ({ children }) => {
           
           // Convert to continue watching array with TV show grouping - OPTIMIZED
           const continueWatchingArray = Object.entries(parsed)
-            .map(([key, data]) => ({
-              id: data.id,
-              title: data.title,
-              type: data.type,
-              poster_path: data.poster_path,
-              backdrop_path: data.backdrop_path,
-              lastWatched: data.lastWatched,
-              season: data.season,
-              episode: data.episode,
-              episodeTitle: data.episodeTitle,
-              progress: data.progress || 0
-            }))
+            .map(([key, data]) => {
+              // Debug logging for title resolution
+              if (data.type === 'tv' && (!data.title || data.title === 'Unknown Series')) {
+                console.log('🔍 TV Show title debug:', {
+                  key,
+                  id: data.id,
+                  title: data.title,
+                  name: data.name,
+                  original_title: data.original_title,
+                  original_name: data.original_name,
+                  allData: data
+                });
+              }
+              
+              return {
+                id: data.id,
+                title: data.title || data.name || data.original_title || data.original_name || (data.type === 'tv' ? 'Unknown Series' : 'Unknown Movie'),
+                type: data.type,
+                poster_path: data.poster_path,
+                backdrop_path: data.backdrop_path,
+                lastWatched: data.lastWatched,
+                season: data.season,
+                episode: data.episode,
+                episodeTitle: data.episodeTitle,
+                progress: data.progress || 0
+              };
+            })
             .sort((a, b) => new Date(b.lastWatched) - new Date(a.lastWatched));
           
           // Group TV shows by ID and keep only the most recent episode for each show - OPTIMIZED
@@ -94,62 +158,17 @@ export const ViewingProgressProvider = ({ children }) => {
       loadFromLocalStorage();
       setIsInitialized(true);
     });
-  }, []);
-
-  // Define loadFromBackend function that can be used by other useEffects
-  const loadFromBackendForSync = useCallback(async () => {
-    try {
-      const token = localStorage.getItem('accessToken');
-      if (!token) {
-        console.log('No access token found, skipping backend viewing progress load');
-        return;
-      }
-      
-      // Check if token is valid by making a simple auth check using profile endpoint
-      try {
-        const authCheck = await fetch(`${getApiUrl()}/user/profile`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        
-        if (!authCheck.ok) {
-          console.log('Token validation failed, clearing token and skipping backend load');
-          localStorage.removeItem('accessToken');
-          return;
-        }
-      } catch (authError) {
-        console.log('Token validation error, skipping backend load:', authError);
-        return;
-      }
-      
-      const response = await userAPI.getViewingProgress();
-      if (response.success && response.data.viewingProgress) {
-        // Update local state with backend data
-        setViewingProgress(response.data.viewingProgress);
-        console.log('Loaded viewing progress from backend:', Object.keys(response.data.viewingProgress).length, 'items');
-      }
-    } catch (error) {
-      console.error('Failed to load viewing progress from backend:', error);
-      
-      // Check if it's an authentication error
-      if (error.message && (error.message.includes('401') || error.message.includes('Unauthorized'))) {
-        console.log('Authentication error, clearing token and using local data');
-        localStorage.removeItem('accessToken');
-      }
-      
-      // Fall back to localStorage
-    }
-  }, []);
+  }, [loadFromBackendForSync]);
 
   // Listen for authentication token changes and reload viewing progress
   useEffect(() => {
+    let timeoutId = null;
+    
     const handleStorageChange = (e) => {
       if (e.key === 'accessToken') {
         console.log('Auth token changed, reloading viewing progress from backend');
         // Small delay to ensure the token is properly set
-        setTimeout(() => {
+        timeoutId = setTimeout(() => {
           loadFromBackendForSync();
         }, 100);
       }
@@ -161,7 +180,7 @@ export const ViewingProgressProvider = ({ children }) => {
     // Also listen for custom auth events
     const handleAuthChange = () => {
       console.log('Auth change detected, reloading viewing progress from backend');
-      setTimeout(() => {
+      timeoutId = setTimeout(() => {
         loadFromBackendForSync();
       }, 100);
     };
@@ -169,54 +188,100 @@ export const ViewingProgressProvider = ({ children }) => {
     window.addEventListener('auth-changed', handleAuthChange);
     
     return () => {
+      // Clear any pending timeouts
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('auth-changed', handleAuthChange);
     };
-  }, []);
+  }, [loadFromBackendForSync]);
 
-  // Periodic refresh from backend (every 30 seconds) to catch changes from other devices
+  // Get socket context for real-time updates (with error handling)
+  let socketContext = null;
+  try {
+    socketContext = useSocket();
+  } catch (error) {
+    console.log('Socket context not available, using polling fallback');
+  }
+
+  // Real-time WebSocket sync for viewing progress
   useEffect(() => {
-    const interval = setInterval(async () => {
-      const token = localStorage.getItem('accessToken');
-      if (token && isInitialized) {
-        try {
-          console.log('Performing periodic viewing progress refresh from backend');
-          const response = await userAPI.getViewingProgress();
-          if (response.success && response.data.viewingProgress) {
-            const backendData = response.data.viewingProgress;
+    if (socketContext && socketContext.addListener) {
+      // Listen for real-time viewing progress updates
+      const removeListener = socketContext.addListener('viewingProgress:updated', (data) => {
+        if (data.userId && data.viewingProgress) {
+          console.log('Received real-time viewing progress update:', Object.keys(data.viewingProgress).length, 'items');
+          
+          // Only update if the data is different
+          const currentData = JSON.stringify(viewingProgress);
+          const newData = JSON.stringify(data.viewingProgress);
+          
+          if (currentData !== newData) {
+            console.log('Viewing progress data changed via WebSocket, updating local state');
+            setViewingProgress(data.viewingProgress);
             
-            // Only update if the data is different
-            const currentData = JSON.stringify(viewingProgress);
-            const newData = JSON.stringify(backendData);
-            
-            if (currentData !== newData) {
-              console.log('Viewing progress data changed on backend, updating local state');
-              setViewingProgress(backendData);
-              
-              // Update localStorage with backend data
-              try {
-                localStorage.setItem('viewingProgress', JSON.stringify(backendData));
-              } catch (error) {
-                console.error('Error updating localStorage with backend data:', error);
-              }
+            // Update localStorage with backend data
+            try {
+              localStorage.setItem('viewingProgress', JSON.stringify(data.viewingProgress));
+            } catch (error) {
+              console.error('Error updating localStorage with WebSocket data:', error);
             }
           }
-        } catch (error) {
-          console.error('Periodic refresh failed:', error);
-          // Don't set sync error for background refresh
         }
-      }
-    }, 30000); // 30 seconds
+      });
 
-    return () => clearInterval(interval);
-  }, [viewingProgress, isInitialized]);
+      return () => {
+        if (removeListener) removeListener();
+      };
+    } else {
+      // Fallback to periodic refresh if WebSocket is not available
+      const interval = setInterval(async () => {
+        const token = localStorage.getItem('accessToken');
+        if (token && isInitialized) {
+          try {
+            console.log('Performing periodic viewing progress refresh from backend');
+            const response = await userAPI.getViewingProgress();
+            if (response.success && response.data.viewingProgress) {
+              const backendData = response.data.viewingProgress;
+              
+              // Only update if the data is different
+              const currentData = JSON.stringify(viewingProgress);
+              const newData = JSON.stringify(backendData);
+              
+              if (currentData !== newData) {
+                console.log('Viewing progress data changed on backend, updating local state');
+                setViewingProgress(backendData);
+                
+                // Update localStorage with backend data
+                try {
+                  localStorage.setItem('viewingProgress', JSON.stringify(backendData));
+                } catch (error) {
+                  console.error('Error updating localStorage with backend data:', error);
+                }
+              }
+            }
+          } catch (error) {
+            console.error('Periodic refresh failed:', error);
+            // Don't set sync error for background refresh
+          }
+        }
+      }, 30000); // 30 seconds
+
+      return () => clearInterval(interval);
+    }
+  }, [viewingProgress, isInitialized, socketContext]);
 
   // Auto-sync with backend and save to localStorage whenever viewing progress changes
   useEffect(() => {
     // Don't sync during initial load
     if (!isInitialized) return;
     
+    let isMounted = true;
+    
     const autoSyncWithBackend = async () => {
+      if (!isMounted) return;
+      
       try {
         // Only sync if we have data and user is authenticated
         const token = localStorage.getItem('accessToken');
@@ -230,8 +295,8 @@ export const ViewingProgressProvider = ({ children }) => {
       }
     };
 
-    // Debounce the sync to avoid too many API calls
-    const syncTimeout = setTimeout(autoSyncWithBackend, 30000);
+    // Debounce the sync to avoid too many API calls (reduced from 30s to 2s for faster sync)
+    const syncTimeout = setTimeout(autoSyncWithBackend, 2000);
     
     // Always save to localStorage
     try {
@@ -240,7 +305,10 @@ export const ViewingProgressProvider = ({ children }) => {
       console.error('Error saving viewing progress:', error);
     }
     
-    return () => clearTimeout(syncTimeout);
+    return () => {
+      isMounted = false;
+      clearTimeout(syncTimeout);
+    };
   }, [viewingProgress, isInitialized]);
 
   // Helper function to extract path from full TMDB URL
@@ -289,7 +357,7 @@ export const ViewingProgressProvider = ({ children }) => {
     
     const movieProgress = {
       id: movie.id,
-      title: movie.title,
+      title: movie.title || movie.name || movie.original_title || movie.original_name || 'Unknown Movie',
       type: 'movie',
       poster_path: extractPathFromUrl(movie.poster_path || movie.poster),
       backdrop_path: extractPathFromUrl(movie.backdrop_path || movie.backdrop),
@@ -335,8 +403,16 @@ export const ViewingProgressProvider = ({ children }) => {
       return;
     }
 
-    const progressKey = `tv_${show.id}_${season}_${episode}`;
+    const progressKey = generateProgressKey(show.id, 'tv', season, episode);
+    
+    if (!progressKey) {
+      console.warn('❌ startWatchingEpisode: Invalid progress key generated', { showId: show.id, season, episode });
+      return;
+    }
+    
     const now = new Date().toISOString();
+    
+    console.log('🎬 Creating progress entry with key:', progressKey);
     
     // Enhanced debugging for TV show data structure
     console.log('🎬 Show data structure:', {
@@ -367,7 +443,7 @@ export const ViewingProgressProvider = ({ children }) => {
     
     const episodeProgress = {
       id: show.id,
-      title: show.name || show.title,
+      title: show.name || show.title || show.original_name || show.original_title || 'Unknown Series',
       type: 'tv',
       poster_path: extractedPosterPath,
       backdrop_path: extractedBackdropPath,
@@ -413,9 +489,32 @@ export const ViewingProgressProvider = ({ children }) => {
 
   // Update viewing progress
   const updateProgress = useCallback((id, type, season = null, episode = null, progress = 0) => {
-    const progressKey = type === 'movie' ? `movie_${id}` : `tv_${id}_${season}_${episode}`;
+    const progressKey = generateProgressKey(id, type, season, episode);
+    
+    if (!progressKey) {
+      console.warn('❌ updateProgress: Invalid progress key generated', { 
+        id, 
+        type, 
+        season, 
+        episode,
+        error: type === 'tv' ? 'TV shows require both season and episode numbers' : 'Invalid content type or missing ID'
+      });
+      return;
+    }
     
     console.log('📊 updateProgress called:', { id, type, season, episode, progress, progressKey });
+    
+    // Additional debugging for TV shows
+    if (type === 'tv') {
+      console.log('📊 TV Progress Update Debug:', {
+        showId: id,
+        season,
+        episode,
+        progress,
+        progressKey,
+        existingProgress: viewingProgress[progressKey]
+      });
+    }
     
     setViewingProgress(prev => {
       const existing = prev[progressKey];
@@ -465,7 +564,23 @@ export const ViewingProgressProvider = ({ children }) => {
       console.log('📊 Updated continue watching list with progress:', sorted.length, 'items');
       return sorted;
     });
-  }, []);
+
+    // Trigger immediate sync for progress updates
+    const token = localStorage.getItem('accessToken');
+    if (token && isInitialized) {
+      const syncTimeout = setTimeout(async () => {
+        try {
+          await userAPI.syncViewingProgress(viewingProgress);
+          console.log('Immediate viewing progress sync completed');
+        } catch (error) {
+          console.error('Immediate viewing progress sync failed:', error);
+        }
+      }, 500); // Small delay to ensure state is updated
+      
+      // Store timeout ID for potential cleanup (though this function doesn't have cleanup)
+      // The timeout will be cleared when the component unmounts via the main cleanup
+    }
+  }, [isInitialized, viewingProgress]);
 
   // Remove from continue watching
   const removeFromContinueWatching = useCallback((id, type, season = null, episode = null) => {
@@ -567,7 +682,7 @@ export const ViewingProgressProvider = ({ children }) => {
       const progressKey = `movie_${item.id}`;
       const movieProgress = {
         id: item.id,
-        title: item.title,
+        title: item.title || 'Unknown Movie',
         type: item.type,
         poster_path: item.poster_path,
         backdrop_path: item.backdrop_path,
@@ -590,7 +705,7 @@ export const ViewingProgressProvider = ({ children }) => {
       const progressKey = `tv_${item.id}_${item.season}_${item.episode}`;
       const episodeProgress = {
         id: item.id,
-        title: item.title,
+        title: item.title || item.name || item.original_title || item.original_name || 'Unknown Series',
         type: item.type,
         poster_path: item.poster_path,
         backdrop_path: item.backdrop_path,
@@ -636,18 +751,33 @@ export const ViewingProgressProvider = ({ children }) => {
         
         // Convert to continue watching array with TV show grouping - OPTIMIZED
         const continueWatchingArray = Object.entries(parsed)
-          .map(([key, data]) => ({
-            id: data.id,
-            title: data.title,
-            type: data.type,
-            poster_path: data.poster_path,
-            backdrop_path: data.backdrop_path,
-            lastWatched: data.lastWatched,
-            season: data.season,
-            episode: data.episode,
-            episodeTitle: data.episodeTitle,
-            progress: data.progress || 0
-          }))
+          .map(([key, data]) => {
+            // Debug logging for title resolution
+            if (data.type === 'tv' && (!data.title || data.title === 'Unknown Series')) {
+              console.log('🔍 TV Show title debug (refreshFromStorage):', {
+                key,
+                id: data.id,
+                title: data.title,
+                name: data.name,
+                original_title: data.original_title,
+                original_name: data.original_name,
+                allData: data
+              });
+            }
+            
+            return {
+              id: data.id,
+              title: data.title || data.name || data.original_title || data.original_name || (data.type === 'tv' ? 'Unknown Series' : 'Unknown Movie'),
+              type: data.type,
+              poster_path: data.poster_path,
+              backdrop_path: data.backdrop_path,
+              lastWatched: data.lastWatched,
+              season: data.season,
+              episode: data.episode,
+              episodeTitle: data.episodeTitle,
+              progress: data.progress || 0
+            };
+          })
           .sort((a, b) => new Date(b.lastWatched) - new Date(a.lastWatched));
         
         // Group TV shows by ID and keep only the most recent episode for each show - OPTIMIZED

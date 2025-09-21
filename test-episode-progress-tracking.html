@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Episode Progress Tracking Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background-color: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .progress-fill {
+            height: 100%;
+            background-color: #28a745;
+            transition: width 0.3s ease;
+        }
+        pre {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Episode Progress Tracking Test</h1>
+    
+    <div class="test-section">
+        <h2>Test Progress Key Generation</h2>
+        <button onclick="testProgressKeyGeneration()">Test Key Generation</button>
+        <div id="keyTestResults"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test Episode Data Validation</h2>
+        <button onclick="testEpisodeValidation()">Test Episode Validation</button>
+        <div id="validationTestResults"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test Progress Tracking Simulation</h2>
+        <button onclick="simulateEpisodeProgress()">Simulate Episode Progress</button>
+        <div id="progressSimulationResults"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test Cross-Device Consistency</h2>
+        <button onclick="testCrossDeviceConsistency()">Test Cross-Device Consistency</button>
+        <div id="crossDeviceTestResults"></div>
+    </div>
+
+    <script>
+        // Mock utility functions (simplified versions for testing)
+        function generateProgressKey(id, type, season = null, episode = null) {
+            if (!id || !type) {
+                console.warn('generateProgressKey: Missing required parameters', { id, type, season, episode });
+                return null;
+            }
+
+            if (type === 'movie') {
+                return `movie_${id}`;
+            } else if (type === 'tv') {
+                if (!season || !episode) {
+                    console.warn('generateProgressKey: TV shows require season and episode numbers', { id, season, episode });
+                    return null;
+                }
+                return `tv_${id}_${season}_${episode}`;
+            }
+
+            console.warn('generateProgressKey: Unknown content type', { type });
+            return null;
+        }
+
+        function validateEpisodeData(episode, currentSeason = null) {
+            const seasonNumber = episode?.season_number || currentSeason?.season_number;
+            const episodeNumber = episode?.episode_number;
+
+            if (!seasonNumber || !episodeNumber) {
+                console.warn('validateEpisodeData: Missing season or episode number', {
+                    episode: episode?.name,
+                    seasonNumber,
+                    episodeNumber,
+                    hasCurrentSeason: !!currentSeason
+                });
+            }
+
+            return {
+                seasonNumber,
+                episodeNumber,
+                isValid: !!(seasonNumber && episodeNumber)
+            };
+        }
+
+        function getProgressForContent(viewingProgress, id, type, season = null, episode = null) {
+            const progressKey = generateProgressKey(id, type, season, episode);
+            if (!progressKey || !viewingProgress) {
+                return null;
+            }
+            return viewingProgress[progressKey] || null;
+        }
+
+        function testProgressKeyGeneration() {
+            const results = document.getElementById('keyTestResults');
+            results.innerHTML = '';
+
+            const testCases = [
+                { id: 123, type: 'movie', season: null, episode: null, expected: 'movie_123' },
+                { id: 456, type: 'tv', season: 1, episode: 5, expected: 'tv_456_1_5' },
+                { id: 789, type: 'tv', season: 2, episode: 10, expected: 'tv_789_2_10' },
+                { id: 999, type: 'tv', season: null, episode: 5, expected: null },
+                { id: 888, type: 'tv', season: 1, episode: null, expected: null },
+                { id: null, type: 'movie', season: null, episode: null, expected: null },
+                { id: 777, type: 'unknown', season: null, episode: null, expected: null }
+            ];
+
+            testCases.forEach((testCase, index) => {
+                const result = generateProgressKey(testCase.id, testCase.type, testCase.season, testCase.episode);
+                const isSuccess = result === testCase.expected;
+                
+                const resultDiv = document.createElement('div');
+                resultDiv.className = `test-result ${isSuccess ? 'success' : 'error'}`;
+                resultDiv.innerHTML = `
+                    <strong>Test ${index + 1}:</strong> 
+                    ${isSuccess ? 'PASS' : 'FAIL'} - 
+                    Expected: ${testCase.expected}, Got: ${result}
+                    <br><small>Input: ${JSON.stringify(testCase)}</small>
+                `;
+                results.appendChild(resultDiv);
+            });
+        }
+
+        function testEpisodeValidation() {
+            const results = document.getElementById('validationTestResults');
+            results.innerHTML = '';
+
+            const testCases = [
+                {
+                    episode: { season_number: 1, episode_number: 5, name: 'Test Episode' },
+                    currentSeason: null,
+                    expected: { seasonNumber: 1, episodeNumber: 5, isValid: true }
+                },
+                {
+                    episode: { episode_number: 3, name: 'Episode Without Season' },
+                    currentSeason: { season_number: 2 },
+                    expected: { seasonNumber: 2, episodeNumber: 3, isValid: true }
+                },
+                {
+                    episode: { season_number: 1, name: 'Episode Without Number' },
+                    currentSeason: null,
+                    expected: { seasonNumber: 1, episodeNumber: undefined, isValid: false }
+                },
+                {
+                    episode: { name: 'Episode Without Data' },
+                    currentSeason: null,
+                    expected: { seasonNumber: undefined, episodeNumber: undefined, isValid: false }
+                }
+            ];
+
+            testCases.forEach((testCase, index) => {
+                const result = validateEpisodeData(testCase.episode, testCase.currentSeason);
+                const isSuccess = result.seasonNumber === testCase.expected.seasonNumber &&
+                                 result.episodeNumber === testCase.expected.episodeNumber &&
+                                 result.isValid === testCase.expected.isValid;
+                
+                const resultDiv = document.createElement('div');
+                resultDiv.className = `test-result ${isSuccess ? 'success' : 'error'}`;
+                resultDiv.innerHTML = `
+                    <strong>Test ${index + 1}:</strong> 
+                    ${isSuccess ? 'PASS' : 'FAIL'} - 
+                    Expected: ${JSON.stringify(testCase.expected)}, Got: ${JSON.stringify(result)}
+                    <br><small>Input: ${JSON.stringify(testCase)}</small>
+                `;
+                results.appendChild(resultDiv);
+            });
+        }
+
+        function simulateEpisodeProgress() {
+            const results = document.getElementById('progressSimulationResults');
+            results.innerHTML = '';
+
+            // Simulate viewing progress data
+            const viewingProgress = {
+                'tv_123_1_1': { id: 123, type: 'tv', season: 1, episode: 1, progress: 25, lastWatched: '2024-01-01T10:00:00Z' },
+                'tv_123_1_2': { id: 123, type: 'tv', season: 1, episode: 2, progress: 100, lastWatched: '2024-01-01T11:00:00Z' },
+                'tv_123_1_3': { id: 123, type: 'tv', season: 1, episode: 3, progress: 0, lastWatched: '2024-01-01T12:00:00Z' },
+                'movie_456': { id: 456, type: 'movie', progress: 50, lastWatched: '2024-01-01T13:00:00Z' }
+            };
+
+            const testCases = [
+                { id: 123, type: 'tv', season: 1, episode: 1, expectedProgress: 25 },
+                { id: 123, type: 'tv', season: 1, episode: 2, expectedProgress: 100 },
+                { id: 123, type: 'tv', season: 1, episode: 3, expectedProgress: 0 },
+                { id: 123, type: 'tv', season: 1, episode: 4, expectedProgress: null },
+                { id: 456, type: 'movie', season: null, episode: null, expectedProgress: 50 }
+            ];
+
+            testCases.forEach((testCase, index) => {
+                const progress = getProgressForContent(viewingProgress, testCase.id, testCase.type, testCase.season, testCase.episode);
+                const progressValue = progress?.progress || null;
+                const isSuccess = progressValue === testCase.expectedProgress;
+                
+                const resultDiv = document.createElement('div');
+                resultDiv.className = `test-result ${isSuccess ? 'success' : 'error'}`;
+                resultDiv.innerHTML = `
+                    <strong>Test ${index + 1}:</strong> 
+                    ${isSuccess ? 'PASS' : 'FAIL'} - 
+                    Expected: ${testCase.expectedProgress}, Got: ${progressValue}
+                    <br><small>Content: ${testCase.type} ${testCase.id} ${testCase.season ? `S${testCase.season}E${testCase.episode}` : ''}</small>
+                `;
+                results.appendChild(resultDiv);
+            });
+
+            // Show progress bars for visualization
+            const progressDiv = document.createElement('div');
+            progressDiv.innerHTML = '<h3>Progress Visualization:</h3>';
+            
+            Object.entries(viewingProgress).forEach(([key, data]) => {
+                const barDiv = document.createElement('div');
+                barDiv.innerHTML = `
+                    <div>${key}: ${data.progress}%</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${data.progress}%"></div>
+                    </div>
+                `;
+                progressDiv.appendChild(barDiv);
+            });
+            
+            results.appendChild(progressDiv);
+        }
+
+        function testCrossDeviceConsistency() {
+            const results = document.getElementById('crossDeviceTestResults');
+            results.innerHTML = '';
+
+            // Simulate the same episode data from different sources
+            const episodeFromAPI = { season_number: 2, episode_number: 5, name: 'The Test Episode' };
+            const currentSeasonFromAPI = { season_number: 2, name: 'Season 2' };
+            
+            // Test consistent key generation
+            const validation1 = validateEpisodeData(episodeFromAPI, currentSeasonFromAPI);
+            const key1 = generateProgressKey(123, 'tv', validation1.seasonNumber, validation1.episodeNumber);
+            
+            // Test with different data structure (what might come from different API calls)
+            const episodeFromDifferentSource = { season_number: 2, episode_number: 5, name: 'The Test Episode' };
+            const validation2 = validateEpisodeData(episodeFromDifferentSource, null);
+            const key2 = generateProgressKey(123, 'tv', validation2.seasonNumber, validation2.episodeNumber);
+            
+            const isConsistent = key1 === key2 && key1 === 'tv_123_2_5';
+            
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `test-result ${isConsistent ? 'success' : 'error'}`;
+            resultDiv.innerHTML = `
+                <strong>Cross-Device Consistency Test:</strong> 
+                ${isConsistent ? 'PASS' : 'FAIL'} - 
+                Both sources generate the same key: ${key1}
+                <br><small>Key 1: ${key1}, Key 2: ${key2}</small>
+            `;
+            results.appendChild(resultDiv);
+
+            // Test edge cases
+            const edgeCases = [
+                { name: 'Null episode data', episode: null, season: null },
+                { name: 'Missing episode number', episode: { season_number: 1 }, season: null },
+                { name: 'Missing season number', episode: { episode_number: 1 }, season: null },
+                { name: 'Valid with fallback season', episode: { episode_number: 1 }, season: { season_number: 1 } }
+            ];
+
+            edgeCases.forEach((testCase, index) => {
+                const validation = validateEpisodeData(testCase.episode, testCase.season);
+                const key = generateProgressKey(123, 'tv', validation.seasonNumber, validation.episodeNumber);
+                
+                const resultDiv = document.createElement('div');
+                resultDiv.className = `test-result ${validation.isValid ? 'success' : 'error'}`;
+                resultDiv.innerHTML = `
+                    <strong>Edge Case ${index + 1}:</strong> 
+                    ${testCase.name} - 
+                    ${validation.isValid ? 'Valid' : 'Invalid'} - 
+                    Key: ${key || 'null'}
+                `;
+                results.appendChild(resultDiv);
+            });
+        }
+
+        // Run initial tests
+        window.onload = function() {
+            testProgressKeyGeneration();
+            testEpisodeValidation();
+        };
+    </script>
+</body>
+</html>

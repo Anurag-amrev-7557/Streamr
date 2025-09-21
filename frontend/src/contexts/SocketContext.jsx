@@ -94,6 +94,11 @@ export const SocketProvider = ({ children }) => {
     }
 
     return () => {
+      // Clear any existing timeout
+      if (cleanupTimeout.current) {
+        clearTimeout(cleanupTimeout.current);
+      }
+      
       cleanupTimeout.current = setTimeout(() => {
         if (isInitialized.current && isMountedRef.current) {
           if (debug) console.log('[SocketProvider] Cleaning up socket connection...');

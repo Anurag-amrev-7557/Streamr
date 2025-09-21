@@ -376,9 +376,7 @@ const Layout = () => {
     
     document.addEventListener('keydown', handleKeyDown);
     return () => {
-      if (isMountedRef.current) {
-        document.removeEventListener('keydown', handleKeyDown);
-      }
+      document.removeEventListener('keydown', handleKeyDown);
     };
   }, [togglePerformanceDashboard]);
 

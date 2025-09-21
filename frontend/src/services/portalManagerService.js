@@ -157,12 +157,22 @@ class PortalManagerService {
     };
     window.addEventListener('beforeunload', this.beforeUnloadHandler);
 
-    // Monitor memory usage
+    // Monitor memory usage with proper cleanup
     if ('memory' in performance) {
       this.memoryMonitorInterval = setInterval(() => {
         this.monitorMemoryUsage();
-      }, 30000); // Check every 30 seconds
+      }, 60000); // Check every 60 seconds (reduced frequency)
     }
+    
+    // Add visibility change listener for performance optimization
+    this.visibilityChangeHandler = () => {
+      if (document.visibilityState === 'hidden') {
+        this.pauseNonEssentialOperations();
+      } else {
+        this.resumeOperations();
+      }
+    };
+    document.addEventListener('visibilitychange', this.visibilityChangeHandler);
   }
 
   startPerformanceMonitoring() {
@@ -234,6 +244,14 @@ class PortalManagerService {
         
         // Automatically clean up inactive portals to reduce memory usage
         this.cleanupInactivePortals();
+        
+        // Force garbage collection if available
+        if (window.gc && typeof window.gc === 'function') {
+          window.gc();
+        }
+        
+        // Clean up old performance metrics to prevent memory accumulation
+        this.cleanupOldPerformanceMetrics();
       }
     }
   }
@@ -283,6 +301,37 @@ class PortalManagerService {
     
     if (cleanedCount > 0 && this.debugMode) {
       console.info(`[PortalManagerService] Memory optimization: cleaned up ${cleanedCount} inactive portals`);
+    }
+    
+    return cleanedCount;
+  }
+
+  /**
+   * Clean up old performance metrics to prevent memory accumulation
+   */
+  cleanupOldPerformanceMetrics() {
+    const now = Date.now();
+    const metricsThreshold = 10 * 60 * 1000; // 10 minutes
+    let cleanedCount = 0;
+    
+    // Clean up old performance metrics
+    Array.from(this.performanceMetrics.entries()).forEach(([id, metrics]) => {
+      if (metrics && metrics.createdAt) {
+        const age = now - metrics.createdAt;
+        if (age > metricsThreshold && !metrics.isActive) {
+          this.performanceMetrics.delete(id);
+          cleanedCount++;
+        }
+      }
+    });
+    
+    // Limit animation performance array size
+    if (this.metrics.animationPerformance.length > 100) {
+      this.metrics.animationPerformance = this.metrics.animationPerformance.slice(-50);
+    }
+    
+    if (cleanedCount > 0 && this.debugMode) {
+      console.info(`[PortalManagerService] Memory optimization: cleaned up ${cleanedCount} old performance metrics`);
     }
     
     return cleanedCount;
@@ -349,7 +398,9 @@ class PortalManagerService {
       container.setAttribute('data-portal-priority', priority);
       container.setAttribute('data-portal-created', Date.now().toString());
 
-      document.body.appendChild(container);
+      if (document.body) {
+        document.body.appendChild(container);
+      }
       isNewContainer = true;
 
       if (debug) {
@@ -470,24 +521,40 @@ class PortalManagerService {
   }
 
   performCleanup(container, id) {
+    // Safety check to ensure container exists
+    if (!container) {
+      console.warn(`[PortalManagerService] Cannot cleanup null container for ${id}`);
+      return;
+    }
+
     // Add cleanup animation if supported
-    if (container.style.transition) {
+    if (container.style && container.style.transition) {
       container.style.opacity = '0';
       setTimeout(() => {
         try {
-          container.parentNode.removeChild(container);
+          if (container.parentNode) {
+            container.parentNode.removeChild(container);
+          }
         } catch (error) {
           console.warn(`[PortalManagerService] Final cleanup failed for ${id}:`, error);
         }
       }, 150);
     } else {
-      container.parentNode.removeChild(container);
+      if (container.parentNode) {
+        container.parentNode.removeChild(container);
+      }
     }
   }
 
   performDelayedCleanup(container, id) {
+    // Safety check to ensure container exists
+    if (!container) {
+      console.warn(`[PortalManagerService] Cannot perform delayed cleanup on null container for ${id}`);
+      return;
+    }
+
     const observer = new MutationObserver(() => {
-      if (container.childElementCount === 0) {
+      if (container && container.childElementCount === 0) {
         observer.disconnect();
         this.performCleanup(container, id);
       }
@@ -505,7 +572,7 @@ class PortalManagerService {
     const timeoutId = setTimeout(() => {
       observer.disconnect();
       this.activeObservers?.delete(id);
-      if (container.parentNode && container.childElementCount === 0) {
+      if (container && container.parentNode && container.childElementCount === 0) {
         this.performCleanup(container, id);
       }
     }, 1000);
@@ -873,6 +940,43 @@ class PortalManagerService {
     console.groupEnd();
   }
 
+  // Pause non-essential operations when tab is hidden
+  pauseNonEssentialOperations() {
+    if (this.debugMode) {
+      console.debug('[PortalManagerService] Pausing non-essential operations');
+    }
+    
+    // Pause memory monitoring
+    if (this.memoryMonitorInterval) {
+      clearInterval(this.memoryMonitorInterval);
+      this.memoryMonitorInterval = null;
+    }
+    
+    // Pause analytics if available
+    if (this.analyticsService && this.analyticsService.pause) {
+      this.analyticsService.pause();
+    }
+  }
+  
+  // Resume operations when tab becomes visible
+  resumeOperations() {
+    if (this.debugMode) {
+      console.debug('[PortalManagerService] Resuming operations');
+    }
+    
+    // Resume memory monitoring
+    if ('memory' in performance) {
+      this.memoryMonitorInterval = setInterval(() => {
+        this.monitorMemoryUsage();
+      }, 30000);
+    }
+    
+    // Resume analytics if available
+    if (this.analyticsService && this.analyticsService.resume) {
+      this.analyticsService.resume();
+    }
+  }
+
   // Cleanup with enhanced services
   cleanupAll() {
     const portalIds = Array.from(this.portals.keys());
@@ -885,6 +989,11 @@ class PortalManagerService {
     if (this.beforeUnloadHandler) {
       window.removeEventListener('beforeunload', this.beforeUnloadHandler);
       this.beforeUnloadHandler = null;
+    }
+    
+    if (this.visibilityChangeHandler) {
+      document.removeEventListener('visibilitychange', this.visibilityChangeHandler);
+      this.visibilityChangeHandler = null;
     }
     
     // Cleanup memory monitoring interval

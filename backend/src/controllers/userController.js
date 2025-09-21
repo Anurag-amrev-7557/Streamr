@@ -548,6 +548,16 @@ exports.syncViewingProgress = async (req, res) => {
     // Sync the viewing progress using the enhanced method
     await user.syncViewingProgress(viewingProgress);
 
+    // Broadcast viewing progress update to all user's connected devices
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user_${req.user.id}`).emit('viewingProgress:updated', {
+        viewingProgress: user.getViewingProgress(),
+        serverTimestamp: new Date().toISOString(),
+        userId: req.user.id
+      });
+    }
+
     res.json({
       success: true,
       message: 'Viewing progress synced successfully',
@@ -612,6 +622,16 @@ exports.syncWatchHistory = async (req, res) => {
 
     // Return the server timestamp for future sync operations
     const serverTimestamp = new Date().toISOString();
+    
+    // Broadcast watch history update to all user's connected devices
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user_${req.user.id}`).emit('watchHistory:updated', {
+        watchHistory: user.watchHistory,
+        serverTimestamp,
+        userId: req.user.id
+      });
+    }
     
     res.json({
       success: true,

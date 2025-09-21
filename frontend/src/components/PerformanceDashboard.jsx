@@ -11,7 +11,10 @@ const PerformanceDashboard = ({ isVisible = false, onClose }) => {
   useEffect(() => {
     if (!isVisible) return;
 
+    let isMounted = true;
+
     const updateMetrics = () => {
+      if (!isMounted) return;
       const comprehensiveReport = enhancedPerformanceService.getComprehensiveReport();
       setMetrics(comprehensiveReport);
       setReport(comprehensiveReport);
@@ -20,7 +23,10 @@ const PerformanceDashboard = ({ isVisible = false, onClose }) => {
     updateMetrics(); // Initial call
     const interval = setInterval(updateMetrics, 2000);
 
-    return () => clearInterval(interval);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, [isVisible]);
 
   // Start monitoring when dashboard becomes visible

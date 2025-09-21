@@ -15,13 +15,20 @@ const NetworkStatusIndicator = ({
   const [lastCheck, setLastCheck] = useState(null);
 
   useEffect(() => {
-    checkNetworkStatus();
+    let isMounted = true;
+    
+    const checkNetworkStatusSafe = async () => {
+      if (!isMounted) return;
+      await checkNetworkStatus();
+    };
+    
+    checkNetworkStatusSafe();
     
     // Check network status less frequently in production and only when tab is visible
     const intervalMs = (import.meta && import.meta.env && import.meta.env.DEV) ? 30000 : 60000;
     const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        checkNetworkStatus();
+      if (isMounted && document.visibilityState === 'visible') {
+        checkNetworkStatusSafe();
       }
     }, intervalMs);
     
@@ -35,6 +42,7 @@ const NetworkStatusIndicator = ({
     }
 
     return () => {
+      isMounted = false;
       clearInterval(interval);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
