@@ -304,10 +304,18 @@ const SeriesCard = ({ series, onSeriesClick, onShowEpisodes, index = 0 }) => {
     return getTmdbImageUrl(path, 'w500');
   };
 
-  const seriesName = series.name || series.title || 'Unknown Title';
-  const seriesYear = series.first_air_date ? new Date(series.first_air_date).getFullYear() : 
-                    series.release_date ? new Date(series.release_date).getFullYear() : null;
-  const seriesRating = series.vote_average || series.rating || 0;
+  const seriesName =
+  series.name ?? series.title ?? "Unknown Title";
+
+const seriesYear =
+  series.first_air_date
+    ? new Date(series.first_air_date).getFullYear()
+    : series.release_date
+    ? new Date(series.release_date).getFullYear()
+    : null;
+
+const seriesRating =
+  series.vote_average ?? series.rating ?? 0;
 
   return (
     <motion.div
@@ -1028,19 +1036,23 @@ const SeriesPage = () => {
       // Transform the series data to match the expected format
       const transformedSeries = {
         ...seriesDetails,
-        type: 'tv',
-        title: seriesDetails.name || 'Unknown Title',
-        release_date: seriesDetails.first_air_date || null,
-        runtime: seriesDetails.episode_run_time?.[0] || null,
-        networks: seriesDetails.networks?.map(network => network.name).join(', ') || 'N/A',
-        number_of_seasons: seriesDetails.number_of_seasons || 0,
-        number_of_episodes: seriesDetails.number_of_episodes || 0,
-        status: seriesDetails.status || 'Unknown',
-        similar: seriesDetails.similar?.results || [],
-        videos: seriesDetails.videos?.results || [],
+        type: "tv",
+        title: seriesDetails.name ?? seriesDetails.title ?? "Unknown Title",
+        name: seriesDetails.name ?? seriesDetails.title ?? "Unknown Title",
+        release_date: seriesDetails.first_air_date ?? seriesDetails.release_date ?? null,
+        year: (seriesDetails.first_air_date ?? seriesDetails.release_date) 
+          ? new Date(seriesDetails.first_air_date ?? seriesDetails.release_date).getFullYear() 
+          : null,
+        runtime: seriesDetails.episode_run_time?.[0] ?? null,
+        networks: seriesDetails.networks?.map(network => network.name).join(", ") ?? "N/A",
+        number_of_seasons: seriesDetails.number_of_seasons ?? 0,
+        number_of_episodes: seriesDetails.number_of_episodes ?? 0,
+        status: seriesDetails.status ?? "Unknown",
+        similar: seriesDetails.similar?.results ?? [],
+        videos: seriesDetails.videos?.results ?? [],
         credits: {
-          cast: seriesDetails.credits?.cast || [],
-          crew: seriesDetails.credits?.crew || []
+          cast: seriesDetails.credits?.cast ?? [],
+          crew: seriesDetails.credits?.crew ?? []
         }
       };
 
@@ -1109,19 +1121,22 @@ const SeriesPage = () => {
       // Transform the series data to match the expected format
       const transformedSeries = {
         ...seriesDetails,
-        type: 'tv',
-        title: seriesDetails.name || 'Unknown Title',
-        release_date: seriesDetails.first_air_date || null,
-        runtime: seriesDetails.episode_run_time?.[0] || null,
-        networks: seriesDetails.networks?.map(network => network.name).join(', ') || 'N/A',
-        number_of_seasons: seriesDetails.number_of_seasons || 0,
-        number_of_episodes: seriesDetails.number_of_episodes || 0,
-        status: seriesDetails.status || 'Unknown',
-        similar: seriesDetails.similar?.results || [],
-        videos: seriesDetails.videos?.results || [],
+        type: "tv",
+        title: seriesDetails.name ?? "Unknown Title",
+        release_date: seriesDetails.first_air_date ?? null,
+        year: seriesDetails.first_air_date 
+          ? new Date(seriesDetails.first_air_date).getFullYear() 
+          : null,
+        runtime: seriesDetails.episode_run_time?.[0] ?? null,
+        networks: seriesDetails.networks?.map(n => n.name).join(", ") ?? "N/A",
+        number_of_seasons: seriesDetails.number_of_seasons ?? 0,
+        number_of_episodes: seriesDetails.number_of_episodes ?? 0,
+        status: seriesDetails.status ?? "Unknown",
+        similar: seriesDetails.similar?.results ?? [],
+        videos: seriesDetails.videos?.results ?? [],
         credits: {
-          cast: seriesDetails.credits?.cast || [],
-          crew: seriesDetails.credits?.crew || []
+          cast: seriesDetails.credits?.cast ?? [],
+          crew: seriesDetails.credits?.crew ?? []
         }
       };
 
@@ -1216,27 +1231,27 @@ const SeriesPage = () => {
 
         // Transform the result to ensure it has the expected structure
         const transformedResult = {
-          id: result.id || result.movie_id || result.tv_id,
-          name: result.name || result.title || 'Unknown Title',
-          title: result.title || result.name || 'Unknown Title',
-          poster_path: result.poster_path || result.poster || '',
-          backdrop_path: result.backdrop_path || result.backdrop || '',
-          overview: result.overview || result.description || '',
-          first_air_date: result.first_air_date || result.release_date || '',
-          release_date: result.release_date || result.first_air_date || '',
-          vote_average: result.vote_average || result.rating || 0,
-          vote_count: result.vote_count || 0,
-          popularity: result.popularity || 0,
-          genre_ids: result.genre_ids || result.genres || [],
-          media_type: result.media_type || 'tv',
-          original_language: result.original_language || 'en',
-          original_name: result.original_name || result.original_title || '',
-          original_title: result.original_title || result.original_name || '',
-          adult: result.adult || false,
-          video: result.video || false,
-          known_for_department: result.known_for_department || '',
-          profile_path: result.profile_path || '',
-          known_for: result.known_for || []
+          id: result.id ?? result.movie_id ?? result.tv_id ?? null,
+          name: result.name ?? result.title ?? "Unknown Title",
+          title: result.title ?? result.name ?? "Unknown Title",
+          poster_path: result.poster_path ?? result.poster ?? "",
+          backdrop_path: result.backdrop_path ?? result.backdrop ?? "",
+          overview: result.overview ?? result.description ?? "",
+          first_air_date: result.first_air_date ?? result.release_date ?? "",
+          release_date: result.release_date ?? result.first_air_date ?? "",
+          vote_average: result.vote_average ?? result.rating ?? 0,
+          vote_count: result.vote_count ?? 0,
+          popularity: result.popularity ?? 0,
+          genre_ids: result.genre_ids ?? result.genres ?? [],
+          media_type: result.media_type ?? "tv",
+          original_language: result.original_language ?? "en",
+          original_name: result.original_name ?? result.original_title ?? "",
+          original_title: result.original_title ?? result.original_name ?? "",
+          adult: result.adult ?? false,
+          video: result.video ?? false,
+          known_for_department: result.known_for_department ?? "",
+          profile_path: result.profile_path ?? "",
+          known_for: result.known_for ?? []
         };
 
         // Additional validation to ensure we have at least an id and name/title
@@ -1284,27 +1299,30 @@ const SeriesPage = () => {
             if (!result || typeof result !== 'object') return null;
             
             return {
-              id: result.id || result.movie_id || result.tv_id,
-              name: result.name || result.title || 'Unknown Title',
-              title: result.title || result.name || 'Unknown Title',
-              poster_path: result.poster_path || result.poster || '',
-              backdrop_path: result.backdrop_path || result.backdrop || '',
-              overview: result.overview || result.description || '',
-              first_air_date: result.first_air_date || result.release_date || '',
-              release_date: result.release_date || result.first_air_date || '',
-              vote_average: result.vote_average || result.rating || 0,
-              vote_count: result.vote_count || 0,
-              popularity: result.popularity || 0,
-              genre_ids: result.genre_ids || result.genres || [],
-              media_type: result.media_type || 'tv',
-              original_language: result.original_language || 'en',
-              original_name: result.original_name || result.original_title || '',
-              original_title: result.original_title || result.original_name || '',
-              adult: result.adult || false,
-              video: result.video || false,
-              known_for_department: result.known_for_department || '',
-              profile_path: result.profile_path || '',
-              known_for: result.known_for || []
+              id: result.id ?? result.movie_id ?? result.tv_id ?? null,
+              name: result.name ?? result.title ?? "Unknown Title",
+              title: result.title ?? result.name ?? "Unknown Title",
+              poster_path: result.poster_path ?? result.poster ?? "",
+              backdrop_path: result.backdrop_path ?? result.backdrop ?? "",
+              overview: result.overview ?? result.description ?? "",
+              first_air_date: result.first_air_date ?? result.release_date ?? "",
+              release_date: result.release_date ?? result.first_air_date ?? "",
+              year: (result.first_air_date ?? result.release_date) 
+                ? new Date(result.first_air_date ?? result.release_date).getFullYear() 
+                : null,
+              vote_average: result.vote_average ?? result.rating ?? 0,
+              vote_count: result.vote_count ?? 0,
+              popularity: result.popularity ?? 0,
+              genre_ids: result.genre_ids ?? result.genres ?? [],
+              media_type: result.media_type ?? "tv",
+              original_language: result.original_language ?? "en",
+              original_name: result.original_name ?? result.original_title ?? "",
+              original_title: result.original_title ?? result.original_name ?? "",
+              adult: result.adult ?? false,
+              video: result.video ?? false,
+              known_for_department: result.known_for_department ?? "",
+              profile_path: result.profile_path ?? "",
+              known_for: result.known_for ?? []
             };
           }).filter(Boolean);
 
@@ -1454,12 +1472,15 @@ const SeriesPage = () => {
                   }
                   
                   return {
-                    title: series.name || series.title || 'Unknown Title',
-                    name: series.name || series.title || 'Unknown Title',
-                    id: series.id || series.movie_id || series.tv_id,
-                    poster_path: series.poster_path || series.poster || '',
-                    year: series.first_air_date ? new Date(series.first_air_date).getFullYear() : 
-                           series.release_date ? new Date(series.release_date).getFullYear() : null
+                    title: series.name ?? series.title ?? "Unknown Title",
+                    name: series.name ?? series.title ?? "Unknown Title",
+                    id: series.id ?? series.movie_id ?? series.tv_id ?? null,
+                    poster_path: series.poster_path ?? series.poster ?? "",
+                    year: series.first_air_date
+                      ? new Date(series.first_air_date).getFullYear()
+                      : series.release_date
+                      ? new Date(series.release_date).getFullYear()
+                      : null,
                   };
                 }).filter(Boolean)} // Remove any null suggestions
                 onSuggestionSelect={(suggestion) => {
