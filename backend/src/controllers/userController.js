@@ -1301,8 +1301,43 @@ exports.syncWishlist = async (req, res) => {
       });
     }
 
-    // Update user's wishlist
-    user.wishlist = wishlist;
+    // Normalize incoming wishlist items to match schema
+    const normalizeGenres = (genres) => {
+      if (!Array.isArray(genres)) return [];
+      return genres
+        .map((g) => {
+          if (typeof g === 'string') return g;
+          if (typeof g === 'number') return String(g);
+          if (g && typeof g === 'object') {
+            if (typeof g.name === 'string') return g.name;
+            if (typeof g.id === 'number' || typeof g.id === 'string') return String(g.id);
+          }
+          return null;
+        })
+        .filter(Boolean);
+    };
+
+    const normalizeCast = (cast) => {
+      if (!Array.isArray(cast)) return [];
+      return cast.map((c) => (typeof c === 'string' ? c : (c && c.name ? String(c.name) : String(c))));
+    };
+
+    user.wishlist = wishlist.map((item) => ({
+      id: item.id,
+      title: item.title,
+      poster_path: item.poster_path || item.poster || undefined,
+      backdrop_path: item.backdrop_path || item.backdrop || undefined,
+      overview: item.overview || '',
+      type: item.type === 'tv' ? 'tv' : 'movie',
+      year: item.year ? String(item.year) : undefined,
+      rating: typeof item.rating === 'number' ? item.rating : (typeof item.vote_average === 'number' ? item.vote_average : undefined),
+      genres: normalizeGenres(item.genres),
+      release_date: item.release_date || undefined,
+      duration: item.duration || undefined,
+      director: item.director || undefined,
+      cast: normalizeCast(item.cast),
+      addedAt: item.addedAt ? new Date(item.addedAt) : new Date()
+    }));
     await user.save();
 
     res.json({
@@ -1349,8 +1384,45 @@ exports.addToWishlist = async (req, res) => {
       });
     }
 
-    // Add movie to wishlist
-    user.wishlist.push(movie);
+    // Normalize and add movie to wishlist
+    const normalizeGenres = (genres) => {
+      if (!Array.isArray(genres)) return [];
+      return genres
+        .map((g) => {
+          if (typeof g === 'string') return g;
+          if (typeof g === 'number') return String(g);
+          if (g && typeof g === 'object') {
+            if (typeof g.name === 'string') return g.name;
+            if (typeof g.id === 'number' || typeof g.id === 'string') return String(g.id);
+          }
+          return null;
+        })
+        .filter(Boolean);
+    };
+
+    const normalizeCast = (cast) => {
+      if (!Array.isArray(cast)) return [];
+      return cast.map((c) => (typeof c === 'string' ? c : (c && c.name ? String(c.name) : String(c))));
+    };
+
+    const normalizedMovie = {
+      id: movie.id,
+      title: movie.title,
+      poster_path: movie.poster_path || movie.poster || undefined,
+      backdrop_path: movie.backdrop_path || movie.backdrop || undefined,
+      overview: movie.overview || '',
+      type: movie.type === 'tv' ? 'tv' : 'movie',
+      year: movie.year ? String(movie.year) : undefined,
+      rating: typeof movie.rating === 'number' ? movie.rating : (typeof movie.vote_average === 'number' ? movie.vote_average : undefined),
+      genres: normalizeGenres(movie.genres),
+      release_date: movie.release_date || undefined,
+      duration: movie.duration || undefined,
+      director: movie.director || undefined,
+      cast: normalizeCast(movie.cast),
+      addedAt: movie.addedAt ? new Date(movie.addedAt) : new Date()
+    };
+
+    user.wishlist.push(normalizedMovie);
     await user.save();
 
     res.json({
