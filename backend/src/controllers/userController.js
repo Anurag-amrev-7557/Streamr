@@ -1340,6 +1340,20 @@ exports.syncWishlist = async (req, res) => {
     }));
     await user.save();
 
+    // Emit realtime update to this user's room
+    try {
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`user_${req.user.id}`).emit('wishlist:updated', {
+          wishlist: user.wishlist,
+          serverTimestamp: new Date().toISOString(),
+          userId: req.user.id
+        });
+      }
+    } catch (emitErr) {
+      console.warn('Emit wishlist:updated failed:', emitErr?.message || emitErr);
+    }
+
     res.json({
       success: true,
       message: 'Wishlist synced successfully',
@@ -1425,6 +1439,20 @@ exports.addToWishlist = async (req, res) => {
     user.wishlist.push(normalizedMovie);
     await user.save();
 
+    // Emit realtime update to this user's room
+    try {
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`user_${req.user.id}`).emit('wishlist:updated', {
+          wishlist: user.wishlist,
+          serverTimestamp: new Date().toISOString(),
+          userId: req.user.id
+        });
+      }
+    } catch (emitErr) {
+      console.warn('Emit wishlist:updated failed:', emitErr?.message || emitErr);
+    }
+
     res.json({
       success: true,
       message: 'Movie added to wishlist successfully',
@@ -1465,6 +1493,20 @@ exports.removeFromWishlist = async (req, res) => {
     user.wishlist = user.wishlist.filter(item => item.id !== parseInt(movieId));
     await user.save();
 
+    // Emit realtime update to this user's room
+    try {
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`user_${req.user.id}`).emit('wishlist:updated', {
+          wishlist: user.wishlist,
+          serverTimestamp: new Date().toISOString(),
+          userId: req.user.id
+        });
+      }
+    } catch (emitErr) {
+      console.warn('Emit wishlist:updated failed:', emitErr?.message || emitErr);
+    }
+
     res.json({
       success: true,
       message: 'Movie removed from wishlist successfully',
@@ -1495,6 +1537,20 @@ exports.clearWishlist = async (req, res) => {
     // Clear wishlist
     user.wishlist = [];
     await user.save();
+
+    // Emit realtime update to this user's room
+    try {
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`user_${req.user.id}`).emit('wishlist:updated', {
+          wishlist: user.wishlist,
+          serverTimestamp: new Date().toISOString(),
+          userId: req.user.id
+        });
+      }
+    } catch (emitErr) {
+      console.warn('Emit wishlist:updated failed:', emitErr?.message || emitErr);
+    }
 
     res.json({
       success: true,

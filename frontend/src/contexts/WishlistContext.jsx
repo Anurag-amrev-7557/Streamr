@@ -3,6 +3,7 @@ import { toNumericRating } from '../utils/ratingUtils';
 import { useUndoSafe } from './UndoContext';
 import { userAPI } from '../services/api';
 import { getApiUrl } from '../config/api';
+import { useSocket } from './SocketContext';
 
 // Genre mapping for converting TMDB genre IDs to names
 const GENRE_MAP = {
@@ -82,6 +83,7 @@ export const useWishlistSafe = () => {
 };
 
 export const WishlistProvider = ({ children }) => {
+  const { socket } = useSocket();
   const [wishlist, setWishlist] = useState(() => {
     // Initialize from localStorage on mount
     try {
@@ -110,9 +112,48 @@ export const WishlistProvider = ({ children }) => {
   const isUpdatingFromBackend = useRef(false);
   const pendingChanges = useRef(new Set());
   const lastLocalChange = useRef(null);
+  const syncPausedUntil = useRef(0);
+  const recentlyRemoved = useRef(new Map()); // id -> timestamp
+
+  const isSyncPaused = useCallback(() => {
+    return Date.now() < syncPausedUntil.current;
+  }, []);
+
+  const pauseSync = useCallback((ms = 3000) => {
+    syncPausedUntil.current = Date.now() + ms;
+  }, []);
 
   // Get undo context safely
   const undoContext = useUndoSafe();
+
+  // Merge backend wishlist with local optimistically-updated list to avoid flicker
+  const mergeWishlist = useCallback((localList, serverList) => {
+    const localById = new Map(localList.map(item => [Number(item.id), item]));
+    const serverById = new Map(serverList.map(item => [Number(item.id), item]));
+
+    const result = [];
+
+    // Prefer local items (optimistic source of truth)
+    localById.forEach((value, key) => {
+      result.push(value);
+    });
+
+    // Add any server items missing locally (e.g., added from another device)
+    serverById.forEach((value, key) => {
+      if (!localById.has(key)) {
+        // If there is a pending local removal for this key, skip adding to prevent flicker
+        const hasPendingRemove = Array.from(pendingChanges.current).some(id => id.startsWith(`remove_${Number(key)}_`));
+        // Also skip if recently removed within suppression window
+        const removedAt = recentlyRemoved.current.get(Number(key));
+        const withinSuppression = removedAt && (Date.now() - removedAt < 15000);
+        if (!hasPendingRemove && !withinSuppression) {
+          result.push(value);
+        }
+      }
+    });
+
+    return result;
+  }, []);
 
   // Helper: reconcile local wishlist with backend using add/remove (no bulk sync)
   const reconcileWithBackend = React.useCallback(async (localList) => {
@@ -157,6 +198,12 @@ export const WishlistProvider = ({ children }) => {
   // Define loadFromBackend function that can be reused (auth changes, manual refresh)
   const loadFromBackend = React.useCallback(async () => {
       try {
+        // Avoid overwriting local optimistic changes or while sync is paused
+        if (pendingChanges.current.size > 0 || isSyncPaused()) {
+          console.log('Skipping backend load due to pending changes or paused sync');
+          setIsInitialized(true);
+          return;
+        }
         const token = localStorage.getItem('accessToken');
         if (!token) {
           console.log('No access token found, skipping backend wishlist load');
@@ -191,10 +238,16 @@ export const WishlistProvider = ({ children }) => {
         const response = await userAPI.getWishlist();
         if (response.success && response.data.wishlist) {
           // Update local state with backend data
-          const backendData = response.data.wishlist.map(movie => ({
+          const backendRaw = response.data.wishlist.map(movie => ({
             ...movie,
+            id: Number(movie.id),
             genres: formatGenres(movie.genres || [])
           }));
+          // Filter out items that were recently removed locally (suppression window)
+          const backendData = backendRaw.filter(item => {
+            const removedAt = recentlyRemoved.current.get(Number(item.id));
+            return !(removedAt && (Date.now() - removedAt < 15000));
+          });
           
           // SAFEGUARD: Check if backend is empty but local storage has data
           if (backendData.length === 0 && wishlist.length > 0) {
@@ -217,18 +270,23 @@ export const WishlistProvider = ({ children }) => {
             return;
           }
           
-          // Update local state with backend data
+          // Update local state with backend data merged with local to avoid flicker (atomic with localStorage)
           isUpdatingFromBackend.current = true;
-          setWishlist(backendData);
+          setWishlist(prev => {
+            const merged = mergeWishlist(prev, backendData);
+            // Skip if unchanged
+            if (JSON.stringify(prev) === JSON.stringify(merged)) {
+              return prev;
+            }
+            try {
+              localStorage.setItem('wishlist', JSON.stringify(merged));
+            } catch (error) {
+              console.error('Error updating localStorage with backend data:', error);
+            }
+            return merged;
+          });
           setLastBackendSync(new Date().toISOString());
           console.log('Loaded wishlist from backend:', backendData.length, 'items');
-          
-          // Update localStorage with backend data
-          try {
-            localStorage.setItem('wishlist', JSON.stringify(backendData));
-          } catch (error) {
-            console.error('Error updating localStorage with backend data:', error);
-          }
         } else if (response.success && response.data.wishlist && response.data.wishlist.length === 0) {
           // Backend explicitly returned empty array
           console.log('Backend returned empty wishlist on initial load');
@@ -272,6 +330,39 @@ export const WishlistProvider = ({ children }) => {
   useEffect(() => {
     loadFromBackend();
   }, [loadFromBackend]);
+
+  // Realtime updates via socket
+  useEffect(() => {
+    if (!socket) return;
+    const handler = (payload) => {
+      try {
+        // Ignore while local pending or paused to avoid overriding optimistic state
+        if (pendingChanges.current.size > 0 || isSyncPaused()) {
+          return;
+        }
+        const backendRaw = Array.isArray(payload?.wishlist) ? payload.wishlist : [];
+        const backendData = backendRaw.map(movie => ({
+          ...movie,
+          id: Number(movie.id),
+          genres: formatGenres(movie.genres || [])
+        }));
+        isUpdatingFromBackend.current = true;
+        setWishlist(prev => {
+          const merged = mergeWishlist(prev, backendData);
+          if (JSON.stringify(prev) === JSON.stringify(merged)) return prev;
+          try { localStorage.setItem('wishlist', JSON.stringify(merged)); } catch {}
+          return merged;
+        });
+        setLastBackendSync(new Date().toISOString());
+      } catch (e) {
+        console.error('Error applying realtime wishlist update:', e);
+      }
+    };
+    socket.on('wishlist:updated', handler);
+    return () => {
+      socket.off('wishlist:updated', handler);
+    };
+  }, [socket, mergeWishlist, isSyncPaused]);
 
   // Save to localStorage whenever wishlist changes
   useEffect(() => {
@@ -323,13 +414,24 @@ export const WishlistProvider = ({ children }) => {
       const token = localStorage.getItem('accessToken');
       if (token && isInitialized && !isSyncing) {
         try {
+          // Don't refresh from backend if there are pending local changes or sync is paused
+          if (pendingChanges.current.size > 0 || isSyncPaused()) {
+            console.log('Skipping periodic wishlist refresh due to pending changes or paused sync');
+            return;
+          }
           console.log('Performing periodic wishlist refresh from backend');
           const response = await userAPI.getWishlist();
           if (response.success && response.data.wishlist) {
-            const backendData = response.data.wishlist.map(movie => ({
+            const backendRaw = response.data.wishlist.map(movie => ({
               ...movie,
+              id: Number(movie.id),
               genres: formatGenres(movie.genres || [])
             }));
+            // Filter out items that were recently removed locally (suppression window)
+            const backendData = backendRaw.filter(item => {
+              const removedAt = recentlyRemoved.current.get(Number(item.id));
+              return !(removedAt && (Date.now() - removedAt < 15000));
+            });
             
             if (backendData.length === 0 && wishlist.length > 0) {
               console.log('Backend returned empty wishlist but local has data. Skipping update to prevent data loss.');
@@ -350,13 +452,20 @@ export const WishlistProvider = ({ children }) => {
             if (currentData !== newData) {
               console.log('Wishlist data changed on backend, updating local state');
               isUpdatingFromBackend.current = true;
-              setWishlist(backendData);
+              setWishlist(prev => {
+                const merged = mergeWishlist(prev, backendData);
+                // Skip if unchanged
+                if (JSON.stringify(prev) === JSON.stringify(merged)) {
+                  return prev;
+                }
+                try {
+                  localStorage.setItem('wishlist', JSON.stringify(merged));
+                } catch (error) {
+                  console.error('Error updating localStorage with backend data:', error);
+                }
+                return merged;
+              });
               setLastBackendSync(new Date().toISOString());
-              try {
-                localStorage.setItem('wishlist', JSON.stringify(backendData));
-              } catch (error) {
-                console.error('Error updating localStorage with backend data:', error);
-              }
             }
           }
         } catch (error) {
@@ -380,6 +489,11 @@ export const WishlistProvider = ({ children }) => {
       try {
         const token = localStorage.getItem('accessToken');
         if (!token) return;
+        // Do not reconcile while there are pending local changes or sync is paused to avoid flicker
+        if (pendingChanges.current.size > 0 || isSyncPaused()) {
+          console.log('Skipping wishlist reconcile due to pending changes or paused sync');
+          return;
+        }
 
         setIsSyncing(true);
         setSyncError(null);
@@ -422,16 +536,28 @@ export const WishlistProvider = ({ children }) => {
     }
 
     try {
+      const changeId = `add_${movie.id}_${Date.now()}`;
+      pendingChanges.current.add(changeId);
+      lastLocalChange.current = Date.now();
       // Format movie data
       const formattedMovie = {
         ...movie,
+        id: Number(movie.id),
         title: movie.title || movie.name || movie.original_title || movie.original_name || (movie.media_type === 'tv' ? 'Unknown Series' : 'Unknown Movie'),
         genres: formatGenres(movie.genres || movie.genre_ids || []),
         addedAt: new Date().toISOString()
       };
 
-      // Add to local state
-      setWishlist(prev => [...prev, formattedMovie]);
+      // Add to local state and immediately persist to localStorage
+      const nextList = [...wishlist.map(i => ({ ...i, id: Number(i.id) })), formattedMovie];
+      setWishlist(nextList);
+      try {
+        localStorage.setItem('wishlist', JSON.stringify(nextList));
+      } catch (e) {
+        console.error('Error writing wishlist to localStorage on add:', e);
+      }
+      // Pause backend fetching briefly to avoid race with local optimistic update
+      pauseSync(3000);
       
       // Add to undo context
       if (undoContext) {
@@ -449,12 +575,28 @@ export const WishlistProvider = ({ children }) => {
         try {
           await userAPI.addToWishlist(formattedMovie);
           console.log('✅ Added to wishlist backend:', formattedMovie.title);
+          // Clear this pending change after successful backend write
+          pendingChanges.current.delete(changeId);
+          setLastBackendSync(new Date().toISOString());
+          // If no more pending changes, unpause immediately
+          if (pendingChanges.current.size === 0) {
+            syncPausedUntil.current = Date.now();
+          }
         } catch (error) {
           console.error('Failed to add to wishlist backend, will sync later:', error);
         }
       }
 
       console.log('✅ Added to wishlist:', formattedMovie.title);
+      // Cleanup any very old pending changes (fallback)
+      const now = Date.now();
+      Array.from(pendingChanges.current).forEach(id => {
+        const ts = parseInt(id.split('_').pop());
+        if (!Number.isNaN(ts) && now - ts > 10000) {
+          pendingChanges.current.delete(id);
+        }
+      });
+
       return true;
     } catch (error) {
       console.error('Error adding to wishlist:', error);
@@ -464,15 +606,29 @@ export const WishlistProvider = ({ children }) => {
 
   // Remove movie from wishlist
   const removeFromWishlist = useCallback(async (movieId) => {
-    const movieToRemove = wishlist.find(item => item.id === movieId);
+    const numericId = Number(movieId);
+    const movieToRemove = wishlist.find(item => Number(item.id) === numericId);
     if (!movieToRemove) {
       console.log('Movie not found in wishlist:', movieId);
       return false;
     }
 
     try {
-      // Remove from local state
-      setWishlist(prev => prev.filter(item => item.id !== movieId));
+      const changeId = `remove_${movieId}_${Date.now()}`;
+      pendingChanges.current.add(changeId);
+      lastLocalChange.current = Date.now();
+      // Remove from local state and immediately persist to localStorage
+      const nextList = wishlist.filter(item => Number(item.id) !== numericId).map(i => ({ ...i, id: Number(i.id) }));
+      setWishlist(nextList);
+      try {
+        localStorage.setItem('wishlist', JSON.stringify(nextList));
+      } catch (e) {
+        console.error('Error writing wishlist to localStorage on remove:', e);
+      }
+      // Pause backend fetching briefly to avoid race with local optimistic update
+      pauseSync(3000);
+      // Mark as recently removed to suppress re-insert from backend for a short window
+      recentlyRemoved.current.set(numericId, Date.now());
       
       // Add to undo context
       if (undoContext) {
@@ -488,14 +644,32 @@ export const WishlistProvider = ({ children }) => {
       const token = localStorage.getItem('accessToken');
       if (token) {
         try {
-          await userAPI.removeFromWishlist(movieId);
+          await userAPI.removeFromWishlist(numericId);
           console.log('✅ Removed from wishlist backend:', movieToRemove.title);
+          // Clear this pending change after successful backend write
+          pendingChanges.current.delete(changeId);
+          setLastBackendSync(new Date().toISOString());
+          // If no more pending changes, unpause immediately
+          if (pendingChanges.current.size === 0) {
+            syncPausedUntil.current = Date.now();
+          }
+          // Cleanup suppression entry after success
+          recentlyRemoved.current.delete(numericId);
         } catch (error) {
           console.error('Failed to remove from wishlist backend, will sync later:', error);
         }
       }
 
       console.log('✅ Removed from wishlist:', movieToRemove.title);
+      // Cleanup any very old pending changes (fallback)
+      const now = Date.now();
+      Array.from(pendingChanges.current).forEach(id => {
+        const ts = parseInt(id.split('_').pop());
+        if (!Number.isNaN(ts) && now - ts > 10000) {
+          pendingChanges.current.delete(id);
+        }
+      });
+
       return true;
     } catch (error) {
       console.error('Error removing from wishlist:', error);
@@ -515,8 +689,13 @@ export const WishlistProvider = ({ children }) => {
     try {
       const currentWishlist = [...wishlist];
       
-      // Clear local state
+      // Clear local state and immediately persist to localStorage
       setWishlist([]);
+      try {
+        localStorage.setItem('wishlist', JSON.stringify([]));
+      } catch (e) {
+        console.error('Error writing wishlist to localStorage on clear:', e);
+      }
       
       // Add to undo context
       if (undoContext) {
