@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trending Content Fix Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .loading { background-color: #fff3cd; border-color: #ffeaa7; }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #6c757d; cursor: not-allowed; }
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 3px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Trending Content Fix Test</h1>
+        <p>This page tests the trending content loading fix with improved timeout handling.</p>
+        
+        <div class="test-section">
+            <h3>Test 1: Direct API Call</h3>
+            <button onclick="testDirectAPI()" id="test1-btn">Test Backend API</button>
+            <div id="test1-result" class="result" style="display: none;"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>Test 2: Frontend Service Call</h3>
+            <button onclick="testFrontendService()" id="test2-btn">Test Frontend Service</button>
+            <div id="test2-result" class="result" style="display: none;"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>Test 3: Timeout Test</h3>
+            <button onclick="testTimeout()" id="test3-btn">Test Timeout Handling</button>
+            <div id="test3-result" class="result" style="display: none;"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>Test 4: Multiple Concurrent Requests</h3>
+            <button onclick="testConcurrent()" id="test4-btn">Test Concurrent Requests</button>
+            <div id="test4-result" class="result" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'https://streamr-jjj9.onrender.com/api/tmdb/trending';
+        
+        function showResult(testId, content, isError = false) {
+            const resultDiv = document.getElementById(testId);
+            const button = document.getElementById(testId.replace('-result', '-btn'));
+            
+            resultDiv.style.display = 'block';
+            resultDiv.textContent = content;
+            resultDiv.className = `result ${isError ? 'error' : 'success'}`;
+            button.disabled = false;
+        }
+        
+        function setLoading(testId) {
+            const resultDiv = document.getElementById(testId);
+            const button = document.getElementById(testId.replace('-result', '-btn'));
+            
+            resultDiv.style.display = 'block';
+            resultDiv.textContent = 'Loading...';
+            resultDiv.className = 'result loading';
+            button.disabled = true;
+        }
+        
+        async function testDirectAPI() {
+            setLoading('test1-result');
+            
+            try {
+                const startTime = Date.now();
+                const response = await fetch(API_URL, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const endTime = Date.now();
+                const duration = endTime - startTime;
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                
+                showResult('test1-result', 
+                    `✅ Direct API call successful!\n` +
+                    `Status: ${response.status}\n` +
+                    `Duration: ${duration}ms\n` +
+                    `Results count: ${data.results?.length || 0}\n` +
+                    `Total pages: ${data.total_pages || 0}\n` +
+                    `First result: ${data.results?.[0]?.title || 'N/A'}`
+                );
+                
+            } catch (error) {
+                showResult('test1-result', 
+                    `❌ Direct API call failed!\n` +
+                    `Error: ${error.message}\n` +
+                    `Type: ${error.name || 'Unknown'}`, 
+                    true
+                );
+            }
+        }
+        
+        async function testFrontendService() {
+            setLoading('test2-result');
+            
+            try {
+                // Simulate the frontend service call with timeout
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 second timeout
+                
+                const startTime = Date.now();
+                const response = await fetch(API_URL, {
+                    method: 'GET',
+                    signal: controller.signal,
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                clearTimeout(timeoutId);
+                const endTime = Date.now();
+                const duration = endTime - startTime;
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                
+                showResult('test2-result', 
+                    `✅ Frontend service call successful!\n` +
+                    `Status: ${response.status}\n` +
+                    `Duration: ${duration}ms\n` +
+                    `Results count: ${data.results?.length || 0}\n` +
+                    `Timeout: 20s (not triggered)\n` +
+                    `First result: ${data.results?.[0]?.title || 'N/A'}`
+                );
+                
+            } catch (error) {
+                const isTimeout = error.name === 'AbortError';
+                showResult('test2-result', 
+                    `❌ Frontend service call failed!\n` +
+                    `Error: ${error.message}\n` +
+                    `Type: ${error.name || 'Unknown'}\n` +
+                    `Is Timeout: ${isTimeout}\n` +
+                    `Timeout: 20s ${isTimeout ? '(triggered)' : '(not triggered)'}`, 
+                    true
+                );
+            }
+        }
+        
+        async function testTimeout() {
+            setLoading('test3-result');
+            
+            try {
+                // Test with a very short timeout to trigger timeout handling
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 1000); // 1 second timeout
+                
+                const startTime = Date.now();
+                const response = await fetch(API_URL, {
+                    method: 'GET',
+                    signal: controller.signal,
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                clearTimeout(timeoutId);
+                const endTime = Date.now();
+                const duration = endTime - startTime;
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                
+                showResult('test3-result', 
+                    `✅ Timeout test completed!\n` +
+                    `Status: ${response.status}\n` +
+                    `Duration: ${duration}ms\n` +
+                    `Timeout: 1s (not triggered - response was faster)\n` +
+                    `Results count: ${data.results?.length || 0}`
+                );
+                
+            } catch (error) {
+                const isTimeout = error.name === 'AbortError';
+                showResult('test3-result', 
+                    `✅ Timeout test completed!\n` +
+                    `Error: ${error.message}\n` +
+                    `Type: ${error.name || 'Unknown'}\n` +
+                    `Is Timeout: ${isTimeout}\n` +
+                    `Timeout: 1s ${isTimeout ? '(triggered as expected)' : '(not triggered)'}`
+                );
+            }
+        }
+        
+        async function testConcurrent() {
+            setLoading('test4-result');
+            
+            try {
+                const startTime = Date.now();
+                
+                // Test multiple concurrent requests
+                const promises = Array.from({ length: 3 }, (_, i) => 
+                    fetch(`${API_URL}?page=${i + 1}`, {
+                        method: 'GET',
+                        headers: {
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json'
+                        }
+                    }).then(res => res.json())
+                );
+                
+                const results = await Promise.allSettled(promises);
+                const endTime = Date.now();
+                const duration = endTime - startTime;
+                
+                const successful = results.filter(r => r.status === 'fulfilled').length;
+                const failed = results.filter(r => r.status === 'rejected').length;
+                
+                showResult('test4-result', 
+                    `✅ Concurrent requests test completed!\n` +
+                    `Duration: ${duration}ms\n` +
+                    `Successful: ${successful}/3\n` +
+                    `Failed: ${failed}/3\n` +
+                    `Results per request: ${results.map(r => 
+                        r.status === 'fulfilled' ? r.value.results?.length || 0 : 'Error'
+                    ).join(', ')}`
+                );
+                
+            } catch (error) {
+                showResult('test4-result', 
+                    `❌ Concurrent requests test failed!\n` +
+                    `Error: ${error.message}\n` +
+                    `Type: ${error.name || 'Unknown'}`, 
+                    true
+                );
+            }
+        }
+    </script>
+</body>
+</html>

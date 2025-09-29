@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Active Users Integration Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #1a1d21, #2b3036);
+            color: white;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .test-section {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .navbar-simulation {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+        .desktop-navbar {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        .mobile-navbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+        }
+        .search-bar {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            padding: 8px 12px;
+            color: white;
+            min-width: 200px;
+        }
+        .search-bar::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4CAF50;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .instructions {
+            background: rgba(0, 150, 255, 0.1);
+            border: 1px solid rgba(0, 150, 255, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .instructions h3 {
+            margin-top: 0;
+            color: #4FC3F7;
+        }
+        .instructions ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        .instructions li {
+            margin: 5px 0;
+        }
+        .test-results {
+            background: rgba(76, 175, 80, 0.1);
+            border: 1px solid rgba(76, 175, 80, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .test-results h3 {
+            margin-top: 0;
+            color: #4CAF50;
+        }
+        .active-users-display {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+        }
+        .active-users-display.mobile {
+            padding: 4px 8px;
+            gap: 6px;
+        }
+        .users-icon {
+            width: 16px;
+            height: 16px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2;
+        }
+        .users-icon.mobile {
+            width: 12px;
+            height: 12px;
+        }
+        .count {
+            font-weight: 500;
+            font-size: 14px;
+        }
+        .count.mobile {
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Active Users Integration Test</h1>
+        
+        <div class="instructions">
+            <h3>📋 Test Instructions</h3>
+            <ul>
+                <li>Make sure the backend server is running on port 3001</li>
+                <li>Make sure the frontend server is running on port 5173</li>
+                <li>Open the main application at <a href="http://localhost:5173" target="_blank" style="color: #4FC3F7;">http://localhost:5173</a></li>
+                <li>Check that the Active Users component appears in both desktop and mobile views</li>
+                <li>Verify real-time updates when opening/closing browser tabs</li>
+            </ul>
+        </div>
+
+        <div class="test-section">
+            <h2>🖥️ Desktop Navbar Simulation</h2>
+            <p>Active Users should appear to the left of the search bar:</p>
+            
+            <div class="navbar-simulation">
+                <div class="desktop-navbar">
+                    <div style="color: #4FC3F7;">Logo</div>
+                    <div style="color: #4FC3F7;">Navigation Links</div>
+                </div>
+                
+                <div class="desktop-navbar">
+                    <!-- Active Users Component (Desktop) -->
+                    <div class="active-users-display">
+                        <div class="status-indicator"></div>
+                        <svg class="users-icon" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                        </svg>
+                        <span class="count" id="desktop-count">Loading...</span>
+                    </div>
+                    
+                    <!-- Search Bar -->
+                    <input type="text" class="search-bar" placeholder="Search movies, TV shows..." />
+                    
+                    <!-- Profile Menu -->
+                    <div style="color: #4FC3F7;">Profile</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>📱 Mobile Navbar Simulation</h2>
+            <p>Active Users should appear in the center of the navbar:</p>
+            
+            <div class="navbar-simulation">
+                <div class="mobile-navbar">
+                    <!-- Left side empty -->
+                    <div></div>
+                    
+                    <!-- Center - Active Users -->
+                    <div class="active-users-display mobile">
+                        <div class="status-indicator" style="width: 6px; height: 6px;"></div>
+                        <svg class="users-icon mobile" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                        </svg>
+                        <span class="count mobile" id="mobile-count">Loading...</span>
+                    </div>
+                    
+                    <!-- Right side - Search and Profile -->
+                    <div style="display: flex; gap: 8px;">
+                        <div style="color: #4FC3F7;">🔍</div>
+                        <div style="color: #4FC3F7;">☰</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-results">
+            <h3>✅ Expected Results</h3>
+            <ul>
+                <li><strong>Desktop:</strong> Active Users component appears to the left of the search bar</li>
+                <li><strong>Mobile:</strong> Active Users component appears in the center of the navbar</li>
+                <li><strong>Real-time:</strong> Count updates automatically when users connect/disconnect</li>
+                <li><strong>Status Indicator:</strong> Green pulsing dot when connected, red when disconnected</li>
+                <li><strong>Responsive:</strong> Different sizes for desktop vs mobile</li>
+            </ul>
+        </div>
+
+        <div class="test-section">
+            <h2>🧪 Live Test</h2>
+            <p>Test the real-time functionality:</p>
+            <ul>
+                <li>Open multiple browser tabs/windows to the main application</li>
+                <li>Watch the active users count increase</li>
+                <li>Close tabs and watch the count decrease</li>
+                <li>Check both desktop and mobile views</li>
+            </ul>
+            
+            <div style="margin-top: 20px;">
+                <a href="http://localhost:5173" target="_blank" style="background: #4CAF50; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; display: inline-block;">
+                    🚀 Open Main Application
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Simulate real-time updates for demonstration
+        let count = 0;
+        
+        function updateCounts() {
+            count = Math.floor(Math.random() * 50) + 1;
+            document.getElementById('desktop-count').textContent = count;
+            document.getElementById('mobile-count').textContent = count;
+        }
+        
+        // Update counts every 3 seconds for demo
+        setInterval(updateCounts, 3000);
+        updateCounts(); // Initial update
+    </script>
+</body>
+</html>
