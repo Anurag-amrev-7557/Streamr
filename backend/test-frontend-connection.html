@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Active Users Test</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #121417;
+            color: white;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .success { background-color: #10b981; }
+        .error { background-color: #ef4444; }
+        .info { background-color: #3b82f6; }
+        .warning { background-color: #f59e0b; }
+        #log {
+            background-color: #1f2937;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Active Users Connection Test</h1>
+    
+    <div id="status" class="status info">Initializing...</div>
+    
+    <h2>API Test</h2>
+    <div id="apiResult">Testing...</div>
+    
+    <h2>WebSocket Test</h2>
+    <div id="wsResult">Testing...</div>
+    
+    <h2>Log</h2>
+    <div id="log"></div>
+    
+    <script>
+        const log = (message) => {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.textContent += `[${timestamp}] ${message}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        };
+        
+        const updateStatus = (message, type = 'info') => {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+        };
+        
+        // Test API connection
+        async function testAPI() {
+            try {
+                log('Testing API connection...');
+                const response = await fetch('http://localhost:3001/api/active-users', {
+                    credentials: 'include',
+                    cache: 'no-cache'
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                log(`API Response: ${JSON.stringify(data, null, 2)}`);
+                document.getElementById('apiResult').innerHTML = `
+                    <div class="status success">✅ API Connected</div>
+                    <p>Count: ${data.count}</p>
+                    <p>Timestamp: ${data.timestamp}</p>
+                `;
+                return true;
+            } catch (error) {
+                log(`API Error: ${error.message}`);
+                document.getElementById('apiResult').innerHTML = `
+                    <div class="status error">❌ API Failed</div>
+                    <p>Error: ${error.message}</p>
+                `;
+                return false;
+            }
+        }
+        
+        // Test WebSocket connection
+        function testWebSocket() {
+            return new Promise((resolve) => {
+                log('Testing WebSocket connection...');
+                
+                const socket = io('http://localhost:3001', {
+                    withCredentials: true,
+                    transports: ['websocket', 'polling'],
+                    reconnection: false
+                });
+                
+                let updateReceived = false;
+                
+                socket.on('connect', () => {
+                    log(`WebSocket connected: ${socket.id}`);
+                    document.getElementById('wsResult').innerHTML = `
+                        <div class="status success">✅ WebSocket Connected</div>
+                        <p>Socket ID: ${socket.id}</p>
+                    `;
+                });
+                
+                socket.on('activeUsers:update', (data) => {
+                    log(`Received activeUsers:update: ${JSON.stringify(data, null, 2)}`);
+                    updateReceived = true;
+                    document.getElementById('wsResult').innerHTML = `
+                        <div class="status success">✅ WebSocket Connected</div>
+                        <p>Socket ID: ${socket.id}</p>
+                        <p>Last Update: ${data.count} users</p>
+                    `;
+                });
+                
+                socket.on('connect_error', (error) => {
+                    log(`WebSocket connection error: ${error.message}`);
+                    document.getElementById('wsResult').innerHTML = `
+                        <div class="status error">❌ WebSocket Failed</div>
+                        <p>Error: ${error.message}</p>
+                    `;
+                    resolve(false);
+                });
+                
+                socket.on('disconnect', (reason) => {
+                    log(`WebSocket disconnected: ${reason}`);
+                });
+                
+                // Wait for updates
+                setTimeout(() => {
+                    socket.disconnect();
+                    resolve(updateReceived);
+                }, 5000);
+            });
+        }
+        
+        // Run tests
+        async function runTests() {
+            updateStatus('Running tests...', 'info');
+            
+            const apiSuccess = await testAPI();
+            const wsSuccess = await testWebSocket();
+            
+            if (apiSuccess && wsSuccess) {
+                updateStatus('✅ All tests passed! Both API and WebSocket are working.', 'success');
+            } else if (apiSuccess) {
+                updateStatus('⚠️ API works but WebSocket has issues.', 'warning');
+            } else if (wsSuccess) {
+                updateStatus('⚠️ WebSocket works but API has issues.', 'warning');
+            } else {
+                updateStatus('❌ Both API and WebSocket have issues.', 'error');
+            }
+        }
+        
+        // Start tests when page loads
+        runTests();
+    </script>
+</body>
+</html>

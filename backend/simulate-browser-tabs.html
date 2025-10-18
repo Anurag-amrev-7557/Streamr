@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Active Users Browser Simulation</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #121417;
+            color: white;
+        }
+        .tab {
+            border: 1px solid #374151;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 10px 0;
+            background-color: #1f2937;
+        }
+        .tab.active { border-color: #10b981; }
+        .tab.disconnected { border-color: #ef4444; }
+        .status {
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin: 5px 0;
+            font-weight: bold;
+        }
+        .success { background-color: #10b981; }
+        .error { background-color: #ef4444; }
+        .info { background-color: #3b82f6; }
+        .warning { background-color: #f59e0b; }
+        #log {
+            background-color: #111827;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+        .controls {
+            margin: 20px 0;
+        }
+        button {
+            background-color: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background-color: #2563eb; }
+        button:disabled { background-color: #6b7280; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+    <h1>🌐 Active Users Browser Simulation</h1>
+    <p>This simulates multiple browser tabs to test active users counting.</p>
+    
+    <div class="controls">
+        <button onclick="createTab()">Create New Tab</button>
+        <button onclick="disconnectAll()">Disconnect All</button>
+        <button onclick="clearLog()">Clear Log</button>
+    </div>
+    
+    <div id="tabs"></div>
+    
+    <div class="tab">
+        <h3>📊 Global Stats</h3>
+        <div id="globalStats">Loading...</div>
+    </div>
+    
+    <div id="log"></div>
+    
+    <script>
+        let tabs = [];
+        let globalStats = { count: 0, lastUpdate: null };
+        
+        const log = (message) => {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.textContent += `[${timestamp}] ${message}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        };
+        
+        const clearLog = () => {
+            document.getElementById('log').textContent = '';
+        };
+        
+        const updateGlobalStats = () => {
+            const statsDiv = document.getElementById('globalStats');
+            statsDiv.innerHTML = `
+                <div class="status info">Active Users: ${globalStats.count}</div>
+                <div>Last Update: ${globalStats.lastUpdate || 'Never'}</div>
+                <div>Connected Tabs: ${tabs.filter(tab => tab.socket && tab.socket.connected).length}</div>
+            `;
+        };
+        
+        const createTab = () => {
+            const tabId = tabs.length + 1;
+            const tab = {
+                id: tabId,
+                socket: null,
+                connected: false,
+                updates: 0
+            };
+            
+            tabs.push(tab);
+            renderTabs();
+            
+            log(`Creating tab ${tabId}...`);
+            
+            const socket = io('http://localhost:3001', {
+                withCredentials: true,
+                transports: ['websocket', 'polling'],
+                reconnection: false
+            });
+            
+            tab.socket = socket;
+            
+            socket.on('connect', () => {
+                tab.connected = true;
+                log(`Tab ${tabId} connected: ${socket.id}`);
+                renderTabs();
+            });
+            
+            socket.on('activeUsers:update', (data) => {
+                tab.updates++;
+                globalStats.count = data.count;
+                globalStats.lastUpdate = new Date().toLocaleTimeString();
+                log(`Tab ${tabId} received update: ${data.count} users`);
+                renderTabs();
+                updateGlobalStats();
+            });
+            
+            socket.on('connect_error', (error) => {
+                log(`Tab ${tabId} connection error: ${error.message}`);
+                renderTabs();
+            });
+            
+            socket.on('disconnect', (reason) => {
+                tab.connected = false;
+                log(`Tab ${tabId} disconnected: ${reason}`);
+                renderTabs();
+            });
+        };
+        
+        const disconnectAll = () => {
+            tabs.forEach(tab => {
+                if (tab.socket) {
+                    tab.socket.disconnect();
+                }
+            });
+            log('All tabs disconnected');
+        };
+        
+        const renderTabs = () => {
+            const tabsDiv = document.getElementById('tabs');
+            tabsDiv.innerHTML = tabs.map(tab => `
+                <div class="tab ${tab.connected ? 'active' : 'disconnected'}">
+                    <h3>Tab ${tab.id}</h3>
+                    <div class="status ${tab.connected ? 'success' : 'error'}">
+                        ${tab.connected ? '✅ Connected' : '❌ Disconnected'}
+                    </div>
+                    <div>Socket ID: ${tab.socket ? tab.socket.id : 'N/A'}</div>
+                    <div>Updates Received: ${tab.updates}</div>
+                    <button onclick="disconnectTab(${tab.id})" ${!tab.connected ? 'disabled' : ''}>
+                        Disconnect
+                    </button>
+                </div>
+            `).join('');
+        };
+        
+        const disconnectTab = (tabId) => {
+            const tab = tabs.find(t => t.id === tabId);
+            if (tab && tab.socket) {
+                tab.socket.disconnect();
+                log(`Tab ${tabId} manually disconnected`);
+            }
+        };
+        
+        // Initialize
+        updateGlobalStats();
+        log('Browser simulation ready. Click "Create New Tab" to start testing.');
+    </script>
+</body>
+</html>
