@@ -1,21 +1,149 @@
-import React from 'react';
+import React, { useCallback, useEffect, useRef, useState, useMemo, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { XMarkIcon } from '@heroicons/react/24/outline';
+import PropTypes from 'prop-types';
 
 /**
  * Portal Templates
  * 
  * Reusable portal templates for common overlay patterns.
  * Features:
- * - Standardized layouts
- * - Consistent animations
- * - Accessibility features
- * - Customizable styling
- * - Performance optimizations
+ * - Standardized layouts with performance optimizations
+ * - Consistent animations with reduced motion support
+ * - Enhanced accessibility (ARIA attributes, keyboard navigation, focus trap)
+ * - Customizable styling with theme support
+ * - Memory leak prevention
+ * - SSR safety
  */
 
+// Animation variants for consistent animations with reduced motion support
+const createAnimationVariants = (prefersReducedMotion = false) => ({
+  overlay: {
+    hidden: { opacity: 0 },
+    visible: { opacity: 1 },
+    exit: { opacity: 0 }
+  },
+  modal: {
+    hidden: { 
+      scale: prefersReducedMotion ? 1 : 0.95, 
+      opacity: 0, 
+      y: prefersReducedMotion ? 0 : 20 
+    },
+    visible: { 
+      scale: 1, 
+      opacity: 1, 
+      y: 0 
+    },
+    exit: { 
+      scale: prefersReducedMotion ? 1 : 0.95, 
+      opacity: 0, 
+      y: prefersReducedMotion ? 0 : 20 
+    }
+  },
+  slide: {
+    hidden: (direction) => ({ 
+      x: prefersReducedMotion ? 0 : (direction === 'right' ? '100%' : '-100%'),
+      opacity: prefersReducedMotion ? 0 : 1
+    }),
+    visible: { x: 0, opacity: 1 },
+    exit: (direction) => ({ 
+      x: prefersReducedMotion ? 0 : (direction === 'right' ? '100%' : '-100%'),
+      opacity: prefersReducedMotion ? 0 : 1
+    })
+  },
+  toast: {
+    hidden: { 
+      opacity: 0, 
+      y: prefersReducedMotion ? 0 : -50, 
+      scale: prefersReducedMotion ? 1 : 0.9 
+    },
+    visible: { opacity: 1, y: 0, scale: 1 },
+    exit: { 
+      opacity: 0, 
+      y: prefersReducedMotion ? 0 : -50, 
+      scale: prefersReducedMotion ? 1 : 0.9 
+    }
+  },
+  drawer: {
+    hidden: { y: prefersReducedMotion ? 0 : '100%', opacity: prefersReducedMotion ? 0 : 1 },
+    visible: { y: 0, opacity: 1 },
+    exit: { y: prefersReducedMotion ? 0 : '100%', opacity: prefersReducedMotion ? 0 : 1 }
+  }
+});
+
+// Hook to detect reduced motion preference
+const usePrefersReducedMotion = () => {
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setPrefersReducedMotion(mediaQuery.matches);
+
+    const handleChange = (e) => setPrefersReducedMotion(e.matches);
+    mediaQuery.addEventListener('change', handleChange);
+
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
+
+  return prefersReducedMotion;
+};
+
+// Hook for keyboard event handling (Escape key)
+const useKeyboardHandler = (onEscape, isOpen) => {
+  useEffect(() => {
+    if (!isOpen || !onEscape) return;
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onEscape();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onEscape, isOpen]);
+};
+
+// Hook for focus trap
+const useFocusTrap = (containerRef, isOpen) => {
+  useEffect(() => {
+    if (!isOpen || !containerRef.current) return;
+
+    const container = containerRef.current;
+    const focusableElements = container.querySelectorAll(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    
+    const firstElement = focusableElements[0];
+    const lastElement = focusableElements[focusableElements.length - 1];
+
+    const handleTabKey = (e) => {
+      if (e.key !== 'Tab') return;
+
+      if (e.shiftKey) {
+        if (document.activeElement === firstElement) {
+          e.preventDefault();
+          lastElement?.focus();
+        }
+      } else {
+        if (document.activeElement === lastElement) {
+          e.preventDefault();
+          firstElement?.focus();
+        }
+      }
+    };
+
+    // Focus first element on open
+    firstElement?.focus();
+
+    container.addEventListener('keydown', handleTabKey);
+    return () => container.removeEventListener('keydown', handleTabKey);
+  }, [containerRef, isOpen]);
+};
+
 // Base portal template with common functionality
-export const BasePortalTemplate = ({
+export const BasePortalTemplate = memo(({
   children,
   isOpen,
   onClose,
@@ -27,15 +155,38 @@ export const BasePortalTemplate = ({
   onBackdropClick = null,
   animationType = 'modal',
   priority = 'normal',
+  enableFocusTrap = true,
+  closeOnEscape = true,
+  ariaLabel = 'Dialog',
+  ariaDescribedBy,
   ...props
 }) => {
-  const handleBackdropClick = (e) => {
-    if (e.target === e.currentTarget && onBackdropClick) {
-      onBackdropClick();
-    }
-  };
+  const containerRef = useRef(null);
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const animations = useMemo(() => createAnimationVariants(prefersReducedMotion), [prefersReducedMotion]);
 
-  const getCloseButtonPosition = () => {
+  // Handle backdrop click
+  const handleBackdropClick = useCallback((e) => {
+    if (e.target === e.currentTarget) {
+      if (onBackdropClick) {
+        onBackdropClick();
+      } else if (onClose) {
+        onClose();
+      }
+    }
+  }, [onBackdropClick, onClose]);
+
+  // Handle escape key
+  useKeyboardHandler(
+    closeOnEscape ? onClose : null,
+    isOpen
+  );
+
+  // Enable focus trap
+  useFocusTrap(containerRef, enableFocusTrap && isOpen);
+
+  // Memoize close button position
+  const closeButtonPositionClass = useMemo(() => {
     const positions = {
       'top-right': 'top-4 right-4',
       'top-left': 'top-4 left-4',
@@ -43,35 +194,43 @@ export const BasePortalTemplate = ({
       'bottom-left': 'bottom-4 left-4'
     };
     return positions[closeButtonPosition] || positions['top-right'];
-  };
+  }, [closeButtonPosition]);
 
   return (
-    <AnimatePresence>
+    <AnimatePresence mode="wait">
       {isOpen && (
         <motion.div
           className={`fixed inset-0 flex items-center justify-center p-4 ${overlayClassName}`}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
+          variants={animations.overlay}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
           transition={{ duration: 0.3, ease: 'easeInOut' }}
           onClick={handleBackdropClick}
           style={{ zIndex: 1, pointerEvents: 'auto' }}
+          role="dialog"
+          aria-modal="true"
+          aria-label={ariaLabel}
+          aria-describedby={ariaDescribedBy}
           {...props}
         >
           <motion.div
+            ref={containerRef}
             className={`relative bg-black rounded-2xl shadow-2xl overflow-hidden ${contentClassName}`}
-            initial={{ scale: 0.95, opacity: 0, y: 20 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.95, opacity: 0, y: 20 }}
+            variants={animations.modal}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
             transition={{ duration: 0.3, ease: 'easeOut' }}
             onClick={(e) => e.stopPropagation()}
             style={{ zIndex: 2, pointerEvents: 'auto' }}
           >
-            {showCloseButton && (
+            {showCloseButton && onClose && (
               <button
+                type="button"
                 onClick={onClose}
-                className={`absolute ${getCloseButtonPosition()} p-2 bg-black/50 hover:bg-black/70 rounded-full transition-colors duration-200`}
-                aria-label="Close"
+                className={`absolute ${closeButtonPositionClass} p-2 bg-black/50 hover:bg-black/70 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-white/50`}
+                aria-label="Close dialog"
                 style={{ zIndex: 10 }}
               >
                 <XMarkIcon className="w-6 h-6 text-white" />
@@ -86,17 +245,37 @@ export const BasePortalTemplate = ({
       )}
     </AnimatePresence>
   );
+});
+
+BasePortalTemplate.displayName = 'BasePortalTemplate';
+
+BasePortalTemplate.propTypes = {
+  children: PropTypes.node.isRequired,
+  isOpen: PropTypes.bool.isRequired,
+  onClose: PropTypes.func,
+  className: PropTypes.string,
+  overlayClassName: PropTypes.string,
+  contentClassName: PropTypes.string,
+  showCloseButton: PropTypes.bool,
+  closeButtonPosition: PropTypes.oneOf(['top-right', 'top-left', 'bottom-right', 'bottom-left']),
+  onBackdropClick: PropTypes.func,
+  animationType: PropTypes.string,
+  priority: PropTypes.string,
+  enableFocusTrap: PropTypes.bool,
+  closeOnEscape: PropTypes.bool,
+  ariaLabel: PropTypes.string,
+  ariaDescribedBy: PropTypes.string
 };
 
 // Modal template for standard modals
-export const ModalTemplate = ({
+export const ModalTemplate = memo(({
   title,
   children,
   footer,
   size = 'medium',
   ...props
 }) => {
-  const getSizeClasses = () => {
+  const sizeClasses = useMemo(() => {
     const sizes = {
       small: 'max-w-md',
       medium: 'max-w-2xl',
@@ -105,21 +284,24 @@ export const ModalTemplate = ({
       full: 'max-w-full mx-4'
     };
     return sizes[size] || sizes.medium;
-  };
+  }, [size]);
 
   return (
     <BasePortalTemplate
-      contentClassName={`w-full ${getSizeClasses()} max-h-[90vh] overflow-y-auto`}
+      contentClassName={`w-full ${sizeClasses} max-h-[90vh] overflow-y-auto`}
+      ariaLabel={typeof title === 'string' ? title : 'Modal dialog'}
       {...props}
     >
       <div className="flex flex-col h-full">
         {title && (
           <div className="p-6 border-b border-white/10">
-            <h2 className="text-2xl font-bold text-white">{title}</h2>
+            <h2 className="text-2xl font-bold text-white" id="modal-title">
+              {title}
+            </h2>
           </div>
         )}
         
-        <div className="flex-1 p-6">
+        <div className="flex-1 p-6" role="document">
           {children}
         </div>
         
@@ -131,10 +313,19 @@ export const ModalTemplate = ({
       </div>
     </BasePortalTemplate>
   );
+});
+
+ModalTemplate.displayName = 'ModalTemplate';
+
+ModalTemplate.propTypes = {
+  title: PropTypes.node,
+  children: PropTypes.node.isRequired,
+  footer: PropTypes.node,
+  size: PropTypes.oneOf(['small', 'medium', 'large', 'xlarge', 'full'])
 };
 
 // Fullscreen template for immersive experiences
-export const FullscreenTemplate = ({
+export const FullscreenTemplate = memo(({
   children,
   header,
   footer,
@@ -144,45 +335,64 @@ export const FullscreenTemplate = ({
     <BasePortalTemplate
       overlayClassName="p-0"
       contentClassName="w-full h-full max-w-none max-h-none rounded-none"
+      ariaLabel="Fullscreen dialog"
       {...props}
     >
       <div className="flex flex-col h-full">
         {header && (
-          <div className="flex-shrink-0">
+          <div className="flex-shrink-0" role="banner">
             {header}
           </div>
         )}
         
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-hidden" role="main">
           {children}
         </div>
         
         {footer && (
-          <div className="flex-shrink-0">
+          <div className="flex-shrink-0" role="contentinfo">
             {footer}
           </div>
         )}
       </div>
     </BasePortalTemplate>
   );
+});
+
+FullscreenTemplate.displayName = 'FullscreenTemplate';
+
+FullscreenTemplate.propTypes = {
+  children: PropTypes.node.isRequired,
+  header: PropTypes.node,
+  footer: PropTypes.node
 };
 
 // Sidebar template for slide-out panels
-export const SidebarTemplate = ({
+export const SidebarTemplate = memo(({
   children,
   position = 'right',
   width = 'md',
+  isOpen,
+  onClose,
+  showCloseButton = true,
   ...props
 }) => {
-  const getPositionClasses = () => {
+  const containerRef = useRef(null);
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const animations = useMemo(() => createAnimationVariants(prefersReducedMotion), [prefersReducedMotion]);
+
+  useKeyboardHandler(onClose, isOpen);
+  useFocusTrap(containerRef, isOpen);
+
+  const positionClass = useMemo(() => {
     const positions = {
       left: 'left-0',
       right: 'right-0'
     };
     return positions[position] || positions.right;
-  };
+  }, [position]);
 
-  const getWidthClasses = () => {
+  const widthClass = useMemo(() => {
     const widths = {
       sm: 'w-80',
       md: 'w-96',
@@ -190,26 +400,32 @@ export const SidebarTemplate = ({
       xl: 'w-[32rem]'
     };
     return widths[width] || widths.md;
-  };
+  }, [width]);
 
   return (
-    <AnimatePresence>
-      {props.isOpen && (
+    <AnimatePresence mode="wait">
+      {isOpen && (
         <motion.div
-          className={`fixed inset-y-0 ${getPositionClasses()} ${getWidthClasses()} bg-black shadow-2xl`}
-          initial={{ x: position === 'right' ? '100%' : '-100%' }}
-          animate={{ x: 0 }}
-          exit={{ x: position === 'right' ? '100%' : '-100%' }}
+          ref={containerRef}
+          className={`fixed inset-y-0 ${positionClass} ${widthClass} bg-black shadow-2xl`}
+          custom={position}
+          variants={animations.slide}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
           transition={{ duration: 0.3, ease: 'easeInOut' }}
           style={{ zIndex: 2, pointerEvents: 'auto' }}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Sidebar panel"
         >
           <div className="flex flex-col h-full">
-            {props.showCloseButton && (
+            {showCloseButton && onClose && (
               <button
-                onClick={props.onClose}
-                className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-black/70 rounded-full transition-colors duration-200"
-                aria-label="Close"
-                style={{ zIndex: 10 }}
+                type="button"
+                onClick={onClose}
+                className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-black/70 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-white/50 z-10"
+                aria-label="Close sidebar"
               >
                 <XMarkIcon className="w-6 h-6 text-white" />
               </button>
@@ -223,65 +439,134 @@ export const SidebarTemplate = ({
       )}
     </AnimatePresence>
   );
+});
+
+SidebarTemplate.displayName = 'SidebarTemplate';
+
+SidebarTemplate.propTypes = {
+  children: PropTypes.node.isRequired,
+  position: PropTypes.oneOf(['left', 'right']),
+  width: PropTypes.oneOf(['sm', 'md', 'lg', 'xl']),
+  isOpen: PropTypes.bool.isRequired,
+  onClose: PropTypes.func,
+  showCloseButton: PropTypes.bool
 };
 
 // Toast template for notifications
-export const ToastTemplate = ({
+export const ToastTemplate = memo(({
   children,
   type = 'info',
   position = 'top-right',
   duration = 5000,
+  isOpen,
+  onClose,
+  autoClose = true,
   ...props
 }) => {
-  const getPositionClasses = () => {
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const animations = useMemo(() => createAnimationVariants(prefersReducedMotion), [prefersReducedMotion]);
+
+  // Auto-close timer
+  useEffect(() => {
+    if (!isOpen || !autoClose || !onClose || duration <= 0) return;
+
+    const timer = setTimeout(() => {
+      onClose();
+    }, duration);
+
+    return () => clearTimeout(timer);
+  }, [isOpen, autoClose, onClose, duration]);
+
+  const positionClass = useMemo(() => {
     const positions = {
       'top-right': 'top-4 right-4',
       'top-left': 'top-4 left-4',
       'bottom-right': 'bottom-4 right-4',
       'bottom-left': 'bottom-4 left-4',
-      'top-center': 'top-4 left-1/2 transform -translate-x-1/2',
-      'bottom-center': 'bottom-4 left-1/2 transform -translate-x-1/2'
+      'top-center': 'top-4 left-1/2 -translate-x-1/2',
+      'bottom-center': 'bottom-4 left-1/2 -translate-x-1/2'
     };
     return positions[position] || positions['top-right'];
-  };
+  }, [position]);
 
-  const getTypeClasses = () => {
+  const typeClass = useMemo(() => {
     const types = {
-      success: 'bg-green-500/90 border-green-400',
-      error: 'bg-red-500/90 border-red-400',
-      warning: 'bg-yellow-500/90 border-yellow-400',
-      info: 'bg-blue-500/90 border-blue-400'
+      success: 'bg-green-500/90 border-green-400 text-white',
+      error: 'bg-red-500/90 border-red-400 text-white',
+      warning: 'bg-yellow-500/90 border-yellow-400 text-gray-900',
+      info: 'bg-blue-500/90 border-blue-400 text-white'
     };
     return types[type] || types.info;
-  };
+  }, [type]);
 
   return (
-    <AnimatePresence>
-      {props.isOpen && (
+    <AnimatePresence mode="wait">
+      {isOpen && (
         <motion.div
-          className={`fixed ${getPositionClasses()} z-50`}
-          initial={{ opacity: 0, y: -50, scale: 0.9 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: -50, scale: 0.9 }}
+          className={`fixed ${positionClass} z-50`}
+          variants={animations.toast}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
           transition={{ duration: 0.3, ease: 'easeOut' }}
           style={{ pointerEvents: 'auto' }}
+          role="alert"
+          aria-live="polite"
+          aria-atomic="true"
         >
-          <div className={`px-4 py-3 rounded-lg shadow-lg border backdrop-blur-sm ${getTypeClasses()}`}>
-            {children}
+          <div className={`px-4 py-3 rounded-lg shadow-lg border backdrop-blur-sm ${typeClass} min-w-[200px] max-w-md`}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex-1">
+                {children}
+              </div>
+              {onClose && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex-shrink-0 p-1 hover:bg-black/20 rounded transition-colors focus:outline-none focus:ring-2 focus:ring-white/50"
+                  aria-label="Close notification"
+                >
+                  <XMarkIcon className="w-5 h-5" />
+                </button>
+              )}
+            </div>
           </div>
         </motion.div>
       )}
     </AnimatePresence>
   );
+});
+
+ToastTemplate.displayName = 'ToastTemplate';
+
+ToastTemplate.propTypes = {
+  children: PropTypes.node.isRequired,
+  type: PropTypes.oneOf(['success', 'error', 'warning', 'info']),
+  position: PropTypes.oneOf(['top-right', 'top-left', 'bottom-right', 'bottom-left', 'top-center', 'bottom-center']),
+  duration: PropTypes.number,
+  isOpen: PropTypes.bool.isRequired,
+  onClose: PropTypes.func,
+  autoClose: PropTypes.bool
 };
 
 // Drawer template for bottom sheets
-export const DrawerTemplate = ({
+export const DrawerTemplate = memo(({
   children,
   height = 'md',
+  isOpen,
+  onClose,
+  showCloseButton = true,
+  showHandle = true,
   ...props
 }) => {
-  const getHeightClasses = () => {
+  const containerRef = useRef(null);
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const animations = useMemo(() => createAnimationVariants(prefersReducedMotion), [prefersReducedMotion]);
+
+  useKeyboardHandler(onClose, isOpen);
+  useFocusTrap(containerRef, isOpen);
+
+  const heightClass = useMemo(() => {
     const heights = {
       sm: 'max-h-[50vh]',
       md: 'max-h-[70vh]',
@@ -289,32 +574,42 @@ export const DrawerTemplate = ({
       full: 'max-h-[95vh]'
     };
     return heights[height] || heights.md;
-  };
+  }, [height]);
 
   return (
-    <AnimatePresence>
-      {props.isOpen && (
+    <AnimatePresence mode="wait">
+      {isOpen && (
         <motion.div
+          ref={containerRef}
           className="fixed inset-x-0 bottom-0 z-50"
-          initial={{ y: '100%' }}
-          animate={{ y: 0 }}
-          exit={{ y: '100%' }}
+          variants={animations.drawer}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
           transition={{ duration: 0.3, ease: 'easeInOut' }}
           style={{ pointerEvents: 'auto' }}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Drawer panel"
         >
-          <div className={`bg-black rounded-t-2xl shadow-2xl ${getHeightClasses()} overflow-hidden`}>
+          <div className={`bg-black rounded-t-2xl shadow-2xl ${heightClass} overflow-hidden`}>
             <div className="flex flex-col h-full">
               {/* Handle */}
-              <div className="flex justify-center p-2">
-                <div className="w-12 h-1 bg-white/30 rounded-full"></div>
-              </div>
+              {showHandle && (
+                <div className="flex justify-center p-2">
+                  <div 
+                    className="w-12 h-1 bg-white/30 rounded-full cursor-grab active:cursor-grabbing"
+                    role="presentation"
+                  ></div>
+                </div>
+              )}
               
-              {props.showCloseButton && (
+              {showCloseButton && onClose && (
                 <button
-                  onClick={props.onClose}
-                  className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-black/70 rounded-full transition-colors duration-200"
-                  aria-label="Close"
-                  style={{ zIndex: 10 }}
+                  type="button"
+                  onClick={onClose}
+                  className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-black/70 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-white/50 z-10"
+                  aria-label="Close drawer"
                 >
                   <XMarkIcon className="w-6 h-6 text-white" />
                 </button>
@@ -329,22 +624,34 @@ export const DrawerTemplate = ({
       )}
     </AnimatePresence>
   );
+});
+
+DrawerTemplate.displayName = 'DrawerTemplate';
+
+DrawerTemplate.propTypes = {
+  children: PropTypes.node.isRequired,
+  height: PropTypes.oneOf(['sm', 'md', 'lg', 'full']),
+  isOpen: PropTypes.bool.isRequired,
+  onClose: PropTypes.func,
+  showCloseButton: PropTypes.bool,
+  showHandle: PropTypes.bool
 };
 
 // Popover template for contextual overlays
-export const PopoverTemplate = ({
+export const PopoverTemplate = memo(({
   children,
   trigger,
   placement = 'bottom',
   offset = 8,
+  closeOnClickOutside = true,
   ...props
 }) => {
-  const [isOpen, setIsOpen] = React.useState(false);
-  const [position, setPosition] = React.useState({ top: 0, left: 0 });
-  const triggerRef = React.useRef(null);
-  const popoverRef = React.useRef(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [position, setPosition] = useState({ top: 0, left: 0 });
+  const triggerRef = useRef(null);
+  const popoverRef = useRef(null);
 
-  const updatePosition = React.useCallback(() => {
+  const updatePosition = useCallback(() => {
     if (!triggerRef.current || !popoverRef.current) return;
 
     const triggerRect = triggerRef.current.getBoundingClientRect();
@@ -374,42 +681,104 @@ export const PopoverTemplate = ({
         left = triggerRect.left + (triggerRect.width - popoverRect.width) / 2;
     }
     
+    // Boundary detection - keep popover in viewport
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    if (left < 0) left = 8;
+    if (left + popoverRect.width > viewportWidth) {
+      left = viewportWidth - popoverRect.width - 8;
+    }
+    if (top < 0) top = 8;
+    if (top + popoverRect.height > viewportHeight) {
+      top = viewportHeight - popoverRect.height - 8;
+    }
+    
     setPosition({ top, left });
   }, [placement, offset]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (isOpen) {
       updatePosition();
       window.addEventListener('resize', updatePosition);
-      window.addEventListener('scroll', updatePosition);
+      window.addEventListener('scroll', updatePosition, true);
       
       return () => {
         window.removeEventListener('resize', updatePosition);
-        window.removeEventListener('scroll', updatePosition);
+        window.removeEventListener('scroll', updatePosition, true);
       };
     }
   }, [isOpen, updatePosition]);
 
+  // Handle click outside
+  useEffect(() => {
+    if (!isOpen || !closeOnClickOutside) return;
+
+    const handleClickOutside = (event) => {
+      if (
+        popoverRef.current &&
+        triggerRef.current &&
+        !popoverRef.current.contains(event.target) &&
+        !triggerRef.current.contains(event.target)
+      ) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen, closeOnClickOutside]);
+
+  // Handle escape key
+  useKeyboardHandler(() => setIsOpen(false), isOpen);
+
+  const handleToggle = useCallback(() => {
+    setIsOpen(prev => !prev);
+  }, []);
+
+  const prefersReducedMotion = usePrefersReducedMotion();
+
   return (
     <>
-      <div ref={triggerRef} onClick={() => setIsOpen(!isOpen)}>
+      <div 
+        ref={triggerRef} 
+        onClick={handleToggle}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            handleToggle();
+          }
+        }}
+        aria-expanded={isOpen}
+        aria-haspopup="true"
+      >
         {trigger}
       </div>
       
-      <AnimatePresence>
+      <AnimatePresence mode="wait">
         {isOpen && (
           <motion.div
             ref={popoverRef}
             className="fixed z-50 bg-black/90 backdrop-blur-sm border border-white/20 rounded-lg shadow-xl"
-            initial={{ opacity: 0, scale: 0.95 }}
+            initial={{ 
+              opacity: 0, 
+              scale: prefersReducedMotion ? 1 : 0.95 
+            }}
             animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
+            exit={{ 
+              opacity: 0, 
+              scale: prefersReducedMotion ? 1 : 0.95 
+            }}
             transition={{ duration: 0.2, ease: 'easeOut' }}
             style={{
               top: position.top,
               left: position.left,
               pointerEvents: 'auto'
             }}
+            role="dialog"
+            aria-modal="false"
           >
             {children}
           </motion.div>
@@ -417,6 +786,16 @@ export const PopoverTemplate = ({
       </AnimatePresence>
     </>
   );
+});
+
+PopoverTemplate.displayName = 'PopoverTemplate';
+
+PopoverTemplate.propTypes = {
+  children: PropTypes.node.isRequired,
+  trigger: PropTypes.node.isRequired,
+  placement: PropTypes.oneOf(['top', 'bottom', 'left', 'right']),
+  offset: PropTypes.number,
+  closeOnClickOutside: PropTypes.bool
 };
 
 // Export all templates

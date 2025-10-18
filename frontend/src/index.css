@@ -52,6 +52,50 @@
   }
 }
 
+/* Smooth scroll-in animations for movie sections */
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Apply smooth animations with reduced motion respect */
+@media (prefers-reduced-motion: no-preference) {
+  .movie-section-enter {
+    animation: slideInUp 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+  }
+  
+  .movie-card-enter {
+    animation: fadeInScale 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+  }
+}
+
+/* Respect reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .movie-section-enter,
+  .movie-card-enter {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .animate-skeleton-shimmer {
   background: linear-gradient(90deg, 
     rgba(255, 255, 255, 0.06) 25%, 
@@ -600,10 +644,6 @@ div, section, main, article {
   .hero-content {
     will-change: auto;
   }
-  
-  .streaming-icon-color-transition {
-    /* No transition for instant color changes */
-  }
 }
 
 /* Smooth hero section loading to prevent jitter */
@@ -640,19 +680,277 @@ div, section, main, article {
   overflow: hidden;
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 1;
+  line-clamp: 1;
 }
 
 .line-clamp-2 {
   overflow: hidden;
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .line-clamp-3 {
   overflow: hidden;
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  line-clamp: 3;
 }
+
+/* ============================================
+   ENHANCED ANIMATION SYSTEM
+   ============================================ */
+
+/* Smooth fade animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Scale animations */
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateZ(0); /* Less dramatic */
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateZ(0);
+  }
+}
+
+@keyframes scaleInBounce {
+  0% {
+    opacity: 0;
+    transform: scale(0.5) translateZ(0); /* Less dramatic start */
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.02) translateZ(0); /* Less overshoot */
+  }
+  70% {
+    transform: scale(0.99) translateZ(0); /* Subtle bounce */
+  }
+  100% {
+    transform: scale(1) translateZ(0);
+  }
+}
+
+@keyframes heartbeat {
+  0%, 100% { transform: scale(1) translateZ(0); }
+  10%, 30% { transform: scale(1.05) translateZ(0); } /* Less dramatic */
+  20%, 40% { transform: scale(0.98) translateZ(0); } /* Less dramatic */
+}
+
+/* Rotation animations */
+@keyframes rotateIn {
+  from {
+    opacity: 0;
+    transform: rotate(-90deg) scale(0.7) translateZ(0); /* Less dramatic */
+  }
+  to {
+    opacity: 1;
+    transform: rotate(0deg) scale(1) translateZ(0);
+  }
+}
+
+/* Glow animations */
+@keyframes glow {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(139, 92, 246, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(139, 92, 246, 0.8), 0 0 30px rgba(139, 92, 246, 0.6);
+  }
+}
+
+/* Shake animation */
+@keyframes shake {
+  0%, 100% { transform: translateX(0) translateZ(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-3px) translateZ(0); } /* Gentler shake */
+  20%, 40%, 60%, 80% { transform: translateX(3px) translateZ(0); } /* Gentler shake */
+}
+
+/* Bounce animation */
+@keyframes bounce {
+  0%, 100% { 
+    transform: translateY(0) translateZ(0);
+    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1); /* Smoother easing */
+  }
+  50% { 
+    transform: translateY(-10px) translateZ(0); /* Less dramatic */
+    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1); /* Smoother easing */
+  }
+}
+
+/* Utility animation classes */
+.animate-fade-in {
+  animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; /* Smoother and longer */
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; /* Smoother and longer */
+}
+
+.animate-scale-bounce {
+  animation: scaleInBounce 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards; /* Smoother, less bouncy */
+}
+
+.animate-heartbeat {
+  animation: heartbeat 2s ease-in-out infinite; /* Slower */
+}
+
+.animate-rotate-in {
+  animation: rotateIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; /* Smoother and longer */
+}
+
+.animate-glow {
+  animation: glow 3s ease-in-out infinite; /* Slower */
+}
+
+.animate-shake {
+  animation: shake 0.6s cubic-bezier(0.16, 1, 0.3, 1); /* Smoother */
+}
+
+.animate-bounce {
+  animation: bounce 1.5s infinite; /* Slower */
+}
+
+/* Smooth transition utilities */
+.transition-smooth {
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); /* Smoother and longer */
+}
+
+.transition-smooth-fast {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1); /* Smoother */
+}
+
+.transition-colors {
+  transition: background-color 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+              color 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.transition-transform {
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1); /* Smoother */
+}
+
+.transition-opacity {
+  transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1); /* Smoother */
+}
+
+.transition-shadow {
+  transition: box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1); /* Smoother */
+}
+
+/* GPU acceleration utilities */
+.gpu-accelerated {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  perspective: 1000px;
+  will-change: transform, opacity;
+}
+
+.gpu-transform {
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+/* Hover effects - Smoother and more fluid */
+.hover-lift {
+  transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hover-lift:hover {
+  transform: translateY(-4px) translateZ(0); /* Very subtle lift */
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.25); /* Softer shadow */
+}
+
+.hover-scale {
+  transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hover-scale:hover {
+  transform: scale(1.02) translateZ(0); /* Very subtle scale */
+}
+
+.hover-glow {
+  transition: box-shadow 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hover-glow:hover {
+  box-shadow: 0 0 15px rgba(139, 92, 246, 0.5),
+              0 0 30px rgba(139, 92, 246, 0.3); /* Softer glow */
+}
+
+.hover-brightness {
+  transition: filter 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hover-brightness:hover {
+  filter: brightness(1.1); /* Very subtle */
+}
+
+/* Card animations - Ultra smooth */
+.card-hover {
+  transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.card-hover:hover {
+  transform: translateY(-2px) translateZ(0); /* Very subtle */
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.25); /* Softer shadow */
+}
+
+.card-press:active {
+  transform: translateY(0px) scale(0.995) translateZ(0); /* Very gentle press */
+}
+
+/* Button animations */
+.button-press {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.button-press:active {
+  transform: scale(0.97) translateZ(0); /* Gentler press */
+}
+
+/* Stagger delay utilities */
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.1s; }
+.stagger-3 { animation-delay: 0.15s; }
+.stagger-4 { animation-delay: 0.2s; }
+.stagger-5 { animation-delay: 0.25s; }
+
+/* Performance optimizations for mobile */
+@media (max-width: 768px) {
+  .animate-scale-bounce {
+    animation: scaleIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  
+  .hover-lift:hover,
+  .card-hover:hover {
+    transform: translateY(-2px) translateZ(0);
+  }
+  
+  /* Faster animations on mobile for responsiveness */
+  .transition-smooth {
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+
+/* Focus visible styles for accessibility */
+*:focus-visible {
+  outline: 2px solid rgba(139, 92, 246, 0.8);
+  outline-offset: 2px;
+  border-radius: 4px;
+  transition: outline-offset 0.3s cubic-bezier(0.16, 1, 0.3, 1); /* Smoother */
+}
+

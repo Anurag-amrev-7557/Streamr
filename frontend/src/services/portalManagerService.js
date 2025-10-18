@@ -360,7 +360,9 @@ class PortalManagerService {
 
     // Check if portal already exists
     if (this.portals.has(id)) {
-      console.warn(`[PortalManagerService] Portal ${id} already exists`);
+      if (debug) {
+        console.debug(`[PortalManagerService] Reusing existing portal: ${id}`);
+      }
       return this.portals.get(id);
     }
 

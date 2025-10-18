@@ -902,6 +902,10 @@ const SimilarListVirtual = ({ items = [], onClick, itemWidth = 160, height = 280
     return { isMobile, isTablet, isDesktop };
   };
 const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) => {
+  // Debug logging
+  console.log('🎬 [MovieDetailsOverlay] Component rendered with movie:', movie?.title || movie?.name);
+  console.log('🎬 [MovieDetailsOverlay] Movie ID:', movie?.id);
+  
   // 🚀 ENHANCED: Portal management - must be called before any conditional returns
   const portalId = 'movie-details-portal';
   
@@ -4544,10 +4548,15 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
 
   // Enhanced rendering check with portal readiness
   if (typeof window === "undefined" || !portalReady || !portalContainer) {
+    console.warn('🎬 [MovieDetailsOverlay] Not rendering - window:', typeof window !== "undefined", 'portalReady:', portalReady, 'portalContainer:', !!portalContainer);
     return null;
   }
+  
+  console.log('🎬 [MovieDetailsOverlay] About to render overlay content');
+  
   const overlayContent = (
     <AnimatePresence>
+      {/* DEBUG: Very obvious indicator */}
       {/* Overlay background - parallax removed */}
       <motion.div
         className="fixed inset-0 bg-black/85 flex items-center justify-center z-[999999999] p-2 sm:p-4 contain-paint transition-none sm:mt-0"
@@ -5467,7 +5476,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                         <AnimatePresence mode="wait">
                           {!isGeneratingShare && shareImageUrl && (
                             <motion.img
-                              key={shareImageUrl}
+                              key={shareImageUrl || 'share-preview'}
                               src={shareImageUrl}
                               alt="Share preview"
                               className="w-full h-full object-contain"
@@ -6180,7 +6189,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                             <motion.div key={`episodes-card-${currentSeason?.season_number}`} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }} style={{ contain: 'layout' }} className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4 lg:gap-6 pb-6">
                               {episodes.slice(0, displayedEpisodes).map((episode, index) => (
                                 <motion.div
-                                  key={episode.id}
+                                  key={episode.id || `episode-${currentSeason?.season_number}-${index}`}
                                   initial={{ opacity: 0 }}
                                   animate={{ opacity: 1 }}
                                   transition={{ 
@@ -6307,7 +6316,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                             <motion.div key={`episodes-list-${currentSeason?.season_number}`} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }} style={{ contain: 'layout' }} className="space-y-0 pb-6">
                               {episodes.slice(0, displayedEpisodes).map((episode, index) => (
                                 <motion.div
-                                  key={episode.id}
+                                  key={episode.id || `episode-list-${currentSeason?.season_number}-${index}`}
                                   initial={{ opacity: 0 }}
                                   animate={{ opacity: 1 }}
                                   transition={{ 
@@ -6819,6 +6828,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     </AnimatePresence>
   );
 
+  console.log('🎬 [MovieDetailsOverlay] Rendering portal content, portalReady:', portalReady);
   return createPortalContent(overlayContent);
 };
 

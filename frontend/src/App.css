@@ -3,7 +3,9 @@
     overflow: hidden;
     background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.15) 50%, rgba(255,255,255,0.05) 75%);
     background-size: 200% 100%;
-    animation: shimmer 1.2s infinite linear;
+    animation: shimmer 2s infinite ease-in-out; /* Increased from 1.2s and changed to ease-in-out */
+    transform: translateZ(0); /* GPU acceleration */
+    will-change: background-position;
   }
   @keyframes shimmer {
     0% { background-position: -200% 0; }
@@ -11,12 +13,13 @@
   }
   .checkmark-anim {
     display: inline-block;
-    animation: pop-check 0.5s cubic-bezier(.23,1.12,.67,1.01);
+    animation: pop-check 0.6s cubic-bezier(0.16, 1, 0.3, 1); /* Smoother easing and longer */
+    transform: translateZ(0); /* GPU acceleration */
   }
   @keyframes pop-check {
-    0% { transform: scale(0.5) rotate(-20deg); opacity: 0; }
-    60% { transform: scale(1.2) rotate(8deg); opacity: 1; }
-    100% { transform: scale(1) rotate(0deg); opacity: 1; }
+    0% { transform: scale(0.7) rotate(-10deg) translateZ(0); opacity: 0; } /* Less extreme
+    60% { transform: scale(1.08) rotate(4deg) translateZ(0); opacity: 1; } /* Less overshoot */
+    100% { transform: scale(1) rotate(0deg) translateZ(0); opacity: 1; }
   }
 
 /* Error Boundary Styles */
@@ -49,7 +52,20 @@
     0 0 40px rgba(59, 130, 246, 0.1);
   position: relative;
   overflow: hidden;
-  animation: modalSlideIn 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: modalSlideIn 0.7s cubic-bezier(0.16, 1, 0.3, 1); /* Longer and smoother */
+  transform: translateZ(0); /* GPU acceleration */
+  will-change: transform, opacity;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.97) translateZ(0); /* Less dramatic movement */
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1) translateZ(0);
+  }
 }
 
 .error-content-modern::before {
@@ -73,7 +89,27 @@
   height: 64px;
   color: #3b82f6;
   opacity: 0.9;
-  animation: iconFloat 3s ease-in-out infinite, iconPulse 2s ease-in-out infinite;
+  animation: iconFloat 4s ease-in-out infinite, iconPulse 3s ease-in-out infinite; /* Slower animations */
+  transform: translateZ(0); /* GPU acceleration */
+  will-change: transform, opacity;
+}
+
+@keyframes iconFloat {
+  0%, 100% {
+    transform: translateY(0) translateZ(0);
+  }
+  50% {
+    transform: translateY(-8px) translateZ(0); /* Less movement */
+  }
+}
+
+@keyframes iconPulse {
+  0%, 100% {
+    opacity: 0.9;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 .error-text-content {
@@ -119,13 +155,15 @@
   font-weight: 600;
   font-size: 0.95rem;
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); /* Longer and smoother */
   box-shadow: 
     0 4px 12px rgba(59, 130, 246, 0.3),
     0 0 0 1px rgba(255, 255, 255, 0.1);
   position: relative;
   overflow: hidden;
   letter-spacing: 0.025em;
+  transform: translateZ(0); /* GPU acceleration */
+  will-change: transform, box-shadow;
 }
 
 .refresh-button-modern::before {
@@ -141,7 +179,7 @@
 
 .refresh-button-modern:hover {
   background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
-  transform: translateY(-2px);
+  transform: translateY(-2px) translateZ(0);
   box-shadow: 
     0 8px 25px rgba(59, 130, 246, 0.4),
     0 0 0 1px rgba(255, 255, 255, 0.15),
@@ -153,7 +191,7 @@
 }
 
 .refresh-button-modern:active {
-  transform: translateY(0);
+  transform: translateY(0) translateZ(0);
   box-shadow: 
     0 4px 12px rgba(59, 130, 246, 0.3),
     0 0 0 1px rgba(255, 255, 255, 0.1);
@@ -170,11 +208,13 @@
 .refresh-icon {
   width: 20px;
   height: 20px;
-  transition: transform 0.3s ease;
+  transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1); /* Longer and smoother */
+  transform: translateZ(0); /* GPU acceleration */
+  will-change: transform;
 }
 
 .refresh-button-modern:hover .refresh-icon {
-  transform: rotate(180deg);
+  transform: rotate(180deg) translateZ(0);
 }
 
 .refresh-button-modern.refreshing {
@@ -193,14 +233,16 @@
 
 .refresh-icon.spinning {
   animation: spin 1s linear infinite;
+  transform: translateZ(0); /* GPU acceleration */
+  will-change: transform;
 }
 
 @keyframes spin {
   from {
-    transform: rotate(0deg);
+    transform: rotate(0deg) translateZ(0);
   }
   to {
-    transform: rotate(360deg);
+    transform: rotate(360deg) translateZ(0);
   }
 }
 

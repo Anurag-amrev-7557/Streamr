@@ -1,9 +1,9 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import PropTypes from 'prop-types';
 
 const RatingBadge = ({ 
-  rating, 
+  rating = 0, 
   size = 'default', 
   showIcon = true, 
   className = '',
@@ -13,23 +13,60 @@ const RatingBadge = ({
   tooltipText = '',
   customColor = '', // New prop for custom color
   isLoading = false, // New prop for loading state
-  tooltipPosition = 'top' // New prop for tooltip position: 'top' | 'bottom'
+  tooltipPosition = 'top', // New prop for tooltip position: 'top' | 'bottom'
+  onClick = null, // New prop for click handler
+  format = 'decimal', // New prop for rating format: 'decimal' | 'percentage' | 'stars'
+  maxRating = 10, // New prop for maximum rating value
+  interactive = false, // New prop to enable interactive mode
+  showLabel = false, // New prop to show "Rating:" label
+  ariaLabel = null // New prop for custom ARIA label
 }) => {
-  // Validate and normalize rating with error handling
-  let normalizedRating = 0;
+  const [isFocused, setIsFocused] = useState(false);
   
-  try {
-    if (typeof rating === 'number' && !isNaN(rating)) {
-      normalizedRating = Math.max(0, Math.min(10, rating));
-    } else if (typeof rating === 'string') {
-      const parsed = parseFloat(rating);
-      if (!isNaN(parsed)) {
-        normalizedRating = Math.max(0, Math.min(10, parsed));
+  // Detect user's motion preferences
+  const prefersReducedMotion = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }, []);
+  // Validate and normalize rating with error handling
+  const normalizedRating = useMemo(() => {
+    let result = 0;
+    
+    try {
+      if (typeof rating === 'number' && !isNaN(rating)) {
+        result = Math.max(0, Math.min(maxRating, rating));
+      } else if (typeof rating === 'string') {
+        const parsed = parseFloat(rating);
+        if (!isNaN(parsed)) {
+          result = Math.max(0, Math.min(maxRating, parsed));
+        }
       }
+    } catch (error) {
+      console.warn('RatingBadge: Error parsing rating:', error);
+      result = 0;
     }
-  } catch (error) {
-    console.warn('RatingBadge: Error parsing rating:', error);
-    normalizedRating = 0;
+    
+    return result;
+  }, [rating, maxRating]);
+
+  // Format the rating based on format prop
+  const formattedRating = useMemo(() => {
+    if (isLoading) return '...';
+    
+    switch (format) {
+      case 'percentage':
+        return `${Math.round((normalizedRating / maxRating) * 100)}%`;
+      case 'stars':
+        return `${(normalizedRating / 2).toFixed(1)}/5`;
+      case 'decimal':
+      default:
+        return normalizedRating.toFixed(1);
+    }
+  }, [normalizedRating, format, maxRating, isLoading]);
+
+  // Don't render if rating is 0 or invalid (unless loading)
+  if (!isLoading && normalizedRating === 0) {
+    return null;
   }
 
   // Validate size prop - now includes ultra-small and extra-small
@@ -62,17 +99,64 @@ const RatingBadge = ({
     visible: { 
       opacity: 1, 
       scale: 1,
-      transition: { duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }
+      transition: prefersReducedMotion 
+        ? { duration: 0 } 
+        : { duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }
     },
     hover: { 
-      scale: 1.02,
-      transition: { duration: 0.2 }
+      scale: prefersReducedMotion ? 1 : 1.02,
+      transition: prefersReducedMotion ? { duration: 0 } : { duration: 0.2 }
     },
     loading: {
       opacity: [0.5, 1],
-      transition: { duration: 1, repeat: Infinity, repeatType: "reverse" }
+      transition: prefersReducedMotion 
+        ? { duration: 0 } 
+        : { duration: 1, repeat: Infinity, repeatType: "reverse" }
     }
   };
+
+  // Click handler with error boundary
+  const handleClick = useCallback((e) => {
+    if (!interactive && !onClick) return;
+    
+    try {
+      e.stopPropagation();
+      onClick?.(normalizedRating);
+    } catch (error) {
+      console.error('RatingBadge: Error in click handler:', error);
+    }
+  }, [onClick, interactive, normalizedRating]);
+
+  // Keyboard handler for accessibility
+  const handleKeyDown = useCallback((e) => {
+    if (!interactive && !onClick) return;
+    
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleClick(e);
+    }
+  }, [handleClick, interactive, onClick]);
+
+  // Generate appropriate ARIA label
+  const generatedAriaLabel = useMemo(() => {
+    if (ariaLabel) return ariaLabel;
+    
+    let label = 'Rating: ';
+    switch (format) {
+      case 'percentage':
+        label += `${Math.round((normalizedRating / maxRating) * 100)} percent`;
+        break;
+      case 'stars':
+        label += `${(normalizedRating / 2).toFixed(1)} out of 5 stars`;
+        break;
+      default:
+        label += `${normalizedRating.toFixed(1)} out of ${maxRating}`;
+    }
+    
+    if (isLoading) label = 'Loading rating...';
+    
+    return label;
+  }, [ariaLabel, normalizedRating, format, maxRating, isLoading]);
 
   // Memoize the style calculations with custom color support
   const { badgeStyle, sizeClass, positionClass, tooltipClass } = useMemo(() => {
@@ -115,21 +199,30 @@ const RatingBadge = ({
   return (
     <AnimatePresence>
       <motion.div
-        className={`group absolute ${positionClass} z-30 ${sizeClass} ${className}`}
+        className={`group absolute ${positionClass} z-30 ${sizeClass} ${className} ${
+          (interactive || onClick) ? 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-transparent' : ''
+        }`}
         variants={variants}
         initial="hidden"
         animate={isLoading ? "loading" : "visible"}
-        whileHover="hover"
-        role="status"
-        aria-label={`Rating: ${normalizedRating.toFixed(1)} out of 10`}
+        whileHover={(interactive || onClick) ? "hover" : undefined}
+        role={(interactive || onClick) ? "button" : "status"}
+        aria-label={generatedAriaLabel}
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
+        tabIndex={(interactive || onClick) ? 0 : -1}
       >
         {tooltipText && (
           <motion.div 
             className={`absolute invisible group-hover:visible opacity-0 group-hover:opacity-100 
-              transition-opacity duration-200 ${tooltipClass} bg-black/75 text-white text-xs 
-              rounded px-2 py-1 whitespace-nowrap z-50`}
-            initial={{ opacity: 0, y: tooltipPosition === 'top' ? 10 : -10 }}
-            animate={{ opacity: 1, y: 0 }}
+              ${isFocused ? '!visible !opacity-100' : ''}
+              transition-opacity duration-200 ${tooltipClass} bg-black/90 text-white text-xs 
+              rounded px-2 py-1 whitespace-nowrap z-50 pointer-events-none`}
+            initial={prefersReducedMotion ? {} : { opacity: 0, y: tooltipPosition === 'top' ? 10 : -10 }}
+            animate={prefersReducedMotion ? {} : { opacity: 1, y: 0 }}
+            role="tooltip"
           >
             {tooltipText}
           </motion.div>
@@ -137,7 +230,15 @@ const RatingBadge = ({
 
         <div className={`relative w-auto h-full rounded-md ${badgeStyle} overflow-hidden 
           ${showShadow ? 'shadow-lg' : ''} flex items-center justify-center px-2 sm:px-1 
-          min-w-max transition-all duration-200 ${isLoading ? 'cursor-wait' : ''}`}>
+          min-w-max transition-all duration-200 ${isLoading ? 'cursor-wait' : ''} 
+          ${isFocused ? 'ring-2 ring-white ring-offset-2 ring-offset-transparent' : ''}`}>
+          
+          {showLabel && !isLoading && (
+            <span className="text-white/80 text-xs mr-1 flex-shrink-0">
+              Rating:
+            </span>
+          )}
+          
           {showIcon && !isLoading && (
             <motion.svg
               xmlns="http://www.w3.org/2000/svg"
@@ -145,7 +246,7 @@ const RatingBadge = ({
                 text-white flex-shrink-0`}
               viewBox="0 0 24 24"
               fill="currentColor"
-              variants={{
+              variants={prefersReducedMotion ? {} : {
                 hidden: { opacity: 0, scale: 0.8 },
                 visible: { opacity: 1, scale: 1 }
               }}
@@ -157,9 +258,9 @@ const RatingBadge = ({
           
           <motion.span
             className="font-semibold sm:font-bold text-white leading-none tracking-tight flex-shrink-0 ml-1"
-            layout
+            layout={!prefersReducedMotion}
           >
-            {isLoading ? '...' : normalizedRating.toFixed(1)}
+            {formattedRating}
           </motion.span>
         </div>
       </motion.div>
@@ -171,7 +272,7 @@ RatingBadge.propTypes = {
   rating: PropTypes.oneOfType([
     PropTypes.number,
     PropTypes.string
-  ]).isRequired,
+  ]),
   size: PropTypes.oneOf(['ultra-small', 'extra-small', 'small', 'default', 'large', 'xl']),
   showIcon: PropTypes.bool,
   className: PropTypes.string,
@@ -181,7 +282,13 @@ RatingBadge.propTypes = {
   tooltipText: PropTypes.string,
   customColor: PropTypes.string,
   isLoading: PropTypes.bool,
-  tooltipPosition: PropTypes.oneOf(['top', 'bottom'])
+  tooltipPosition: PropTypes.oneOf(['top', 'bottom']),
+  onClick: PropTypes.func,
+  format: PropTypes.oneOf(['decimal', 'percentage', 'stars']),
+  maxRating: PropTypes.number,
+  interactive: PropTypes.bool,
+  showLabel: PropTypes.bool,
+  ariaLabel: PropTypes.string
 };
 
 export default React.memo(RatingBadge);

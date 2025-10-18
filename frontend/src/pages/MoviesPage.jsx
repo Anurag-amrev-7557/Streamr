@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense, memo } from 'react';
+import PropTypes from 'prop-types';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { 
   getTrendingMovies, 
@@ -996,7 +997,60 @@ const MoviesPage = () => {
       
       // Clear visible movies set to prevent memory leaks
       setVisibleMovies(new Set());
-      
+    };
+  }, []);
+
+  // SEO: Update page title and meta tags dynamically
+  useEffect(() => {
+    const title = searchQuery 
+      ? `Search Results for "${searchQuery}" - Movies | Streamr` 
+      : selectedGenre
+      ? `${selectedGenre.name} Movies | Streamr`
+      : `${activeCategory.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())} Movies | Streamr`;
+    
+    const description = searchQuery
+      ? `Search results for "${searchQuery}". Discover movies, collections, and more on Streamr.`
+      : selectedGenre
+      ? `Browse ${selectedGenre.name} movies. Find the best ${selectedGenre.name.toLowerCase()} films to watch on Streamr.`
+      : `Discover ${activeCategory.replace('_', ' ')} movies. Browse popular, top-rated, upcoming, and now playing films on Streamr.`;
+    
+    document.title = title;
+    
+    // Update meta description
+    let metaDescription = document.querySelector('meta[name="description"]');
+    if (!metaDescription) {
+      metaDescription = document.createElement('meta');
+      metaDescription.name = 'description';
+      document.head.appendChild(metaDescription);
+    }
+    metaDescription.content = description;
+    
+    // Update Open Graph tags
+    let ogTitle = document.querySelector('meta[property="og:title"]');
+    if (!ogTitle) {
+      ogTitle = document.createElement('meta');
+      ogTitle.setAttribute('property', 'og:title');
+      document.head.appendChild(ogTitle);
+    }
+    ogTitle.content = title;
+    
+    let ogDescription = document.querySelector('meta[property="og:description"]');
+    if (!ogDescription) {
+      ogDescription = document.createElement('meta');
+      ogDescription.setAttribute('property', 'og:description');
+      document.head.appendChild(ogDescription);
+    }
+    ogDescription.content = description;
+    
+    // Cleanup function to reset title
+    return () => {
+      document.title = 'Streamr - Watch Movies and TV Shows';
+    };
+  }, [searchQuery, selectedGenre, activeCategory]);
+
+  // FIXED: Cleanup timeouts and intervals
+  useEffect(() => {
+    return () => {
       // FIXED: Clear all timeouts and intervals to prevent memory leaks
       if (searchTimeoutRef.current) {
         clearTimeout(searchTimeoutRef.current);
@@ -3584,7 +3638,7 @@ const MoviesPage = () => {
   return (
     <motion.div 
       ref={(el) => { scrollContainerRef.current = el; setScrollRootEl(el); }}
-              className="min-h-screen bg-[#0F0F0F] text-white overflow-y-auto scrollbar-gutter-stable ultra-smooth-scroll momentum-scroll"
+      className="min-h-screen bg-[#0F0F0F] text-white overflow-y-auto scrollbar-gutter-stable ultra-smooth-scroll momentum-scroll"
       exit={{ opacity: 0 }}
     >
       <div className="w-full px-4 py-8">
@@ -3658,11 +3712,27 @@ const MoviesPage = () => {
 
           {/* Category Selector */}
           {!searchQuery && (
-                            <div ref={categorySelectorRef} className="relative inline-flex rounded-full bg-[#1a1a1a] p-1 overflow-x-auto max-w-full horizontal-scroll-container scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+            <nav 
+              ref={categorySelectorRef} 
+              className="relative inline-flex rounded-full bg-[#1a1a1a] p-1 overflow-x-auto max-w-full horizontal-scroll-container scrollbar-hide" 
+              style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+              role="tablist"
+              aria-label="Movie categories"
+            >
               {categories.map((category) => (
                 <button
                   key={category.id}
                   onClick={() => handleCategoryChange(category.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleCategoryChange(category.id);
+                    }
+                  }}
+                  role="tab"
+                  aria-selected={activeCategory === category.id}
+                  aria-label={`${category.name} movies`}
+                  tabIndex={activeCategory === category.id ? 0 : -1}
                   className={`relative px-4 py-0.5 rounded-full text-sm font-medium transition-colors duration-300 whitespace-nowrap focus:outline-none flex items-center gap-2 ${
                     activeCategory === category.id
                       ? 'text-black'
@@ -3700,7 +3770,7 @@ const MoviesPage = () => {
                   )}
                 </button>
               ))}
-            </div>
+            </nav>
           )}
 
           {/* Enhanced Filters */}
@@ -3765,6 +3835,8 @@ const MoviesPage = () => {
             duration: 0.3,
             ease: [0.25, 0.46, 0.45, 0.94]
           }}
+          role="main"
+          aria-label={`${activeCategory.replace('_', ' ')} movies grid`}
         >
                     {error ? (
             <EnhancedLoadingIndicator
@@ -3798,6 +3870,8 @@ const MoviesPage = () => {
                 delayChildren: 0.05
               }}
               className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 3xl:grid-cols-10 gap-4"
+              role="list"
+              aria-label={`List of ${activeCategory.replace('_', ' ')} movies`}
             >
               {activeCategory === 'collections' ? (
                 displayMovies.map((item, index) => {
@@ -3981,6 +4055,11 @@ const MoviesPage = () => {
       <NetworkStatusBadge />
     </motion.div>
   );
+};
+
+// PropTypes for validation
+MoviesPage.propTypes = {
+  // No props - this is a route component
 };
 
 export default MoviesPage;

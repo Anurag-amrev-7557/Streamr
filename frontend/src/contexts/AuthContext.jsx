@@ -1,260 +1,27 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { getApiUrl, switchBackendMode, getCurrentBackendMode } from '../config/api';
-import { detectUserLocation, getFormattedLocation } from '../utils/locationDetection';
+import { switchBackendMode, getCurrentBackendMode } from '../config/api';
+import { detectAndUpdateUserLocation } from '../services/locationService';
+import { authAPI } from '../services/authService';
+import { userAPI } from '../services/userService';
 import { toast } from 'react-hot-toast';
-
-// Authentication API functions
-const authAPI = {
-  refreshToken: async () => {
-    try {
-      
-      // Check if we have a refresh token in localStorage as fallback
-      const storedRefreshToken = localStorage.getItem('refreshToken');
-      
-      const headers = {
-        'Content-Type': 'application/json',
-      };
-      
-      // Add Authorization header if we have a stored refresh token
-      if (storedRefreshToken) {
-        headers['Authorization'] = `Bearer ${storedRefreshToken}`;
-      }
-      
-      const response = await fetch(`${getApiUrl()}/auth/refresh-token`, {
-        method: 'POST',
-        headers,
-        credentials: 'include', // This is crucial for sending cookies
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ Frontend: Response error:', errorText);
-        throw new Error('Token refresh failed');
-      }
-      
-      const data = await response.json();
-      
-      // Store new refresh token in localStorage if provided
-      if (data.data && data.data.refreshToken) {
-        localStorage.setItem('refreshToken', data.data.refreshToken);
-      }
-      
-      return data;
-    } catch (error) {
-      console.error('❌ Frontend: Token refresh error:', error);
-      throw error;
-    }
-  },
-  
-  login: async (credentials) => {
-    try {
-      const response = await fetch(`${getApiUrl()}/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(credentials),
-        credentials: 'include', // This is crucial for receiving cookies
-      });
-
-      // Try to parse response body regardless of status to extract error messages
-      let data = null;
-      try {
-        data = await response.json();
-      } catch (e) {
-        // Ignore JSON parse errors; we'll fall back to generic messages
-      }
-
-      if (!response.ok) {
-        const errorMessage =
-          data?.message ||
-          (Array.isArray(data?.errors) && data.errors[0]?.msg) ||
-          'Login failed';
-        throw new Error(errorMessage);
-      }
-
-      // Store refresh token in localStorage for fallback
-      if (data && data.data && data.data.refreshToken) {
-        localStorage.setItem('refreshToken', data.data.refreshToken);
-      }
-
-      return data;
-    } catch (error) {
-      console.error('Login error:', error);
-      throw error;
-    }
-  },
-  
-  logout: async () => {
-    try {
-      const response = await fetch(`${getApiUrl()}/auth/logout`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include', // This is crucial for clearing cookies
-      });
-      
-      // Clear refresh token from localStorage
-      localStorage.removeItem('refreshToken');
-      
-      return await response.json();
-    } catch (error) {
-      console.error('Logout error:', error);
-      throw error;
-    }
-  },
-  
-  forgotPassword: async (email) => {
-    try {
-      const response = await fetch(`${getApiUrl()}/auth/forgot-password`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email }),
-      });
-      
-      if (!response.ok) {
-        throw new Error('Forgot password request failed');
-      }
-      
-      return await response.json();
-    } catch (error) {
-      console.error('Forgot password error:', error);
-      throw error;
-    }
-  },
-  
-  resetPassword: async (token, newPassword) => {
-    try {
-      const response = await fetch(`${getApiUrl()}/auth/reset-password`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ token, newPassword }),
-      });
-      
-      if (!response.ok) {
-        throw new Error('Password reset failed');
-      }
-      
-      return await response.json();
-    } catch (error) {
-      console.error('Password reset error:', error);
-      throw error;
-    }
-  },
-  
-  verifyEmail: async (token) => {
-    try {
-      const response = await fetch(`${getApiUrl()}/auth/verify-email`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ token }),
-      });
-      
-      if (!response.ok) {
-        throw new Error('Email verification failed');
-      }
-      
-      return await response.json();
-    } catch (error) {
-      console.error('Email verification error:', error);
-      throw error;
-    }
-  }
-};
-
-const userAPI = {
-  getProfile: async () => {
-    try {
-      const token = localStorage.getItem('accessToken');
-      if (!token) {
-        throw new Error('No access token');
-      }
-      
-      const response = await fetch(`${getApiUrl()}/user/profile`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to get user profile');
-      }
-      
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      console.error('Get profile error:', error);
-      throw error;
-    }
-  },
-  
-  updateProfile: async (userData) => {
-    try {
-      const token = localStorage.getItem('accessToken');
-      if (!token) {
-        throw new Error('No access token');
-      }
-      
-      const response = await fetch(`${getApiUrl()}/user/profile`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(userData),
-        credentials: 'include',
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to update profile');
-      }
-      
-      return await response.json();
-    } catch (error) {
-      console.error('Update profile error:', error);
-      throw error;
-    }
-  },
-  
-  signup: async (userData) => {
-    try {
-      const response = await fetch(`${getApiUrl()}/auth/register`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(userData),
-        credentials: 'include',
-      });
-      
-      if (!response.ok) {
-        throw new Error('Signup failed');
-      }
-      
-      return await response.json();
-    } catch (error) {
-      console.error('Signup error:', error);
-      throw error;
-    }
-  }
-};
 
 const AuthContext = createContext(null);
 
-// Token refresh interval (14 minutes - refresh before 15-minute expiration)
-const TOKEN_REFRESH_INTERVAL = 14 * 60 * 1000;
-// Session timeout (2 days)
-const SESSION_TIMEOUT = 2 * 24 * 60 * 60 * 1000;
+// Constants
+const TOKEN_REFRESH_INTERVAL = 14 * 60 * 1000; // 14 minutes
+const SESSION_TIMEOUT = 2 * 24 * 60 * 60 * 1000; // 2 days
+const SESSION_WARNING_TIME = 60 * 60 * 1000; // 1 hour before timeout
+const SESSION_CHECK_INTERVAL = 60000; // Check every minute
+const REFRESH_RETRY_DELAY = 30000; // 30 seconds
+
+/**
+ * Dispatch authentication change events
+ * @param {string} action - The action that triggered the event ('login' or 'logout')
+ */
+const dispatchAuthEvents = (action) => {
+  window.dispatchEvent(new CustomEvent('auth-changed', { detail: { action } }));
+  window.dispatchEvent(new Event('account-reload'));
+};
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -270,6 +37,7 @@ export const AuthProvider = ({ children }) => {
   const sessionCheckIntervalRef = useRef(null);
   const activityListenersRef = useRef([]);
   const isMountedRef = useRef(true);
+  const logoutRef = useRef(null);
 
   // Update last activity time
   const updateActivity = useCallback(() => {
@@ -281,23 +49,25 @@ export const AuthProvider = ({ children }) => {
 
   // Check session timeout
   useEffect(() => {
+    if (!user) return;
+
     const checkSessionTimeout = () => {
       if (!isMountedRef.current) return;
       
       const timeLeft = SESSION_TIMEOUT - (Date.now() - lastActivity);
       
       // Show warning 1 hour before timeout
-      if (timeLeft <= 60 * 60 * 1000 && !sessionWarning) {
+      if (timeLeft <= SESSION_WARNING_TIME && !sessionWarning) {
         setSessionWarning(true);
       }
       
-      // Logout if session expired
-      if (!rememberMe && timeLeft <= 0) {
-        logout();
+      // Logout if session expired and remember me is false
+      if (!rememberMe && timeLeft <= 0 && logoutRef.current) {
+        logoutRef.current();
       }
     };
 
-    sessionCheckIntervalRef.current = setInterval(checkSessionTimeout, 60000); // Check every minute
+    sessionCheckIntervalRef.current = setInterval(checkSessionTimeout, SESSION_CHECK_INTERVAL);
     
     return () => {
       if (sessionCheckIntervalRef.current) {
@@ -305,7 +75,7 @@ export const AuthProvider = ({ children }) => {
         sessionCheckIntervalRef.current = null;
       }
     };
-  }, [lastActivity, rememberMe, sessionWarning]);
+  }, [user, lastActivity, rememberMe, sessionWarning]);
 
   // Add activity listeners
   useEffect(() => {
@@ -362,9 +132,13 @@ export const AuthProvider = ({ children }) => {
       console.error('❌ Token refresh failed:', err);
       
       // If refresh token is expired or invalid, clear everything
-      if (err.message.includes('401') || err.message.includes('Unauthorized') || err.message.includes('No refresh token provided')) {
+      const isAuthError = err.message.includes('401') || 
+                         err.message.includes('Unauthorized') || 
+                         err.message.includes('No refresh token provided');
+      
+      if (isAuthError) {
         localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken'); // Also clear refresh token
+        localStorage.removeItem('refreshToken');
         if (isMountedRef.current) {
           setUser(null);
           setSessionWarning(false);
@@ -377,6 +151,8 @@ export const AuthProvider = ({ children }) => {
 
   // Automatic token refresh
   useEffect(() => {
+    if (!user) return;
+
     let refreshTimeout = null;
 
     const scheduleRefresh = async () => {
@@ -388,25 +164,23 @@ export const AuthProvider = ({ children }) => {
         refreshTimeout = null;
       }
 
-      // Set new timeout - refresh 1 minute before token expires
+      // Refresh 1 minute before token expires
       refreshTimeout = setTimeout(async () => {
         if (!isMountedRef.current) return;
         
         const success = await refreshTokenAndUserData();
         if (success && isMountedRef.current) {
-          scheduleRefresh(); // Schedule next refresh only if successful
+          scheduleRefresh(); // Schedule next refresh
         } else if (isMountedRef.current) {
-          // If refresh failed, try again in 30 seconds
-          refreshTimeout = setTimeout(scheduleRefresh, 30000);
+          // If refresh failed, retry in 30 seconds
+          refreshTimeout = setTimeout(scheduleRefresh, REFRESH_RETRY_DELAY);
         }
-      }, TOKEN_REFRESH_INTERVAL - 60000); // Refresh 1 minute before expiration
+      }, TOKEN_REFRESH_INTERVAL - 60000);
 
       refreshTokenTimeoutRef.current = refreshTimeout;
     };
 
-    if (user) {
-      scheduleRefresh();
-    }
+    scheduleRefresh();
 
     return () => {
       if (refreshTokenTimeoutRef.current) {
@@ -487,6 +261,9 @@ export const AuthProvider = ({ children }) => {
     };
   }, [refreshTokenAndUserData]);
 
+  /**
+   * Reload user profile data
+   */
   const reloadUser = async () => {
     try {
       const profileResponse = await userAPI.getProfile();
@@ -500,104 +277,48 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  /**
+   * Login user with email/password or OAuth data
+   * @param {string|Object} emailOrUser - Email string or OAuth user object
+   * @param {string} [password] - Password (not required for OAuth)
+   * @param {boolean} [remember=false] - Remember user session
+   * @returns {Promise<Object>} Result with success status
+   */
   const login = useCallback(async (emailOrUser, password, remember = false) => {
     try {
       setLoading(true);
       setError(null);
       setRememberMe(remember);
       
-      // If only one argument is provided and it's an object, it's an OAuth login
+      // Handle OAuth login
       if (!password && typeof emailOrUser === 'object') {
         const { user, accessToken } = emailOrUser;
         if (accessToken) {
           localStorage.setItem('accessToken', accessToken);
         }
         
-        // Dispatch auth change event for watchlist sync
-        window.dispatchEvent(new CustomEvent('auth-changed', { detail: { action: 'login' } }));
-        window.dispatchEvent(new Event('account-reload'));
+        dispatchAuthEvents('login');
         
         setUser(user);
         setLastActivity(Date.now());
         setSessionWarning(false);
         
-        // Automatically detect and update user location for OAuth login if not already set
+        // Auto-detect location for OAuth users without location
         if (user && !user.location) {
-          try {
-            const detectedLocation = await detectUserLocation();
-            
-            if (detectedLocation) {
-              
-              // Get formatted location string for display and storage
-              const formattedLocation = getFormattedLocation(detectedLocation, 'full');
-              
-              // Update the user's location in the database using inline function
-              const token = localStorage.getItem('accessToken');
-              if (token) {
-                try {
-                  const response = await fetch(`${getApiUrl()}/user/profile`, {
-                    method: 'PUT',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({ location: formattedLocation })
-                  });
-                  
-                  if (response.ok) {
-                    const locationUpdateResponse = await response.json();
-                    if (locationUpdateResponse.success) {
-                      
-                      // Update the local user state with the new location
-                      setUser(prevUser => ({
-                        ...prevUser,
-                        location: formattedLocation
-                      }));
-                      
-                      // Show detailed location information in toast
-                      let toastMessage = `Location detected: ${formattedLocation}`;
-                      if (detectedLocation.city && detectedLocation.state) {
-                        toastMessage += `\n📍 ${detectedLocation.city}, ${detectedLocation.state}`;
-                        if (detectedLocation.country && detectedLocation.country !== detectedLocation.state) {
-                          toastMessage += `, ${detectedLocation.country}`;
-                        }
-                      }
-                      
-                      toast.success(toastMessage, {
-                        duration: 4000,
-                        icon: '📍'
-                      });
-                    } else {
-                      console.warn('⚠️ Failed to update location for OAuth user:', locationUpdateResponse);
-                    }
-                  } else {
-                    console.warn('⚠️ Failed to update location for OAuth user - HTTP error:', response.status);
-                  }
-                } catch (updateError) {
-                }
-              } else {
-              }
-            } else {
-            }
-          } catch (locationError) {
-            console.warn('⚠️ Location detection/update failed for OAuth user:', locationError);
-            // Don't fail the OAuth login if location detection fails
-          }
-        } else if (user?.location) {
+          await detectAndUpdateUserLocation(setUser, true);
         }
         
         setLoading(false);
         return { success: true };
       }
       
-      // Regular email/password login
+      // Handle regular email/password login
       const response = await authAPI.login({ email: emailOrUser, password: password });
       
       if (!response.success) {
         throw new Error(response.message || 'Login failed');
       }
       
-      // Set user data and token
       const { user, accessToken } = response.data;
       if (!accessToken) {
         throw new Error('No access token received from login');
@@ -605,9 +326,7 @@ export const AuthProvider = ({ children }) => {
       
       localStorage.setItem('accessToken', accessToken);
       
-      // Dispatch auth change event for watchlist sync
-      window.dispatchEvent(new CustomEvent('auth-changed', { detail: { action: 'login' } }));
-      window.dispatchEvent(new Event('account-reload'));
+      dispatchAuthEvents('login');
       
       // Fetch fresh user profile to ensure latest changes are reflected
       let currentUser = null;
@@ -626,73 +345,10 @@ export const AuthProvider = ({ children }) => {
         setUser(user);
       }
 
-              // Automatically detect and update user location if not already set
-        if (currentUser && !currentUser.location) {
-          try {
-            
-            const detectedLocation = await detectUserLocation();
-            
-            if (detectedLocation) {
-              
-              // Get formatted location string for display and storage
-              const formattedLocation = getFormattedLocation(detectedLocation, 'full');
-              
-              // Update the user's location in the database using inline function
-              const token = localStorage.getItem('accessToken');
-              if (token) {
-                try {
-                  const response = await fetch(`${getApiUrl()}/user/profile`, {
-                    method: 'PUT',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({ location: formattedLocation })
-                  });
-                  
-                  if (response.ok) {
-                    const locationUpdateResponse = await response.json();
-                    if (locationUpdateResponse.success) {
-                      
-                      // Update the local user state with the new location
-                      setUser(prevUser => ({
-                        ...prevUser,
-                        location: formattedLocation
-                      }));
-                      
-                      // Show detailed location information in toast
-                      let toastMessage = `Location detected: ${formattedLocation}`;
-                      if (detectedLocation.city && detectedLocation.state) {
-                        toastMessage += `\n📍 ${detectedLocation.city}, ${detectedLocation.state}`;
-                        if (detectedLocation.country && detectedLocation.country !== detectedLocation.state) {
-                          toastMessage += `, ${detectedLocation.country}`;
-                        }
-                      }
-                      
-                      toast.success(toastMessage, {
-                        duration: 4000,
-                        icon: '📍'
-                      });
-                    } else {
-                      console.warn('⚠️ Failed to update location in database:', locationUpdateResponse);
-                    }
-                  } else {
-                    console.warn('⚠️ Failed to update location in database - HTTP error:', response.status);
-                  }
-                } catch (updateError) {
-                  console.warn('⚠️ Failed to update location in database:', updateError);
-                }
-              } else {
-                console.warn('⚠️ No access token available for location update');
-              }
-            } else {
-            }
-          } catch (locationError) {
-            console.warn('⚠️ Location detection/update failed:', locationError);
-            // Don't fail the login if location detection fails
-          }
-        } else if (currentUser?.location) {
-        }
+      // Auto-detect location for users without location
+      if (currentUser && !currentUser.location) {
+        await detectAndUpdateUserLocation(setUser, true);
+      }
 
       setLastActivity(Date.now());
       setSessionWarning(false);
@@ -707,12 +363,16 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
+  /**
+   * Sign up a new user
+   * @param {Object} userData - User registration data
+   * @returns {Promise<Object>} Result with success status
+   */
   const signup = async (userData) => {
     try {
       setError(null);
       const response = await authAPI.signup(userData);
       
-      // Set user data and token
       const { accessToken, user } = response.data;
       if (!accessToken) {
         throw new Error('No access token received from signup');
@@ -720,75 +380,13 @@ export const AuthProvider = ({ children }) => {
       
       localStorage.setItem('accessToken', accessToken);
       
-      // Dispatch auth change event for watchlist sync
-      window.dispatchEvent(new CustomEvent('auth-changed', { detail: { action: 'login' } }));
-      window.dispatchEvent(new Event('account-reload'));
+      dispatchAuthEvents('login');
       
       setUser(user);
       setLastActivity(Date.now());
       
-      // Automatically detect and update user location for new accounts
-      try {
-        const detectedLocation = await detectUserLocation();
-        
-                    if (detectedLocation) {
-              
-              // Get formatted location string for display and storage
-              const formattedLocation = getFormattedLocation(detectedLocation, 'full');
-              
-              // Update the user's location in the database using inline function
-              const token = localStorage.getItem('accessToken');
-              if (token) {
-                try {
-                  const response = await fetch(`${getApiUrl()}/user/profile`, {
-                    method: 'PUT',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({ location: formattedLocation })
-                  });
-                  
-                  if (response.ok) {
-                    const locationUpdateResponse = await response.json();
-                    if (locationUpdateResponse.success) {
-                      
-                      // Update the local user state with the new location
-                      setUser(prevUser => ({
-                        ...prevUser,
-                        location: formattedLocation
-                      }));
-                      
-                      // Show detailed location information in toast
-                      let toastMessage = `Location detected: ${formattedLocation}`;
-                      if (detectedLocation.city && detectedLocation.state) {
-                        toastMessage += `\n📍 ${detectedLocation.city}, ${detectedLocation.state}`;
-                        if (detectedLocation.country && detectedLocation.country !== detectedLocation.state) {
-                          toastMessage += `, ${detectedLocation.country}`;
-                        }
-                      }
-                      
-                      toast.success(toastMessage, {
-                        duration: 4000,
-                        icon: '📍'
-                      });
-                    } else {
-                      console.warn('⚠️ Failed to update location for new user:', locationUpdateResponse);
-                    }
-                  } else {
-                    console.warn('⚠️ Failed to update location for new user - HTTP error:', response.status);
-                  }
-                } catch (updateError) {
-                  console.warn('⚠️ Failed to update location for new user:', updateError);
-                }
-              } else {
-                console.warn('⚠️ No access token available for location update');
-              }
-        } else {
-        }
-      } catch (locationError) {
-        // Don't fail the signup if location detection fails
-      }
+      // Auto-detect location for new accounts
+      await detectAndUpdateUserLocation(setUser, true);
       
       return { success: true };
     } catch (err) {
@@ -798,6 +396,9 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  /**
+   * Logout the current user
+   */
   const logout = useCallback(async () => {
     try {
       await authAPI.logout();
@@ -819,12 +420,20 @@ export const AuthProvider = ({ children }) => {
       setRememberMe(false);
       localStorage.removeItem('accessToken');
       
-      // Dispatch auth change event for watchlist sync
-      window.dispatchEvent(new CustomEvent('auth-changed', { detail: { action: 'logout' } }));
-      window.dispatchEvent(new Event('account-reload'));
+      dispatchAuthEvents('logout');
     }
   }, []);
 
+  // Keep logoutRef in sync with logout function
+  useEffect(() => {
+    logoutRef.current = logout;
+  }, [logout]);
+
+  /**
+   * Request password reset email
+   * @param {string} email - User email
+   * @returns {Promise<Object>} Result with success status
+   */
   const forgotPassword = async (email) => {
     try {
       setError(null);
@@ -837,6 +446,12 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  /**
+   * Reset password with token
+   * @param {string} token - Reset token
+   * @param {string} newPassword - New password
+   * @returns {Promise<Object>} Result with success status
+   */
   const resetPassword = async (token, newPassword) => {
     try {
       setError(null);
@@ -849,6 +464,11 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  /**
+   * Verify email with token
+   * @param {string} token - Verification token
+   * @returns {Promise<Object>} Result with user data
+   */
   const verifyEmail = async (token) => {
     try {
       const response = await authAPI.verifyEmail(token);
@@ -883,93 +503,31 @@ export const AuthProvider = ({ children }) => {
     };
   }, []);
 
-  // Manual location detection function for existing users
-  const detectAndUpdateLocation = async () => {
+  /**
+   * Manual location detection for existing users
+   * @returns {Promise<Object>} Result with location data
+   */
+  const manualDetectAndUpdateLocation = async () => {
     if (!user) {
       toast.error('Please log in to update your location');
       return { success: false, error: 'User not logged in' };
     }
 
-    try {
+    const result = await detectAndUpdateUserLocation(setUser, true);
+    
+    if (result.success) {
+      // Show extended toast with additional details
+      const toastMessage = result.details
+        ? `Location updated: ${result.location}\n📍 ${result.details.city || ''}, ${result.details.state || ''}${result.details.country && result.details.country !== result.details.state ? `, ${result.details.country}` : ''}`
+        : `Location updated: ${result.location}`;
       
-      const detectedLocation = await detectUserLocation();
-      
-      if (detectedLocation) {
-        
-        // Get formatted location string for display and storage
-        const formattedLocation = getFormattedLocation(detectedLocation, 'full');
-        
-        // Update the user's location in the database using inline function
-        const token = localStorage.getItem('accessToken');
-        if (!token) {
-          throw new Error('No authentication token found');
-        }
-        
-        const response = await fetch(`${getApiUrl()}/user/profile`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({ location: formattedLocation })
-        });
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          let errorMessage = `HTTP error! status: ${response.status}`;
-          try {
-            const errorData = JSON.parse(errorText);
-            errorMessage = errorData.message || errorMessage;
-          } catch (e) {
-            console.warn('Could not parse error response as JSON');
-          }
-          throw new Error(errorMessage);
-        }
-        
-        const locationUpdateResponse = await response.json();
-        
-        if (locationUpdateResponse.success) {
-          
-          // Update the local user state with the new location
-          setUser(prevUser => ({
-            ...prevUser,
-            location: formattedLocation
-          }));
-          
-          // Show detailed location information in toast
-          let toastMessage = `Location updated: ${formattedLocation}`;
-          if (detectedLocation.city && detectedLocation.state) {
-            toastMessage += `\n📍 ${detectedLocation.city}, ${detectedLocation.state}`;
-            if (detectedLocation.country && detectedLocation.country !== detectedLocation.state) {
-              toastMessage += `, ${detectedLocation.country}`;
-            }
-          }
-          
-          // Add note about postal code if not available
-          if (!detectedLocation.postalCode) {
-            toastMessage += `\n💡 Postal code not available for this area`;
-          }
-          
-          toast.success(toastMessage, {
-            duration: 5000,
-            icon: '📍'
-          });
-          
-          return { success: true, location: formattedLocation, details: detectedLocation };
-        } else {
-          console.warn('⚠️ Failed to update location in database:', locationUpdateResponse);
-          toast.error('Failed to update location in database');
-          return { success: false, error: 'Database update failed' };
-        }
-      } else {
-        toast.error('Location detection failed. Please check your browser permissions.');
-        return { success: false, error: 'Location detection failed' };
-      }
-    } catch (error) {
-      console.error('❌ Location detection/update failed:', error);
-      toast.error('Location detection failed. Please try again.');
-      return { success: false, error: error.message };
+      toast.success(toastMessage, {
+        duration: 5000,
+        icon: '📍'
+      });
     }
+    
+    return result;
   };
 
   const value = {
@@ -988,7 +546,7 @@ export const AuthProvider = ({ children }) => {
     reloadUser,
     switchBackendMode,
     getCurrentBackendMode,
-    detectAndUpdateLocation
+    detectAndUpdateLocation: manualDetectAndUpdateLocation
   };
 
   return (

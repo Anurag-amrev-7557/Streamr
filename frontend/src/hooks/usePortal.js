@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import portalManagerService from '../services/portalManagerService';
 
@@ -15,11 +15,12 @@ import portalManagerService from '../services/portalManagerService';
  * - Performance optimizations
  */
 
-const PORTAL_REGISTRY = new Map();
-const PORTAL_STACK = [];
-let NEXT_Z_INDEX = 2147483647; // Start with max z-index
+// Removed unused global variables - they're duplicates of instance variables
+const BASE_Z_INDEX = 2147483647; // Maximum safe z-index value
 
 class PortalManager {
+  static instance = null;
+
   static getInstance() {
     if (!PortalManager.instance) {
       PortalManager.instance = new PortalManager();
@@ -28,10 +29,18 @@ class PortalManager {
   }
 
   constructor() {
+    if (PortalManager.instance) {
+      return PortalManager.instance;
+    }
+
     this.portals = new Map();
     this.stack = [];
-    this.baseZIndex = 2147483647;
+    this.baseZIndex = BASE_Z_INDEX;
+    this.nextZIndex = BASE_Z_INDEX;
     this.debugMode = process.env.NODE_ENV === 'development';
+    this.mutationObservers = new Map(); // Track observers for cleanup
+    
+    PortalManager.instance = this;
   }
 
   createPortal(id, options = {}) {
@@ -124,11 +133,18 @@ class PortalManager {
 
     const { container } = portalInfo;
     
-    if (shouldCleanup && container && container.parentNode) {
+    // Clean up any existing mutation observer
+    const existingObserver = this.mutationObservers.get(id);
+    if (existingObserver) {
+      existingObserver.disconnect();
+      this.mutationObservers.delete(id);
+    }
+    
+    if (shouldCleanup && container?.parentNode) {
       try {
         // Only remove if container is empty
         if (container.childElementCount === 0) {
-          container.parentNode.removeChild(container);
+          container.remove(); // Use remove() instead of parentNode.removeChild()
           
           if (this.debugMode) {
             console.debug(`[PortalManager] Removed portal container: ${id}`);
@@ -138,8 +154,9 @@ class PortalManager {
           const observer = new MutationObserver(() => {
             if (container.childElementCount === 0) {
               observer.disconnect();
+              this.mutationObservers.delete(id);
               try {
-                container.parentNode.removeChild(container);
+                container.remove();
                 if (this.debugMode) {
                   console.debug(`[PortalManager] Delayed removal of portal: ${id}`);
                 }
@@ -150,15 +167,19 @@ class PortalManager {
           });
           
           observer.observe(container, { childList: true });
+          this.mutationObservers.set(id, observer);
           
           // Force cleanup after timeout
           setTimeout(() => {
-            observer.disconnect();
-            if (container.parentNode && container.childElementCount === 0) {
-              try {
-                container.parentNode.removeChild(container);
-              } catch (error) {
-                console.warn(`[PortalManager] Timeout cleanup failed for ${id}:`, error);
+            if (this.mutationObservers.has(id)) {
+              observer.disconnect();
+              this.mutationObservers.delete(id);
+              if (container.parentNode && container.childElementCount === 0) {
+                try {
+                  container.remove();
+                } catch (error) {
+                  console.warn(`[PortalManager] Timeout cleanup failed for ${id}:`, error);
+                }
               }
             }
           }, 1000);
@@ -185,7 +206,7 @@ class PortalManager {
   }
 
   getNextZIndex() {
-    return ++NEXT_Z_INDEX;
+    return ++this.nextZIndex;
   }
 
   getStackInfo() {
@@ -210,8 +231,16 @@ class PortalManager {
 
   // Cleanup all portals (useful for testing or app shutdown)
   cleanupAll() {
+    // Clean up all mutation observers first
+    this.mutationObservers.forEach(observer => observer.disconnect());
+    this.mutationObservers.clear();
+    
     const portalIds = Array.from(this.portals.keys());
     portalIds.forEach(id => this.removePortal(id, true));
+    
+    // Reset state
+    this.portals.clear();
+    this.stack = [];
   }
 }
 
@@ -226,13 +255,12 @@ export const portalManager = PortalManager.getInstance();
  * @returns {object} Portal utilities with enhanced features
  */
 export const usePortal = (id, options = {}) => {
-  const [portalContainer, setPortalContainer] = useState(null);
-  const [portalUtils, setPortalUtils] = useState(null);
-  const [portalReady, setPortalReady] = useState(false);
   const cleanupRef = useRef(null);
   const isMountedRef = useRef(true);
   const analyticsRef = useRef(null);
   const stateRef = useRef(null);
+  const containerRef = useRef(null);
+  const initializedRef = useRef(false);
 
   const {
     zIndex,
@@ -251,14 +279,10 @@ export const usePortal = (id, options = {}) => {
     onEscape = null
   } = options;
 
-  // Create portal on mount with enhanced services
-  useEffect(() => {
-    isMountedRef.current = true;
-
-    if (typeof window === 'undefined') {
-      setPortalContainer(null);
-      setPortalUtils(null);
-      setPortalReady(false);
+  // Initialize portal synchronously on first render
+  // useMemo ensures this runs during render phase (not after like useEffect)
+  useMemo(() => {
+    if (typeof window === 'undefined' || initializedRef.current) {
       return;
     }
 
@@ -276,10 +300,40 @@ export const usePortal = (id, options = {}) => {
       onEscape
     });
 
-    setPortalContainer(utils.container);
-    setPortalUtils(utils);
-    setPortalReady(true);
+    containerRef.current = utils.container;
     cleanupRef.current = utils.cleanup;
+    initializedRef.current = true;
+  }, []); // Empty deps - only runs on initial mount
+
+  // Re-create portal if it was cleaned up (Strict Mode scenario)
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    // Check if portal was cleaned up but component remounted
+    if (!containerRef.current && !initializedRef.current) {
+      const utils = portalManagerService.createPortal(id, {
+        zIndex,
+        accessibility,
+        stacking,
+        cleanup,
+        debug,
+        priority,
+        group,
+        onFocus,
+        onBlur,
+        onEscape
+      });
+
+      if (!isMountedRef.current) return;
+
+      containerRef.current = utils.container;
+      cleanupRef.current = utils.cleanup;
+      initializedRef.current = true;
+    }
 
     // Initialize analytics tracking
     if (analytics && portalManagerService.analyticsService) {
@@ -310,7 +364,7 @@ export const usePortal = (id, options = {}) => {
       });
       
       // Store accessibility cleanup - ensure it's a function
-      if (cleanupRef.current && typeof accessibilityCleanup === 'function') {
+      if (typeof accessibilityCleanup === 'function') {
         const originalCleanup = cleanupRef.current;
         cleanupRef.current = () => {
           try {
@@ -318,7 +372,9 @@ export const usePortal = (id, options = {}) => {
           } catch (error) {
             console.warn(`[usePortal] Accessibility cleanup failed for ${id}:`, error);
           }
-          originalCleanup();
+          if (typeof originalCleanup === 'function') {
+            originalCleanup();
+          }
         };
       }
     }
@@ -328,57 +384,86 @@ export const usePortal = (id, options = {}) => {
       
       // Track portal destruction
       if (analyticsRef.current) {
-        analyticsRef.current.trackPortalDestroyed(id, 'component_unmount');
+        try {
+          analyticsRef.current.trackPortalDestroyed(id, 'component_unmount');
+        } catch (error) {
+          if (debug) {
+            console.warn(`[usePortal] Analytics tracking failed for ${id}:`, error);
+          }
+        }
       }
 
       // Save state before cleanup
       if (statePersistence && stateRef.current) {
-        stateRef.current.savePortalState(id, {
-          isOpen: false,
-          destroyedAt: Date.now()
-        });
+        try {
+          stateRef.current.savePortalState(id, {
+            isOpen: false,
+            destroyedAt: Date.now()
+          });
+        } catch (error) {
+          if (debug) {
+            console.warn(`[usePortal] State persistence failed for ${id}:`, error);
+          }
+        }
       }
 
       if (cleanupRef.current) {
-        cleanupRef.current();
-        cleanupRef.current = null;
+        try {
+          cleanupRef.current();
+        } catch (error) {
+          console.warn(`[usePortal] Cleanup failed for ${id}:`, error);
+        } finally {
+          cleanupRef.current = null;
+        }
       }
       
-      // Clear refs to prevent memory leaks
+      // Clear refs to allow re-initialization on remount (Strict Mode)
       analyticsRef.current = null;
       stateRef.current = null;
+      containerRef.current = null;
+      initializedRef.current = false; // Reset so portal can be recreated on remount
     };
   }, [id]); // Simplified dependencies to prevent unnecessary re-renders
 
   // Enhanced portal creation function with analytics
   const createPortalContent = useCallback((content) => {
-    if (!portalContainer || !isMountedRef.current) {
+    const container = containerRef.current;
+    if (!container || !isMountedRef.current) {
       return null;
     }
 
     // Track portal content creation
     if (analyticsRef.current) {
-      analyticsRef.current.trackPortalEvent(id, 'content_created', {
-        hasContent: !!content,
-        contentType: typeof content
-      });
+      try {
+        analyticsRef.current.trackPortalEvent(id, 'content_created', {
+          hasContent: !!content,
+          contentType: typeof content
+        });
+      } catch (error) {
+        // Silently fail analytics to not break portal functionality
+      }
     }
 
-    return createPortal(content, portalContainer);
-  }, [portalContainer, id]);
+    return createPortal(content, container);
+  }, [id]);
 
   // Enhanced focus management with analytics
   const focusPortal = useCallback(() => {
-    if (portalContainer) {
-      portalContainer.focus();
+    const container = containerRef.current;
+    if (container) {
+      container.focus();
       
       if (analyticsRef.current) {
-        analyticsRef.current.trackUserInteraction('focusEvents', id, {
-          element: 'portal-container'
-        });
+        try {
+          analyticsRef.current.trackUserInteraction('focusEvents', id, {
+            element: 'portal-container'
+          });
+        } catch (error) {
+          // Silently fail analytics
+        }
       }
     }
-  }, [portalContainer, id]);
+  }, [id]);
 
   // Save portal state
   const savePortalState = useCallback((state) => {
@@ -398,14 +483,22 @@ export const usePortal = (id, options = {}) => {
   // Track user interactions
   const trackInteraction = useCallback((type, data = {}) => {
     if (analyticsRef.current) {
-      analyticsRef.current.trackUserInteraction(type, id, data);
+      try {
+        analyticsRef.current.trackUserInteraction(type, id, data);
+      } catch (error) {
+        // Silently fail analytics
+      }
     }
   }, [id]);
 
   // Coordinate animations
   const coordinateAnimation = useCallback((animationType) => {
     if (portalManagerService.animationService) {
-      portalManagerService.coordinateAnimations([id], animationType);
+      try {
+        portalManagerService.coordinateAnimations([id], animationType);
+      } catch (error) {
+        console.warn(`[usePortal] Animation coordination failed for ${id}:`, error);
+      }
     }
   }, [id]);
 
@@ -420,7 +513,7 @@ export const usePortal = (id, options = {}) => {
   }, []);
 
   return {
-    container: portalContainer,
+    container: containerRef.current,
     createPortal: createPortalContent,
     focusPortal,
     savePortalState,
@@ -429,9 +522,9 @@ export const usePortal = (id, options = {}) => {
     coordinateAnimation,
     getPortalInfo,
     getPerformanceMetrics,
-    isReady: portalReady,
-    zIndex: portalUtils?.zIndex,
-    id: portalUtils?.id,
+    isReady: typeof window !== 'undefined' && !!containerRef.current,
+    zIndex: containerRef.current?.style?.zIndex,
+    id: id,
     // Enhanced service access
     analytics: analyticsRef.current,
     state: stateRef.current
@@ -467,14 +560,19 @@ export const usePortalStack = (options = {}) => {
       analytics: enableAnalytics
     });
     
-    setStack(prev => [...prev, { id, utils, addedAt: Date.now() }]);
+    const newItem = { id, utils, addedAt: Date.now() };
+    setStack(prev => [...prev, newItem]);
     
     // Track stack addition
     if (analytics) {
-      analytics.trackPortalEvent(id, 'added_to_stack', {
-        stackSize: stack.length + 1,
-        group
-      });
+      try {
+        analytics.trackPortalEvent(id, 'added_to_stack', {
+          stackSize: stack.length + 1,
+          group
+        });
+      } catch (error) {
+        // Silently fail analytics
+      }
     }
     
     return utils;
@@ -486,12 +584,16 @@ export const usePortalStack = (options = {}) => {
     
     // Track stack removal
     if (analytics) {
-      analytics.trackPortalEvent(id, 'removed_from_stack', {
-        stackSize: stack.length - 1,
-        group
-      });
+      try {
+        analytics.trackPortalEvent(id, 'removed_from_stack', {
+          stackSize: Math.max(0, stack.length - 1),
+          group
+        });
+      } catch (error) {
+        // Silently fail analytics
+      }
     }
-  }, [analytics, stack.length]);
+  }, [analytics, stack.length, group]);
 
   const getTopPortal = useCallback(() => {
     const stackInfo = portalManagerService.getStackInfo();
@@ -500,8 +602,12 @@ export const usePortalStack = (options = {}) => {
 
   const coordinateStackAnimations = useCallback((animationType) => {
     if (coordinateAnimations && portalManagerService.animationService) {
-      const portalIds = stack.map(item => item.id);
-      portalManagerService.coordinateAnimations(portalIds, animationType);
+      try {
+        const portalIds = stack.map(item => item.id);
+        portalManagerService.coordinateAnimations(portalIds, animationType);
+      } catch (error) {
+        console.warn('[usePortalStack] Animation coordination failed:', error);
+      }
     }
   }, [stack, coordinateAnimations]);
 
@@ -511,10 +617,14 @@ export const usePortalStack = (options = {}) => {
     
     // Track stack cleanup
     if (analytics) {
-      analytics.trackEvent('stack_cleanup', {
-        stackSize: stack.length,
-        group
-      });
+      try {
+        analytics.trackEvent('stack_cleanup', {
+          stackSize: stack.length,
+          group
+        });
+      } catch (error) {
+        // Silently fail analytics
+      }
     }
   }, [analytics, stack.length, group]);
 

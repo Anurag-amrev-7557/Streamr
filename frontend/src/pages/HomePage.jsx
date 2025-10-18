@@ -54,6 +54,10 @@ import CastDetailsOverlay from '../components/CastDetailsOverlay';
 import RatingBadge from '../components/RatingBadge';
 const AdBlockerRecommendationToast = lazy(() => import('../components/AdBlockerRecommendationToast'));
 
+// 🚀 NEW: Performance & Error Handling Components
+const PerformanceMonitor = lazy(() => import('../components/PerformanceMonitor'));
+const EnhancedErrorBoundary = lazy(() => import('../components/EnhancedErrorBoundary'));
+
 // Contexts and Hooks
 import { useLoading } from '../contexts/LoadingContext';
 import { useWatchlist } from '../contexts/WatchlistContext';
@@ -61,11 +65,17 @@ import { useViewingProgress } from '../contexts/ViewingProgressContext';
 import { useSmoothScroll, useScrollAnimation } from '../hooks/useSmoothScroll';
 import { usePersistentCache } from '../hooks/usePersistentCache';
 
+// 🚀 NEW: Performance Optimization Hooks
+import { useMovieCache } from '../hooks/useMovieCache';
+import { useAPIOptimization } from '../hooks/useAPIOptimization';
+import { useBatchedUpdates } from '../hooks/useBatchedUpdates';
+
 // Utilities and Services
 import memoryOptimizationService from '../utils/memoryOptimizationService';
 import { trackPageLoad, trackApiCall } from '../utils/performanceMonitor';
 import performanceOptimizationService from '../services/performanceOptimizationService';
 import enhancedPerformanceService from '../services/enhancedPerformanceService';
+import { throttle, debounce, isLowEndDevice, getNetworkSpeed } from '../utils/performanceUtils';
 
 // Runtime helper: determine if user prefers reduced motion or device is low-power/low-spec
 // Use a function so callers can evaluate at render time (keeps behavior consistent across components)
@@ -99,7 +109,7 @@ import 'swiper/css/pagination';
 
 // 🚀 PERFORMANCE OPTIMIZED: Enhanced Swiper styles with advanced performance optimizations
 const swiperStyles = `
-  /* Reduced GPU pressure: avoid blanket will-change/translateZ which pins layers to GPU memory */
+  /* 🚀 OPTIMIZED: Minimal GPU usage - removed unnecessary transforms */
   .swiper,
   .swiper-wrapper {
     overflow: visible;
@@ -117,40 +127,35 @@ const swiperStyles = `
   
   .swiper-slide {
     backface-visibility: hidden;
-    transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1);
     width: auto !important;
   }
 
-  /* Enhanced navigation button styles */
+  /* 🚀 OPTIMIZED: Reduced transition effects for better performance */
   .swiper-button-prev,
   .swiper-button-next {
-    transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-    /* removed backdrop-filter for perf - kept translucent background */
+    transition: background 0.2s ease, opacity 0.2s ease;
     background: rgba(255,255,255,0.06);
   }
 
   .swiper-button-prev:hover,
   .swiper-button-next:hover {
-    transform: scale(1.1);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    background: rgba(255, 255, 255, 0.12);
   }
 
   .swiper-button-prev:active,
   .swiper-button-next:active {
-    transform: scale(0.95);
+    opacity: 0.8;
   }
 
-  /* Enhanced slide transitions */
+  /* 🚀 OPTIMIZED: Removed scale transforms to reduce GPU load */
   .swiper-slide-active {
-    transform: scale(1.02);
-    transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    /* Removed transform scale for performance */
   }
 
   .swiper-slide-prev,
   .swiper-slide-next {
-    transform: scale(0.98);
-    opacity: 0.8;
-    transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    opacity: 0.95;
+    transition: opacity 0.2s ease;
   }
 
   /* Smooth momentum scrolling */
@@ -285,7 +290,8 @@ const swiperStyles = `
     background: rgba(255, 255, 255, 0.06) !important;
     border: 1px solid rgba(255, 255, 255, 0.2) !important;
     border-radius: 50% !important;
-    transition: all 0.2s ease !important;
+    /* 🚀 OPTIMIZED: Reduced transition complexity */
+    transition: background 0.2s ease, opacity 0.2s ease !important;
     position: absolute !important;
     top: 50% !important;
     transform: translateY(-50%) !important;
@@ -309,14 +315,12 @@ const swiperStyles = `
     color: white !important;
   }
   
-  /* Hover effects */
+  /* 🚀 OPTIMIZED: Simplified hover effects */
   .swiper-button-next:hover,
   .swiper-button-prev:hover,
   .category-swiper-next:hover,
   .category-swiper-prev:hover {
-    background: rgba(255, 255, 255, 0.2) !important;
-    transform: translateY(-50%) scale(1.1) !important;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3) !important;
+    background: rgba(255, 255, 255, 0.15) !important;
   }
   
   /* Visibility control for custom navigation */
@@ -427,7 +431,9 @@ const MovieDetailsOverlay = lazy(() => import('../components/MovieDetailsOverlay
 const VisibleOnDemand = ({ children, rootMargin = '200px', placeholderHeight = 300 }) => {
   // start hidden to defer rendering until visible
   const [isVisible, setIsVisible] = useState(false);
+  const [hasAnimated, setHasAnimated] = useState(false);
   const ref = useRef(null);
+  const shouldReduceMotion = getReducedMotionOrLowPower();
 
   useEffect(() => {
   if (!ref.current || isVisible) return;
@@ -437,8 +443,14 @@ const VisibleOnDemand = ({ children, rootMargin = '200px', placeholderHeight = 3
       observer = new IntersectionObserver((entries) => {
         const entry = entries[0];
         if (entry && (entry.isIntersecting || entry.intersectionRatio > 0)) {
-          // Defer mounting to next tick to avoid layout thrash
-          Promise.resolve().then(() => setIsVisible(true));
+          // Use requestAnimationFrame for smoother transition
+          requestAnimationFrame(() => {
+            setIsVisible(true);
+            // Trigger animation immediately for smoother experience
+            requestAnimationFrame(() => {
+              setHasAnimated(true);
+            });
+          });
           observer.disconnect();
         }
       }, {
@@ -451,6 +463,7 @@ const VisibleOnDemand = ({ children, rootMargin = '200px', placeholderHeight = 3
     } catch (_) {
       // Fallback: render immediately if IntersectionObserver not available
       setIsVisible(true);
+      setHasAnimated(true);
     }
     
     return () => {
@@ -465,7 +478,29 @@ const VisibleOnDemand = ({ children, rootMargin = '200px', placeholderHeight = 3
   return (
     <div ref={ref} style={{ minHeight: placeholderHeight }}>
       {isVisible ? (
-        <div style={{ contain: 'paint layout' }}>{children}</div>
+        shouldReduceMotion ? (
+          // 🚀 OPTIMIZED: Use plain div for low-end devices to avoid GPU overhead
+          <div style={{ contain: 'layout style paint' }}>
+            {children}
+          </div>
+        ) : (
+          <motion.div 
+            style={{ 
+              contain: 'layout style paint',
+              // 🚀 OPTIMIZED: Remove will-change when animation completes to free GPU resources
+              ...(hasAnimated ? {} : { willChange: 'opacity' }),
+            }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={hasAnimated ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
+            transition={{ 
+              duration: 0.3, // Reduced from 0.4s
+              ease: 'easeOut',
+              delay: 0,
+            }}
+          >
+            {children}
+          </motion.div>
+        )
       ) : (
         <div style={{ height: placeholderHeight }} aria-hidden="true" />
       )}
@@ -1009,52 +1044,56 @@ const MovieSectionSwiper = memo(({ title, movies, loading, onLoadMore, hasMore, 
   if (isMobile) {
     return (
       <div className="mt-8 px-4">
-        <motion.div 
-          className="flex items-center justify-between mb-4"
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, ease: "easeOut" }} // 🚀 OPTIMIZED: Reduced from 0.6s
-        >
-          <motion.h2 
-            className="text-xl font-semibold bg-gradient-to-r from-white via-white/90 to-white/60 bg-clip-text text-transparent relative"
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5, delay: 0.05, ease: "easeOut" }} // 🚀 OPTIMIZED: Reduced from 0.7s
-          >
-            <motion.span
-              className="absolute inset-0 bg-gradient-to-r from-blue-400/20 via-purple-400/20 to-pink-400/20 bg-clip-text text-transparent"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: [0, 0.3, 0] }}
-              transition={{ duration: 1.5, repeat: Infinity, delay: 0.5 }} // 🚀 OPTIMIZED: Reduced from 2s
-            />
-            {title}
-          </motion.h2>
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.4, delay: 0.1, ease: "easeOut" }} // 🚀 OPTIMIZED: Reduced from 0.6s
-          >
+        {/* 🚀 OPTIMIZED: Disable animations on low-end devices */}
+        {isLowPower ? (
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold bg-gradient-to-r from-white via-white/90 to-white/60 bg-clip-text text-transparent relative">
+              {title}
+            </h2>
             <Link
               to={`/movies?category=${sectionKey}`}
               aria-label={`View all ${title}`}
-              className="group text-[11px] px-2.5 py-1 rounded-full bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/10 transition-all duration-300 transform hover:scale-105"
+              className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/10 transition-colors duration-200"
             >
               <span className="relative z-10">View all</span>
-              <motion.span
-                className="ml-1 inline-block"
-                animate={{ x: [0, 3, 0] }}
-                transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
-              >
-                →
-              </motion.span>
+              <span className="ml-1 inline-block">→</span>
             </Link>
+          </div>
+        ) : (
+          <motion.div 
+            className="flex items-center justify-between mb-4"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
+          >
+            <motion.h2 
+              className="text-xl font-semibold bg-gradient-to-r from-white via-white/90 to-white/60 bg-clip-text text-transparent relative"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.4, delay: 0.05, ease: "easeOut" }}
+            >
+              {title}
+            </motion.h2>
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.3, delay: 0.1, ease: "easeOut" }}
+            >
+              <Link
+                to={`/movies?category=${sectionKey}`}
+                aria-label={`View all ${title}`}
+                className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/10 transition-colors duration-200"
+              >
+                <span className="relative z-10">View all</span>
+                <span className="ml-1 inline-block">→</span>
+              </Link>
+            </motion.div>
           </motion.div>
-        </motion.div>
+        )}
         <div className="flex gap-3 sm:gap-4 md:gap-6 overflow-x-auto scrollbar-hide pb-4 px-2 sm:px-4 horizontal-scroll-container" style={{
           scrollBehavior: 'smooth',
           WebkitOverflowScrolling: 'touch',
-          willChange: 'scroll-position, transform',
-          transform: 'translate3d(0, 0, 0)',
+          // 🚀 OPTIMIZED: Remove will-change to reduce GPU layer promotion
           contain: 'layout style paint',
           scrollSnapType: 'x proximity',
           scrollPadding: '0 20px',
@@ -1062,13 +1101,17 @@ const MovieSectionSwiper = memo(({ title, movies, loading, onLoadMore, hasMore, 
           // 🚀 PERFORMANCE OPTIMIZATIONS
           contentVisibility: 'auto',
           containIntrinsicSize: 'auto 200px',
-          isolation: 'isolate'
         }}>
           {movies.map((movie, index) => (
-            <div 
+            <div
               key={`${sectionKey}-${movie.id}-${index}`} 
               className="flex-shrink-0"
               onMouseEnter={() => onMovieHover && onMovieHover(movie, index, movies)}
+              style={{
+                // 🚀 OPTIMIZED: Simple opacity transition instead of motion.div
+                opacity: 1,
+                transition: isLowPower ? 'none' : 'opacity 0.3s ease-out',
+              }}
             >
               <MemoizedMovieCard 
                 {...movie} 
@@ -1097,47 +1140,52 @@ const MovieSectionSwiper = memo(({ title, movies, loading, onLoadMore, hasMore, 
 
   return (
     <div className="mt-8">
-      <motion.div 
-        className="flex items-center justify-between mb-4 pl-7 pr-4"
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, ease: "easeOut" }}
-      >
-        <motion.h2 
-          className="text-xl font-semibold bg-gradient-to-r from-white via-white/90 to-white/60 bg-clip-text text-transparent relative"
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.7, delay: 0.1, ease: "easeOut" }}
-        >
-          <motion.span
-            className="absolute inset-0 bg-gradient-to-r from-blue-400/20 via-purple-400/20 to-pink-400/20 bg-clip-text text-transparent"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: [0, 0.3, 0] }}
-            transition={{ duration: 2, repeat: Infinity, delay: 1 }}
-          />
-          {title}
-        </motion.h2>
-        <motion.div
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.6, delay: 0.2, ease: "easeOut" }}
-        >
+      {/* 🚀 OPTIMIZED: Disable animations on low-end devices */}
+      {isLowPower ? (
+        <div className="flex items-center justify-between mb-4 pl-7 pr-4">
+          <h2 className="text-xl font-semibold bg-gradient-to-r from-white via-white/90 to-white/60 bg-clip-text text-transparent relative">
+            {title}
+          </h2>
           <Link
             to={`/movies?category=${sectionKey}`}
             aria-label={`View all ${title}`}
-            className="group text-xs px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/10 transition-all duration-300 transform hover:scale-105"
+            className="text-xs px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/10 transition-colors duration-200"
           >
             <span className="relative z-10">View all</span>
-            <motion.span
-              className="ml-1 inline-block"
-              animate={{ x: [0, 3, 0] }}
-              transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
-            >
-              →
-            </motion.span>
+            <span className="ml-1 inline-block">→</span>
           </Link>
+        </div>
+      ) : (
+        <motion.div 
+          className="flex items-center justify-between mb-4 pl-7 pr-4"
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: "easeOut" }}
+        >
+          <motion.h2 
+            className="text-xl font-semibold bg-gradient-to-r from-white via-white/90 to-white/60 bg-clip-text text-transparent relative"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.5, delay: 0.1, ease: "easeOut" }}
+          >
+            {title}
+          </motion.h2>
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.4, delay: 0.2, ease: "easeOut" }}
+          >
+            <Link
+              to={`/movies?category=${sectionKey}`}
+              aria-label={`View all ${title}`}
+              className="text-xs px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/10 transition-colors duration-200"
+            >
+              <span className="relative z-10">View all</span>
+              <span className="ml-1 inline-block">→</span>
+            </Link>
+          </motion.div>
         </motion.div>
-      </motion.div>
+      )}
       <div className="relative group">
         <div className="absolute inset-y-0 left-0 w-28 bg-gradient-to-r from-[#121417] to-transparent z-10 pointer-events-none"></div>
         <div className="absolute inset-y-0 right-0 w-28 bg-gradient-to-l from-[#121417] to-transparent z-10 pointer-events-none"></div>
@@ -1196,10 +1244,13 @@ const MovieSectionSwiper = memo(({ title, movies, loading, onLoadMore, hasMore, 
         >
                       {itemsToRender.map((movie, index) => (
               <SwiperSlide key={`${sectionKey}-${movie.id}-${index}`} className="!w-auto">
+                {/* 🚀 OPTIMIZED: Removed GPU-heavy properties */}
                 <div
                   onMouseEnter={() => onMovieHover && onMovieHover(movie, index, movies)}
-                  className="transform-gpu will-change-transform"
-                  style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden', transform: 'translateZ(0)' }}
+                  style={{ 
+                    opacity: 1,
+                    transition: isLowPower ? 'none' : 'opacity 0.3s ease-out',
+                  }}
                 >
                   <MovieCard 
                     {...movie} 
@@ -1231,69 +1282,43 @@ const MovieSectionSwiper = memo(({ title, movies, loading, onLoadMore, hasMore, 
             </div>
           ) : null
         )}
-        {/* Enhanced Navigation buttons - only visible on desktop */}
-        <motion.div 
+        {/* 🚀 OPTIMIZED: Simplified Navigation buttons - CSS-only for low-end devices */}
+        <div 
           ref={prevElRef} 
-          className="!w-10 !h-10 !bg-white/5 hover:!bg-white/10 !rounded-full !border !border-white/10 !transition-all !duration-300 opacity-0 group-hover:opacity-100 !absolute !left-0 !-translate-y-1/2 !top-[50%] !m-0 !z-20 hover:!shadow-lg hover:!shadow-black/20 flex items-center justify-center cursor-pointer"
-          whileHover={{ 
-            scale: 1.1, 
-            backgroundColor: 'rgba(255, 255, 255, 0.15)',
-            borderColor: 'rgba(255, 255, 255, 0.25)'
-          }}
-          whileTap={{ scale: 0.95 }}
-          transition={{ 
-            type: "spring", 
-            stiffness: 400, 
-            damping: 25 
-          }}
+          className="!w-10 !h-10 !bg-white/5 hover:!bg-white/12 !rounded-full !border !border-white/10 !transition-colors !duration-200 opacity-0 group-hover:opacity-100 !absolute !left-0 !-translate-y-1/2 !top-[50%] !m-0 !z-20 flex items-center justify-center cursor-pointer"
           onClick={() => {
             if (swiperRef.current && swiperRef.current.slidePrev) {
               swiperRef.current.slidePrev(600, 'cubic-bezier(0.25, 0.46, 0.45, 0.94)');
             }
           }}
         >
-          <motion.svg 
+          <svg 
             className="w-5 h-5 text-white" 
             fill="none" 
             stroke="currentColor" 
             viewBox="0 0 24 24"
-            whileHover={{ x: -2 }}
-            transition={{ type: "spring", stiffness: 400, damping: 25 }}
           >
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
-          </motion.svg>
-        </motion.div>
-        <motion.div 
+          </svg>
+        </div>
+        <div 
           ref={nextElRef} 
-          className="!w-10 !h-10 !bg-white/5 hover:!bg-white/10 !rounded-full !border !border-white/10 !transition-all !duration-300 opacity-0 group-hover:opacity-100 !absolute !right-0 !-translate-y-1/2 !top-[50%] !m-0 !z-20 hover:!shadow-lg hover:!shadow-black/20 flex items-center justify-center cursor-pointer"
-          whileHover={{ 
-            scale: 1.1, 
-            backgroundColor: 'rgba(255, 255, 255, 0.15)',
-            borderColor: 'rgba(255, 255, 255, 0.25)'
-          }}
-          whileTap={{ scale: 0.95 }}
-          transition={{ 
-            type: "spring", 
-            stiffness: 400, 
-            damping: 25 
-          }}
+          className="!w-10 !h-10 !bg-white/5 hover:!bg-white/12 !rounded-full !border !border-white/10 !transition-colors !duration-200 opacity-0 group-hover:opacity-100 !absolute !right-0 !-translate-y-1/2 !top-[50%] !m-0 !z-20 flex items-center justify-center cursor-pointer"
           onClick={() => {
             if (swiperRef.current && swiperRef.current.slideNext) {
               swiperRef.current.slideNext(600, 'cubic-bezier(0.25, 0.46, 0.45, 0.94)');
             }
           }}
         >
-          <motion.svg 
+          <svg 
             className="w-5 h-5 text-white" 
             fill="none" 
             stroke="currentColor" 
             viewBox="0 0 24 24"
-            whileHover={{ x: 2 }}
-            transition={{ type: "spring", stiffness: 400, damping: 25 }}
           >
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
-          </motion.svg>
-        </motion.div>
+          </svg>
+        </div>
       </div>
     </div>
   );
@@ -1486,7 +1511,12 @@ const ProgressiveImage = memo(
       >
         {/* Shimmer Loading Placeholder */}
         {!imageLoaded && !imageError && (
-          <div className="absolute inset-0 z-0 bg-gradient-to-br from-[#1a1d24] to-[#2b3036]">
+          <motion.div 
+            className="absolute inset-0 z-0 bg-gradient-to-br from-[#1a1d24] to-[#2b3036]"
+            initial={{ opacity: 1 }}
+            animate={{ opacity: imageLoaded ? 0 : 1 }}
+            transition={{ duration: 0.4 }}
+          >
             <div
               className="absolute inset-0 animate-shimmer"
               style={{
@@ -1496,19 +1526,21 @@ const ProgressiveImage = memo(
                 animation: "shimmer 2s infinite linear",
               }}
             />
-          </div>
+          </motion.div>
         )}
 
         {/* Tiny Image (Blurred) */}
         {currentSrc && !imageError && !imageLoaded && (
-          <div
-            className="absolute inset-0 z-10 bg-cover bg-center transition-opacity duration-500"
+          <motion.div
+            className="absolute inset-0 z-10 bg-cover bg-center"
             style={{
               backgroundImage: `url("${currentSrc}")`,
               transform: "scale(1.08)",
-              opacity: imageLoaded ? 0 : 1,
-              transition: "opacity 0.5s",
+              filter: "blur(8px)",
             }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: imageLoaded ? 0 : 0.7 }}
+            transition={{ duration: 0.3 }}
             aria-hidden="true"
           />
         )}
@@ -1516,21 +1548,14 @@ const ProgressiveImage = memo(
         {/* Full Image (background-image for smooth fade, plus <img> for SEO/accessibility) */}
         {!imageError && currentSrc && (
           <>
+            {/* 🚀 OPTIMIZED: Simplified background image for better GPU performance */}
             <div
-              className={`absolute inset-0 z-20 bg-cover bg-center transition-all duration-700 ${
-                imageLoaded ? "opacity-100 scale-100" : "opacity-0 scale-105"
-              }`}
+              className="absolute inset-0 z-20 bg-cover bg-center"
               style={{
                 backgroundImage: currentSrc === src ? `url("${src}")` : "none",
                 backgroundPosition: "center 20%",
-                imageRendering: "auto",
-                WebkitBackfaceVisibility: "hidden",
-                backfaceVisibility: "hidden",
-                transform: "translateZ(0)",
-                WebkitFontSmoothing: "antialiased",
-                WebkitTransform: "translate3d(0,0,0)",
-                transition:
-                  "opacity 0.7s cubic-bezier(0.22,1,0.36,1), transform 0.7s cubic-bezier(0.22,1,0.36,1)",
+                opacity: imageLoaded ? 1 : 0,
+                transition: imageLoaded ? 'none' : 'opacity 0.5s ease-out',
               }}
               aria-hidden="true"
             />
@@ -1542,6 +1567,8 @@ const ProgressiveImage = memo(
                 srcSet={srcSet}
                 sizes={sizes}
                 alt={alt}
+                loading="lazy"
+                decoding="async"
                 style={{
                   position: "absolute",
                   width: 1,
@@ -2047,7 +2074,7 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
         touchAction: 'auto',
       }}
     >
-      <div className={`relative ${isMobile ? 'aspect-[2/3]' : 'aspect-[16/10]'} rounded-lg overflow-hidden transform-gpu transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl hover:shadow-black/20 w-full active:scale-[0.98] active:shadow-lg`}>
+      <div className={`relative ${isMobile ? 'aspect-[2/3]' : 'aspect-[16/10]'} rounded-lg overflow-hidden transform-gpu transition-all duration-700 hover:scale-[1.015] hover:shadow-2xl hover:shadow-black/20 w-full active:scale-[0.995] active:shadow-lg`}>
         {/* Prefetch shimmer/spinner overlay */}
         {prefetching && (
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/30 pointer-events-none">
@@ -2092,7 +2119,7 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
           <ProgressiveImage
             src={imageSource}
             alt={title}
-            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+            className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"
             aspectRatio={aspectRatio}
           />
         {/* Click Loader Overlay */}
@@ -4693,6 +4720,37 @@ const HomePage = () => {
     triggerOnce: true
   });
 
+  // 🚀 NEW: Performance Optimization Hooks
+  const { 
+    get: getCachedMovie, 
+    set: setCachedMovie, 
+    getStats: getMovieCacheStats,
+    clear: clearMovieCache 
+  } = useMovieCache({
+    ttl: 60 * 60 * 1000, // 1 hour TTL
+    maxSize: 100, // Max 100 cached items
+    maxMemoryMB: 10, // Max 10MB cache size
+  });
+
+  const { 
+    optimizedFetch, 
+    batchFetch,
+    getStats: getAPIStats,
+    clearPending: clearPendingRequests
+  } = useAPIOptimization({
+    retryAttempts: 3,
+    retryDelay: 1000,
+    timeout: 10000,
+    rateLimit: 10, // 10 requests per second
+  });
+
+  const { 
+    queueUpdate, 
+    flushUpdates 
+  } = useBatchedUpdates({
+    batchDelay: 50,
+  });
+
   // Movie state variables
   const [trendingMovies, setTrendingMovies] = useState([]);
   const [popularMovies, setPopularMovies] = useState([]);
@@ -6809,6 +6867,17 @@ const HomePage = () => {
       
       // Clear lazy load queue
       setLazyLoadQueue(new Set());
+      
+      // 🚀 NEW: Cleanup performance optimization hooks
+      try {
+        clearMovieCache();
+        clearPendingRequests();
+        if (import.meta.env.DEV) {
+          console.log('🧹 Performance optimization hooks cleaned up');
+        }
+      } catch (error) {
+        console.warn('Error cleaning up performance hooks:', error);
+      }
     };
   }, []); // FIXED: Empty dependency array to prevent infinite loops
 
@@ -6985,6 +7054,45 @@ const HomePage = () => {
 
 
   // 🚀 OPTIMIZED: Helper functions for ultra-fast loading
+  
+  // 🚀 NEW: Optimized fetch with caching and API optimization
+  const fetchWithOptimization = useCallback(async (sectionKey, page = 1) => {
+    const cacheKey = `${sectionKey}_page_${page}`;
+    
+    // Check cache first
+    const cached = getCachedMovie(cacheKey);
+    if (cached) {
+      if (import.meta.env.DEV) {
+        console.log(`✅ Cache hit for ${cacheKey}`);
+      }
+      return cached;
+    }
+    
+    // Fetch with API optimization (deduplication, retry, rate limiting)
+    try {
+      const fetchFn = getFetchFunction(sectionKey);
+      if (!fetchFn) {
+        throw new Error(`No fetch function for ${sectionKey}`);
+      }
+      
+      const data = await optimizedFetch(
+        cacheKey,
+        () => fetchFn(page)
+      );
+      
+      // Cache the result
+      setCachedMovie(cacheKey, data);
+      
+      if (import.meta.env.DEV) {
+        console.log(`✅ Fetched and cached ${cacheKey}`, data?.length || 0, 'items');
+      }
+      
+      return data;
+    } catch (error) {
+      console.error(`Error fetching ${sectionKey}:`, error);
+      throw error;
+    }
+  }, [getCachedMovie, setCachedMovie, optimizedFetch]);
   
   // Enhanced function to fetch a single section with priority and performance monitoring
   const fetchPrioritySection = async (sectionKey, retryCount = 0) => {
@@ -9065,7 +9173,14 @@ const HomePage = () => {
   }
 
   return (
-    <div className={`relative flex size-full min-h-screen flex-col bg-[#121417] dark group/design-root overflow-x-hidden font-inter scrollbar-hide smooth-scroll performance-scroll touch-scroll-fix`}>
+    <MotionConfig
+      transition={{
+        duration: 0.4,
+        ease: [0.16, 1, 0.3, 1], // Smooth easeOutExpo
+      }}
+      reducedMotion={reducedMotionOrLowPower ? "always" : "never"}
+    >
+      <div className={`relative flex size-full min-h-screen flex-col bg-[#121417] dark group/design-root overflow-x-hidden font-inter scrollbar-hide smooth-scroll performance-scroll touch-scroll-fix`}>
       {/* Error Boundary for better error handling */}
       <ErrorBoundary
         fallback={
@@ -9475,7 +9590,7 @@ const HomePage = () => {
     )}
 
     {/* Cache Status Display */}
-    {import.meta.env.DEV && (
+    {import.meta.env.DEV && false && (
       <div className="fixed bottom-20 right-4 bg-black/80 text-white p-3 rounded-lg text-xs z-50">
         <div className="font-bold mb-2">Cache Status</div>
         <div>Entries: {getCacheStats().totalEntries}</div>
@@ -9503,7 +9618,49 @@ const HomePage = () => {
          />
        </Suspense>
      )}
+
+    {/* 🚀 NEW: Performance Monitor - Dev Only */}
+    {import.meta.env.DEV && (
+      <Suspense fallback={null}>
+        <PerformanceMonitor enabled={true} />
+      </Suspense>
+    )}
+
+    {/* 🚀 NEW: Enhanced Cache Stats Display - Dev Only */}
+    {import.meta.env.DEV && false && (
+      <div className="fixed bottom-52 right-4 bg-black/90 backdrop-blur-sm text-white p-4 rounded-lg text-xs z-40 font-mono min-w-[200px]">
+        <div className="font-bold mb-3 text-blue-400 text-sm border-b border-white/20 pb-2">📊 Performance Stats</div>
+        
+        {/* Movie Cache Stats */}
+        <div className="mb-3">
+          <div className="text-white/70 font-semibold mb-1">Movie Cache:</div>
+          <div className="text-green-400">Hit Rate: {getMovieCacheStats().hitRate}</div>
+          <div className="text-white/60">Entries: {getMovieCacheStats().totalEntries}</div>
+          <div className="text-white/60">Memory: {getMovieCacheStats().memoryUsageMB}MB</div>
+        </div>
+
+        {/* API Stats */}
+        <div className="mb-3">
+          <div className="text-white/70 font-semibold mb-1">API Calls:</div>
+          <div className="text-green-400">Success Rate: {getAPIStats().successRate}</div>
+          <div className="text-blue-400">Dedup Rate: {getAPIStats().deduplicationRate}</div>
+          <div className="text-white/60">Total: {getAPIStats().total}</div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-2 mt-3 pt-3 border-t border-white/20">
+          <button 
+            onClick={clearMovieCache}
+            className="flex-1 px-2 py-1 bg-red-600/80 hover:bg-red-600 rounded text-xs transition-colors"
+            title="Clear movie cache"
+          >
+            Clear Cache
+          </button>
+        </div>
+      </div>
+    )}
   </div>
+    </MotionConfig>
   );
 };
 

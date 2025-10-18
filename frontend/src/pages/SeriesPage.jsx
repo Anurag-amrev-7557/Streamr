@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, lazy, Suspense, useCallback } from 'react';
+import PropTypes from 'prop-types';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   getPopularTVShows, 
@@ -445,6 +446,26 @@ const seriesRating =
   );
 };
 
+// PropTypes for SeriesCard component
+SeriesCard.propTypes = {
+  series: PropTypes.shape({
+    id: PropTypes.oneOfType([PropTypes.number, PropTypes.string]).isRequired,
+    name: PropTypes.string,
+    title: PropTypes.string,
+    poster_path: PropTypes.string,
+    backdrop_path: PropTypes.string,
+    vote_average: PropTypes.number,
+    rating: PropTypes.number,
+    first_air_date: PropTypes.string,
+    release_date: PropTypes.string,
+    genre_ids: PropTypes.arrayOf(PropTypes.number),
+    overview: PropTypes.string,
+  }).isRequired,
+  onSeriesClick: PropTypes.func.isRequired,
+  onShowEpisodes: PropTypes.func,
+  index: PropTypes.number,
+};
+
 const SeriesPage = () => {
   // 🚀 FIXED: Add mounted ref to prevent state updates on unmounted components
   const isMountedRef = useRef(true);
@@ -492,6 +513,105 @@ const SeriesPage = () => {
   const { watchlist, addToWatchlist, removeFromWatchlist } = useWatchlist();
   const [isMobile, setIsMobile] = useState(false);
 
+  // 🎯 SEO: Dynamic metadata updates using native DOM manipulation
+  useEffect(() => {
+    const getCategoryName = () => {
+      const category = categories.find(c => c.id === activeCategory);
+      return category?.label || 'TV Series';
+    };
+
+    const getPageTitle = () => {
+      let title = 'Streamr - TV Series';
+      
+      if (searchQuery) {
+        title = `Search: ${searchQuery} - Streamr`;
+      } else if (selectedGenre && selectedYear) {
+        title = `${selectedGenre.name} TV Shows from ${selectedYear} - Streamr`;
+      } else if (selectedGenre) {
+        title = `${selectedGenre.name} TV Shows - Streamr`;
+      } else if (selectedYear) {
+        title = `TV Shows from ${selectedYear} - Streamr`;
+      } else {
+        title = `${getCategoryName()} TV Series - Streamr`;
+      }
+      
+      return title;
+    };
+
+    const getPageDescription = () => {
+      if (searchQuery) {
+        return `Search results for "${searchQuery}" in TV series. Discover your next favorite show on Streamr.`;
+      } else if (selectedGenre && selectedYear) {
+        return `Browse ${selectedGenre.name} TV shows from ${selectedYear}. Stream thousands of series on Streamr.`;
+      } else if (selectedGenre) {
+        return `Explore the best ${selectedGenre.name} TV shows. Watch trending series on Streamr.`;
+      } else if (selectedYear) {
+        return `Discover TV shows released in ${selectedYear}. Stream classic and new series on Streamr.`;
+      }
+      return `Discover ${getCategoryName()} TV series. Watch thousands of shows across all genres on Streamr.`;
+    };
+
+    // Update document title
+    document.title = getPageTitle();
+
+    // Update or create meta description
+    let metaDescription = document.querySelector('meta[name="description"]');
+    if (!metaDescription) {
+      metaDescription = document.createElement('meta');
+      metaDescription.setAttribute('name', 'description');
+      document.head.appendChild(metaDescription);
+    }
+    metaDescription.setAttribute('content', getPageDescription());
+
+    // Update or create Open Graph title
+    let ogTitle = document.querySelector('meta[property="og:title"]');
+    if (!ogTitle) {
+      ogTitle = document.createElement('meta');
+      ogTitle.setAttribute('property', 'og:title');
+      document.head.appendChild(ogTitle);
+    }
+    ogTitle.setAttribute('content', getPageTitle());
+
+    // Update or create Open Graph description
+    let ogDescription = document.querySelector('meta[property="og:description"]');
+    if (!ogDescription) {
+      ogDescription = document.createElement('meta');
+      ogDescription.setAttribute('property', 'og:description');
+      document.head.appendChild(ogDescription);
+    }
+    ogDescription.setAttribute('content', getPageDescription());
+
+    // Update or create Open Graph type
+    let ogType = document.querySelector('meta[property="og:type"]');
+    if (!ogType) {
+      ogType = document.createElement('meta');
+      ogType.setAttribute('property', 'og:type');
+      document.head.appendChild(ogType);
+    }
+    ogType.setAttribute('content', 'website');
+
+    // Update or create canonical URL
+    let canonical = document.querySelector('link[rel="canonical"]');
+    if (!canonical) {
+      canonical = document.createElement('link');
+      canonical.setAttribute('rel', 'canonical');
+      document.head.appendChild(canonical);
+    }
+    const baseUrl = window.location.origin;
+    const params = new URLSearchParams();
+    if (activeCategory !== 'popular') params.set('category', activeCategory);
+    if (selectedGenre) params.set('genre', selectedGenre.name.toLowerCase());
+    if (selectedYear) params.set('year', selectedYear);
+    const queryString = params.toString();
+    canonical.setAttribute('href', `${baseUrl}/series${queryString ? `?${queryString}` : ''}`);
+
+    // Cleanup function
+    return () => {
+      // Reset to default title when component unmounts
+      document.title = 'Streamr';
+    };
+  }, [activeCategory, searchQuery, selectedGenre, selectedYear]);
+
   // Streaming icon animation hook with rubber band effect
   const { 
     getIconColor, 
@@ -530,6 +650,47 @@ const SeriesPage = () => {
       }
     };
   }, []);
+
+  // ⌨️ Keyboard navigation for category selector
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const categorySelector = categorySelectorRef.current;
+      if (!categorySelector || searchQuery) return;
+
+      const buttons = Array.from(categorySelector.querySelectorAll('button'));
+      const currentIndex = categories.findIndex(c => c.id === activeCategory);
+
+      // Arrow key navigation
+      if (e.key === 'ArrowLeft' && currentIndex > 0) {
+        e.preventDefault();
+        const prevCategory = categories[currentIndex - 1];
+        handleCategoryClick(prevCategory.id);
+        buttons[currentIndex - 1]?.focus();
+      } else if (e.key === 'ArrowRight' && currentIndex < categories.length - 1) {
+        e.preventDefault();
+        const nextCategory = categories[currentIndex + 1];
+        handleCategoryClick(nextCategory.id);
+        buttons[currentIndex + 1]?.focus();
+      }
+      // Home/End keys
+      else if (e.key === 'Home') {
+        e.preventDefault();
+        const firstCategory = categories[0];
+        handleCategoryClick(firstCategory.id);
+        buttons[0]?.focus();
+      } else if (e.key === 'End') {
+        e.preventDefault();
+        const lastCategory = categories[categories.length - 1];
+        handleCategoryClick(lastCategory.id);
+        buttons[buttons.length - 1]?.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [activeCategory, categories, searchQuery]);
 
   // Mouse wheel event handler for category selector
   useEffect(() => {
@@ -1519,11 +1680,21 @@ const SeriesPage = () => {
           </div>
         </div>
           {!searchQuery && (
-            <div ref={categorySelectorRef} className="relative inline-flex rounded-full bg-[#1a1a1a] p-1 overflow-x-auto max-w-full horizontal-scroll-container scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+            <div 
+              ref={categorySelectorRef} 
+              className="relative inline-flex rounded-full bg-[#1a1a1a] p-1 overflow-x-auto max-w-full horizontal-scroll-container scrollbar-hide" 
+              style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+              role="tablist"
+              aria-label="TV series categories"
+            >
               {categories.map((category) => (
                 <button
                   key={category.id}
                   onClick={() => handleCategoryClick(category.id)}
+                  role="tab"
+                  aria-selected={activeCategory === category.id}
+                  aria-controls={`${category.id}-series-panel`}
+                  tabIndex={activeCategory === category.id ? 0 : -1}
                   className={`relative px-4 py-0.5 rounded-full text-sm font-medium transition-colors duration-300 whitespace-nowrap focus:outline-none flex items-center gap-2 ${
                     activeCategory === category.id
                       ? 'text-black'
@@ -1535,6 +1706,7 @@ const SeriesPage = () => {
                     <span 
                       className="relative z-10 flex-shrink-0 streaming-icon-color-transition"
                       style={{ color: getIconColor(category.id) }}
+                      aria-hidden="true"
                     >
                       {(() => {
                         try {
@@ -1556,6 +1728,7 @@ const SeriesPage = () => {
                       animate="animate"
                       exit="exit"
                       transition={getBackgroundTransition()}
+                      aria-hidden="true"
                     />
                   )}
                 </button>
@@ -1657,6 +1830,10 @@ const SeriesPage = () => {
           >
             {(() => {
               const displaySeries = getDisplaySeries();
+              const getCategoryLabel = () => {
+                const category = categories.find(c => c.id === activeCategory);
+                return category?.label || 'TV Series';
+              };
 
               return (
                 <motion.div
@@ -1671,6 +1848,9 @@ const SeriesPage = () => {
                     delayChildren: 0.05
                   }}
                   className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 3xl:grid-cols-10 gap-4"
+                  role="region"
+                  aria-label={searchQuery ? `Search results for ${searchQuery}` : `${getCategoryLabel()} TV series`}
+                  id={`${activeCategory}-series-panel`}
                 >
                   {displaySeries.map((s, index) => {
                     if (!s || typeof s !== 'object') {

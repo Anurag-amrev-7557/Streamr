@@ -225,7 +225,7 @@ const MangaReaderPage = lazy(() => import('./pages/MangaReaderPage.jsx').catch(e
 }));
 import { SocketProvider } from './contexts/SocketContext'
 // Lazy load components that are not immediately needed
-const MovieDetailsOverlay = lazy(() => import('./components/MovieDetailsOverlay').catch(err => {
+const MovieDetailsOverlay = lazy(() => import('./components/MovieDetailsOverlay.jsx').catch(err => {
   console.error('Failed to load MovieDetailsOverlay:', err);
   return { default: () => <div>Failed to load MovieDetailsOverlay</div> };
 }));
@@ -368,6 +368,22 @@ const Layout = () => {
   // Get full page loader state from context
   const { fullPageLoader } = useLoading();
   
+  // Debug: Log when selectedMovie changes
+  useEffect(() => {
+    console.log('🎬 [App] selectedMovie state changed:', selectedMovie?.title || selectedMovie?.name || 'null');
+    if (selectedMovie) {
+      console.log('🎬 [App] Should show MovieDetailsOverlay now');
+    }
+  }, [selectedMovie]);
+  
+  // Debug: Log when selectedCast changes
+  useEffect(() => {
+    console.log('👤 [App] selectedCast state changed:', selectedCast?.name || 'null');
+    if (selectedCast) {
+      console.log('👤 [App] Should show CastDetailsOverlay now');
+    }
+  }, [selectedCast]);
+  
   // FIXED: Enhanced cleanup on unmount
   useEffect(() => {
     isMountedRef.current = true;
@@ -472,6 +488,9 @@ const Layout = () => {
   const scrollDirection = scrollState.scrollDirection >= 0 ? 'down' : 'up';
   
   const handleMovieSelect = React.useCallback((movie) => {
+    console.log('🎬 [App] handleMovieSelect called with:', movie?.title || movie?.name);
+    console.log('🎬 [App] Full movie data:', movie);
+    
     if (isMountedRef.current) {
       // Add source flag to avoid loading overlay for search results which already have data
       setSelectedMovie({
@@ -479,12 +498,22 @@ const Layout = () => {
         _source: movie._source || 'direct',  // 'direct' = from navbar search, default otherwise
         _skipInitialLoad: movie._source === 'direct' || movie._skipInitialLoad  // Skip loader for search results
       });
+      
+      console.log('🎬 [App] selectedMovie state updated');
+    } else {
+      console.warn('🎬 [App] Component not mounted, skipping setSelectedMovie');
     }
   }, []);
 
   const handleCastSelect = React.useCallback((cast) => {
+    console.log('👤 [App] handleCastSelect called with:', cast?.name);
+    console.log('👤 [App] Full cast data:', cast);
+    
     if (isMountedRef.current) {
       setSelectedCast(cast);
+      console.log('👤 [App] selectedCast state updated');
+    } else {
+      console.warn('👤 [App] Component not mounted, skipping setSelectedCast');
     }
   }, []);
   

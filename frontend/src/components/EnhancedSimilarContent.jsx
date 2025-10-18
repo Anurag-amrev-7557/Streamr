@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, useDeferredValue, useTransition } from 'react';
+import PropTypes from 'prop-types';
 import { scheduleRaf, cancelRaf } from '../utils/throttledRaf';
 import { motion, AnimatePresence } from 'framer-motion';
 import { similarContentUtils } from '../services/enhancedSimilarContentService';
@@ -114,6 +115,48 @@ const Animated = ({ children, motionProps = {}, className = '', style = {}, as: 
   );
 };
 
+// Skeleton Loader Component for Similar Content Cards
+const SimilarContentSkeleton = React.memo(({ count = 8, isMobile = false }) => {
+  return (
+    <div className={`grid gap-4 ${
+      isMobile 
+        ? 'grid-cols-2 sm:grid-cols-3' 
+        : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6'
+    }`}>
+      {[...Array(count)].map((_, index) => (
+        <div 
+          key={index} 
+          className="bg-gray-800/50 rounded-lg overflow-hidden animate-pulse"
+          aria-hidden="true"
+        >
+          {/* Poster skeleton */}
+          <div className="aspect-[2/3] bg-gray-700/50"></div>
+          
+          {/* Content skeleton */}
+          <div className="p-3 space-y-2">
+            {/* Title skeleton */}
+            <div className="h-4 bg-gray-700/50 rounded w-3/4"></div>
+            
+            {/* Year skeleton */}
+            <div className="h-3 bg-gray-700/50 rounded w-1/2"></div>
+            
+            {/* Rating skeleton */}
+            <div className="flex items-center gap-2">
+              <div className="h-3 w-3 bg-gray-700/50 rounded-full"></div>
+              <div className="h-3 bg-gray-700/50 rounded w-1/3"></div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+});
+
+SimilarContentSkeleton.propTypes = {
+  count: PropTypes.number,
+  isMobile: PropTypes.bool
+};
+
 // Custom Modern Minimalist Dropdown Component
 const CustomDropdown = React.memo(({ 
   options, 
@@ -154,11 +197,36 @@ const CustomDropdown = React.memo(({
 
   const selectedOption = options.find(option => option.value === value) || options[0];
 
+  // Keyboard navigation
+  const handleKeyDown = useCallback((event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      setIsOpen(!isOpen);
+    } else if (event.key === 'Escape' && isOpen) {
+      event.preventDefault();
+      setIsOpen(false);
+    } else if (event.key === 'ArrowDown' && isOpen) {
+      event.preventDefault();
+      const currentIndex = options.findIndex(opt => opt.value === value);
+      const nextIndex = (currentIndex + 1) % options.length;
+      onChange(options[nextIndex].value);
+    } else if (event.key === 'ArrowUp' && isOpen) {
+      event.preventDefault();
+      const currentIndex = options.findIndex(opt => opt.value === value);
+      const prevIndex = currentIndex === 0 ? options.length - 1 : currentIndex - 1;
+      onChange(options[prevIndex].value);
+    }
+  }, [isOpen, options, value, onChange]);
+
   return (
     <div ref={dropdownRef} className={`relative ${className}`}>
       {/* Dropdown Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
+        onKeyDown={handleKeyDown}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        aria-label={`${placeholder}: ${selectedOption?.label}`}
         className="flex items-center justify-between w-full px-3 py-1.5 text-sm text-white bg-transparent border-b border-white/15 hover:border-white/30 focus:outline-none focus:border-primary/80 transition-all duration-200 min-w-[120px]"
       >
         <span className="truncate">{selectedOption?.label || placeholder}</span>
@@ -182,6 +250,8 @@ const CustomDropdown = React.memo(({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -10, scale: 0.95 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
+            role="listbox"
+            aria-label={placeholder}
             className="absolute top-full left-0 right-0 mt-1 bg-[#1a1a1a]/95 backdrop-blur-md border border-white/10 rounded-lg shadow-xl z-50 overflow-hidden"
           >
             <div className="max-h-48 overflow-y-auto">
@@ -192,7 +262,9 @@ const CustomDropdown = React.memo(({
                     onChange(option.value);
                     setIsOpen(false);
                   }}
-                  className={`w-full px-3 py-2 text-sm text-left hover:bg-white/10 transition-colors duration-150 ${
+                  role="option"
+                  aria-selected={option.value === value}
+                  className={`w-full px-3 py-2 text-sm text-left hover:bg-white/10 transition-colors duration-150 focus:outline-none focus:bg-white/15 ${
                     option.value === value 
                       ? 'bg-primary/20 text-primary' 
                       : 'text-white/80'
@@ -210,7 +282,13 @@ const CustomDropdown = React.memo(({
 });
 
 // Netflix-Level Enhanced Similar Content Card with AI indicators - FIXED: Enhanced memory leak prevention
-const EnhancedSimilarCard = React.memo(({ item, onClick, isMobile, showRelevanceScore = false, disableAnimations = false }) => {
+const EnhancedSimilarCard = React.memo(({ 
+  item, 
+  onClick = null, 
+  isMobile = false, 
+  showRelevanceScore = false, 
+  disableAnimations = false 
+}) => {
   const isMountedRef = useRef(true); // FIXED: Add mounted ref for cleanup
   const imageRef = useRef(null); // FIXED: Add image ref for cleanup
   const correctSrcRef = useRef(null); // Track the correct src
@@ -383,6 +461,15 @@ const EnhancedSimilarCard = React.memo(({ item, onClick, isMobile, showRelevance
     <motion.div 
       className="group cursor-pointer relative"
       onClick={handleClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          handleClick();
+        }
+      }}
+      role="button"
+      tabIndex={0}
+      aria-label={`${displayTitle}, released ${displayYear}${item.vote_average ? `, rated ${formatRating(item.vote_average)}` : ''}`}
       variants={cardVariants}
       initial={cardVariants ? 'initial' : undefined}
       animate={cardVariants ? 'animate' : undefined}
@@ -755,7 +842,7 @@ const SimilarContentFilters = React.memo(({ filters, onFilterChange, isMobile = 
 const EnhancedSimilarContent = React.memo(({ 
   contentId, 
   contentType = 'movie', 
-  onItemClick, 
+  onItemClick = null, 
   isMobile = false,
   maxItems = 16, // Reduced from 24 to 16 for better memory management
   showFilters = true,
@@ -1657,21 +1744,29 @@ const EnhancedSimilarContent = React.memo(({
     );
   }
 
-  // Error state
+  // Error state with retry logic
   if (error) {
     return (
-      <div className={`${className}`}>
+      <div className={`${className}`} role="alert" aria-live="assertive">
         {showTitle && (
           <h3 className="text-xl font-bold text-white mb-4">Similar Content</h3>
         )}
         <div className="text-center text-gray-400 py-8">
-          <svg className="w-12 h-12 mx-auto mb-4 text-white/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg 
+            className="w-12 h-12 mx-auto mb-4 text-white/20" 
+            fill="none" 
+            stroke="currentColor" 
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
           </svg>
-          <p>{error}</p>
+          <p className="mb-2">{error}</p>
+          <p className="text-sm text-gray-500 mb-4">Please try again or refresh the page.</p>
           <button 
             onClick={() => fetchSimilarContent(1, false)}
-            className="mt-4 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/80 transition-colors"
+            className="mt-4 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/80 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-gray-900"
+            aria-label="Retry loading similar content"
           >
             Try Again
           </button>
@@ -1972,5 +2067,48 @@ const MemoizedEnhancedSimilarContent = React.memo(EnhancedSimilarContent, (prevP
     prevProps.className === nextProps.className
   );
 });
+
+// PropTypes for type checking
+EnhancedSimilarContent.propTypes = {
+  contentId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+  contentType: PropTypes.oneOf(['movie', 'tv']),
+  onItemClick: PropTypes.func,
+  isMobile: PropTypes.bool,
+  maxItems: PropTypes.number,
+  showFilters: PropTypes.bool,
+  showTitle: PropTypes.bool,
+  showPagination: PropTypes.bool,
+  showLoadMore: PropTypes.bool,
+  className: PropTypes.string
+};
+
+CustomDropdown.propTypes = {
+  options: PropTypes.arrayOf(PropTypes.shape({
+    value: PropTypes.any.isRequired,
+    label: PropTypes.string.isRequired
+  })).isRequired,
+  value: PropTypes.any.isRequired,
+  onChange: PropTypes.func.isRequired,
+  placeholder: PropTypes.string,
+  className: PropTypes.string
+};
+
+EnhancedSimilarCard.propTypes = {
+  item: PropTypes.shape({
+    id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+    title: PropTypes.string,
+    name: PropTypes.string,
+    poster_path: PropTypes.string,
+    year: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    release_date: PropTypes.string,
+    first_air_date: PropTypes.string,
+    similarityScore: PropTypes.number,
+    vote_average: PropTypes.number
+  }).isRequired,
+  onClick: PropTypes.func,
+  isMobile: PropTypes.bool,
+  showRelevanceScore: PropTypes.bool,
+  disableAnimations: PropTypes.bool
+};
 
 export default MemoizedEnhancedSimilarContent; 

@@ -724,9 +724,8 @@ const SearchResultItem = memo(({
         if (movie.isSuggestion) {
           handleSearchQuery(movie.title);
           debouncedSearch.search(movie.title);
-        } else if (movie.type === 'person') {
-          onCastSelect(movie);
         } else {
+          // Always use onSelect to show MovieDetailsOverlay for all content types
           onSelect(movie);
         }
       }}
@@ -874,7 +873,8 @@ const SearchResultItem = memo(({
           onClick={(e) => {
             e.stopPropagation();
             if (movie.type === 'person') {
-              onCastSelect(movie);
+              // Show MovieDetailsOverlay for person type as well
+              onSelect(movie);
             } else {
               if (isInWatchlist && isInWatchlist(movie.id)) {
                 // Remove from watchlist
@@ -1811,6 +1811,9 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
 
     // Enhanced movie selection with analytics and caching
     if (onMovieSelect) {
+      console.log('🎬 [Navbar] Calling onMovieSelect with movie:', movieData.title || movieData.name);
+      console.log('🎬 [Navbar] Movie data:', movieData);
+      
       // Track selection analytics
       scheduleNonCritical(() => {
         try {

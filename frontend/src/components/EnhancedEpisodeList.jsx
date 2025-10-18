@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
+import PropTypes from 'prop-types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useInView } from 'react-intersection-observer';
 import enhancedEpisodeService from '../services/enhancedEpisodeService.js';
@@ -41,9 +42,9 @@ const episodeVariants = {
 
 const EnhancedEpisodeList = ({ 
   tvId, 
-  seasonNumber, 
-  onEpisodeSelect, 
-  onSeasonChange,
+  seasonNumber = null, 
+  onEpisodeSelect = null, 
+  onSeasonChange = null,
   initialSeason = null,
   showSearch = true,
   showStats = true,
@@ -66,6 +67,9 @@ const EnhancedEpisodeList = ({
   const [sortOrder, setSortOrder] = useState('asc');
   const [showAllEpisodes, setShowAllEpisodes] = useState(false);
   const [episodeCache, setEpisodeCache] = useState(new Map());
+  const [retryCount, setRetryCount] = useState(0);
+  const maxRetries = 3;
+  const cacheExpirationTime = 5 * 60 * 1000; // 5 minutes
 
   // Refs for intersection observer
   const { ref: loadMoreRef, inView } = useInView({
@@ -74,6 +78,59 @@ const EnhancedEpisodeList = ({
   });
 
   const searchInputRef = useRef(null);
+  const searchTimeoutRef = useRef(null);
+  const abortControllerRef = useRef(null);
+  const episodeListRef = useRef(null);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyPress = (e) => {
+      // Focus search on '/' key
+      if (e.key === '/' && showSearch && !e.target.matches('input, textarea')) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+      
+      // Clear search on 'Escape' key
+      if (e.key === 'Escape' && searchTerm) {
+        e.preventDefault();
+        handleSearch('');
+        searchInputRef.current?.blur();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [searchTerm, showSearch, handleSearch]);
+
+  // Debounced search function
+  const debouncedSearch = useCallback((term, delay = 500) => {
+    // Clear previous timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    // Abort previous request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    searchTimeoutRef.current = setTimeout(() => {
+      handleSearchImmediate(term);
+    }, delay);
+  }, []);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   // Memoized filtered episodes
   const displayEpisodes = useMemo(() => {
@@ -136,10 +193,13 @@ const EnhancedEpisodeList = ({
       const cacheKey = `episodes_${tvId}_${seasonNum}`;
       const cached = episodeCache.get(cacheKey);
       
-      if (cached) {
-        setEpisodes(cached);
-        setFilteredEpisodes(cached);
-        setHasMoreEpisodes(cached.length > maxEpisodesPerPage);
+      // Check if cache is still valid
+      const isCacheValid = cached && (Date.now() - cached.timestamp) < cacheExpirationTime;
+      
+      if (isCacheValid) {
+        setEpisodes(cached.data);
+        setFilteredEpisodes(cached.data);
+        setHasMoreEpisodes(cached.data.length > maxEpisodesPerPage);
       } else {
         // Fetch from API
         const seasonData = await enhancedEpisodeService.getSeason(tvId, seasonNum);
@@ -149,8 +209,15 @@ const EnhancedEpisodeList = ({
         setFilteredEpisodes(episodesData);
         setHasMoreEpisodes(episodesData.length > maxEpisodesPerPage);
         
-        // Cache the episodes
-        setEpisodeCache(prev => new Map(prev).set(cacheKey, episodesData));
+        // Cache the episodes with timestamp
+        setEpisodeCache(prev => {
+          const newCache = new Map(prev);
+          newCache.set(cacheKey, {
+            data: episodesData,
+            timestamp: Date.now()
+          });
+          return newCache;
+        });
       }
       
       // Load season stats
@@ -163,15 +230,18 @@ const EnhancedEpisodeList = ({
         }
       }
       
+      // Reset retry count on successful load
+      setRetryCount(0);
+      
     } catch (err) {
       console.error(`Error loading episodes for season ${seasonNum}:`, err);
-      setError('Failed to load episodes');
+      setError('Failed to load episodes. Please try again.');
       setEpisodes([]);
       setFilteredEpisodes([]);
     } finally {
       setLoadingEpisodes(false);
     }
-  }, [tvId, maxEpisodesPerPage, showStats, episodeCache]);
+  }, [tvId, maxEpisodesPerPage, showStats, episodeCache, cacheExpirationTime]);
 
   // Handle season change
   const handleSeasonChange = useCallback(async (season) => {
@@ -185,10 +255,8 @@ const EnhancedEpisodeList = ({
     onEpisodeSelect?.(episode, currentSeason);
   }, [onEpisodeSelect, currentSeason]);
 
-  // Search episodes
-  const handleSearch = useCallback(async (term) => {
-    setSearchTerm(term);
-    
+  // Search episodes (immediate version for debounced calls)
+  const handleSearchImmediate = useCallback(async (term) => {
     if (!term.trim()) {
       setFilteredEpisodes(episodes);
       setCurrentPage(1);
@@ -196,24 +264,39 @@ const EnhancedEpisodeList = ({
     }
     
     try {
+      // Create new abort controller for this request
+      abortControllerRef.current = new AbortController();
+      
       const searchResults = await enhancedEpisodeService.searchEpisodes(
         tvId, 
         currentSeason.season_number, 
-        term
+        term,
+        { signal: abortControllerRef.current.signal }
       );
       setFilteredEpisodes(searchResults);
       setCurrentPage(1);
     } catch (err) {
+      // Ignore aborted requests
+      if (err.name === 'AbortError') {
+        return;
+      }
+      
       console.error('Error searching episodes:', err);
       // Fallback to client-side search
       const filtered = episodes.filter(episode => 
-        episode.name.toLowerCase().includes(term.toLowerCase()) ||
-        episode.overview.toLowerCase().includes(term.toLowerCase()) ||
-        episode.episode_number.toString().includes(term)
+        episode.name?.toLowerCase().includes(term.toLowerCase()) ||
+        episode.overview?.toLowerCase().includes(term.toLowerCase()) ||
+        episode.episode_number?.toString().includes(term)
       );
       setFilteredEpisodes(filtered);
     }
   }, [tvId, currentSeason, episodes]);
+
+  // Search episodes (wrapper with debounce)
+  const handleSearch = useCallback((term) => {
+    setSearchTerm(term);
+    debouncedSearch(term);
+  }, [debouncedSearch]);
 
   // Sort episodes
   const handleSort = useCallback((newSortBy, newSortOrder) => {
@@ -236,8 +319,8 @@ const EnhancedEpisodeList = ({
     }
   }, [inView, hasMoreEpisodes, loadingEpisodes, showAllEpisodes]);
 
-  // Episode card component
-  const EpisodeCard = ({ episode, index }) => (
+  // Episode card component (Memoized)
+  const EpisodeCard = memo(({ episode, index }) => (
     <motion.div
       variants={episodeVariants}
       initial="hidden"
@@ -245,6 +328,15 @@ const EnhancedEpisodeList = ({
       whileHover="hover"
       className="bg-gray-800 rounded-lg overflow-hidden cursor-pointer group"
       onClick={() => handleEpisodeClick(episode)}
+      role="button"
+      tabIndex={0}
+      aria-label={`Episode ${episode.episode_number}: ${episode.name}`}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          handleEpisodeClick(episode);
+        }
+      }}
     >
       <div className="flex">
         {/* Episode still image */}
@@ -304,10 +396,10 @@ const EnhancedEpisodeList = ({
         </div>
       </div>
     </motion.div>
-  );
+  ));
 
-  // Season selector component
-  const SeasonSelector = () => (
+  // Season selector component (Memoized)
+  const SeasonSelector = memo(() => (
     <div className="mb-6">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-lg font-semibold text-white">Seasons</h3>
@@ -318,11 +410,14 @@ const EnhancedEpisodeList = ({
         )}
       </div>
       
-              <div className="flex gap-2 overflow-x-auto pb-2 horizontal-scroll-container">
+      <div className="flex gap-2 overflow-x-auto pb-2 horizontal-scroll-container" role="tablist" aria-label="Season selection">
         {seasons.map((season) => (
           <button
             key={season.season_number}
             onClick={() => handleSeasonChange(season)}
+            role="tab"
+            aria-selected={currentSeason?.season_number === season.season_number}
+            aria-label={`${season.name}, ${season.episode_count} episodes`}
             className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
               currentSeason?.season_number === season.season_number
                 ? 'bg-blue-600 text-white shadow-lg'
@@ -331,16 +426,16 @@ const EnhancedEpisodeList = ({
           >
             {season.name}
             {season.is_latest && (
-              <span className="ml-1 text-xs text-yellow-400">★</span>
+              <span className="ml-1 text-xs text-yellow-400" aria-label="Latest season">★</span>
             )}
           </button>
         ))}
       </div>
     </div>
-  );
+  ));
 
-  // Search and filter component
-  const SearchAndFilter = () => (
+  // Search and filter component (Memoized)
+  const SearchAndFilter = memo(() => (
     <div className="mb-6 space-y-4">
       {/* Search bar */}
       {showSearch && (
@@ -351,11 +446,13 @@ const EnhancedEpisodeList = ({
             placeholder="Search episodes..."
             value={searchTerm}
             onChange={(e) => handleSearch(e.target.value)}
+            aria-label="Search episodes"
             className="w-full px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 transition-colors"
           />
           {searchTerm && (
             <button
               onClick={() => handleSearch('')}
+              aria-label="Clear search"
               className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white"
             >
               ✕
@@ -369,6 +466,7 @@ const EnhancedEpisodeList = ({
         <select
           value={sortBy}
           onChange={(e) => handleSort(e.target.value, sortOrder)}
+          aria-label="Sort episodes by"
           className="px-3 py-1 bg-gray-800 border border-gray-600 rounded text-sm text-white focus:outline-none focus:border-blue-500"
         >
           <option value="episode_number">Episode Number</option>
@@ -380,16 +478,17 @@ const EnhancedEpisodeList = ({
         
         <button
           onClick={() => handleSort(sortBy, sortOrder === 'asc' ? 'desc' : 'asc')}
+          aria-label={`Sort ${sortOrder === 'asc' ? 'descending' : 'ascending'}`}
           className="px-3 py-1 bg-gray-800 border border-gray-600 rounded text-sm text-white hover:bg-gray-700 transition-colors"
         >
           {sortOrder === 'asc' ? '↑' : '↓'}
         </button>
       </div>
     </div>
-  );
+  ));
 
-  // Season stats component
-  const SeasonStats = () => {
+  // Season stats component (Memoized)
+  const SeasonStats = memo(() => {
     if (!showStats || !seasonStats) return null;
     
     return (
@@ -397,6 +496,8 @@ const EnhancedEpisodeList = ({
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="mb-6 p-4 bg-gray-800 rounded-lg"
+        role="region"
+        aria-label="Season statistics"
       >
         <h4 className="text-sm font-medium text-white mb-3">Season Statistics</h4>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
@@ -425,41 +526,88 @@ const EnhancedEpisodeList = ({
         </div>
       </motion.div>
     );
-  };
+  });
 
-  // Loading component
+  // Loading component with skeleton
   const LoadingSpinner = () => (
     <div className="flex justify-center items-center py-8">
       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
     </div>
   );
 
-  // Error component
+  // Loading skeleton for episodes
+  const EpisodeListSkeleton = () => (
+    <div className="space-y-3">
+      {[...Array(5)].map((_, i) => (
+        <div key={i} className="bg-gray-800 rounded-lg overflow-hidden animate-pulse">
+          <div className="flex">
+            <div className="w-32 h-20 bg-gray-700 flex-shrink-0"></div>
+            <div className="flex-1 p-3 space-y-2">
+              <div className="h-4 bg-gray-700 rounded w-3/4"></div>
+              <div className="h-3 bg-gray-700 rounded w-full"></div>
+              <div className="h-3 bg-gray-700 rounded w-5/6"></div>
+              <div className="flex justify-between">
+                <div className="h-3 bg-gray-700 rounded w-20"></div>
+                <div className="h-3 bg-gray-700 rounded w-16"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  // Error component with retry
   const ErrorMessage = () => (
-    <div className="text-center py-8">
-      <div className="text-red-400 mb-2">⚠️</div>
-      <p className="text-gray-400">{error}</p>
+    <div className="text-center py-8" role="alert" aria-live="polite">
+      <div className="text-red-400 mb-2 text-4xl">⚠️</div>
+      <p className="text-gray-400 mb-1">{error}</p>
+      {retryCount < maxRetries && (
+        <p className="text-gray-500 text-sm mb-4">
+          Retry attempt {retryCount} of {maxRetries}
+        </p>
+      )}
       <button
-        onClick={() => loadSeasonEpisodes(currentSeason?.season_number)}
-        className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        onClick={() => {
+          setRetryCount(prev => prev + 1);
+          loadSeasonEpisodes(currentSeason?.season_number);
+        }}
+        disabled={retryCount >= maxRetries}
+        className={`mt-4 px-4 py-2 rounded-lg transition-colors ${
+          retryCount >= maxRetries
+            ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+            : 'bg-blue-600 text-white hover:bg-blue-700'
+        }`}
       >
-        Retry
+        {retryCount >= maxRetries ? 'Max retries reached' : 'Retry'}
       </button>
     </div>
   );
 
   // Empty state component
   const EmptyState = () => (
-    <div className="text-center py-8">
-      <div className="text-gray-400 mb-2">📺</div>
+    <div className="text-center py-8" role="status" aria-live="polite">
+      <div className="text-gray-400 mb-2 text-4xl">📺</div>
       <p className="text-gray-400">
         {searchTerm ? 'No episodes found matching your search.' : 'No episodes available for this season.'}
       </p>
+      {searchTerm && (
+        <button
+          onClick={() => handleSearch('')}
+          className="mt-4 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
+        >
+          Clear Search
+        </button>
+      )}
     </div>
   );
 
   if (loading) {
-    return <LoadingSpinner />;
+    return (
+      <div className={`space-y-6 ${className}`}>
+        <EpisodeListSkeleton />
+      </div>
+    );
   }
 
   if (error) {
@@ -467,7 +615,7 @@ const EnhancedEpisodeList = ({
   }
 
   return (
-    <div className={`space-y-6 ${className}`}>
+    <div className={`space-y-6 ${className}`} ref={episodeListRef}>
       {/* Season Selector */}
       <SeasonSelector />
       
@@ -483,23 +631,28 @@ const EnhancedEpisodeList = ({
         initial="hidden"
         animate="visible"
         className="space-y-3"
+        role="list"
+        aria-label="Episodes list"
       >
         {displayEpisodes.length > 0 ? (
           <>
             {displayEpisodes.map((episode, index) => (
-              <EpisodeCard key={episode.id} episode={episode} index={index} />
+              <div key={episode.id} role="listitem">
+                <EpisodeCard episode={episode} index={index} />
+              </div>
             ))}
             
             {/* Load more trigger */}
             {hasMoreEpisodes && !showAllEpisodes && (
-              <div ref={loadMoreRef} className="h-10" />
+              <div ref={loadMoreRef} className="h-10" aria-hidden="true" />
             )}
             
             {/* Show all episodes button */}
             {hasMoreEpisodes && !showAllEpisodes && (
               <button
                 onClick={() => setShowAllEpisodes(true)}
-                className="w-full py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                className="w-full py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+                aria-label={`Show all ${filteredEpisodes.length} episodes`}
               >
                 Show All Episodes ({filteredEpisodes.length})
               </button>
@@ -516,6 +669,25 @@ const EnhancedEpisodeList = ({
       )}
     </div>
   );
+};
+
+// PropTypes for type checking
+EnhancedEpisodeList.propTypes = {
+  tvId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+  seasonNumber: PropTypes.number,
+  onEpisodeSelect: PropTypes.func,
+  onSeasonChange: PropTypes.func,
+  initialSeason: PropTypes.shape({
+    season_number: PropTypes.number,
+    name: PropTypes.string,
+    episode_count: PropTypes.number,
+    is_special: PropTypes.bool,
+    is_latest: PropTypes.bool
+  }),
+  showSearch: PropTypes.bool,
+  showStats: PropTypes.bool,
+  maxEpisodesPerPage: PropTypes.number,
+  className: PropTypes.string
 };
 
 export default EnhancedEpisodeList; 
