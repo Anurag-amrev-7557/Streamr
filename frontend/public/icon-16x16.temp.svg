@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="16" height="16" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+  <!-- Dark background -->
+  <rect width="48" height="48" fill="#121417" rx="8"/>
+  
+  <!-- Define enhanced drop shadow filter -->
+  <defs>
+    <filter id="logoShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <!-- Create shadow blur -->
+      <feGaussianBlur in="SourceAlpha" stdDeviation="1.5"/>
+      <feOffset dx="0" dy="2" result="offsetblur"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.6"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Logo with shadow -->
+  <path 
+    fillRule="evenodd" 
+    clipRule="evenodd" 
+    d="M24 4H42V17.3333V30.6667H24V44H6V30.6667V17.3333H24V4Z" 
+    fill="white"
+    filter="url(#logoShadow)"
+  />
+</svg>
