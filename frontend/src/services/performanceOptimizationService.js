@@ -22,7 +22,7 @@ class PerformanceOptimizationService {
       
       // Memory optimization
       maxCacheSize: 500, // Limit cache size to prevent memory issues
-      memoryThreshold: 150 * 1024 * 1024, // 150MB memory threshold
+  memoryThreshold: 200 * 1024 * 1024, // 200MB memory threshold (raised to reduce premature cleanup)
       aggressiveCleanup: true, // Enable aggressive memory cleanup
       
       // Cache optimization

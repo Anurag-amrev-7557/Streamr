@@ -86,11 +86,64 @@ import performanceOptimizationService from '../services/performanceOptimizationS
 import enhancedPerformanceService from '../services/enhancedPerformanceService';
 import { throttle, debounce, isLowEndDevice, getNetworkSpeed } from '../utils/performanceUtils';
 
-// Runtime helper: DISABLED to enable animations on all devices including mobile
-// Always returns false to ensure full animations work on mobile
+// Runtime helper: detect prefers-reduced-motion, Save-Data, or slow network
+// Returns true when animations should be reduced or disabled for stability
 const getReducedMotionOrLowPower = () => {
-  // Always return false to enable animations on all devices
-  return false;
+  if (typeof window === 'undefined') return false;
+
+  try {
+    const prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    // Use Network Information API when available to detect Save-Data or slow connections
+    const connection = navigator && (navigator.connection || null);
+    const saveData = connection && typeof connection.saveData === 'boolean' ? connection.saveData : false;
+    const effectiveType = connection && connection.effectiveType ? connection.effectiveType : null;
+    const slowEffectiveType = effectiveType && ['slow-2g', '2g'].includes(effectiveType);
+
+    return Boolean(prefersReducedMotion || saveData || slowEffectiveType);
+  } catch (e) {
+    return false;
+  }
+};
+
+// Reusable viewport hook to avoid duplicated resize listeners across components
+const useViewport = () => {
+  const isClient = typeof window !== 'undefined';
+  const getIsMobile = () => (isClient ? window.innerWidth < 768 : false);
+  const [isMobile, setIsMobile] = useState(getIsMobile);
+  const [isDesktop, setIsDesktop] = useState(() => !getIsMobile());
+
+  useEffect(() => {
+    if (!isClient) return undefined;
+    let mounted = true;
+
+    const handler = () => {
+      if (!mounted) return;
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      setIsDesktop(!mobile);
+    };
+
+    // Run once to initialize
+    handler();
+
+    try {
+      window.addEventListener('resize', handler, { passive: true });
+    } catch (e) {
+      window.addEventListener('resize', handler);
+    }
+
+    return () => {
+      mounted = false;
+      try {
+        window.removeEventListener('resize', handler);
+      } catch (e) {
+        try { window.removeEventListener('resize', handler); } catch (_) {}
+      }
+    };
+  }, [isClient]);
+
+  return { isMobile, isDesktop };
 };
 
 // Swiper imports for desktop category and movie sections
@@ -1146,6 +1199,7 @@ const MovieSectionSwiper = memo(({ title, movies, loading, onLoadMore, hasMore, 
                 onClick={() => onMovieSelect(movie)} 
                 id={movie.id} 
                 onPrefetch={() => onPrefetch && onPrefetch(movie.id)} 
+                applyWillChange={index < 8}
               />
             </motion.div>
           ))}
@@ -1628,15 +1682,16 @@ const ProgressiveImage = memo(
   }
 );
 
-const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, duration, runtime, onMouseLeave, onClick, id, prefetching, cardClassName, poster, poster_path, backdrop_path, overview, genres, release_date, first_air_date, vote_average, media_type, onPrefetch }) => {
+const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, duration, runtime, onMouseLeave, onClick, id, prefetching, cardClassName, poster, poster_path, backdrop_path, overview, genres, release_date, first_air_date, vote_average, media_type, onPrefetch, applyWillChange }) => {
   const { addToWatchlist, removeFromWatchlist, isInWatchlist } = useWatchlist();
   const [isInWatchlistState, setIsInWatchlistState] = useState(false);
   const [isPrefetching, setIsPrefetching] = useState(false);
   const [prefetchComplete, setPrefetchComplete] = useState(false);
   const hoverTimeoutRef = useRef(null);
   const prefetchTimeoutRef = useRef(null);
-  const [isMobile, setIsMobile] = useState(false);
+  const { isMobile } = useViewport();
   const [isOpening, setIsOpening] = useState(false);
+  const rootRef = useRef(null);
   
   // Simplified drag detection - only track if mouse is pressed and moving
   const [isMousePressed, setIsMousePressed] = useState(false);
@@ -1670,39 +1725,28 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
     setIsInWatchlistState(isInWatchlist(id));
   }, [id, isInWatchlist]);
 
-  // Check if we're on mobile for responsive layout - FIXED: Proper cleanup and mobile detection
+  // Apply will-change dynamically for first few cards to avoid persistent GPU layer promotion
   useEffect(() => {
-    const checkScreenSize = () => {
-      // FIXED: More reliable mobile detection
-      const isNowMobile = window.innerWidth < 768 || 
-                         (window.navigator && window.navigator.userAgent && 
-                          /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(window.navigator.userAgent));
-      setIsMobile(prev => {
-        if (prev !== isNowMobile) {
-          return isNowMobile;
-        }
-        return prev;
-      });
-    };
-    
-    checkScreenSize();
-    const resizeHandler = checkScreenSize;
-    
-    try {
-      window.addEventListener('resize', resizeHandler, { passive: true });
-    } catch (error) {
-      // Fallback for browsers that don't support passive listeners
-      window.addEventListener('resize', resizeHandler);
-    }
-    
-    return () => {
+    if (!applyWillChange || typeof window === 'undefined') return undefined;
+    const el = rootRef.current;
+    if (!el || !el.style) return undefined;
+
+    // Apply will-change briefly when component mounts to optimize the upcoming animation
+    el.style.willChange = 'transform, opacity';
+    const t = setTimeout(() => {
       try {
-        window.removeEventListener('resize', resizeHandler);
-      } catch (error) {
-        console.warn('Error removing resize listener:', error);
-      }
+        el.style.willChange = 'auto';
+      } catch (e) {}
+    }, 350);
+
+    return () => {
+      clearTimeout(t);
+      try { if (el && el.style) el.style.willChange = 'auto'; } catch (e) {}
     };
-  }, []);
+  }, [applyWillChange]);
+
+  // Check if we're on mobile for responsive layout - FIXED: Proper cleanup and mobile detection
+  // useViewport provides isMobile
 
   // Further enhanced prefetching function with image preloading, error logging, and smarter checks
   const handlePrefetch = useCallback(async () => {
@@ -1953,40 +1997,7 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
   }, []);
 
   // FIXED: Add proper cleanup for mobile detection with passive listeners
-  useEffect(() => {
-    const checkScreenSize = () => {
-      const isNowMobile = window.innerWidth < 768 || 
-                         (window.navigator && window.navigator.userAgent && 
-                          /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(window.navigator.userAgent));
-      setIsMobile(prev => {
-        if (prev !== isNowMobile) {
-          if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_MEMORY === 'true') {
-            console.log('MovieCard Mobile detection changed:', isNowMobile, 'Screen width:', window.innerWidth);
-          }
-          return isNowMobile;
-        }
-        return prev;
-      });
-    };
-    
-    checkScreenSize();
-    const resizeHandler = checkScreenSize;
-    
-    try {
-      window.addEventListener('resize', resizeHandler, { passive: true });
-    } catch (error) {
-      // Fallback for browsers that don't support passive listeners
-      window.addEventListener('resize', resizeHandler);
-    }
-    
-    return () => {
-      try {
-        window.removeEventListener('resize', resizeHandler);
-      } catch (error) {
-        console.warn('Error removing resize listener:', error);
-      }
-    };
-  }, []);
+  // Mobile detection handled by useViewport hook
 
   // Modified click handler that prevents clicks during dragging
   const handleCardClick = useCallback((event) => {
@@ -2073,6 +2084,7 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
   const cardWidth = getCardWidth();
   return (
     <div 
+      ref={rootRef}
       className={`flex flex-col gap-4 rounded-lg ${cardWidth} flex-shrink-0 ${cardClassName} movie-card-container`}
       data-movie-id={id}
       style={{
@@ -2083,7 +2095,7 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
         touchAction: 'auto',
       }}
     >
-      <div className={`relative ${isMobile ? 'aspect-[2/3]' : 'aspect-[16/10]'} rounded-lg overflow-hidden transform-gpu transition-all duration-700 hover:scale-[1.015] hover:shadow-2xl hover:shadow-black/20 w-full active:scale-[0.995] active:shadow-lg`}>
+  <div className={`relative ${isMobile ? 'aspect-[2/3]' : 'aspect-[16/10]'} rounded-lg overflow-hidden transform-gpu transition-transform duration-300 hover:scale-[1.015] hover:shadow-2xl hover:shadow-black/20 w-full active:scale-[0.995] active:shadow-lg`}> 
         {/* Prefetch shimmer/spinner overlay */}
         {prefetching && (
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/30 pointer-events-none">
@@ -2128,7 +2140,7 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
           <ProgressiveImage
             src={imageSource}
             alt={title}
-            className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"
+            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
             aspectRatio={aspectRatio}
           />
         {/* Click Loader Overlay */}
@@ -2343,7 +2355,7 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
   const [isViewAllMode, setIsViewAllMode] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
-  const [isDesktop, setIsDesktop] = useState(false);
+  const { isDesktop } = useViewport();
   const [prefetchingIds, setPrefetchingIds] = useState([]);
   
   const scrollContainerRef = useRef(null);
@@ -2368,41 +2380,7 @@ const MovieSection = memo(({ title, movies, loading, onLoadMore, hasMore, curren
   }, [sectionKey, title, movies, loading, hasMore, currentPage]);
 
   // Check if we're on desktop for navigation buttons - FIXED: Proper cleanup and mobile detection
-  useEffect(() => {
-    const checkScreenSize = () => {
-      // FIXED: More reliable mobile/desktop detection
-      const isNowDesktop = window.innerWidth > 768 && 
-                          !(window.navigator && window.navigator.userAgent && 
-                            /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(window.navigator.userAgent));
-      setIsDesktop(prev => {
-        if (prev !== isNowDesktop) {
-          if (import.meta.env.DEV) {
-            console.log('MovieSection Desktop detection changed:', isNowDesktop, 'Screen width:', window.innerWidth);
-          }
-          return isNowDesktop;
-        }
-        return prev;
-      });
-    };
-    
-    checkScreenSize();
-    const resizeHandler = checkScreenSize;
-    
-    try {
-      window.addEventListener('resize', resizeHandler, { passive: true });
-    } catch (error) {
-      // Fallback for browsers that don't support passive listeners
-      window.addEventListener('resize', resizeHandler);
-    }
-    
-    return () => {
-      try {
-        window.removeEventListener('resize', resizeHandler);
-      } catch (error) {
-        console.warn('Error removing resize listener:', error);
-      }
-    };
-  }, []);
+  // Desktop detection handled by useViewport hook
 
   const handleReachEnd = async (sectionKey) => {
     // FIXED: Enhanced validation with proper parameter handling
@@ -3228,7 +3206,7 @@ const HeroSection = memo(({ featuredContent, trendingMovies, onMovieSelect, onGe
     >
       {/* 🚀 OPTIMIZED: Background Image with smooth fade-in to prevent jitter */}
       <motion.img
-        className="absolute inset-0 w-full h-full object-cover will-change-opacity transform-gpu"
+        className="absolute inset-0 w-full h-full object-cover transform-gpu"
         src={getBackdropProps(featuredContent, 'w1280').src}
         srcSet={getBackdropProps(featuredContent, 'w1280').srcSet}
         alt={`${featuredContent.title || featuredContent.name || 'Featured'} backdrop`}
@@ -3252,11 +3230,11 @@ const HeroSection = memo(({ featuredContent, trendingMovies, onMovieSelect, onGe
       {/* Gradient Overlay - Enhanced for mobile visibility */}
       <div className="absolute inset-0 bg-gradient-to-r from-[#121417] via-[#121417]/90 sm:via-[#121417]/80 to-[#121417]/40 sm:to-transparent" />
       {/* Content */}
-      <div className="relative h-full max-w-7xl px-4 sm:px-6 lg:px-8 flex items-end will-change-transform transform-gpu hero-content">
+  <div className="relative h-full max-w-7xl px-4 sm:px-6 lg:px-8 flex items-end transform-gpu hero-content">
         <div className="w-full max-w-2xl lg:max-w-3xl xl:max-w-4xl flex flex-col gap-4 sm:gap-6 rounded-2xl p-4 sm:p-6 md:p-10 overflow-auto lg:overflow-visible max-h-[85vh] sm:max-h-[90vh] md:max-h-[85vh] lg:max-h-none mt-4 sm:mt-8 mx-auto lg:mx-0 scrollbar-hide">
           <div className="flex items-center gap-2 mb-2 sm:mb-4">
-            <div className="relative group will-change-transform">
-              <div className="absolute inset-0 bg-gradient-to-r from-primary/20 to-primary/10 blur-md group-hover:blur-lg transition-all duration-300 rounded-full transform-gpu will-change-transform"></div>
+            <div className="relative group">
+              <div className="absolute inset-0 bg-gradient-to-r from-primary/20 to-primary/10 blur-md group-hover:blur-lg transition-all duration-300 rounded-full transform-gpu"></div>
               <div className="relative flex items-center gap-2 px-3 sm:px-4 py-1 sm:py-1.5 bg-black/40 backdrop-blur-sm rounded-full border border-white/10 transform-gpu">
                 <svg className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-primary transform-gpu" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M13 2L3 14H12L11 22L21 10H12L13 2Z" fill="currentColor" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
@@ -3278,7 +3256,7 @@ const HeroSection = memo(({ featuredContent, trendingMovies, onMovieSelect, onGe
                  <img
                   src={featuredContent.logo}
                   alt={featuredContent.title}
-                   className="w-[180px] sm:w-[220px] md:w-[280px] lg:w-[320px] xl:w-[340px] max-w-full h-auto object-contain transform-gpu will-change-transform hero-logo"
+                   className="w-[180px] sm:w-[220px] md:w-[280px] lg:w-[320px] xl:w-[340px] max-w-full h-auto object-contain transform-gpu hero-logo"
                   style={{
                     backfaceVisibility: 'hidden',
                     imageRendering: 'optimizeQuality'
@@ -3412,7 +3390,7 @@ const HeroSection = memo(({ featuredContent, trendingMovies, onMovieSelect, onGe
                 return (
                   <motion.span
                     key={genreName}
-                    className="px-2 sm:px-3 py-1 bg-white/10 text-white/80 rounded-full text-xs sm:text-sm cursor-pointer hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-white/30 will-change-transform"
+                    className="px-2 sm:px-3 py-1 bg-white/10 text-white/80 rounded-full text-xs sm:text-sm cursor-pointer hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-white/30"
                     custom={i}
                     variants={genreChipVariants}
                     initial="hidden"
@@ -3456,9 +3434,9 @@ const HeroSection = memo(({ featuredContent, trendingMovies, onMovieSelect, onGe
           <div className="flex flex-row items-center gap-2 sm:gap-3 md:gap-4 overflow-visible px-2 py-4 w-full mb-6">
             <button
               onClick={() => onMovieSelect(featuredContent)}
-              className="group relative flex-1 sm:w-auto px-4 sm:px-6 md:px-8 py-2.5 sm:py-3 bg-white text-black rounded-full hover:bg-white/90 transition-all duration-300 flex items-center justify-center gap-2 font-medium hover:scale-105 hover:shadow-lg hover:shadow-white/20 overflow-hidden flex-shrink-0 transform-gpu will-change-transform"
+              className="group relative flex-1 sm:w-auto px-4 sm:px-6 md:px-8 py-2.5 sm:py-3 bg-white text-black rounded-full hover:bg-white/90 transition-all duration-300 flex items-center justify-center gap-2 font-medium hover:scale-105 hover:shadow-lg hover:shadow-white/20 overflow-hidden flex-shrink-0 transform-gpu"
             >
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 will-change-transform"></div>
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-300"></div>
               <div className="relative flex items-center gap-2">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-5 sm:w-5 transition-all duration-300 group-hover:scale-110 group-hover:rotate-12" viewBox="0 0 24 24" fill="currentColor">
                   <polygon points="8,5 20,12 8,19" />
@@ -3469,9 +3447,9 @@ const HeroSection = memo(({ featuredContent, trendingMovies, onMovieSelect, onGe
             {/* Watch Trailer - desktop only (match Add to List styling) */}
             <button
               onClick={handleOpenTrailer}
-              className="hidden md:flex group relative flex-1 sm:w-auto px-3 sm:px-4 md:px-6 py-2.5 sm:py-3 rounded-full transition-all duration-300 items-center justify-center gap-2 font-medium hover:scale-105 hover:shadow-lg overflow-hidden flex-shrink-0 transform-gpu will-change-transform bg-white/10 text-white/90 border border-white/10 hover:bg-white/20"
+              className="hidden md:flex group relative flex-1 sm:w-auto px-3 sm:px-4 md:px-6 py-2.5 sm:py-3 rounded-full transition-all duration-300 items-center justify-center gap-2 font-medium hover:scale-105 hover:shadow-lg overflow-hidden flex-shrink-0 transform-gpu bg-white/10 text-white/90 border border-white/10 hover:bg-white/20"
             >
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 will-change-transform"></div>
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-300"></div>
               <div className="relative flex items-center gap-2">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="h-4 w-4 sm:h-5 sm:w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <circle cx="12" cy="12" r="9" />
@@ -3482,14 +3460,14 @@ const HeroSection = memo(({ featuredContent, trendingMovies, onMovieSelect, onGe
             </button>
             <button
               onClick={handleWatchlistClick}
-              className={`group relative flex-1 sm:w-auto px-3 sm:px-4 md:px-6 py-2.5 sm:py-3 rounded-full transition-all duration-300 flex items-center justify-center gap-2 font-medium hover:scale-105 hover:shadow-lg overflow-hidden flex-shrink-0 transform-gpu will-change-transform ${
+              className={`group relative flex-1 sm:w-auto px-3 sm:px-4 md:px-6 py-2.5 sm:py-3 rounded-full transition-all duration-300 flex items-center justify-center gap-2 font-medium hover:scale-105 hover:shadow-lg overflow-hidden flex-shrink-0 transform-gpu ${
                 isMovieInWatchlist 
                   ? 'bg-white/20 text-white border border-white/30 hover:bg-white/30' 
                   : 'bg-white/10 text-white/90 border border-white/10 hover:bg-white/20'
               }`}
               style={{ whiteSpace: 'nowrap' }}
             >
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 will-change-transform"></div>
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-300"></div>
               <div className="relative flex items-center gap-2 min-w-0">
                 <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 sm:h-5 sm:w-5 transition-all duration-300 group-hover:scale-110 ${isMovieInWatchlist ? 'group-hover:rotate-12' : 'group-hover:rotate-90'}`} viewBox="0 0 24 24" fill="currentColor">
                   {isMovieInWatchlist ? (
@@ -3965,7 +3943,7 @@ const MobileHeroSection = memo(({ featuredContent, trendingMovies, loading, onMo
                   <img
                     src={content.backdrop || content.poster_path}
                     alt={`${content.title || content.name || 'Content'} backdrop`}
-                    className="w-full h-full object-cover transition-transform duration-700 hover:scale-110"
+                    className="w-full h-full object-cover transition-transform duration-300 hover:scale-110"
                     loading={index < 2 ? "eager" : "lazy"}
                     fetchpriority={index < 2 ? "high" : "auto"}
                     decoding="async"
@@ -4779,7 +4757,7 @@ const HomePage = () => {
   const [currentFeaturedIndex, setCurrentFeaturedIndex] = useState(0);
   const [activeCategory, setActiveCategory] = useState('all');
   const [isInWatchlistState, setIsInWatchlistState] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
+  const { isMobile } = useViewport();
   
   // Ad blocker recommendation toast state
   const [showAdBlockerToast, setShowAdBlockerToast] = useState(false);
@@ -5177,47 +5155,7 @@ const HomePage = () => {
     };
   }, []); // Empty dependency array to prevent infinite loops
 
-  // FIXED: Enhanced mobile detection effect with proper cleanup
-  useEffect(() => {
-    let isMounted = true;
-    
-    const checkScreenSize = () => {
-      if (!isMounted) return;
-      
-      const isNowMobile = window.innerWidth < 768 || 
-                         (window.navigator && window.navigator.userAgent && 
-                          /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(window.navigator.userAgent));
-      
-      setIsMobile(prev => {
-        if (prev !== isNowMobile) {
-          if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_MEMORY === 'true') {
-            console.log('Mobile detection changed:', isNowMobile, 'Screen width:', window.innerWidth);
-          }
-          return isNowMobile;
-        }
-        return prev;
-      });
-    };
-    
-    checkScreenSize();
-    const resizeHandler = checkScreenSize;
-    
-    try {
-      window.addEventListener('resize', resizeHandler, { passive: true });
-    } catch (error) {
-      // Fallback for browsers that don't support passive listeners
-      window.addEventListener('resize', resizeHandler);
-    }
-    
-    return () => {
-      isMounted = false;
-      try {
-        window.removeEventListener('resize', resizeHandler);
-      } catch (error) {
-        console.warn('Error removing resize listener:', error);
-      }
-    };
-  }, []);
+  // Viewport detection is handled by useViewport hook above
 
   // 🎬 FIXED: Auto-refresh viewing progress when user returns to page
   useEffect(() => {
@@ -6799,10 +6737,52 @@ const HomePage = () => {
     };
     
     // FIXED: Add timeout to prevent hanging initialization
+    // NOTE: instead of forcefully marking the component as unmounted (isMounted = false)
+    // we perform a graceful cleanup, attempt memory/portal cleanup, set an error
+    // and perform a single retry after a short delay. This avoids abruptly stopping
+    // background fetches and leaving callers in an inconsistent state.
+    let initRetryAttempted = false;
     const initTimeout = setTimeout(() => {
-      if (isMounted) {
-        console.warn('Initialization timeout - forcing cleanup');
-        isMounted = false;
+      if (!isMounted) return;
+      console.warn('Initialization timeout - attempting graceful cleanup and retry');
+
+      // Try to free memory and reduce pressure
+      try {
+        if (performanceOptimizationService && typeof performanceOptimizationService.performMemoryCleanup === 'function') {
+          performanceOptimizationService.performMemoryCleanup();
+        }
+      } catch (e) {
+        console.warn('Memory cleanup call failed during init timeout:', e);
+      }
+
+      // Notify portal manager to cleanup inactive portals
+      try {
+        if (portalManagerService && typeof portalManagerService.cleanupInactivePortals === 'function') {
+          portalManagerService.cleanupInactivePortals();
+        }
+      } catch (e) {
+        console.warn('Portal cleanup call failed during init timeout:', e);
+      }
+
+      // Surface an error to the UI (best-effort)
+      try {
+        if (isMounted) setError && setError('Initialization timed out. Retrying...');
+      } catch (e) {
+        // ignore
+      }
+
+      // Perform a single retry to initialize again after a short backoff
+      if (!initRetryAttempted) {
+        initRetryAttempted = true;
+        setTimeout(() => {
+          if (!isMounted) return;
+          console.log('Retrying initialization after timeout (single attempt)');
+          try {
+            initializeData();
+          } catch (e) {
+            console.error('Retry of initializeData failed:', e);
+          }
+        }, 5000);
       }
     }, 30000); // 30 second timeout
     
@@ -8810,7 +8790,10 @@ const HomePage = () => {
           break;
         case 'End':
           e.preventDefault();
-          smoothSlideTo(activeSwiper, activeSwiper.slides.length - 1, 600);
+          // Guard against cases where slides may not be initialized yet
+          if (activeSwiper && activeSwiper.slides && typeof activeSwiper.slides.length === 'number' && activeSwiper.slides.length > 0) {
+            smoothSlideTo(activeSwiper, activeSwiper.slides.length - 1, 600);
+          }
           break;
       }
     };

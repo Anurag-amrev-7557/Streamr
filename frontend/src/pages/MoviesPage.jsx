@@ -1414,11 +1414,8 @@ const MoviesPage = () => {
       if (fetchInProgress.current) {
         fetchInProgress.current = false;
       }
-      setLoading(false);
-      setIsLoadingNextPage(false);
-      
-      // Clear any pending fetch operations
-      if (isMounted.current) {
+      // Do not call setState during unmount; use refs to indicate unmounted state
+      if (isMounted && typeof isMounted === 'object') {
         isMounted.current = false;
       }
     };
@@ -1920,66 +1917,10 @@ const MoviesPage = () => {
         clearTimeout(prefetchTimeoutRef.current);
         prefetchTimeoutRef.current = null;
       }
-      
-      // Clear large state objects
-      setMovies([]);
-      setSearchResults([]);
-      setPrefetchedMovies(new Set());
-      setPrefetchCache(new Map());
-      setVisibleMovies(new Set());
-      
-      // Clear any remaining timeouts
-      // Note: hoverTimeoutRef is handled by MovieCard components, prefetchTimeoutRef is handled here
-      
-      // Clear all state to prevent memory leaks
-      setSearchQuery('');
-      setSelectedGenre(null);
-      setSelectedYear(null);
-      setSortBy('popularity');
-      setTempMovies([]);
-      setSelectedMovie(null);
-      setPage(1);
-      setTotalPages(1);
-      setIsLoadingMore(false);
-      setShowGenreDropdown(false);
-      setShowSortDropdown(false);
-      setShowYearDropdown(false);
-      // Don't clear loaded images immediately - let them persist for better UX
-      // setLoadedImages({});
-      // Clear loaded images after a delay to prevent memory accumulation
-      setTimeout(() => {
-        setLoadedImages({});
-      }, 30000); // Clear after 30 seconds
-      setLoading(true);
-      setLoadedSections({
-        header: false,
-        filters: false,
-        movies: false
-      });
-      setSearchResults([]);
-      setIsSearching(false);
-      setSearchError(null);
-      setSearchPage(1);
-      setHasMoreSearchResults(false);
-      setActiveCategory('popular');
-      setHasMore(true);
-      setError(null);
-      setYearDropdownOpen(false);
-      setGenreDropdownOpen(false);
-      setSearchHistoryItems([]);
-      setTrendingSearches([]);
-      setPrefetchStats({
-        totalPrefetched: 0,
-        successfulPrefetches: 0,
-        failedPrefetches: 0,
-        cacheHits: 0
-      });
-      setIsTransitioning(false);
-      setIsUpdating(false);
-      setCurrentPage(1);
-      setIsLoadingNextPage(false);
-      setNextPageMovies([]);
-      
+      // Avoid calling setState during unmount. If you need to clear large state to free memory,
+      // prefer using refs or let React garbage collect after unmount. The following non-state
+      // cleanups are safe and avoid React warnings.
+
     };
   }, []);
 

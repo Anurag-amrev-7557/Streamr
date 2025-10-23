@@ -233,7 +233,7 @@ class PortalManagerService {
       const usedMemory = memoryInfo.usedJSHeapSize / 1024 / 1024; // MB
       
       // Alert if memory usage is high
-      if (usedMemory > 100) { // 100MB threshold
+  if (usedMemory > 200) { // 200MB threshold (raised to reduce noisy warnings)
         console.warn('[PortalManagerService] High memory usage detected:', {
           usedMemory: `${usedMemory.toFixed(2)}MB`,
           activePortals: this.portals.size,

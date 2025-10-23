@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, useImperativeHandle } from 'react';
+/* eslint-disable-next-line no-unused-vars */
 import { motion, AnimatePresence } from 'framer-motion';
-import { createPortal } from 'react-dom';
 import { getTVSeason } from '../services/tmdbService';
 import EnhancedLoadMoreButton from './enhanced/EnhancedLoadMoreButton';
 import { useViewingProgress } from '../contexts/ViewingProgressContext';
@@ -8,7 +8,7 @@ import { usePortal } from '../hooks/usePortal';
 import { PORTAL_CONFIGS, createPortalEventHandlers } from '../utils/portalUtils';
 
 // Virtualized episode list component for performance
-const VirtualizedEpisodeList = React.memo(({ 
+const VirtualizedEpisodeList = React.memo(React.forwardRef(({ 
   episodes, 
   selectedEpisode, 
   onEpisodeSelect, 
@@ -16,13 +16,13 @@ const VirtualizedEpisodeList = React.memo(({
   itemHeight = 50,
   onLoadMore,
   hasMore
-}) => {
+}, ref) => {
   const [scrollTop, setScrollTop] = useState(0);
   const containerRef = useRef(null);
   
   // Calculate visible range
   const visibleCount = Math.ceil(containerHeight / itemHeight);
-  const startIndex = Math.floor(scrollTop / itemHeight);
+  const startIndex = Math.max(0, Math.floor(scrollTop / itemHeight));
   const endIndex = Math.min(startIndex + visibleCount + 1, episodes.length);
   
   // Get visible episodes
@@ -31,12 +31,23 @@ const VirtualizedEpisodeList = React.memo(({
   const handleScroll = useCallback((e) => {
     setScrollTop(e.target.scrollTop);
   }, []);
+
+  // Expose imperative methods to parent
+  useImperativeHandle(ref, () => ({
+    scrollToEpisode: (episodeNumber) => {
+      const idx = episodes.findIndex(e => e.episode_number === episodeNumber);
+      if (idx === -1 || !containerRef.current) return;
+      containerRef.current.scrollTop = idx * itemHeight;
+      setScrollTop(containerRef.current.scrollTop || 0);
+    },
+    getScrollTop: () => containerRef.current ? containerRef.current.scrollTop : 0
+  }), [episodes, itemHeight]);
   
   return (
     <div 
       ref={containerRef}
       className="overflow-y-auto"
-      style={{ height: containerHeight }}
+      style={{ height: containerHeight, transition: 'opacity 160ms ease, transform 160ms ease' }}
       onScroll={handleScroll}
     >
       <div style={{ height: episodes.length * itemHeight, position: 'relative' }}>
@@ -96,7 +107,7 @@ const VirtualizedEpisodeList = React.memo(({
       )}
     </div>
   );
-});
+}));
 
 
 
@@ -108,9 +119,7 @@ const TVEpisodeSelector = ({
   onEpisodeSelect,
   seasons = [],
   currentSeason = null,
-  onSeasonChange = null,
-  currentService = null,
-  onServiceChange = null
+  onSeasonChange = null
 }) => {
   const { startWatchingEpisode } = useViewingProgress();
   const [selectedSeason, setSelectedSeason] = useState(1);
@@ -119,6 +128,7 @@ const TVEpisodeSelector = ({
   const [isLoadingEpisodes, setIsLoadingEpisodes] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
+  const [isTransitioning, setIsTransitioning] = useState(false);
   const [displayedEpisodes, setDisplayedEpisodes] = useState(10); // Show 10 episodes initially
   const [totalEpisodes, setTotalEpisodes] = useState(0);
   
@@ -393,7 +403,7 @@ const TVEpisodeSelector = ({
   ]);
 
   // Fetch more episodes from API - simplified
-  const fetchMoreEpisodesFromAPI = useCallback(async () => {
+  const _fetchMoreEpisodesFromAPI = useCallback(async () => {
     if (!show?.id || !selectedSeason || !isMountedRef.current) return;
 
     try {
@@ -422,9 +432,51 @@ const TVEpisodeSelector = ({
     setDisplayedEpisodes(10);
   }, []);
 
+  const gridRef = useRef(null);
+  const listRef = useRef(null);
+  const virtualListRef = useRef(null);
+
+  // Prevent rapid toggles and preserve scroll position
   const handleViewModeChange = useCallback((mode) => {
-    setViewMode(mode);
-  }, []);
+    if (mode === viewMode || isTransitioning) return;
+
+    setIsTransitioning(true);
+
+    try {
+      // If switching from grid -> list, capture grid scroll and approximate position
+      if (mode === 'list') {
+        const gridEl = gridRef.current;
+        const scrollTop = gridEl?.scrollTop || 0;
+        // Estimate currently visible episode index from scrollTop
+        const approxIndex = Math.floor(scrollTop / 80); // avg grid item height approx
+        const approxEpisode = displayedEpisodesList[approxIndex]?.episode_number;
+        // Switch view immediately but restore scroll after mount
+        setViewMode(mode);
+        setTimeout(() => {
+          if (virtualListRef.current && approxEpisode) {
+            virtualListRef.current.scrollToEpisode(approxEpisode);
+          }
+          setIsTransitioning(false);
+        }, 180);
+        return;
+      }
+
+      // If switching to grid, capture list scroll top to restore later (best-effort)
+      if (mode === 'grid') {
+        const listScroll = virtualListRef.current?.getScrollTop?.() || 0;
+        // store on listRef for potential future use
+        if (listRef.current) listRef.current._savedScrollTop = listScroll;
+      }
+
+      setViewMode(mode);
+      // small delay to allow CSS & layout to settle
+      setTimeout(() => setIsTransitioning(false), 120);
+    } catch (err) {
+      console.error('Error switching view mode:', err);
+      setViewMode(mode);
+      setIsTransitioning(false);
+    }
+  }, [viewMode, isTransitioning, displayedEpisodesList]);
 
   // Generate seasons if not provided
   const availableSeasons = useMemo(() => {
@@ -540,21 +592,23 @@ const TVEpisodeSelector = ({
                       <div className="flex bg-white/10 rounded-lg p-1">
                         <button
                           onClick={() => handleViewModeChange('grid')}
+                          disabled={isTransitioning}
                           className={`px-3 py-1 rounded text-xs font-medium transition-all duration-200 ${
                             viewMode === 'grid'
                               ? 'bg-red-600 text-white'
                               : 'text-white/80 hover:bg-white/20'
-                          }`}
+                          } ${isTransitioning ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
                           Grid
                         </button>
                         <button
                           onClick={() => handleViewModeChange('list')}
+                          disabled={isTransitioning}
                           className={`px-3 py-1 rounded text-xs font-medium transition-all duration-200 ${
                             viewMode === 'list'
                               ? 'bg-red-600 text-white'
                               : 'text-white/80 hover:bg-white/20'
-                          }`}
+                          } ${isTransitioning ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
                           List
                         </button>
@@ -586,113 +640,130 @@ const TVEpisodeSelector = ({
                     </div>
                   ) : (
                     <div>
-                      {viewMode === 'grid' ? (
-                        // Grid View with Load More Arrow
-                        <div className="relative">
-                          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-96 overflow-y-auto">
-                            {displayedEpisodesList.map((episode, index) => (
-                              <div key={episode.id} className="relative">
-                                <button
-                                  onClick={() => handleEpisodeSelect(episode)}
-                                  className={`w-full p-3 rounded-lg text-sm font-medium transition-all duration-200 text-left ${
-                                    selectedEpisode === episode.episode_number
-                                      ? 'bg-red-600 text-white shadow-lg'
-                                      : 'bg-white/10 text-white/80 hover:bg-white/20'
-                                  }`}
-                                >
-                                  <div className="text-center">
-                                    <div className="font-semibold">Episode {episode.episode_number}</div>
-                                    {episode.name && (
-                                      <div className="text-xs opacity-70 truncate mt-1">
-                                        {episode.name}
-                                      </div>
-                                    )}
-                                    {episode.runtime && (
-                                      <div className="text-xs opacity-50 mt-1">
-                                        {Math.floor(episode.runtime / 60)}m
-                                      </div>
-                                    )}
-                                  </div>
-                                </button>
-                                
-                                {/* Load More Arrow - Show at the 10th episode position */}
-                                {hasMoreEpisodes && index === 9 && (
-                                  <motion.div
-                                    className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 z-10"
-                                    initial={{ opacity: 0, y: -10 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    transition={{ duration: 0.3 }}
+                      <AnimatePresence mode="wait">
+                        {viewMode === 'grid' && (
+                          <motion.div
+                            key="grid"
+                            initial={{ opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -6 }}
+                            transition={{ duration: 0.18 }}
+                            className="relative"
+                          >
+                            <div ref={gridRef} className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-96 overflow-y-auto">
+                              {displayedEpisodesList.map((episode, index) => (
+                                <div key={episode.id} className="relative">
+                                  <button
+                                    onClick={() => handleEpisodeSelect(episode)}
+                                    className={`w-full p-3 rounded-lg text-sm font-medium transition-all duration-200 text-left ${
+                                      selectedEpisode === episode.episode_number
+                                        ? 'bg-red-600 text-white shadow-lg'
+                                        : 'bg-white/10 text-white/80 hover:bg-white/20'
+                                    }`}
                                   >
-                                    <motion.button
-                                      onClick={handleLoadMore}
-                                      className="flex items-center justify-center w-8 h-8 bg-white/20 hover:bg-white/30 rounded-full transition-colors duration-200 shadow-lg"
-                                      whileHover={{ scale: 1.1 }}
-                                      whileTap={{ scale: 0.9 }}
-                                    >
-                                      <motion.svg 
-                                        className="w-4 h-4 text-white" 
-                                        fill="none" 
-                                        stroke="currentColor" 
-                                        viewBox="0 0 24 24"
-                                        animate={{ y: [0, 2, 0] }}
-                                        transition={{ duration: 1.5, repeat: Infinity }}
-                                      >
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7-7-7" />
-                                      </motion.svg>
-                                    </motion.button>
-                                  </motion.div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                          
-                                                     {/* Enhanced Load More Button for Grid View */}
-                           {hasMoreEpisodes && (
-                             <div className="flex justify-center mt-6">
-                               <EnhancedLoadMoreButton
-                                 onClick={handleLoadMore}
-                                 hasMore={hasMoreEpisodes}
-                                 isLoading={isLoadingMore}
-                                 totalItems={filteredEpisodes.length}
-                                 displayedItems={displayedEpisodes}
-                                 loadingText="Loading more episodes..."
-                                 buttonText="Load More Episodes"
-                                 itemName="episodes"
-                                 variant="primary"
-                               />
-                             </div>
-                           )}
+                                    <div className="text-center">
+                                      <div className="font-semibold">Episode {episode.episode_number}</div>
+                                      {episode.name && (
+                                        <div className="text-xs opacity-70 truncate mt-1">
+                                          {episode.name}
+                                        </div>
+                                      )}
+                                      {episode.runtime && (
+                                        <div className="text-xs opacity-50 mt-1">
+                                          {Math.floor(episode.runtime / 60)}m
+                                        </div>
+                                      )}
+                                    </div>
+                                  </button>
 
-                          {/* Error Message */}
-                          {loadMoreError && (
-                            <motion.div
-                              initial={{ opacity: 0, y: 10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              className="mt-4 text-center"
-                            >
-                              <div className="inline-flex items-center gap-2 px-4 py-2 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                                {loadMoreError}
+                                  {/* Load More Arrow - Show at the 10th episode position */}
+                                  {hasMoreEpisodes && index === 9 && (
+                                    <motion.div
+                                      className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 z-10"
+                                      initial={{ opacity: 0, y: -10 }}
+                                      animate={{ opacity: 1, y: 0 }}
+                                      transition={{ duration: 0.3 }}
+                                    >
+                                      <motion.button
+                                        onClick={handleLoadMore}
+                                        className="flex items-center justify-center w-8 h-8 bg-white/20 hover:bg-white/30 rounded-full transition-colors duration-200 shadow-lg"
+                                        whileHover={{ scale: 1.1 }}
+                                        whileTap={{ scale: 0.9 }}
+                                      >
+                                        <motion.svg 
+                                          className="w-4 h-4 text-white" 
+                                          fill="none" 
+                                          stroke="currentColor" 
+                                          viewBox="0 0 24 24"
+                                          animate={{ y: [0, 2, 0] }}
+                                          transition={{ duration: 1.5, repeat: Infinity }}
+                                        >
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7-7-7" />
+                                        </motion.svg>
+                                      </motion.button>
+                                    </motion.div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Enhanced Load More Button for Grid View */}
+                            {hasMoreEpisodes && (
+                              <div className="flex justify-center mt-6">
+                                <EnhancedLoadMoreButton
+                                  onClick={handleLoadMore}
+                                  hasMore={hasMoreEpisodes}
+                                  isLoading={isLoadingMore}
+                                  totalItems={filteredEpisodes.length}
+                                  displayedItems={displayedEpisodes}
+                                  loadingText="Loading more episodes..."
+                                  buttonText="Load More Episodes"
+                                  itemName="episodes"
+                                  variant="primary"
+                                />
                               </div>
-                            </motion.div>
-                          )}
-                        </div>
-                      ) : (
-                        // List View with Virtualization
-                        <div className="max-h-96">
-                          <VirtualizedEpisodeList
-                            episodes={displayedEpisodesList}
-                            selectedEpisode={selectedEpisode}
-                            onEpisodeSelect={handleEpisodeSelect}
-                            containerHeight={384}
-                            itemHeight={60}
-                            onLoadMore={handleLoadMore}
-                            hasMore={hasMoreEpisodes}
-                          />
-                        </div>
-                      )}
+                            )}
+
+                            {/* Error Message */}
+                            {loadMoreError && (
+                              <motion.div
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="mt-4 text-center"
+                              >
+                                <div className="inline-flex items-center gap-2 px-4 py-2 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                  {loadMoreError}
+                                </div>
+                              </motion.div>
+                            )}
+                          </motion.div>
+                        )}
+
+                        {viewMode === 'list' && (
+                          <motion.div
+                            key="list"
+                            initial={{ opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -6 }}
+                            transition={{ duration: 0.18 }}
+                            className="max-h-96"
+                          >
+                            <VirtualizedEpisodeList
+                              ref={virtualListRef}
+                              episodes={displayedEpisodesList}
+                              selectedEpisode={selectedEpisode}
+                              onEpisodeSelect={handleEpisodeSelect}
+                              containerHeight={384}
+                              itemHeight={60}
+                              onLoadMore={handleLoadMore}
+                              hasMore={hasMoreEpisodes}
+                            />
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
                   )}
                 </div>

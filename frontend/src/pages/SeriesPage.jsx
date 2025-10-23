@@ -620,7 +620,7 @@ const SeriesPage = () => {
     getRubberBandVariants 
   } = useStreamingIconAnimation(activeCategory);
 
-  const categories = [
+  const categories = React.useMemo(() => [
     { id: 'popular', label: 'Popular', networkId: null },
     { id: 'top_rated', label: 'Top Rated', networkId: null },
     { id: 'airing_today', label: 'Airing Today', networkId: null },
@@ -630,26 +630,11 @@ const SeriesPage = () => {
     { id: 'hulu', label: 'Hulu', networkId: 453 },
     { id: 'disney', label: 'Disney+', networkId: 2739 },
     { id: 'apple', label: 'Apple TV+', networkId: 2552 }
-  ];
+  ], []);
 
   const yearOptions = Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i);
 
-  // 🚀 FIXED: Enhanced cleanup on unmount with proper mounted ref management
-  useEffect(() => {
-    isMountedRef.current = true;
-    
-    fetchGenres();
-    fetchInitialSeries();
-    
-    return () => {
-      // Mark as unmounted first to prevent any new operations
-      isMountedRef.current = false;
-      
-      if (observerRef.current) {
-        observerRef.current.disconnect();
-      }
-    };
-  }, []);
+  // Mount: fetch will be triggered after fetch callbacks are declared further down
 
   // ⌨️ Keyboard navigation for category selector
   useEffect(() => {
@@ -776,42 +761,32 @@ const SeriesPage = () => {
     };
   }, []);
 
-  const fetchGenres = async () => {
+
+
+  // Make fetchGenres stable and cancellable
+  const fetchGenres = React.useCallback(async (signal) => {
     try {
       const response = await getGenres();
+      if (signal?.aborted) return;
       const allGenres = response.genres || [];
-      // Show only TV-applicable genres to avoid non-matching filters
       const tvGenres = allGenres.filter(g => !g.type || g.type === 'tv' || g.type === 'both');
-      setGenres(tvGenres);
+      if (isMountedRef.current && !signal?.aborted) setGenres(tvGenres);
     } catch (err) {
+      if (signal?.aborted) return;
       console.error('Error fetching genres:', err);
     }
-  };
+  }, []);
 
-  // Enhanced retry handler for loading failures
-  const handleRetry = useCallback(async () => {
-    setRetryCount(prev => prev + 1);
-    setError(null);
-    
-    try {
-      await fetchInitialSeries(activeCategory);
-    } catch (error) {
-      console.error('Retry failed:', error);
-      setError(enhancedLoadingService.getErrorMessage(error, 'TV series'));
-    }
-  }, [activeCategory]);
+  
 
-  const fetchInitialSeries = async (category = activeCategory) => {
+  const fetchInitialSeries = React.useCallback(async (category = activeCategory, signal) => {
     try {
-      setLoading(true);
+      if (isMountedRef.current && !signal?.aborted) setLoading(true);
       const networkId = categories.find(c => c.id === category)?.networkId;
-      
       let response;
       if (networkId) {
-        // Fetch series by network/streaming service
         response = await getTVSeriesByNetwork(networkId, 1);
       } else {
-        // Fetch based on category
         switch (category) {
           case 'popular':
             response = await getPopularTVShows(1);
@@ -826,44 +801,37 @@ const SeriesPage = () => {
             response = await getPopularTVShows(1);
         }
       }
-      
-      // Handle different response formats
+
+      if (signal?.aborted) return;
+
       let seriesData = [];
       let totalPages = 1;
       let currentPage = 1;
-      
+
       if (response) {
-        // getPopularTVShows returns { movies: [...], totalPages: ..., currentPage: ... }
         if (response.movies && Array.isArray(response.movies)) {
           seriesData = response.movies;
           totalPages = response.totalPages || 1;
           currentPage = response.currentPage || 1;
-        }
-        // getTVSeriesByNetwork returns { results: [...], page: ..., totalPages: ... }
-        else if (response.results && Array.isArray(response.results)) {
+        } else if (response.results && Array.isArray(response.results)) {
           seriesData = response.results;
           totalPages = response.totalPages || 1;
           currentPage = response.page || 1;
-        }
-        // Fallback for other formats
-        else if (Array.isArray(response)) {
+        } else if (Array.isArray(response)) {
           seriesData = response;
         }
       }
-      
+
       if (seriesData.length > 0) {
         const transformedSeries = seriesData.map(series => {
-          // Check if data is already transformed (from getPopularTVShows)
           const isAlreadyTransformed = series.title && series.poster && !series.name;
-          
           if (isAlreadyTransformed) {
-            // Data is already transformed, just ensure it has the required properties
             return {
               ...series,
               type: 'tv',
-              name: series.title, // Map title back to name for consistency
-              poster_path: series.poster, // Map poster back to poster_path
-              backdrop_path: series.backdrop, // Map backdrop back to backdrop_path
+              name: series.title,
+              poster_path: series.poster,
+              backdrop_path: series.backdrop,
               first_air_date: series.year ? `${series.year}-01-01` : null,
               vote_average: parseFloat(series.rating) || 0,
               rating: toNumericRating(series.rating),
@@ -873,7 +841,6 @@ const SeriesPage = () => {
               networks: series.networks || []
             };
           } else {
-            // Raw data from getTVSeriesByNetwork, apply standard transformation
             return {
               ...series,
               type: 'tv',
@@ -894,20 +861,54 @@ const SeriesPage = () => {
           }
         });
 
-        setSeries(transformedSeries);
-        setHasMore(currentPage < totalPages);
-        setPage(currentPage);
+        if (!signal?.aborted && isMountedRef.current) {
+          setSeries(transformedSeries);
+          setHasMore(currentPage < totalPages);
+          setPage(currentPage);
+        }
       } else {
-        console.error('No series data found in response:', response);
-        setError('No series available');
+        if (!signal?.aborted) {
+          console.error('No series data found in response:', response);
+          setError('No series available');
+        }
       }
     } catch (err) {
+      if (signal?.aborted) return;
       console.error('Error fetching series:', err);
       setError(enhancedLoadingService.getErrorMessage(err, 'TV series'));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted && isMountedRef.current) setLoading(false);
     }
-  };
+  }, [activeCategory, categories]);
+
+  // Mount: fetch genres and initial series using AbortController to allow cancellation
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    const controller = new AbortController();
+    const { signal } = controller;
+
+    fetchGenres(signal);
+    fetchInitialSeries(activeCategory, signal);
+
+    return () => {
+      isMountedRef.current = false;
+      controller.abort();
+      if (observerRef.current) observerRef.current.disconnect();
+    };
+  }, [fetchGenres, fetchInitialSeries, activeCategory]);
+
+  // Enhanced retry handler for loading failures (placed after fetchInitialSeries)
+  const handleRetry = useCallback(async () => {
+    setRetryCount(prev => prev + 1);
+    setError(null);
+    try {
+      await fetchInitialSeries(activeCategory);
+    } catch (error) {
+      console.error('Retry failed:', error);
+      setError(enhancedLoadingService.getErrorMessage(error, 'TV series'));
+    }
+  }, [activeCategory, fetchInitialSeries]);
 
   const loadMoreSeries = useCallback(async () => {
     if (loading || isLoadingMore) return;
@@ -1570,9 +1571,7 @@ const SeriesPage = () => {
   }, [searchQuery, searchResults, series, selectedGenre, selectedYear]);
 
   // Update the initial category
-  useEffect(() => {
-    setActiveCategory('popular');
-  }, []);
+
 
   // Trigger re-render when selectedGenre changes to apply filtering
   useEffect(() => {

@@ -772,16 +772,22 @@ const ContinueWatching = ({ onMovieSelect, isMobile }) => {
     if (!swiper || typeof swiper !== 'object') return;
 
     try {
-      // Only call update methods if they exist
+      // Base update (safe)
       if (typeof swiper.update === 'function') swiper.update();
-      if (typeof swiper.updateSlides === 'function') swiper.updateSlides();
-      if (typeof swiper.updateProgress === 'function') swiper.updateProgress();
-      if (typeof swiper.updateSize === 'function') swiper.updateSize();
-      if (typeof swiper.updateSlidesClasses === 'function') swiper.updateSlidesClasses();
+
+      // Only call slide-related updates if slides are available on the swiper instance
+      const hasSlides = !!swiper.slides && (typeof swiper.slides.length === 'number');
+
+      if (hasSlides) {
+        if (typeof swiper.updateSlides === 'function') swiper.updateSlides();
+        if (typeof swiper.updateProgress === 'function') swiper.updateProgress();
+        if (typeof swiper.updateSize === 'function') swiper.updateSize();
+        if (typeof swiper.updateSlidesClasses === 'function') swiper.updateSlidesClasses();
+      }
 
       // Reset to first slide if current index is out of bounds
       const count = Array.isArray(memoizedContinueWatching) ? memoizedContinueWatching.length : 0;
-      if (typeof swiper.activeIndex === 'number' && swiper.activeIndex >= count && count > 0) {
+      if (hasSlides && typeof swiper.activeIndex === 'number' && swiper.activeIndex >= count && count > 0) {
         if (typeof swiper.slideTo === 'function') swiper.slideTo(0, 0); // Instantly move to first slide
       }
     } catch (error) {

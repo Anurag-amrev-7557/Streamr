@@ -44,6 +44,25 @@ const BottomNav = () => {
     timersRef.current.forEach(timer => clearTimeout(timer));
     timersRef.current.clear();
   }, []);
+
+  // Centralized RAF scheduler to reduce repetition and ensure previous RAF is canceled
+  const scheduleUpdate = useCallback((fn) => {
+    try {
+      if (rafIdRef.current) {
+        cancelRaf(rafIdRef.current);
+      }
+    } catch (_) {
+      // ignore cancellation errors
+    }
+
+    rafIdRef.current = scheduleRaf(() => {
+      try {
+        fn();
+      } catch (_) {}
+    });
+
+    return rafIdRef.current;
+  }, []);
   
   // State
   const [hasAnimatedIn, setHasAnimatedIn] = useState(false);
@@ -144,7 +163,7 @@ const BottomNav = () => {
       
       // Update indicator immediately when ref is set
       if (key === activeKey) {
-        setTimeout(() => updateIndicator(), 0);
+        addTimer(setTimeout(() => updateIndicator(), 0));
       }
     } else {
       // Only remove ref if element is actually null/undefined
@@ -160,11 +179,12 @@ const BottomNav = () => {
   useEffect(() => {
     // schedule multiple updates to catch ref timing
     updateIndicator();
-    const t1 = setTimeout(() => updateIndicator(), 0);
-    const t2 = setTimeout(() => updateIndicator(), 60);
+    const t1 = addTimer(setTimeout(() => updateIndicator(), 0));
+    const t2 = addTimer(setTimeout(() => updateIndicator(), 60));
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
+      // timers are also tracked in timersRef and will be cleared on unmount
     };
   }, [isMenuActive, updateIndicator]);
 
@@ -172,28 +192,21 @@ const BottomNav = () => {
   useEffect(() => {
     // console.log('BottomNav: updateIndicator useEffect triggered:', { activeKey, isAuthOrProfilePage });
     
-    if (rafIdRef.current) {
-      cancelRaf(rafIdRef.current);
-      rafIdRef.current = null;
-    }
-    
-    // Update immediately for better responsiveness
+    // Cancel any scheduled RAF and run an immediate update
+    try { if (rafIdRef.current) cancelRaf(rafIdRef.current); } catch (_) {}
     updateIndicator();
-    
-  // Then schedule a RAF update for smooth animation (throttled)
-  if (rafIdRef.current) { try { cancelRaf(rafIdRef.current); } catch (_) {} }
-  rafIdRef.current = scheduleRaf(() => updateIndicator());
-    
+
+    // Throttled RAF update using helper
+    scheduleUpdate(() => updateIndicator());
+
     // Also schedule an update after a small delay to ensure refs are set
-    const delayedUpdate = setTimeout(() => {
+    const delayedUpdate = addTimer(setTimeout(() => {
       updateIndicator();
-    }, 50);
-    
+    }, 50));
+
     return () => {
-      if (rafIdRef.current) {
-        cancelRaf(rafIdRef.current);
-        rafIdRef.current = null;
-      }
+      try { if (rafIdRef.current) cancelRaf(rafIdRef.current); } catch (_) {}
+      rafIdRef.current = null;
       clearTimeout(delayedUpdate);
     };
   }, [updateIndicator]);
@@ -209,13 +222,9 @@ const BottomNav = () => {
       
       // Update immediately for better responsiveness
       updateIndicator();
-      
-      if (rafIdRef.current) {
-        cancelRaf(rafIdRef.current);
-      }
-      
-  if (rafIdRef.current) { try { cancelRaf(rafIdRef.current); } catch (_) {} }
-  rafIdRef.current = scheduleRaf(() => { if (isMounted) updateIndicator(); });
+
+      // Use centralized scheduler for smoother updates
+      scheduleUpdate(() => { if (isMounted) updateIndicator(); });
     };
 
     const handleVisibilityChange = () => {
@@ -260,10 +269,8 @@ const BottomNav = () => {
       }
       
       // Clean up RAF
-      if (rafIdRef.current) {
-        cancelRaf(rafIdRef.current);
-        rafIdRef.current = null;
-      }
+      try { if (rafIdRef.current) cancelRaf(rafIdRef.current); } catch (_) {}
+      rafIdRef.current = null;
     };
   }, [updateIndicator]);
 
@@ -278,25 +285,25 @@ const BottomNav = () => {
     // Update immediately for better responsiveness
     updateIndicator();
     
-    const timer = setTimeout(() => {
+    const timer = addTimer(setTimeout(() => {
       if (isMounted) {
-  updateIndicator();
-  if (rafIdRef.current) { try { cancelRaf(rafIdRef.current); } catch (_) {} }
-  rafIdRef.current = scheduleRaf(() => { if (isMounted) updateIndicator(); });
+        updateIndicator();
+        scheduleUpdate(() => { if (isMounted) updateIndicator(); });
       }
-    }, 100); // Reduced delay for better responsiveness
-    
+    }, 100)); // Reduced delay for better responsiveness
+
     // Also check if refs are available and update
-    const refCheckTimer = setTimeout(() => {
+    const refCheckTimer = addTimer(setTimeout(() => {
       if (isMounted && itemRefs.current.size > 0) {
         updateIndicator();
       }
-    }, 200);
+    }, 200));
       
     return () => {
       isMounted = false;
       clearTimeout(timer);
       clearTimeout(refCheckTimer);
+      // timers are tracked in timersRef and will be cleared in the final cleanup
     };
   }, [updateIndicator]);
 
@@ -309,19 +316,19 @@ const BottomNav = () => {
     // Update immediately for better responsiveness
     updateIndicator();
     
-    const timer = setTimeout(() => {
+    const timer = addTimer(setTimeout(() => {
       if (isMounted) {
-  updateIndicator();
-  rafIdRef.current = scheduleRaf(() => { if (isMounted) updateIndicator(); });
+        updateIndicator();
+        scheduleUpdate(() => { if (isMounted) updateIndicator(); });
       }
-    }, 50); // Reduced delay for better responsiveness
-    
+    }, 50)); // Reduced delay for better responsiveness
+
     // Also check if refs are available and update
-    const refCheckTimer = setTimeout(() => {
+    const refCheckTimer = addTimer(setTimeout(() => {
       if (isMounted && itemRefs.current.size > 0) {
         updateIndicator();
       }
-    }, 100);
+    }, 100));
       
     return () => {
       isMounted = false;
@@ -333,21 +340,21 @@ const BottomNav = () => {
   // Cleanup function to prevent memory leaks
   useEffect(() => {
     return () => {
-      
-      // Clear all refs
-      if (rafIdRef.current) {
-        cancelRaf(rafIdRef.current);
-        rafIdRef.current = null;
-      }
-      
+      // Clear all tracked timers
+      try { clearAllTimers(); } catch (_) {}
+
+      // Clear RAF
+      try { if (rafIdRef.current) cancelRaf(rafIdRef.current); } catch (_) {}
+      rafIdRef.current = null;
+
       if (resizeObserverRef.current) {
         resizeObserverRef.current.disconnect();
         resizeObserverRef.current = null;
       }
-      
+
       // Don't clear item refs on unmount - they should persist
       // itemRefs.current.clear();
-      
+
       // Reset state
       isDocHiddenRef.current = false;
       isFirstMount.current = true;
@@ -356,10 +363,9 @@ const BottomNav = () => {
 
   // Monitor refs availability and update indicator
   useEffect(() => {
-    if (itemRefs.current.size > 0 && activeKey && !isAuthOrProfilePage) {
-      
-      // Update indicator when refs become available
-      setTimeout(() => updateIndicator(), 0);
+    if (activeKey && !isAuthOrProfilePage) {
+      // Update indicator when active key changes or when refs are expected to be ready
+      addTimer(setTimeout(() => updateIndicator(), 0));
     }
   }, [itemRefs.current.size, activeKey, isAuthOrProfilePage, updateIndicator]);
 
@@ -487,6 +493,7 @@ const BottomNav = () => {
                       className={`relative overflow-hidden flex flex-col items-center justify-center gap-0.5 h-12 px-2 rounded-xl transition-all duration-150 ${
                         isActive ? 'text-black' : 'text-white/70 hover:text-white active:text-white/90'
                       }`}
+                      aria-current={isActive ? 'page' : undefined}
                       onPointerDown={() => {
                         // console.log(`BottomNav: NavLink ${item.to} pointer down`);
                         handleNavInteraction();
@@ -518,10 +525,18 @@ const BottomNav = () => {
               >
                 <button
                   type="button"
+                  aria-label="Open menu"
                   aria-haspopup="dialog"
                   aria-expanded={isMenuOpen}
                   aria-controls="bottom-sheet-menu"
                   onClick={() => setIsMenuOpen(prev => !prev)}
+                  onKeyDown={(e) => {
+                    // Toggle on Enter or Space for keyboard users
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setIsMenuOpen(prev => !prev);
+                    }
+                  }}
                   className={`relative overflow-hidden flex flex-col items-center justify-center gap-0.5 h-12 px-2 rounded-xl transition-all duration-150 ${
                     isMenuActive ? 'text-black' : 'text-white/70 hover:text-white active:text-white/90'
                   }`}

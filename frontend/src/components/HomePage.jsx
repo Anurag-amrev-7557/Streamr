@@ -8764,7 +8764,9 @@ const HomePage = () => {
           break;
         case 'End':
           e.preventDefault();
-          smoothSlideTo(activeSwiper, activeSwiper.slides.length - 1, 600);
+          if (activeSwiper && activeSwiper.slides && typeof activeSwiper.slides.length === 'number' && activeSwiper.slides.length > 0) {
+            smoothSlideTo(activeSwiper, activeSwiper.slides.length - 1, 600);
+          }
           break;
       }
     };
