@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
 import { ThemeProvider } from './contexts/ThemeContext'
+import { HelmetProvider } from 'react-helmet-async'
 // Defer non-critical utilities to idle to reduce initial JS
 if (typeof window !== 'undefined') {
   const idle = window.requestIdleCallback || ((cb) => setTimeout(cb, 1000));
@@ -42,9 +43,11 @@ if (import.meta.env.DEV || window.location.hostname === 'localhost' || window.lo
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <ThemeProvider>
-      <App />
-    </ThemeProvider>
+    <HelmetProvider>
+      <ThemeProvider>
+        <App />
+      </ThemeProvider>
+    </HelmetProvider>
   </StrictMode>,
 )
 

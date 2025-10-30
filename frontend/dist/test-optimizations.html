@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Optimizations Test - Streamr</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 30px;
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, #fff, #e0e7ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .test-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .test-section h3 {
+            margin-bottom: 15px;
+            color: #60a5fa;
+            font-size: 1.3rem;
+        }
+        
+        .test-result {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+        }
+        
+        .status-icon {
+            font-size: 20px;
+            width: 30px;
+            text-align: center;
+        }
+        
+        .status-success { color: #10b981; }
+        .status-error { color: #ef4444; }
+        .status-warning { color: #f59e0b; }
+        .status-info { color: #3b82f6; }
+        
+        .test-button {
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            margin: 5px;
+        }
+        
+        .test-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(59, 130, 246, 0.3);
+        }
+        
+        .test-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .network-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .info-card {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .info-card .label {
+            font-size: 12px;
+            opacity: 0.8;
+            margin-bottom: 5px;
+        }
+        
+        .info-card .value {
+            font-size: 18px;
+            font-weight: 600;
+            color: #60a5fa;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #10b981, #3b82f6);
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+        
+        .log-container {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+        }
+        
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 2px 0;
+        }
+        
+        .log-info { color: #60a5fa; }
+        .log-success { color: #10b981; }
+        .log-warning { color: #f59e0b; }
+        .log-error { color: #ef4444; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Network Optimizations Test</h1>
+        
+        <!-- Service Worker Test -->
+        <div class="test-section">
+            <h3>📱 Service Worker & Offline Support</h3>
+            <div class="test-result">
+                <span class="status-icon" id="sw-status">⏳</span>
+                <span>Service Worker Status: <span id="sw-text">Checking...</span></span>
+            </div>
+            <div class="test-result">
+                <span class="status-icon" id="cache-status">⏳</span>
+                <span>Cache API: <span id="cache-text">Checking...</span></span>
+            </div>
+            <button class="test-button" onclick="testServiceWorker()">Test Service Worker</button>
+            <button class="test-button" onclick="testOfflineMode()">Test Offline Mode</button>
+        </div>
+        
+        <!-- Network Information Test -->
+        <div class="test-section">
+            <h3>📶 Network Information & Performance</h3>
+            <div class="test-result">
+                <span class="status-icon" id="network-status">⏳</span>
+                <span>Network Info API: <span id="network-text">Checking...</span></span>
+            </div>
+            <div class="network-info" id="network-details" style="display: none;">
+                <div class="info-card">
+                    <div class="label">Connection Type</div>
+                    <div class="value" id="connection-type">-</div>
+                </div>
+                <div class="info-card">
+                    <div class="label">Download Speed</div>
+                    <div class="value" id="download-speed">-</div>
+                </div>
+                <div class="info-card">
+                    <div class="label">Latency (RTT)</div>
+                    <div class="value" id="latency">-</div>
+                </div>
+                <div class="info-card">
+                    <div class="label">Network Quality</div>
+                    <div class="value" id="network-quality">-</div>
+                </div>
+            </div>
+            <button class="test-button" onclick="testNetworkInfo()">Test Network Info</button>
+            <button class="test-button" onclick="testNetworkSpeed()">Test Network Speed</button>
+        </div>
+        
+        <!-- Browser Features Test -->
+        <div class="test-section">
+            <h3>🔧 Browser Features & APIs</h3>
+            <div class="test-result">
+                <span class="status-icon" id="intersection-status">⏳</span>
+                <span>Intersection Observer: <span id="intersection-text">Checking...</span></span>
+            </div>
+            <div class="test-result">
+                <span class="status-icon" id="abort-status">⏳</span>
+                <span>AbortController: <span id="abort-text">Checking...</span></span>
+            </div>
+            <div class="test-result">
+                <span class="status-icon" id="fetch-status">⏳</span>
+                <span>Fetch API: <span id="fetch-text">Checking...</span></span>
+            </div>
+            <button class="test-button" onclick="testBrowserFeatures()">Test Browser Features</button>
+        </div>
+        
+        <!-- Performance Test -->
+        <div class="test-section">
+            <h3>⚡ Performance & Loading</h3>
+            <div class="test-result">
+                <span class="status-icon" id="performance-status">⏳</span>
+                <span>Performance API: <span id="performance-text">Checking...</span></span>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="performance-progress"></div>
+            </div>
+            <button class="test-button" onclick="testPerformance()">Test Performance</button>
+            <button class="test-button" onclick="testImageLoading()">Test Image Loading</button>
+        </div>
+        
+        <!-- Test Logs -->
+        <div class="test-section">
+            <h3>📋 Test Logs</h3>
+            <div class="log-container" id="log-container">
+                <div class="log-entry log-info">🚀 Starting network optimization tests...</div>
+            </div>
+            <button class="test-button" onclick="clearLogs()">Clear Logs</button>
+            <button class="test-button" onclick="runAllTests()">Run All Tests</button>
+        </div>
+    </div>
+
+    <script>
+        // Logging utility
+        function log(message, type = 'info') {
+            const logContainer = document.getElementById('log-container');
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry log-${type}`;
+            logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        // Update status display
+        function updateStatus(id, status, text) {
+            const statusIcon = document.getElementById(id + '-status');
+            const statusText = document.getElementById(id + '-text');
+            
+            statusIcon.textContent = status.icon;
+            statusIcon.className = `status-icon status-${status.type}`;
+            statusText.textContent = text;
+        }
+
+        // Test 1: Service Worker
+        async function testServiceWorker() {
+            log('Testing Service Worker...', 'info');
+            
+            if ('serviceWorker' in navigator) {
+                try {
+                    const registrations = await navigator.serviceWorker.getRegistrations();
+                    if (registrations.length > 0) {
+                        updateStatus('sw', { icon: '✅', type: 'success' }, `Registered (${registrations.length})`);
+                        log(`Service Worker registered: ${registrations.length} instances`, 'success');
+                        
+                        registrations.forEach((reg, index) => {
+                            log(`  ${index + 1}. Scope: ${reg.scope}, State: ${reg.active ? 'Active' : 'Inactive'}`, 'info');
+                        });
+                    } else {
+                        updateStatus('sw', { icon: '⚠️', type: 'warning' }, 'Not registered');
+                        log('Service Worker not registered yet', 'warning');
+                    }
+                } catch (error) {
+                    updateStatus('sw', { icon: '❌', type: 'error' }, 'Error');
+                    log(`Service Worker error: ${error.message}`, 'error');
+                }
+            } else {
+                updateStatus('sw', { icon: '❌', type: 'error' }, 'Not supported');
+                log('Service Worker not supported in this browser', 'error');
+            }
+        }
+
+        // Test 2: Cache API
+        async function testCacheAPI() {
+            log('Testing Cache API...', 'info');
+            
+            if ('caches' in window) {
+                try {
+                    const cacheNames = await caches.keys();
+                    updateStatus('cache', { icon: '✅', type: 'success' }, `Available (${cacheNames.length})`);
+                    log(`Cache API available: ${cacheNames.length} caches`, 'success');
+                    
+                    cacheNames.forEach(name => {
+                        log(`  - ${name}`, 'info');
+                    });
+                } catch (error) {
+                    updateStatus('cache', { icon: '❌', type: 'error' }, 'Error');
+                    log(`Cache API error: ${error.message}`, 'error');
+                }
+            } else {
+                updateStatus('cache', { icon: '❌', type: 'error' }, 'Not supported');
+                log('Cache API not supported in this browser', 'error');
+            }
+        }
+
+        // Test 3: Network Information
+        async function testNetworkInfo() {
+            log('Testing Network Information API...', 'info');
+            
+            if ('connection' in navigator) {
+                const conn = navigator.connection;
+                updateStatus('network', { icon: '✅', type: 'success' }, 'Available');
+                log('Network Information API available', 'success');
+                
+                // Show network details
+                document.getElementById('network-details').style.display = 'grid';
+                
+                // Update network info
+                document.getElementById('connection-type').textContent = conn.effectiveType || 'unknown';
+                document.getElementById('download-speed').textContent = `${(conn.downlink || 0).toFixed(1)} Mbps`;
+                document.getElementById('latency').textContent = `${conn.rtt || 0} ms`;
+                
+                // Determine network quality
+                let quality = 'Unknown';
+                if (conn.effectiveType === '4g') quality = 'Excellent';
+                else if (conn.effectiveType === '3g') quality = 'Good';
+                else if (conn.effectiveType === '2g') quality = 'Poor';
+                else if (conn.effectiveType === 'slow-2g') quality = 'Very Poor';
+                
+                document.getElementById('network-quality').textContent = quality;
+                
+                log(`Connection: ${conn.effectiveType}, Speed: ${conn.downlink} Mbps, RTT: ${conn.rtt} ms`, 'info');
+            } else {
+                updateStatus('network', { icon: '❌', type: 'error' }, 'Not supported');
+                log('Network Information API not supported in this browser', 'error');
+            }
+        }
+
+        // Test 4: Browser Features
+        function testBrowserFeatures() {
+            log('Testing browser features...', 'info');
+            
+            // Intersection Observer
+            if ('IntersectionObserver' in window) {
+                updateStatus('intersection', { icon: '✅', type: 'success' }, 'Supported');
+                log('Intersection Observer: Supported', 'success');
+            } else {
+                updateStatus('intersection', { icon: '❌', type: 'error' }, 'Not supported');
+                log('Intersection Observer: Not supported', 'error');
+            }
+            
+            // AbortController
+            if ('AbortController' in window) {
+                updateStatus('abort', { icon: '✅', type: 'success' }, 'Supported');
+                log('AbortController: Supported', 'success');
+            } else {
+                updateStatus('abort', { icon: '❌', type: 'error' }, 'Not supported');
+                log('AbortController: Not supported', 'error');
+            }
+            
+            // Fetch API
+            if ('fetch' in window) {
+                updateStatus('fetch', { icon: '✅', type: 'success' }, 'Supported');
+                log('Fetch API: Supported', 'success');
+            } else {
+                updateStatus('fetch', { icon: '❌', type: 'error' }, 'Not supported');
+                log('Fetch API: Not supported', 'error');
+            }
+        }
+
+        // Test 5: Performance
+        async function testPerformance() {
+            log('Testing Performance API...', 'info');
+            
+            if ('performance' in window) {
+                updateStatus('performance', { icon: '✅', type: 'success' }, 'Available');
+                log('Performance API available', 'success');
+                
+                // Simulate performance test
+                const progressBar = document.getElementById('performance-progress');
+                for (let i = 0; i <= 100; i += 10) {
+                    progressBar.style.width = i + '%';
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+                
+                log('Performance test completed', 'success');
+            } else {
+                updateStatus('performance', { icon: '❌', type: 'error' }, 'Not supported');
+                log('Performance API not supported in this browser', 'error');
+            }
+        }
+
+        // Test 6: Network Speed
+        async function testNetworkSpeed() {
+            log('Testing network speed...', 'info');
+            
+            try {
+                const startTime = Date.now();
+                const response = await fetch('/api/health', { 
+                    method: 'GET',
+                    cache: 'no-cache',
+                    signal: AbortSignal.timeout(10000)
+                });
+                const endTime = Date.now();
+                const responseTime = endTime - startTime;
+                
+                if (response.ok) {
+                    let speed = 'Fast';
+                    if (responseTime > 3000) speed = 'Slow';
+                    else if (responseTime > 1000) speed = 'Medium';
+                    
+                    log(`Network speed test: ${responseTime}ms (${speed})`, 'success');
+                } else {
+                    log(`Network speed test failed: HTTP ${response.status}`, 'error');
+                }
+            } catch (error) {
+                log(`Network speed test error: ${error.message}`, 'error');
+            }
+        }
+
+        // Test 7: Image Loading
+        function testImageLoading() {
+            log('Testing image loading capabilities...', 'info');
+            
+            // Test if Intersection Observer works for lazy loading
+            if ('IntersectionObserver' in window) {
+                log('Image lazy loading: Supported via Intersection Observer', 'success');
+            } else {
+                log('Image lazy loading: Not supported (no Intersection Observer)', 'warning');
+            }
+            
+            // Test if loading="lazy" is supported
+            const testImg = document.createElement('img');
+            if ('loading' in testImg) {
+                log('Native lazy loading: Supported', 'success');
+            } else {
+                log('Native lazy loading: Not supported', 'warning');
+            }
+        }
+
+        // Test 8: Offline Mode
+        function testOfflineMode() {
+            log('Testing offline mode...', 'info');
+            
+            if ('serviceWorker' in navigator && 'caches' in window) {
+                log('Offline mode: Supported (Service Worker + Cache API)', 'success');
+                
+                // Check if we have cached content
+                caches.keys().then(cacheNames => {
+                    if (cacheNames.length > 0) {
+                        log(`Offline content: ${cacheNames.length} caches available`, 'success');
+                    } else {
+                        log('Offline content: No caches yet', 'warning');
+                    }
+                });
+            } else {
+                log('Offline mode: Not supported', 'error');
+            }
+        }
+
+        // Utility functions
+        function clearLogs() {
+            document.getElementById('log-container').innerHTML = '<div class="log-entry log-info">🚀 Logs cleared...</div>';
+        }
+
+        async function runAllTests() {
+            log('Running all tests...', 'info');
+            
+            await testServiceWorker();
+            await testCacheAPI();
+            testNetworkInfo();
+            testBrowserFeatures();
+            await testPerformance();
+            await testNetworkSpeed();
+            testImageLoading();
+            testOfflineMode();
+            
+            log('All tests completed!', 'success');
+        }
+
+        // Auto-run basic tests on page load
+        window.addEventListener('load', async () => {
+            log('Page loaded, running initial tests...', 'info');
+            
+            // Run basic tests
+            await testServiceWorker();
+            await testCacheAPI();
+            testNetworkInfo();
+            testBrowserFeatures();
+            
+            log('Initial tests completed!', 'success');
+        });
+    </script>
+</body>
+</html> 

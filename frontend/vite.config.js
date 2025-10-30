@@ -326,7 +326,9 @@ export default defineConfig(({ command, mode }) => {
         'react-icons',
         'date-fns',
         'swiper',
-        'firebase',
+  // removed plain 'firebase' because Vite cannot always pre-bundle the top-level
+  // package (it uses subpath exports). If needed, add specific submodules like
+  // 'firebase/app', 'firebase/auth', 'firebase/firestore' instead.
         'react-intersection-observer',
         // Ensure proper pre-bundling for interop
         'react-youtube',

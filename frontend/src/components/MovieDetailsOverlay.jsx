@@ -1130,6 +1130,8 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   const trailerPreloadRef = useRef(null);
   const overlayRef = useRef(null);
   const contentRef = useRef(null);
+  const previouslyFocusedElementRef = useRef(null);
+  const bodyOverflowRef = useRef(null);
   const playerRef = useRef(null);
   const timeoutRef = useRef(null);
   const intervalRef = useRef(null);
@@ -1401,24 +1403,29 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   const containerVariants = useMemo(() => ({
     hidden: { 
       opacity: 0,
-      scale: 0.98,
-      y: 15,
+      // start slightly lower and smaller for a natural pop-in
+      scale: 0.97,
+      y: 20,
     },
     visible: {
       opacity: 1,
       scale: 1,
       y: 0,
       transition: {
-        duration: 0.2,
-        ease: 'easeOut'
+        // use a short ease for the backdrop; child content will use springs
+        duration: 0.22,
+        ease: 'easeOut',
+        // slight stagger for children to improve perceived smoothness
+        staggerChildren: 0.03,
+        when: 'beforeChildren'
       },
     },
     exit: {
       opacity: 0,
-      scale: 0.98,
-      y: 15,
+      scale: 0.97,
+      y: 16,
       transition: {
-        duration: 0.15,
+        duration: 0.14,
         ease: 'easeIn'
       },
     },
@@ -1426,25 +1433,28 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
 
   const itemVariants = useMemo(() => ({
     hidden: { 
-      y: 6,
+      y: 8,
       opacity: 0,
-      scale: 0.98,
+      scale: 0.985,
     },
     visible: {
       y: 0,
       opacity: 1,
       scale: 1,
       transition: {
-        duration: 0.15,
-        ease: 'easeOut'
+        // spring gives a more natural, less mechanical pop-in
+        type: 'spring',
+        stiffness: 300,
+        damping: 28,
+        mass: 0.7
       },
     },
     exit: {
-      y: -4,
+      y: -6,
       opacity: 0,
-      scale: 0.98,
+      scale: 0.985,
       transition: {
-        duration: 0.1,
+        duration: 0.12,
         ease: 'easeIn'
       },
     },
@@ -2139,10 +2149,47 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   
   // Note: preferReducedMotion() function defined at top is used to respect user settings
   
-  // 🆕 NEW: Use full animation variants on all devices
+  // 🆕 NEW: Adaptive variants helper
+  // - Respects prefers-reduced-motion
+  // - Enables light-weight variants for low-performance devices
+  // - Enables full variants (including stagger/springs) for high-performance devices
   const getAdaptiveVariants = useCallback((baseVariants) => {
-    // Always return full animations - no device constraints
-    return baseVariants;
+    if (prefersReducedMotion()) {
+      // Reduce to a minimal opacity change
+      return {
+        hidden: { opacity: 0 },
+        visible: { opacity: 1, transition: { duration: 0.08 } },
+        exit: { opacity: 0, transition: { duration: 0.06 } }
+      };
+    }
+
+    // For high-performance devices, expose the base variants so we can use springs/staggering
+    if (isHighPerformanceDevice()) {
+      return baseVariants;
+    }
+
+    // Default: slightly simplified animations for moderate devices
+    // Keep motion but shorten durations to stay snappy
+    const simplified = { ...baseVariants };
+    if (simplified.visible && simplified.visible.transition) {
+      simplified.visible = {
+        ...simplified.visible,
+        transition: {
+          ...(simplified.visible.transition || {}),
+          duration: 0.18,
+        }
+      };
+    }
+    if (simplified.exit && simplified.exit.transition) {
+      simplified.exit = {
+        ...simplified.exit,
+        transition: {
+          ...(simplified.exit.transition || {}),
+          duration: 0.12,
+        }
+      };
+    }
+    return simplified;
   }, []);
   
   // 🆕 NEW: Debounced animation system for performance optimization
@@ -2813,14 +2860,33 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
 
   // 🚀 FIXED: Memoize click outside and escape handlers with stable references
   const handleClickOutside = useCallback((event) => {
+    // Only allow outside-click closing for the top-most portal to avoid
+    // accidentally closing overlays stacked behind this one.
+    try {
+      if (portalIdActual && portalManagerService && typeof portalManagerService.isTopPortal === 'function') {
+        if (!portalManagerService.isTopPortal(portalIdActual)) return;
+      }
+    } catch (e) {
+      // If portal manager check fails, fall back to default behavior
+    }
+
     if (overlayRef.current && !contentRef.current?.contains(event.target)) {
-      onClose();
+      if (typeof onClose === 'function') onClose();
     }
   }, [onClose]);
 
   const handleEscape = useCallback((event) => {
     if (event.key === 'Escape') {
-      onClose();
+      // Only allow Escape to close the top-most portal
+      try {
+        if (portalIdActual && portalManagerService && typeof portalManagerService.isTopPortal === 'function') {
+          if (!portalManagerService.isTopPortal(portalIdActual)) return;
+        }
+      } catch (e) {
+        // ignore and fallback
+      }
+
+      if (typeof onClose === 'function') onClose();
     }
   }, [onClose]);
 
@@ -4573,6 +4639,113 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     }
   }, [portalReady, focusPortal]);
 
+  // Focus trap + body scroll lock for accessibility and UX
+  useEffect(() => {
+    if (!portalReady || !portalContainer) return;
+
+    // Only lock scroll & trap focus when this is the top-most portal
+    const shouldActivate = (() => {
+      try {
+        if (portalIdActual && portalManagerService && typeof portalManagerService.isTopPortal === 'function') {
+          return portalManagerService.isTopPortal(portalIdActual);
+        }
+      } catch (e) { /* ignore */ }
+      return true;
+    })();
+
+    if (!shouldActivate) return;
+
+    // Save previously focused element to restore on close
+    previouslyFocusedElementRef.current = (typeof document !== 'undefined') ? document.activeElement : null;
+
+    // Lock body scroll (remember previous overflow)
+    try {
+      if (typeof document !== 'undefined') {
+        bodyOverflowRef.current = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    // Focus the first focusable element inside contentRef or the content container itself
+    const focusFirst = () => {
+      try {
+        const root = contentRef.current;
+        if (!root) return;
+        const focusableSelector = 'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+        const elements = Array.from(root.querySelectorAll(focusableSelector)).filter(el => el.offsetParent !== null);
+        if (elements.length) {
+          elements[0].focus();
+        } else {
+          // fallback to container
+          if (typeof root.focus === 'function') root.focus();
+        }
+      } catch (e) {}
+    };
+
+    // Keydown handler to trap Tab navigation inside the overlay
+    const keydownHandler = (e) => {
+      if (e.key !== 'Tab') return;
+      // Only enforce when this portal is top-most
+      try {
+        if (portalIdActual && portalManagerService && typeof portalManagerService.isTopPortal === 'function') {
+          if (!portalManagerService.isTopPortal(portalIdActual)) return;
+        }
+      } catch (er) {}
+
+      const root = contentRef.current;
+      if (!root) return;
+      const focusableSelector = 'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+      const focusable = Array.from(root.querySelectorAll(focusableSelector)).filter(el => el.offsetParent !== null);
+      if (focusable.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+
+    // Apply initial focus after a short delay to allow portal animation to finish
+    const initialFocusTimer = setTimeout(() => {
+      focusFirst();
+    }, 120);
+
+    document.addEventListener('keydown', keydownHandler);
+
+    return () => {
+      clearTimeout(initialFocusTimer);
+      document.removeEventListener('keydown', keydownHandler);
+
+      // Restore body overflow
+      try {
+        if (typeof document !== 'undefined') {
+          document.body.style.overflow = bodyOverflowRef.current || '';
+          bodyOverflowRef.current = null;
+        }
+      } catch (e) {}
+
+      // Restore previous focus
+      try {
+        const prev = previouslyFocusedElementRef.current;
+        if (prev && typeof prev.focus === 'function') prev.focus();
+        previouslyFocusedElementRef.current = null;
+      } catch (e) {}
+    };
+  }, [portalReady, portalContainer, portalIdActual]);
+
   // 🚀 ENHANCED: Portal debugging and monitoring
   useEffect(() => {
     if (process.env.NODE_ENV === 'development' && portalReady) {
@@ -4600,6 +4773,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       {/* DEBUG: Very obvious indicator */}
       {/* Overlay background - parallax removed */}
       <motion.div
+        ref={overlayRef}
         className="fixed inset-0 bg-black/85 flex items-center justify-center z-[999999999] p-2 sm:p-4 contain-paint transition-none sm:mt-0"
         variants={getAdaptiveVariants(containerVariants)}
         initial="hidden"
@@ -4612,6 +4786,9 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         {/* Main content - parallax removed */}
         <motion.div
           ref={contentRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label={movieDetails?.title || movieDetails?.name || 'Movie details'}
           className="relative w-full max-w-6xl h-auto max-h-[calc(100vh-1rem)] z-[1000000000] sm:max-h-[95vh] bg-gradient-to-br from-[#1a1d24] to-[#121417] rounded-3xl shadow-3xl overflow-hidden flex flex-col pointer-events-auto overflow-y-auto mt-2 sm:mt-6"
           variants={getAdaptiveVariants(itemVariants)}
           initial="hidden"

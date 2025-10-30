@@ -13,9 +13,12 @@
  * - FIXED: Optimized performance monitoring with consolidated observers
  */
 import React, { useState, useEffect, useRef, useCallback, memo, useMemo, lazy, Suspense } from 'react';
+import { Helmet } from 'react-helmet-async';
 import { cancelRaf, scheduleRaf } from '../utils/throttledRaf';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
+import useReducedMotion from '../hooks/useReducedMotion';
+import { defaultTransition, fadeUpVariant } from '../utils/animationVariants';
 
 // Core Services and Configuration
 import { getApiUrl } from '../config/api';
@@ -385,24 +388,39 @@ const swiperStyles = `
   .group:hover .category-swiper-prev {
     opacity: 1 !important;
   }
+
+  /* Category button active state - use CSS transitions instead of direct DOM mutation */
+  .swiper-slide-active button {
+    transform: scale(1.05);
+    transition: transform 0.18s ease-out;
+  }
+
+  .swiper-slide:not(.swiper-slide-active) button {
+    transform: scale(1);
+    transition: transform 0.18s ease-out;
+  }
 `;
 
-// Inject styles (idempotent)
-if (typeof document !== 'undefined') {
-  const existing = document.getElementById('homepage-swiper-styles');
-  if (!existing) {
-    const styleSheet = document.createElement('style');
-    styleSheet.id = 'homepage-swiper-styles';
-    styleSheet.textContent = swiperStyles;
-    document.head.appendChild(styleSheet);
-  }
-  
-  // Inject optimized ultra-smooth scrolling styles
-  const existingScrollStyles = document.getElementById('ultra-smooth-scroll-styles');
-  if (!existingScrollStyles) {
-    const scrollStyleSheet = document.createElement('style');
-    scrollStyleSheet.id = 'ultra-smooth-scroll-styles';
-    scrollStyleSheet.textContent = `
+// Client-only style injection function (idempotent)
+// Moved into a function to avoid DOM mutations at module import time (helps SSR and tests)
+const injectHomepageStyles = () => {
+  if (typeof document === 'undefined') return;
+
+  try {
+    const existing = document.getElementById('homepage-swiper-styles');
+    if (!existing) {
+      const styleSheet = document.createElement('style');
+      styleSheet.id = 'homepage-swiper-styles';
+      styleSheet.textContent = swiperStyles;
+      document.head.appendChild(styleSheet);
+    }
+
+    // Inject optimized ultra-smooth scrolling styles
+    const existingScrollStyles = document.getElementById('ultra-smooth-scroll-styles');
+    if (!existingScrollStyles) {
+      const scrollStyleSheet = document.createElement('style');
+      scrollStyleSheet.id = 'ultra-smooth-scroll-styles';
+      scrollStyleSheet.textContent = `
       /* Base scroll styles */
       .ultra-smooth-scroll,
       .scroll-container-fix {
@@ -467,9 +485,14 @@ if (typeof document !== 'undefined') {
         }
       }
     `;
-    document.head.appendChild(scrollStyleSheet);
+      document.head.appendChild(scrollStyleSheet);
+    }
+  } catch (e) {
+    // Don't throw in client environment; best-effort only
+    // eslint-disable-next-line no-console
+    console.warn('injectHomepageStyles failed', e);
   }
-}
+};
 // Lazy load non-critical components with optimized preloading
 const MovieDetailsOverlay = lazy(() => import('../components/MovieDetailsOverlay'), {
   suspense: true
@@ -485,7 +508,7 @@ const VisibleOnDemand = ({ children, rootMargin = '400px', placeholderHeight = 3
   const [isVisible, setIsVisible] = useState(false);
   const [shouldAnimate, setShouldAnimate] = useState(false);
   const ref = useRef(null);
-  const shouldReduceMotion = getReducedMotionOrLowPower();
+  const shouldReduceMotion = getReducedMotionOrLowPower() || useReducedMotion();
 
   useEffect(() => {
   if (!ref.current || isVisible) return;
@@ -499,14 +522,11 @@ const VisibleOnDemand = ({ children, rootMargin = '400px', placeholderHeight = 3
           setIsVisible(true);
           observer.disconnect();
           
-          // Delay animation until after content is likely rendered
-          // This prevents animation stuttering during initial render
+          // Delay animation until after content is likely rendered to avoid jank
+          // Use two nested requestAnimationFrame calls to wait for paint
           requestAnimationFrame(() => {
             requestAnimationFrame(() => {
-              // Wait for 2 frames to ensure content is painted
-              setTimeout(() => {
-                setShouldAnimate(true);
-              }, 50); // Small delay for smoother animation start
+              setShouldAnimate(true);
             });
           });
         }
@@ -551,11 +571,7 @@ const VisibleOnDemand = ({ children, rootMargin = '400px', placeholderHeight = 3
             }}
             initial={{ opacity: 0, y: 20 }}
             animate={shouldAnimate ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-            transition={{ 
-              duration: 0.5,
-              ease: [0.4, 0, 0.2, 1], // Smooth easing
-              delay: 0,
-            }}
+            transition={shouldReduceMotion ? { duration: 0 } : { ...defaultTransition, duration: 0.5 }}
           >
             {children}
           </motion.div>
@@ -576,23 +592,26 @@ const useDevicePerformanceHints = () => {
   });
 
   useEffect(() => {
-    // Force reducedMotion to false to enable animations on all devices
+    // Properly detect user and device hints (respect accessibility preferences)
     let reducedMotion = false;
     let isPointerFine = true;
     let isLowEndDevice = false;
 
-    // Removed reduced motion detection to always enable animations
-    // try {
-    //   reducedMotion = typeof window !== 'undefined' && 
-    //                  window.matchMedia && 
-    //                  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    // } catch (_) {}
-    
     try {
-      isPointerFine = typeof window !== 'undefined' && 
-                     window.matchMedia && 
-                     window.matchMedia('(pointer: fine)').matches;
-    } catch (_) {}
+      reducedMotion = typeof window !== 'undefined' &&
+        window.matchMedia &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    } catch (_) {
+      reducedMotion = false;
+    }
+
+    try {
+      isPointerFine = typeof window !== 'undefined' &&
+        window.matchMedia &&
+        window.matchMedia('(pointer: fine)').matches;
+    } catch (_) {
+      isPointerFine = true;
+    }
 
     // Detect low-end devices by checking device memory, CPU cores and network
     try {
@@ -615,6 +634,30 @@ const useDevicePerformanceHints = () => {
     }
 
     setHints({ reducedMotion, isPointerFine, isLowEndDevice });
+
+    // Listen for changes to prefers-reduced-motion so component updates if user changes system preference
+    let rmMql;
+    try {
+      if (typeof window !== 'undefined' && window.matchMedia) {
+        rmMql = window.matchMedia('(prefers-reduced-motion: reduce)');
+        const onChange = (ev) => {
+          try {
+            setHints(prev => ({ ...prev, reducedMotion: !!(ev && ev.matches) }));
+          } catch (_) {}
+        };
+        if (rmMql.addEventListener) rmMql.addEventListener('change', onChange);
+        else if (rmMql.addListener) rmMql.addListener(onChange);
+
+        return () => {
+          try {
+            if (rmMql) {
+              if (rmMql.removeEventListener) rmMql.removeEventListener('change', onChange);
+              else if (rmMql.removeListener) rmMql.removeListener(onChange);
+            }
+          } catch (_) {}
+        };
+      }
+    } catch (_) {}
   }, []);
 
   return hints;
@@ -888,20 +931,7 @@ const CategorySwiper = memo(({ categories, activeCategory, onCategoryClick, isMo
         // navigation disabled for category swiper (arrows hidden)
         navigation={false}
         onSwiper={(swiper) => { categorySwiperRef.current = swiper; }}
-        onSlideChange={(swiper) => {
-          // Enhanced category slide change animation
-          const activeSlide = swiper.slides[swiper.activeIndex];
-          if (activeSlide) {
-            const button = activeSlide.querySelector('button');
-            if (button) {
-              button.style.transform = 'scale(1.05)';
-              button.style.transition = 'transform 0.2s ease-out';
-              setTimeout(() => {
-                button.style.transform = 'scale(1)';
-              }, 200);
-            }
-          }
-        }}
+        
         freeMode={{
           enabled: true,
           momentum: true,
@@ -4654,6 +4684,16 @@ const HomePage = () => {
   const { reducedMotion, isPointerFine, isLowEndDevice } = useDevicePerformanceHints();
   // Evaluate reduced motion or low power preference at render time
   const reducedMotionOrLowPower = getReducedMotionOrLowPower();
+  // Inject homepage styles on client mount (idempotent)
+  useEffect(() => {
+    try {
+      injectHomepageStyles();
+    } catch (e) {
+      // best-effort only
+      // eslint-disable-next-line no-console
+      console.warn('Failed to inject homepage styles on mount', e);
+    }
+  }, []);
   
   // 🚀 ADVANCED: Zustand Store Integration (Hybrid Approach - Phase 1)
   // Using Zustand alongside existing useState for gradual migration
@@ -9142,13 +9182,20 @@ const HomePage = () => {
   }
 
   return (
-    <MotionConfig
+  <MotionConfig
       transition={{
         duration: 0.4,
         ease: [0.16, 1, 0.3, 1], // Smooth easeOutExpo
       }}
       reducedMotion={reducedMotionOrLowPower ? "always" : "never"}
     >
+      <Helmet>
+        <title>Streamr — Home</title>
+        <meta name="description" content="Streamr - Discover movies, TV shows, and more. Watch your favorite content anytime, anywhere." />
+        <link rel="canonical" href="https://streamr.com/" />
+        <meta property="og:title" content="Streamr - Home" />
+        <meta property="og:description" content="Streamr - Discover movies, TV shows, and more. Watch your favorite content anytime, anywhere." />
+      </Helmet>
       <div className={`relative flex size-full min-h-screen flex-col bg-[#121417] dark group/design-root overflow-x-hidden font-inter scrollbar-hide smooth-scroll performance-scroll touch-scroll-fix`}>
       {/* Error Boundary for better error handling */}
       <ErrorBoundary

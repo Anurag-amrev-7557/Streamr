@@ -302,9 +302,35 @@ class EnhancedServiceWorkerRegistration {
   }
 
   async installApp() {
-    // PWA Install App Method COMPLETELY DISABLED
-    console.log('PWA install app method completely disabled');
-    return;
+    // Trigger the saved beforeinstallprompt event to show the native install prompt
+    try {
+      if (!this.deferredPrompt) {
+        console.log('No install prompt available at the moment');
+        return false;
+      }
+
+      // Show the prompt
+      await this.deferredPrompt.prompt();
+
+      // Wait for the user's choice
+      const choice = await this.deferredPrompt.userChoice;
+
+      // Clear the saved prompt
+      this.deferredPrompt = null;
+
+      if (choice && choice.outcome === 'accepted') {
+        this.isInstalled = true;
+        this.trackInstallation && this.trackInstallation();
+        console.log('User accepted the PWA install prompt');
+        return true;
+      }
+
+      console.log('User dismissed the PWA install prompt');
+      return false;
+    } catch (error) {
+      console.error('Error while showing install prompt:', error);
+      return false;
+    }
   }
 
   showUpdateNotification() {

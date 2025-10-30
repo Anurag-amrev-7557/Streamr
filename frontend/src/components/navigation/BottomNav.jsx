@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import useReducedMotion from '../../hooks/useReducedMotion';
+import { springEntrance, defaultTransition, reducedMotionTransition } from '../../utils/animationVariants';
 import { HomeIcon, FilmIcon, TvIcon, UserGroupIcon, BookmarkIcon, EllipsisHorizontalIcon, BookOpenIcon, AdjustmentsHorizontalIcon } from '@heroicons/react/24/outline';
 import { useLoading } from '../../contexts/LoadingContext';
 import { scheduleRaf, cancelRaf } from '../../utils/throttledRaf';
@@ -67,9 +69,18 @@ const BottomNav = () => {
   // State
   const [hasAnimatedIn, setHasAnimatedIn] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  // Track changes to item refs (refs mutations don't trigger rerenders)
+  const [refVersion, setRefVersion] = useState(0);
   
-  // Always allow full animations on all devices
-  const prefersReducedMotion = false;
+  // Respect the user's reduced-motion preference where possible
+  const prefersReducedMotion = useMemo(() => {
+    if (typeof window === 'undefined') return true;
+    try {
+      return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    } catch (_) {
+      return false;
+    }
+  }, []);
   
   // Hide bottom nav when full page loader is shown or on manga reader pages
   const isMangaReaderPage = useMemo(() => {
@@ -165,12 +176,15 @@ const BottomNav = () => {
       if (key === activeKey) {
         addTimer(setTimeout(() => updateIndicator(), 0));
       }
+      // bump refVersion so effects depending on refs can re-run reliably
+      setRefVersion(v => v + 1);
     } else {
       // Only remove ref if element is actually null/undefined
       // Don't remove ref during re-renders
       if (!element && itemRefs.current.has(key)) {
         itemRefs.current.delete(key);
         // console.log(`BottomNav: Removed ref for ${key}`);
+        setRefVersion(v => v + 1);
       }
     }
   }, [activeKey, updateIndicator]);
@@ -235,11 +249,11 @@ const BottomNav = () => {
       
       // Update indicator when page becomes visible again
       if (!document.hidden) {
-        setTimeout(() => {
+        addTimer(setTimeout(() => {
           if (isMounted) {
             updateIndicator();
           }
-        }, 100);
+        }, 100));
       }
     };
 
@@ -367,28 +381,18 @@ const BottomNav = () => {
       // Update indicator when active key changes or when refs are expected to be ready
       addTimer(setTimeout(() => updateIndicator(), 0));
     }
-  }, [itemRefs.current.size, activeKey, isAuthOrProfilePage, updateIndicator]);
+  }, [refVersion, activeKey, isAuthOrProfilePage, updateIndicator]);
 
   // Don't render if should hide - moved to JSX level to avoid hook issues
 
-  // Full animation variants for all devices
-  const entranceVariants = {
-    hidden: {
-      y: 50,
-      opacity: 0,
-    },
-    visible: {
-      y: 0,
-      opacity: 1,
-      transition: {
-        type: 'spring',
-        stiffness: 200,
-        damping: 25,
-        mass: 1,
-        delay: 0.05,
-      }
-    }
-  };
+  // Respect user's reduced-motion preference
+  const reducedMotion = useReducedMotion();
+
+  // Full animation variants for entrance (use shared springEntrance)
+  const entranceVariants = reducedMotion ? {
+    hidden: { y: 0, opacity: 1 },
+    visible: { y: 0, opacity: 1, transition: reducedMotionTransition }
+  } : springEntrance({ delay: 0.05 });
 
   // Handle animation completion
   const handleAnimationComplete = useCallback(() => {
@@ -399,18 +403,18 @@ const BottomNav = () => {
     updateIndicator();
     
     // Then schedule additional updates to ensure smooth positioning
-    setTimeout(() => {
+    addTimer(setTimeout(() => {
       updateIndicator();
-      if (rafIdRef.current) { try { cancelRaf(rafIdRef.current); } catch (_) {} }
-      rafIdRef.current = scheduleRaf(() => updateIndicator());
-    }, 50);
-    
+      // Use centralized scheduler to avoid duplicate RAFs
+      scheduleUpdate(() => updateIndicator());
+    }, 50));
+
     // Also check if refs are available and update
-    setTimeout(() => {
+    addTimer(setTimeout(() => {
       if (itemRefs.current.size > 0) {
         updateIndicator();
       }
-    }, 100);
+    }, 100));
   }, [updateIndicator]);
 
   // Handle nav item interactions
@@ -424,11 +428,11 @@ const BottomNav = () => {
   rafIdRef.current = scheduleRaf(() => updateIndicator());
     
     // Also check if refs are available and update
-    setTimeout(() => {
+    addTimer(setTimeout(() => {
       if (itemRefs.current.size > 0) {
         updateIndicator();
       }
-    }, 50);
+    }, 50));
   }, [updateIndicator]);
 
   // Don't render if should hide

@@ -80,6 +80,32 @@
       * {
         box-sizing: border-box;
       }
+
+      /* Skip link (visually hidden until focused) for keyboard users */
+      .skip-link {
+        position: absolute;
+        left: -999px;
+        top: auto;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        z-index: -9999;
+        background: #fff;
+        color: #111;
+        padding: 8px 12px;
+        border-radius: 4px;
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      .skip-link:focus {
+        left: 1rem;
+        top: 1rem;
+        width: auto;
+        height: auto;
+        overflow: visible;
+        z-index: 10001;
+      }
     </style>
     
     <!-- Non-blocking Google Fonts -->
@@ -111,7 +137,9 @@
     <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
     
     <!-- PWA Meta Tags -->
-    <link rel="manifest" href="/manifest.json">
+  <!-- Prefer light manifest when the user prefers a light color scheme -->
+  <link rel="manifest" href="/manifest-light.json" media="(prefers-color-scheme: light)">
+  <link rel="manifest" href="/manifest.json">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Streamr">
@@ -121,7 +149,9 @@
     <meta name="msapplication-config" content="/browserconfig.xml">
   </head>
   <body>
-    <div id="root"></div>
+    <!-- Accessibility: Skip link for keyboard users -->
+    <a href="#root" class="skip-link" onclick="document.getElementById('root').focus();return false;">Skip to main content</a>
+  <div id="root" tabindex="-1"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
