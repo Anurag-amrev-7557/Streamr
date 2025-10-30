@@ -1,1 +1,0 @@
-console.log('🔍 Debug localStorage:'); console.log('accessToken:', localStorage.getItem('accessToken')); console.log('refreshToken:', localStorage.getItem('refreshToken')); console.log('user:', JSON.parse(localStorage.getItem('user') || 'null'));

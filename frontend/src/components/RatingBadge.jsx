@@ -1,5 +1,5 @@
 import React, { useMemo, useCallback, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import PropTypes from 'prop-types';
 
 const RatingBadge = ({ 
@@ -11,8 +11,9 @@ const RatingBadge = ({
   showShadow = false,
   colorTheme = 'dark',
   tooltipText = '',
-  customColor = '', // New prop for custom color
+  customColor = '', // New prop for custom color (any valid CSS color)
   isLoading = false, // New prop for loading state
+  hideWhenZero = false, // New prop: hide badge when rating is exactly 0
   tooltipPosition = 'top', // New prop for tooltip position: 'top' | 'bottom'
   onClick = null, // New prop for click handler
   format = 'decimal', // New prop for rating format: 'decimal' | 'percentage' | 'stars'
@@ -23,8 +24,8 @@ const RatingBadge = ({
 }) => {
   const [isFocused, setIsFocused] = useState(false);
   
-  // Force animations on all devices including mobile - ignore reduced motion preference
-  const prefersReducedMotion = false;
+  // Respect the user's reduced motion preference for accessibility
+  const prefersReducedMotion = useReducedMotion();
   
   // Validate and normalize rating with error handling
   const normalizedRating = useMemo(() => {
@@ -62,8 +63,8 @@ const RatingBadge = ({
     }
   }, [normalizedRating, format, maxRating, isLoading]);
 
-  // Don't render if rating is 0 or invalid (unless loading)
-  if (!isLoading && normalizedRating === 0) {
+  // Optionally hide when rating is exactly 0 (preserve visibility when loading)
+  if (!isLoading && hideWhenZero && normalizedRating === 0) {
     return null;
   }
 
@@ -174,10 +175,10 @@ const RatingBadge = ({
       return 'bg-black/50 text-white';
     };
 
+    // For custom colors we return an empty Tailwind class and provide inline style
     const getCustomBadgeStyle = () => {
-      return customColor ? `bg-${customColor} text-white` : colorTheme === 'colored' 
-        ? getColoredBadgeStyle(normalizedRating)
-        : getDarkBadgeStyle(normalizedRating);
+      if (customColor) return '';
+      return colorTheme === 'colored' ? getColoredBadgeStyle(normalizedRating) : getDarkBadgeStyle(normalizedRating);
     };
 
     const getTooltipPosition = () => {
@@ -194,6 +195,56 @@ const RatingBadge = ({
     };
   }, [normalizedRating, colorTheme, validSize, validPosition, customColor, tooltipPosition]);
 
+  // Calculate inline style and accessible text color when customColor is provided
+  const customStyle = useMemo(() => {
+    if (!customColor) return null;
+
+    // Try to compute a readable foreground color (black/white) based on luminance for hex colors.
+    // Support formats: #RRGGBB, #RGB, rgb(...), rgba(...), or any valid CSS color as fallback.
+    const getLuminanceFromHex = (hex) => {
+      // normalize #RGB to #RRGGBB
+      if (!hex) return null;
+      try {
+        let c = hex.trim();
+        if (c[0] === '#') c = c.slice(1);
+        if (c.length === 3) c = c.split('').map(ch => ch + ch).join('');
+        if (c.length !== 6) return null;
+        const r = parseInt(c.slice(0,2), 16);
+        const g = parseInt(c.slice(2,4), 16);
+        const b = parseInt(c.slice(4,6), 16);
+        // relative luminance formula
+        const srgb = [r,g,b].map(v => v/255).map(v => v <= 0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4));
+        return 0.2126*srgb[0] + 0.7152*srgb[1] + 0.0722*srgb[2];
+      } catch (e) {
+        return null;
+      }
+    };
+
+    let style = { backgroundColor: customColor };
+    const luminance = getLuminanceFromHex(customColor);
+    if (luminance !== null) {
+      style.color = luminance > 0.5 ? 'black' : 'white';
+    } else {
+      // fallback: prefer white text for dark-ish colors (best-effort)
+      style.color = 'white';
+    }
+
+    return style;
+  }, [customColor]);
+
+  // Determine icon size separately (don't reuse sizeClass which contains height/padding)
+  const iconSize = useMemo(() => {
+    // Reduced icon sizes for a more compact appearance
+    switch (validSize) {
+      case 'ultra-small': return 'w-2 h-2';
+      case 'extra-small': return 'w-2.5 h-2.5';
+      case 'small': return 'w-3 h-3';
+      case 'large': return 'w-4 h-4';
+      case 'xl': return 'w-4.5 h-4.5';
+      default: return 'w-3.5 h-3.5';
+    }
+  }, [validSize]);
+
   return (
     <AnimatePresence>
       <motion.div
@@ -206,6 +257,7 @@ const RatingBadge = ({
         whileHover={(interactive || onClick) ? "hover" : undefined}
         role={(interactive || onClick) ? "button" : "status"}
         aria-label={generatedAriaLabel}
+        aria-live={(interactive || onClick) ? undefined : 'polite'}
         onClick={handleClick}
         onKeyDown={handleKeyDown}
         onFocus={() => setIsFocused(true)}
@@ -226,13 +278,13 @@ const RatingBadge = ({
           </motion.div>
         )}
 
-        <div className={`relative w-auto h-full rounded-md ${badgeStyle} overflow-hidden 
+        <div style={customStyle || undefined} className={`relative w-auto h-full rounded-md ${badgeStyle ? badgeStyle : ''} overflow-hidden 
           ${showShadow ? 'shadow-lg' : ''} flex items-center justify-center px-2 sm:px-1 
           min-w-max transition-all duration-200 ${isLoading ? 'cursor-wait' : ''} 
           ${isFocused ? 'ring-2 ring-white ring-offset-2 ring-offset-transparent' : ''}`}>
           
           {showLabel && !isLoading && (
-            <span className="text-white/80 text-xs mr-1 flex-shrink-0">
+            <span className="text-current opacity-80 text-xs mr-1 flex-shrink-0">
               Rating:
             </span>
           )}
@@ -240,8 +292,7 @@ const RatingBadge = ({
           {showIcon && !isLoading && (
             <motion.svg
               xmlns="http://www.w3.org/2000/svg"
-              className={`${sizeClass.includes('ultra-small') ? 'w-2 h-2' : 'w-3 h-3'} 
-                text-white flex-shrink-0`}
+              className={`${iconSize} text-current flex-shrink-0`}
               viewBox="0 0 24 24"
               fill="currentColor"
               variants={prefersReducedMotion ? {} : {
@@ -255,7 +306,7 @@ const RatingBadge = ({
           )}
           
           <motion.span
-            className="font-semibold sm:font-bold text-white leading-none tracking-tight flex-shrink-0 ml-1"
+            className="font-semibold sm:font-bold text-current leading-none tracking-tight flex-shrink-0 ml-0.5"
             layout={!prefersReducedMotion}
           >
             {formattedRating}

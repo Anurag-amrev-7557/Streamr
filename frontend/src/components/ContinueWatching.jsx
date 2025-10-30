@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import PropTypes from 'prop-types';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Navigation, A11y, Mousewheel, Keyboard, FreeMode } from 'swiper/modules';
 import 'swiper/css';
@@ -667,6 +668,15 @@ const ContinueWatchingCard = React.memo(({ item, onClick, isMobile, onRemove, in
 
 ContinueWatchingCard.displayName = 'ContinueWatchingCard';
 
+// PropTypes for the card to help catch incorrect prop usage
+ContinueWatchingCard.propTypes = {
+  item: PropTypes.object.isRequired,
+  onClick: PropTypes.func.isRequired,
+  isMobile: PropTypes.bool,
+  onRemove: PropTypes.func,
+  index: PropTypes.number,
+  totalItems: PropTypes.number,
+};
 // Main Continue Watching Component - ADVANCED VERSION with intelligent optimizations
 const ContinueWatching = ({ onMovieSelect, isMobile }) => {
   const { 
@@ -692,8 +702,14 @@ const ContinueWatching = ({ onMovieSelect, isMobile }) => {
   const visibilityListenerRef = useRef(null);
   const focusListenerRef = useRef(null);
   
-  // Advanced visibility tracking
-  const [isVisible, setIsVisible] = useState(!document.hidden);
+  // Advanced visibility tracking (SSR-safe)
+  const [isVisible, setIsVisible] = useState(() => {
+    try {
+      return typeof document !== 'undefined' ? !document.hidden : true;
+    } catch (e) {
+      return true;
+    }
+  });
   
   // Intelligent refresh with throttling to prevent excessive API calls
   const intelligentRefresh = useCallback(async () => {
@@ -754,16 +770,28 @@ const ContinueWatching = ({ onMovieSelect, isMobile }) => {
     // Cleanup is automatic via memory optimizer
   }, [intelligentRefresh, memoryOptimizer, isVisible]);
   
-  // Advanced memoization with deep comparison
-  const memoizedContinueWatching = useMemo(() => {
-    // Ensure continueWatching is always an array to avoid runtime errors
+  // Advanced memoization with stats computed in one pass to reduce work
+  const { memoizedContinueWatching, stats } = useMemo(() => {
     const list = Array.isArray(continueWatching) ? continueWatching : [];
-    // Sort by last watched date (most recent first) for better UX
-    return [...list].sort((a, b) => {
+    // Create shallow copy and sort by lastWatched (most recent first)
+    const sorted = [...list].sort((a, b) => {
       const dateA = a?.lastWatched ? new Date(a.lastWatched).getTime() : 0;
       const dateB = b?.lastWatched ? new Date(b.lastWatched).getTime() : 0;
       return dateB - dateA;
     });
+
+    // Compute stats in the same iteration for performance
+    const computed = sorted.reduce(
+      (acc, item) => {
+        if (item?.type === 'movie') acc.movies += 1;
+        if (item?.type === 'tv') acc.tvShows += 1;
+        acc.total += 1;
+        return acc;
+      },
+      { movies: 0, tvShows: 0, total: 0 }
+    );
+
+    return { memoizedContinueWatching: sorted, stats: computed };
   }, [continueWatching]);
 
   // Advanced Swiper update logic with error handling
@@ -909,12 +937,7 @@ const ContinueWatching = ({ onMovieSelect, isMobile }) => {
     return null;
   }
 
-  // Count statistics for better UX
-  const stats = useMemo(() => {
-    const movies = memoizedContinueWatching.filter(item => item.type === 'movie').length;
-    const tvShows = memoizedContinueWatching.filter(item => item.type === 'tv').length;
-    return { movies, tvShows, total: memoizedContinueWatching.length };
-  }, [memoizedContinueWatching]);
+  // stats are now provided by the memo above
 
   // Mobile rendering with enhanced UI
   if (isMobile) {
@@ -1273,6 +1296,12 @@ const ContinueWatching = ({ onMovieSelect, isMobile }) => {
       </motion.div>
     </motion.div>
   );
+};
+
+// PropTypes for ContinueWatching
+ContinueWatching.propTypes = {
+  onMovieSelect: PropTypes.func,
+  isMobile: PropTypes.bool,
 };
 
 export default ContinueWatching; 

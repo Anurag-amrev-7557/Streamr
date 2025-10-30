@@ -51,6 +51,7 @@
     "react-youtube": "^10.1.0",
     "socket.io-client": "^4.8.1",
     "swiper": "^11.2.8",
+  "prop-types": "^15.8.1",
     "vite-imagetools": "^7.1.0",
     "vite-plugin-compression": "^0.5.1",
     "web-vitals": "^5.1.0",

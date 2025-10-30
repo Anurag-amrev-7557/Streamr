@@ -7,8 +7,7 @@ import React, {
   memo, 
   useReducer,
   useTransition,
-  useDeferredValue,
-  startTransition
+  useDeferredValue
 } from 'react';
 import PropTypes from 'prop-types';
 import { motion, AnimatePresence, useAnimationControls } from 'framer-motion';
@@ -328,6 +327,8 @@ const EnhancedEpisodeList = ({
   const episodeListRef = useRef(null);
   const prefetchTimeoutRef = useRef(null);
   const animationControls = useAnimationControls();
+  // Ref to safely call season change handler from effects (avoids TDZ/stale closures)
+  const handleSeasonChangeRef = useRef(null);
   
   // Intersection observer for infinite scroll
   const { ref: loadMoreRef, inView } = useInView({
@@ -663,7 +664,8 @@ const EnhancedEpisodeList = ({
             s => s.season_number === state.currentSeason.season_number
           );
           if (currentIndex > 0) {
-            handleSeasonChange(state.seasons[currentIndex - 1]);
+            // Use ref to avoid TDZ/stale closures
+            handleSeasonChangeRef.current?.(state.seasons[currentIndex - 1]);
           }
         }
         if (e.key === 'ArrowRight' && state.currentSeason) {
@@ -672,7 +674,7 @@ const EnhancedEpisodeList = ({
             s => s.season_number === state.currentSeason.season_number
           );
           if (currentIndex < state.seasons.length - 1) {
-            handleSeasonChange(state.seasons[currentIndex + 1]);
+            handleSeasonChangeRef.current?.(state.seasons[currentIndex + 1]);
           }
         }
       }
@@ -709,6 +711,11 @@ const EnhancedEpisodeList = ({
     
     onSeasonChange?.(season);
   }, [loadSeasonEpisodes, onSeasonChange, animationControls]);
+
+  // Keep ref in sync so keyboard shortcuts can call the latest handler
+  useEffect(() => {
+    handleSeasonChangeRef.current = handleSeasonChange;
+  }, [handleSeasonChange]);
 
 
   const handleEpisodeClick = useCallback((episode) => {
@@ -778,7 +785,7 @@ const EnhancedEpisodeList = ({
   // ============================================================================
   
   // Episode card component with advanced features
-  const EpisodeCard = memo(({ episode, index, viewMode }) => {
+  const EpisodeCard = memo(({ episode, index, viewMode, onEpisodeClick, currentSeasonNumber }) => {
     const cardClass = viewMode === 'compact' 
       ? 'flex items-center gap-2 p-2'
       : 'flex gap-3 p-3';
@@ -793,14 +800,14 @@ const EnhancedEpisodeList = ({
         exit="exit"
         layout
         className="bg-gray-800 rounded-lg overflow-hidden cursor-pointer group relative"
-        onClick={() => handleEpisodeClick(episode)}
+        onClick={() => onEpisodeClick?.(episode)}
         role="button"
         tabIndex={0}
         aria-label={`Episode ${episode.episode_number}: ${episode.name}`}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
-            handleEpisodeClick(episode);
+            onEpisodeClick?.(episode);
           }
         }}
       >
@@ -889,7 +896,7 @@ const EnhancedEpisodeList = ({
               className="bg-blue-600 hover:bg-blue-700 text-white p-1.5 rounded-full transition-colors"
               onClick={(e) => {
                 e.stopPropagation();
-                handleEpisodeClick(episode);
+                onEpisodeClick?.(episode);
               }}
               aria-label="Play episode"
             >
@@ -901,10 +908,13 @@ const EnhancedEpisodeList = ({
     );
   }, (prevProps, nextProps) => {
     // Custom comparison for optimal re-rendering
+    // Re-render when identity, view mode, progress, or handler/current season changes
     return (
       prevProps.episode.id === nextProps.episode.id &&
       prevProps.viewMode === nextProps.viewMode &&
-      prevProps.episode.watch_progress === nextProps.episode.watch_progress
+      prevProps.episode.watch_progress === nextProps.episode.watch_progress &&
+      prevProps.currentSeasonNumber === nextProps.currentSeasonNumber &&
+      prevProps.onEpisodeClick === nextProps.onEpisodeClick
     );
   });
 
@@ -1346,7 +1356,13 @@ const EnhancedEpisodeList = ({
             <AnimatePresence mode="popLayout">
               {displayEpisodes.map((episode, index) => (
                 <div key={episode.id} role="listitem">
-                  <EpisodeCard episode={episode} index={index} viewMode={state.viewMode} />
+                  <EpisodeCard
+                    episode={episode}
+                    index={index}
+                    viewMode={state.viewMode}
+                    onEpisodeClick={handleEpisodeClick}
+                    currentSeasonNumber={state.currentSeason?.season_number}
+                  />
                 </div>
               ))}
             </AnimatePresence>

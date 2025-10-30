@@ -1,11 +1,97 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
-const AdBlockerRecommendationToast = ({ show, onClose, onDismiss }) => {
+function detectAdblock({ onDetection }) {
+  let detected = false;
+
+  // 1. Bait DIV heuristic
+  const baitDiv = document.createElement('div');
+  baitDiv.className = 'pub_300x250 adsbox ad-banner ad_banner ad-placement doubleclick adunit sponsor';
+  baitDiv.style.cssText = 'width: 1px; height: 1px; position: absolute; left: -9999px; pointer-events: none;';
+  document.body.appendChild(baitDiv);
+
+  // 2. Script and network test
+  const fakeAdScript = document.createElement('script');
+  fakeAdScript.type = 'text/javascript';
+  fakeAdScript.async = true;
+  fakeAdScript.onerror = () => {
+    detected = true;
+    clean();
+    onDetection(true);
+  };
+  fakeAdScript.onload = () => {
+    // Not blocked by extension filters
+    setTimeout(() => {
+      if (!detected && baitDiv && (baitDiv.offsetParent === null || baitDiv.offsetHeight === 0 || getComputedStyle(baitDiv).display === 'none')) {
+        detected = true;
+        clean();
+        onDetection(true);
+      } else if (!detected) {
+        clean();
+        onDetection(false);
+      }
+    }, 50);
+  };
+  // Try loading a common ad script URI likely to be blocked
+  fakeAdScript.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?fakeparam='+Math.random();
+  document.body.appendChild(fakeAdScript);
+
+  // 3. Blocked image test
+  const img = document.createElement('img');
+  img.src = 'https://ads.example.com/ad.jpg?'+Math.random();
+  img.style.display = 'none';
+  img.onerror = () => {
+    detected = true;
+    clean();
+    onDetection(true);
+  };
+  document.body.appendChild(img);
+
+  // Helper
+  function clean() {
+    [baitDiv, fakeAdScript, img].forEach(el => { if (el && el.parentNode) el.parentNode.removeChild(el); });
+  }
+}
+
+const AdBlockerRecommendationToast = ({ show, onClose, onDismiss, onDetection }) => {
   const [visible, setVisible] = useState(show);
   const [isAnimating, setIsAnimating] = useState(false);
+  const [isDetected, setIsDetected] = useState(null); // null=not tested, true/false=result
+  const detectOnceRef = useRef(false);
+
+  // Detect accessibility or headless (for best UX, avoid bugging bots)
+  function ignoreDueToEnvironment() {
+    // Simple screen reader/headless/devtools heuristic
+    if (window && ('ontouchstart' in window && typeof window.navigator.maxTouchPoints === 'number' && window.navigator.maxTouchPoints === 0)) {
+      return true;
+    }
+    // try to detect automation
+    if (window.navigator.webdriver || /HeadlessChrome/.test(window.navigator.userAgent || '')) {
+      return true;
+    }
+    // Do not show if prefers reduced motion/accessibility
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return true;
+    return false;
+  }
 
   useEffect(() => {
-    if (show) {
+    if (ignoreDueToEnvironment()) {
+      setVisible(false);
+      setIsDetected(null);
+      return;
+    }
+    if (!detectOnceRef.current && show) {
+      detectOnceRef.current = true;
+      detectAdblock({
+        onDetection: (blocked) => {
+          setIsDetected(blocked);
+          if (typeof onDetection === 'function') onDetection(blocked);
+        },
+      });
+    }
+  }, [show, onDetection]);
+
+  useEffect(() => {
+    if (show && (isDetected === true || isDetected === false)) {
       setIsAnimating(true);
       setVisible(true);
       try {
@@ -15,10 +101,10 @@ const AdBlockerRecommendationToast = ({ show, onClose, onDismiss }) => {
         handleClose();
       }, 7000);
       return () => clearTimeout(timer);
-    } else {
+    } else if (!show) {
       handleClose();
     }
-  }, [show]);
+  }, [show, isDetected]);
 
   const handleClose = () => {
     setIsAnimating(false);

@@ -7,3 +7,6 @@
 {"level":"info","message":"MongoDB connected successfully","timestamp":"2025-10-30T08:06:33.871Z"}
 {"env":"production","level":"info","message":"Server running","port":"3001","timestamp":"2025-10-30T08:06:33.874Z"}
 {"level":"info","message":"Allowed origins: %o","timestamp":"2025-10-30T08:06:33.874Z"}
+{"level":"info","message":"MongoDB connected successfully","timestamp":"2025-10-30T13:35:32.114Z"}
+{"env":"production","level":"info","message":"Server running","port":"3001","timestamp":"2025-10-30T13:35:32.118Z"}
+{"level":"info","message":"Allowed origins: %o","timestamp":"2025-10-30T13:35:32.118Z"}

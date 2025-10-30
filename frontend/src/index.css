@@ -924,11 +924,14 @@ div, section, main, article {
   }
 }
 
-/* Focus visible styles for accessibility */
+/* Remove focus rings globally (overrides any utility-generated rings). Note: this reduces keyboard-visible focus indicators.
+   If you want to preserve focus for keyboard users while hiding for mouse, consider using :focus-visible with
+   a non-intrusive style instead. */
+*:focus,
 *:focus-visible {
-  outline: 2px solid rgba(139, 92, 246, 0.8);
-  outline-offset: 2px;
-  border-radius: 4px;
-  transition: outline-offset 0.3s cubic-bezier(0.16, 1, 0.3, 1); /* Smoother */
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-tap-highlight-color: transparent !important;
+  -webkit-focus-ring-color: transparent !important;
 }
 

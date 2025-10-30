@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import { getCollectionDetails } from '../services/tmdbService';
@@ -7,6 +7,8 @@ import { XMarkIcon, PlayIcon, PlusIcon, CheckIcon } from '@heroicons/react/24/ou
 import { useWatchlist } from '../contexts/WatchlistContext';
 import { usePortal } from '../hooks/usePortal';
 import { PORTAL_CONFIGS, createPortalEventHandlers } from '../utils/portalUtils';
+import PropTypes from 'prop-types';
+import CenteredLogoLoader from './CenteredLogoLoader';
 
 const CollectionDetailsOverlay = ({ collection, onClose, onMovieSelect }) => {
   const [collectionDetails, setCollectionDetails] = useState(null);
@@ -15,6 +17,8 @@ const CollectionDetailsOverlay = ({ collection, onClose, onMovieSelect }) => {
   const [selectedMovie, setSelectedMovie] = useState(null);
   const [openingMovieId, setOpeningMovieId] = useState(null);
   const { addToWatchlist, removeFromWatchlist, watchlist, isInWatchlist } = useWatchlist();
+  const closeBtnRef = useRef(null);
+  const prevBodyOverflowRef = useRef(null);
 
   // Enhanced portal management
   const portalId = `collection-details-${collection?.id || 'default'}`;
@@ -27,37 +31,59 @@ const CollectionDetailsOverlay = ({ collection, onClose, onMovieSelect }) => {
     ...createPortalEventHandlers(portalId, { onClose })
   });
 
-  // Fetch collection details when component mounts
+  // Fetch collection details when `collection.id` changes.
+  // Use a cancel flag to avoid setting state after unmount.
   useEffect(() => {
+    let cancelled = false;
     const fetchCollectionDetails = async () => {
-      if (!collection?.id) return;
-      
-      try {
-        setLoading(true);
-        setError(null);
-        const details = await getCollectionDetails(collection.id);
-        setCollectionDetails(details);
-      } catch (err) {
-        console.error('Error fetching collection details:', err);
-        setError(err.message);
-      } finally {
+      if (!collection?.id) {
+        setCollectionDetails(null);
         setLoading(false);
+        setError(null);
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+      try {
+        const details = await getCollectionDetails(collection.id);
+        if (!cancelled) {
+          setCollectionDetails(details || null);
+        }
+      } catch (err) {
+        // Keep the error shape predictable
+        if (!cancelled) {
+          console.error('Error fetching collection details:', err);
+          setError(err?.message || String(err));
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     };
 
     fetchCollectionDetails();
+
+    return () => {
+      cancelled = true;
+    };
   }, [collection?.id]);
 
   const handleMovieClick = useCallback(async (movie) => {
+    if (!movie || !movie.id) return;
+    // Avoid duplicate opens
+    if (openingMovieId) return;
+
     setOpeningMovieId(movie.id);
+    setSelectedMovie(movie);
     try {
-      setSelectedMovie(movie);
       if (onMovieSelect) {
         const maybePromise = onMovieSelect(movie);
         if (maybePromise && typeof maybePromise.then === 'function') {
           await maybePromise;
         }
       }
+    } catch (err) {
+      console.error('Error in onMovieSelect handler:', err);
     } finally {
       setOpeningMovieId(null);
     }
@@ -84,17 +110,54 @@ const CollectionDetailsOverlay = ({ collection, onClose, onMovieSelect }) => {
   }, [onClose]);
 
   useEffect(() => {
+    // Trap escape and prevent background scroll, but restore previous overflow value on cleanup.
     document.addEventListener('keydown', handleKeyDown);
+    prevBodyOverflowRef.current = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    
+
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = 'unset';
+      // Restore previous overflow value (could be '' or 'auto')
+      document.body.style.overflow = prevBodyOverflowRef.current || '';
     };
   }, [handleKeyDown]);
 
   const movies = useMemo(() => {
-    return collectionDetails?.parts || [];
+    return Array.isArray(collectionDetails?.parts) ? collectionDetails.parts : [];
+  }, [collectionDetails]);
+
+  // Memoize computed poster/backdrop to avoid repeated `getPosterProps` calls during rerenders
+  const backdropSrc = useMemo(() => {
+    if (!collectionDetails?.backdrop_path) return null;
+    return getBackdropProps({ backdrop_path: collectionDetails.backdrop_path }, 'w1280').src;
+  }, [collectionDetails?.backdrop_path]);
+
+  const posterFallback = useMemo(() => {
+    // Simple generic SVG placeholder encoded once for all posters (keeps bundle small and predictable)
+    const svg = `<?xml version='1.0' encoding='UTF-8'?>` +
+      `<svg xmlns='http://www.w3.org/2000/svg' width='500' height='750' viewBox='0 0 500 750'>` +
+      `<rect width='500' height='750' fill='#0b0b0b'/>` +
+      `<text x='50%' y='55%' fill='#444' font-family='Arial' font-size='22' text-anchor='middle'>No Image</text>` +
+      `</svg>`;
+    return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+  }, []);
+
+  // compute a clean release year range like 2001–2005 or single year
+  const releaseYearRange = useMemo(() => {
+    try {
+      const years = (collectionDetails?.parts || [])
+        .map(p => p.release_date)
+        .filter(Boolean)
+        .map(d => new Date(d).getFullYear())
+        .filter(Boolean)
+        .sort((a, b) => a - b);
+      if (years.length === 0) return null;
+      const first = years[0];
+      const last = years[years.length - 1];
+      return first === last ? String(first) : `${first}–${last}`;
+    } catch (err) {
+      return null;
+    }
   }, [collectionDetails]);
 
   if (!collection) return null;
@@ -103,6 +166,15 @@ const CollectionDetailsOverlay = ({ collection, onClose, onMovieSelect }) => {
   if (typeof window === 'undefined' || !portalReady || !portalContainer) {
     return null;
   }
+
+  // focus close button when overlay is ready
+  useEffect(() => {
+    if (portalReady && closeBtnRef.current) {
+      // small timeout ensures DOM focusable
+      const t = setTimeout(() => closeBtnRef.current?.focus(), 50);
+      return () => clearTimeout(t);
+    }
+  }, [portalReady]);
 
   return createPortalContent(
     <AnimatePresence>
@@ -125,11 +197,11 @@ const CollectionDetailsOverlay = ({ collection, onClose, onMovieSelect }) => {
           {/* Header */}
           <div className="relative">
             {/* Backdrop Image */}
-            {collectionDetails?.backdrop_path && (
+            {backdropSrc && (
               <div className="relative h-96 md:h-[30rem] lg:h-[36rem] overflow-hidden">
                 <img
-                  src={getBackdropProps({ backdrop_path: collectionDetails.backdrop_path }, 'w1280').src}
-                  alt={collectionDetails.name}
+                  src={backdropSrc}
+                  alt={collectionDetails?.name || collection.name}
                   className="w-full h-full object-cover"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent" />
@@ -138,8 +210,10 @@ const CollectionDetailsOverlay = ({ collection, onClose, onMovieSelect }) => {
             
             {/* Close Button */}
             <button
+              ref={closeBtnRef}
               onClick={onClose}
-              className="absolute top-4 right-4 p-2 bg-black/80 hover:bg-white/10 rounded-full transition-colors border border-white/20"
+              aria-label={`Close ${collectionDetails?.name || collection.name} details`}
+              className="absolute top-4 right-4 p-2 bg-black/80 hover:bg-white/10 rounded-full transition-colors border border-white/20 focus:outline-none focus:ring-2 focus:ring-blue-400"
               style={{ zIndex: 10 }}
             >
               <XMarkIcon className="w-6 h-6 text-white" />
@@ -309,16 +383,9 @@ const CollectionDetailsOverlay = ({ collection, onClose, onMovieSelect }) => {
                         
                         {/* Click Loader Overlay */}
                         {openingMovieId === movie.id && (
-                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center" style={{ zIndex: 20 }}>
-                            <div className="spinner"></div>
-                            <style>{`
-                              .spinner { --size: 18px; --first-block-clr: rgba(255,255,255, 0.8); --second-block-clr: rgba(255,255,255, 0.8); --clr: #111; width: 48px; height: 48px; position: relative; }
-                              .spinner::after,.spinner::before { box-sizing: border-box; position: absolute; content: ""; width: 18px; height: 20px; top: 50%; animation: up 2.4s cubic-bezier(0,0,0.24,1.21) infinite; left: 50%; background: var(--first-block-clr); backdrop-filter: blur(10px); }
-                              .spinner::after { background: var(--second-block-clr); top: calc(50% - var(--size)); left: calc(50% - var(--size)); animation: down 2.4s cubic-bezier(0,0,0.24,1.21) infinite; backdrop-filter: blur(10px); }
-                              @keyframes down { 0%,100% { transform: none; } 25% { transform: translateX(80%);} 50% { transform: translateX(80%) translateY(80%);} 75% { transform: translateY(80%);} }
-                              @keyframes up { 0%,100% { transform: none; } 25% { transform: translateX(-90%);} 50% { transform: translateX(-90%) translateY(-90%);} 75% { transform: translateY(-90%);} }
-                            `}</style>
-                          </div>
+                          <>
+                            <CenteredLogoLoader />
+                          </>
                         )}
                         
                         {/* Overlay with movie info */}

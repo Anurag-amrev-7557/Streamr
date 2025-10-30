@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense, memo } from 'react';
 import PropTypes from 'prop-types';
+import CenteredLogoLoader from '../components/CenteredLogoLoader';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { 
   getTrendingMovies, 
@@ -649,16 +650,7 @@ const MovieCard = memo(({ movie, index, onClick, onPrefetch, onImageLoad, onImag
 
         {/* Click Loader Overlay */}
         {isOpening && (
-          <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-20">
-            <div className="spinner"></div>
-            <style>{`
-              .spinner { --size: 18px; --first-block-clr: rgba(255,255,255, 0.8); --second-block-clr: rgba(255,255,255, 0.8); --clr: #111; width: 48px; height: 48px; position: relative; }
-              .spinner::after,.spinner::before { box-sizing: border-box; position: absolute; content: ""; width: 18px; height: 20px; top: 50%; animation: up 2.4s cubic-bezier(0,0,0.24,1.21) infinite; left: 50%; background: var(--first-block-clr); }
-              .spinner::after { background: var(--second-block-clr); top: calc(50% - var(--size)); left: calc(50% - var(--size)); animation: down 2.4s cubic-bezier(0,0,0.24,1.21) infinite; }
-              @keyframes down { 0%,100% { transform: none; } 25% { transform: translateX(80%);} 50% { transform: translateX(80%) translateY(80%);} 75% { transform: translateY(80%);} }
-              @keyframes up { 0%,100% { transform: none; } 25% { transform: translateX(-90%);} 50% { transform: translateX(-90%) translateY(-90%);} 75% { transform: translateY(-90%);} }
-            `}</style>
-          </div>
+          <CenteredLogoLoader />
         )}
 
         
