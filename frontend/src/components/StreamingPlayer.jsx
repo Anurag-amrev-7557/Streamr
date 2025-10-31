@@ -441,9 +441,10 @@ const StreamingPlayer = ({
     const hasTimeThresholdReached = now - lastProgressUpdateRef.current > timeThreshold;
     
     if (hasSignificantProgressChange || hasTimeThresholdReached) {
-      // Update refs immediately
-      currentProgressRef.current = progress;
-      lastProgressUpdateRef.current = now;
+      // Capture previous progress then update refs immediately
+        const previousProgress = currentProgressRef.current;
+        currentProgressRef.current = progress;
+        lastProgressUpdateRef.current = now;
       
       // Use centralized, throttled scheduler for smoother UI updates and visibility-aware gating
       // Cancel any previous RAF scheduled for player updates
@@ -498,7 +499,7 @@ const StreamingPlayer = ({
             progress: progress.toFixed(1) + '%', 
             duration, 
             currentTime,
-            previousProgress: currentProgressRef.current.toFixed(1) + '%',
+            previousProgress: (typeof previousProgress === 'number' ? previousProgress.toFixed(1) + '%' : '0%'),
             reason: hasSignificantProgressChange ? 'progress_change' : 'time_threshold'
           });
         }
@@ -978,15 +979,16 @@ const StreamingPlayer = ({
   const saveProgress = useCallback(() => {
     try {
       const latestContent = latestContentRef.current;
-      if (currentProgress > 0 && latestContent) {
+      const finalProgress = currentProgressRef.current || 0;
+      const finalTotal = totalDurationRef.current || 0;
+      if (finalProgress > 0 && latestContent) {
         if (process.env.NODE_ENV === 'development') console.log('💾 Saving final progress:', { 
           content: latestContent.title || latestContent.name, 
-          progress: currentProgress.toFixed(1) + '%',
+          progress: finalProgress.toFixed(1) + '%',
+          totalDuration: finalTotal,
           totalTimeUpdates: timeUpdateCountRef.current
         });
-        
-        // Progress is already being saved by updateProgressState
-        // This is just for logging the final save
+        // Progress is already being saved by updateProgressState; this is a final log/backup
       }
     } catch (error) {
       console.warn('⚠️ Error saving progress:', error);
@@ -1028,22 +1030,26 @@ const StreamingPlayer = ({
     // Track close interaction - use refs to avoid dependency issues
     const currentContent = latestContentRef.current;
     if (trackInteraction && currentContent) {
-      trackInteraction('close_button_clicked', {
-        contentId: currentContent.id,
-        progress: currentProgress,
-        totalDuration: totalDuration,
-        method: 'close_button'
-      });
+      try {
+        trackInteraction('close_button_clicked', {
+          contentId: currentContent.id,
+          progress: currentProgressRef.current || 0,
+          totalDuration: totalDurationRef.current || 0,
+          method: 'close_button'
+        });
+      } catch (e) {
+        // Analytics should not block close
+      }
     }
-    
+
     // Save progress before closing
     saveProgress();
     stopProgressTracking();
-    
+
     setIsLoading(true);
     setHasError(false);
     onClose();
-  }, [onClose, trackInteraction, currentProgress, totalDuration]); // Removed content?.id dependency
+  }, [onClose, trackInteraction, saveProgress, stopProgressTracking]); // Use refs for mutable values
 
   const handleEscape = useCallback((e) => {
     if (e.key === 'Escape' && isOpen) {

@@ -44,25 +44,34 @@ const StreamingServiceToggler = ({
       setIsOpen(false);
       return;
     }
-    setLastSelectedService(currentService);
+
+    // Capture the current service immediately to avoid relying on state updates inside async flows
+    const previousServiceKey = currentService;
+    setLastSelectedService(previousServiceKey);
     setIsLoading(true);
     setErrorMsg("");
+
     if (debounceTimeout.current) clearTimeout(debounceTimeout.current);
     debounceTimeout.current = setTimeout(() => {
       startTransition(async () => {
         try {
-          await onServiceChange(service);
-          if (onServiceLoad) {
+          // Only call onServiceChange if provided
+          if (typeof onServiceChange === 'function') {
+            await onServiceChange(service);
+          }
+
+          if (typeof onServiceLoad === 'function') {
             onServiceLoad(service);
           }
           setIsOpen(false);
         } catch (error) {
           console.error('Error changing streaming service:', error);
           setErrorMsg("Failed to change service. Please try again.");
-          if (lastSelectedService) {
-            const fallbackService = availableServices.find(s => s.key === lastSelectedService);
-            if (fallbackService) {
-              await onServiceChange(fallbackService);
+          // Attempt fallback using the captured previous service key
+          if (previousServiceKey) {
+            const fallbackService = availableServices.find(s => s.key === previousServiceKey);
+            if (fallbackService && typeof onServiceChange === 'function') {
+              try { await onServiceChange(fallbackService); } catch (e) { /* swallow */ }
             }
           }
         } finally {
@@ -107,6 +116,16 @@ const StreamingServiceToggler = ({
       }
     }
   }, [isOpen, availableServices, focusedIndex, handleServiceSelect]);
+
+  // Cleanup debounce timeout on unmount to avoid leaks
+  useEffect(() => {
+    return () => {
+      if (debounceTimeout.current) {
+        clearTimeout(debounceTimeout.current);
+        debounceTimeout.current = null;
+      }
+    };
+  }, []);
 
   // Memoize the available services processing to prevent unnecessary recalculations
   const processAvailableServices = useCallback(async () => {

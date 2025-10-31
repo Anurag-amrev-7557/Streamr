@@ -71,6 +71,31 @@ const BottomNav = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   // Track changes to item refs (refs mutations don't trigger rerenders)
   const [refVersion, setRefVersion] = useState(0);
+
+  // Compact window width hook to reduce listeners and re-renders
+  const useWindowWidth = () => {
+    const isClient = typeof window !== 'undefined';
+    const [width, setWidth] = useState(isClient ? window.innerWidth : 1200);
+    useEffect(() => {
+      if (!isClient) return;
+      let raf = null;
+      const onResize = () => {
+        if (raf) return;
+        raf = requestAnimationFrame(() => {
+          setWidth(window.innerWidth);
+          raf = null;
+        });
+      };
+      window.addEventListener('resize', onResize, { passive: true });
+      return () => {
+        window.removeEventListener('resize', onResize);
+        if (raf) cancelAnimationFrame(raf);
+      };
+    }, [isClient]);
+    return width;
+  };
+
+  const windowWidth = useWindowWidth();
   
   // Respect the user's reduced-motion preference where possible
   const prefersReducedMotion = useMemo(() => {
@@ -257,10 +282,8 @@ const BottomNav = () => {
       }
     };
 
-    // Add event listeners with passive option for better performance
-    window.addEventListener('resize', handleResize, { passive: true });
-    window.addEventListener('orientationchange', handleResize, { passive: true });
-    document.addEventListener('visibilitychange', handleVisibilityChange, { passive: true });
+  // Add visibility change listener; resize is handled by useWindowWidth above and ResizeObserver
+  document.addEventListener('visibilitychange', handleVisibilityChange, { passive: true });
     
     // Use ResizeObserver for more reliable sizing
     if ('ResizeObserver' in window && containerRef.current) {
@@ -271,10 +294,8 @@ const BottomNav = () => {
     return () => {
       isMounted = false;
       
-      // Clean up event listeners
-      window.removeEventListener('resize', handleResize);
-      window.removeEventListener('orientationchange', handleResize);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+  // Clean up event listeners
+  document.removeEventListener('visibilitychange', handleVisibilityChange);
       
       // Clean up ResizeObserver
       if (resizeObserverRef.current) {
@@ -382,6 +403,15 @@ const BottomNav = () => {
       addTimer(setTimeout(() => updateIndicator(), 0));
     }
   }, [refVersion, activeKey, isAuthOrProfilePage, updateIndicator]);
+
+  // Update indicator on window width changes (handled by useWindowWidth)
+  useEffect(() => {
+    // Immediate and scheduled updates to ensure layout has settled
+    updateIndicator();
+    scheduleUpdate(() => updateIndicator());
+    const t = addTimer(setTimeout(() => updateIndicator(), 60));
+    return () => clearTimeout(t);
+  }, [windowWidth, updateIndicator]);
 
   // Don't render if should hide - moved to JSX level to avoid hook issues
 

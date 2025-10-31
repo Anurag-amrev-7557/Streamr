@@ -53,6 +53,8 @@ const recordSearchMetric = (duration) => {
 
 const SEARCH_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 const MAX_CACHE_SIZE = 100; // Maximum number of cached searches (now managed by OptimizedCache)
+// Suggestion cache TTL
+const SUGGESTION_CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
 
 // Fuzzy string matching utility
 const fuzzyMatch = (str1, str2, threshold = 0.6) => {
@@ -962,23 +964,47 @@ SearchResultItem.displayName = 'SearchResultItem';
 const Navbar = ({ onMovieSelect, onCastSelect }) => {
   // 🚀 FIXED: Add mounted ref to prevent state updates on unmounted components
   const isMountedRef = useRef(true);
-  // Responsive: collapse some links below 1450px and show overflow menu
-  const [isNarrow, setIsNarrow] = useState(false);
-  const [isNarrowSm, setIsNarrowSm] = useState(false); // <1280px
-  const [isNarrowXs, setIsNarrowXs] = useState(false); // <1160px
-  const [isNarrowLg, setIsNarrowLg] = useState(false); // <1690px
-  const [isNarrowMd, setIsNarrowMd] = useState(false); // <1585px
-  const [isNarrowMd2, setIsNarrowMd2] = useState(false); // <1565px
-  const [isNarrowMd3, setIsNarrowMd3] = useState(false); // <1545px
-  const [isNarrowMd4, setIsNarrowMd4] = useState(false); // <1366px
-  const [isNarrowMd5, setIsNarrowMd5] = useState(false); // <1337px
-  const [isNarrowMd6, setIsNarrowMd6] = useState(false); // <1327px
-  const [isNarrowMd7, setIsNarrowMd7] = useState(false); // <1296px
-  const [isNarrowMd8, setIsNarrowMd8] = useState(false); // <1280px
-  const [isNarrowMd9, setIsNarrowMd9] = useState(false); // <1270px
-  const [isNarrowMd10, setIsNarrowMd10] = useState(false); // <1260px
-  const [isNarrowMd11, setIsNarrowMd11] = useState(false); // <1250px
-  const [isNarrowMd12, setIsNarrowMd12] = useState(false); // <1240px
+  // Responsive sizing: use a single window width source to derive breakpoints (fewer states => fewer re-renders)
+  const useWindowWidth = () => {
+    const isClient = typeof window !== 'undefined';
+    const [width, setWidth] = useState(isClient ? window.innerWidth : 1200);
+    useEffect(() => {
+      if (!isClient) return;
+      let rafId = null;
+      const onResize = () => {
+        // Throttle updates to animation frames for smoothness
+        if (rafId) return;
+        rafId = requestAnimationFrame(() => {
+          setWidth(window.innerWidth);
+          rafId = null;
+        });
+      };
+      window.addEventListener('resize', onResize, { passive: true });
+      return () => {
+        window.removeEventListener('resize', onResize);
+        if (rafId) cancelAnimationFrame(rafId);
+      };
+    }, [isClient]);
+    return width;
+  };
+
+  const windowWidth = useWindowWidth();
+  const isNarrow = windowWidth < 1450;
+  const isNarrowSm = windowWidth < 1280; // <1280px
+  const isNarrowXs = windowWidth < 1160; // <1160px
+  const isNarrowLg = windowWidth < 1690; // <1690px
+  const isNarrowMd = windowWidth < 1585; // <1585px
+  const isNarrowMd2 = windowWidth < 1565; // <1565px
+  const isNarrowMd3 = windowWidth < 1545; // <1545px
+  const isNarrowMd4 = windowWidth < 1366; // <1366px
+  const isNarrowMd5 = windowWidth < 1337; // <1337px
+  const isNarrowMd6 = windowWidth < 1327; // <1327px
+  const isNarrowMd7 = windowWidth < 1296; // <1296px
+  const isNarrowMd8 = windowWidth < 1280; // <1280px
+  const isNarrowMd9 = windowWidth < 1270; // <1270px
+  const isNarrowMd10 = windowWidth < 1260; // <1260px
+  const isNarrowMd11 = windowWidth < 1250; // <1250px
+  const isNarrowMd12 = windowWidth < 1240; // <1240px
 
   const [showOverflow, setShowOverflow] = useState(false);
   const overflowRef = useRef(null);
@@ -1003,27 +1029,9 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
     ];
 
     return links.filter(l => !visibility[l.key]);
-  }, [isNarrow, isNarrowSm, isNarrowXs]);
+  }, [windowWidth]);
 
-  useEffect(() => {
-    const check = () => {
-      const w = window.innerWidth;
-      setIsNarrow(w < 1450);
-      setIsNarrowSm(w < 1280);
-      setIsNarrowXs(w < 1160);
-      setIsNarrowLg(w < 1690);
-      setIsNarrowMd(w < 1585);
-      setIsNarrowMd2(w < 1565);
-      setIsNarrowMd3(w < 1545);
-      setIsNarrowMd4(w < 1366);
-      setIsNarrowMd5(w < 1337);
-      setIsNarrowMd6(w < 1327);
-      setIsNarrowMd7(w < 1296);
-    };
-    check();
-    window.addEventListener('resize', check, { passive: true });
-    return () => window.removeEventListener('resize', check);
-  }, []);
+  // window size is handled by useWindowWidth hook above
 
   useEffect(() => {
     const onDocClick = (e) => {
@@ -1065,6 +1073,11 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
   const mobileSearchOverlayRef = useRef(null);
   const mobileSearchInputRef = inputRef; // already defined
   const rafHolderRef = useRef(null);
+  // Filters state (used by keyboard handlers)
+  const [showFilters, setShowFilters] = useState(false);
+  // Dedicated refs for typeahead (avoid attaching refs to function objects)
+  const typeaheadBufferRef = useRef('');
+  const typeaheadTimeoutRef = useRef(null);
 
   // Performance-optimized mobile menu state management
   const { isOpen: isMobileMenuOpen, isPending, openMenu, closeMenu, toggleMenu } = useMobileMenuState();
@@ -1099,9 +1112,10 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
       setSelectedIndex(-1);
       
       // Clear any pending timeouts
-      if (handleKeyDown?.typeaheadTimeoutRef?.current) {
-        clearTimeout(handleKeyDown.typeaheadTimeoutRef.current);
-        handleKeyDown.typeaheadTimeoutRef.current = null;
+      // Clear any typeahead timeout
+      if (typeaheadTimeoutRef.current) {
+        clearTimeout(typeaheadTimeoutRef.current);
+        typeaheadTimeoutRef.current = null;
       }
       
       // Clear any pending animations
@@ -2020,14 +2034,13 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
 
   // Enhanced typeahead with better matching
   const handleTypeahead = useCallback((char, selectedIndex, searchResults, setSelectedIndex, scrollToSelected) => {
-    if (handleKeyDown?.typeaheadTimeoutRef?.current) {
-      clearTimeout(handleKeyDown.typeaheadTimeoutRef.current);
+    // Clear previous timeout
+    if (typeaheadTimeoutRef.current) {
+      clearTimeout(typeaheadTimeoutRef.current);
+      typeaheadTimeoutRef.current = null;
     }
-    // Ensure buffer ref exists before using
-    if (!handleKeyDown?.typeaheadBufferRef) {
-      if (handleKeyDown) handleKeyDown.typeaheadBufferRef = { current: '' };
-    }
-    handleKeyDown.typeaheadBufferRef.current += char.toLowerCase();
+    // Append char to buffer
+    typeaheadBufferRef.current = (typeaheadBufferRef.current || '') + char.toLowerCase();
     
     // Find matching item starting from current position
     let foundIndex = -1;
@@ -2036,7 +2049,7 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
     // Search from current position to end
     for (let i = currentIndex; i < searchResults.length; i++) {
       const title = (searchResults[i].title || searchResults[i].name || '').toLowerCase();
-    if (title.startsWith(handleKeyDown?.typeaheadBufferRef?.current || '')) {
+      if (title.startsWith(typeaheadBufferRef.current || '')) {
         foundIndex = i;
         break;
       }
@@ -2046,7 +2059,7 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
     if (foundIndex === -1) {
       for (let i = 0; i < currentIndex; i++) {
         const title = (searchResults[i].title || searchResults[i].name || '').toLowerCase();
-  if (title.startsWith(handleKeyDown?.typeaheadBufferRef?.current || '')) {
+        if (title.startsWith(typeaheadBufferRef.current || '')) {
           foundIndex = i;
           break;
         }
@@ -2066,9 +2079,9 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
     }
     
     // Clear typeahead buffer after delay
-    if (!handleKeyDown.typeaheadTimeoutRef) handleKeyDown.typeaheadTimeoutRef = { current: null };
-    handleKeyDown.typeaheadTimeoutRef.current = setTimeout(() => { 
-      if (handleKeyDown?.typeaheadBufferRef) handleKeyDown.typeaheadBufferRef.current = ''; 
+    typeaheadTimeoutRef.current = setTimeout(() => {
+      typeaheadBufferRef.current = '';
+      typeaheadTimeoutRef.current = null;
     }, 1000); // Increased timeout for better UX
   }, []);
 
@@ -2081,7 +2094,6 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
       rafHolderRef.current = null;
     }
   } catch (e) {}
-
   if (rafHolderRef) {
     rafHolderRef.current = scheduleRaf(() => {
       const el = document.querySelector(`[data-index="${index}"]`);
@@ -2089,64 +2101,32 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
 
       // Batch DOM operations for better performance
       const elementsToUpdate = document.querySelectorAll('.animate-navbar-select');
-      const updates = [];
-      
-      // Remove previous animations efficiently
-      elementsToUpdate.forEach(elem => {
-        updates.push(() => elem.classList.remove('animate-navbar-select'));
-      });
-      
+      elementsToUpdate.forEach(elem => elem.classList.remove('animate-navbar-select'));
+
       // Add new animation with enhanced visual feedback
-      updates.push(() => {
-        el.classList.add('animate-navbar-select');
-        
-        // Enhanced accessibility: Announce selection for screen readers
-        const title = el.querySelector('[data-movie-title]')?.textContent || 
-                     el.getAttribute('aria-label') || 
-                     `Item ${index + 1}`;
-        
-        // Update ARIA live region for screen readers
-        const liveRegion = document.getElementById('search-live-region');
-        if (liveRegion) {
-          liveRegion.textContent = `Selected: ${title}`;
-        }
-        
-        // Add subtle haptic feedback if supported
-        if (navigator.vibrate && window.innerWidth <= 768) {
-          navigator.vibrate(10);
-        }
-      });
-      
-      // Execute all updates in a single frame
-      updates.forEach(update => update());
-      
-      // Enhanced cleanup with proper timing
-      const cleanup = () => {
-        el.classList.remove('animate-navbar-select');
-        
-        // Clear live region after animation
-        const liveRegion = document.getElementById('search-live-region');
-        if (liveRegion && liveRegion.textContent.includes('Selected:')) {
-          setTimeout(() => {
-            liveRegion.textContent = '';
-          }, 100);
-        }
-      };
-      
-      // Use requestIdleCallback for cleanup if available, otherwise setTimeout
+      el.classList.add('animate-navbar-select');
+
+      // Enhanced accessibility: Announce selection for screen readers
+      const title = el.querySelector('[data-movie-title]')?.textContent || el.getAttribute('aria-label') || `Item ${index + 1}`;
+      const liveRegion = document.getElementById('search-live-region');
+      if (liveRegion) {
+        liveRegion.textContent = `Selected: ${title}`;
+        setTimeout(() => { liveRegion.textContent = ''; }, 300);
+      }
+
+      // Add subtle haptic feedback if supported
+      if (navigator.vibrate && window.innerWidth <= 768) {
+        navigator.vibrate(10);
+      }
+
+      // Cleanup after animation
+      const cleanup = () => el.classList.remove('animate-navbar-select');
       if (window.requestIdleCallback) {
-        window.requestIdleCallback(() => cleanup(), { timeout: 350 });
+        window.requestIdleCallback(cleanup, { timeout: 350 });
       } else {
         setTimeout(cleanup, 300);
       }
     });
-    
-    // Return cleanup function
-    return () => {
-      if (animationFrame) {
-        try { cancelRaf(animationFrame); } catch (e) {}
-      }
-    };
   }
   }, []);
 
@@ -2154,15 +2134,7 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
   const handleKeyDown = useCallback((e) => {
     if (!showResults || searchResults.length === 0) return;
 
-    // Use refs to persist typeahead buffer and timeout across renders
-    if (typeof handleKeyDown === 'function') {
-      if (!handleKeyDown.typeaheadBufferRef) {
-        handleKeyDown.typeaheadBufferRef = { current: '' };
-      }
-      if (!handleKeyDown.typeaheadTimeoutRef) {
-        handleKeyDown.typeaheadTimeoutRef = { current: null };
-      }
-    }
+    // Use dedicated refs (typeaheadBufferRef / typeaheadTimeoutRef) to persist typeahead state across renders
 
 
 
@@ -2258,11 +2230,11 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
         
       case 'Backspace':
         // Clear typeahead buffer on backspace
-        if (handleKeyDown.typeaheadBufferRef?.current) {
-          handleKeyDown.typeaheadBufferRef.current = '';
-          if (handleKeyDown.typeaheadTimeoutRef?.current) {
-            clearTimeout(handleKeyDown.typeaheadTimeoutRef.current);
-            handleKeyDown.typeaheadTimeoutRef.current = null;
+        if (typeaheadBufferRef.current) {
+          typeaheadBufferRef.current = '';
+          if (typeaheadTimeoutRef.current) {
+            clearTimeout(typeaheadTimeoutRef.current);
+            typeaheadTimeoutRef.current = null;
           }
         }
         break;
@@ -3455,7 +3427,7 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
         {isCenteredSearchOpen && createPortal(
           <div 
             ref={searchRef} 
-            className="fixed top-[140px] left-1/2 transform -translate-x-1/2 w-[40vw] max-w-none z-[60] transition-all duration-300 ease-out group"
+            className="fixed top-[140px] left-1/2 transform -translate-x-1/2 w-[90vw] sm:w-[80vw] md:w-[60vw] lg:w-[50vw] xl:w-[40vw] max-w-[1100px] z-[60] transition-all duration-300 ease-out group"
           >
           {/* Enhanced Animated Background Glow for Search */}
           <motion.div

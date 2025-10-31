@@ -100,20 +100,61 @@ const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
         <h2 className="text-xl font-semibold bg-gradient-to-r from-white via-white/90 to-white/60 bg-clip-text text-transparent relative">Top Rated Korean Dramas</h2>
       </div>
       {loading ? (
-        <div className="flex flex-row gap-2 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
-          {[...Array(10)].map((_, idx) => (
-            <div key={idx} style={{ width: 310, height: 280, flex: '0 0 auto', padding: 0, margin: 0 }} className="flex flex-row items-center mr-2">
-              <div style={{ width: 60, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-                <span style={{ fontSize: 200, fontWeight: 800, color: 'rgba(255,255,255,0.10)' }}>{idx + 1}</span>
+        isMobile ? (
+          <div className="flex flex-row gap-2 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+            {[...Array(10)].map((_, idx) => (
+              <div key={idx} style={{ width: 310, height: 280, flex: '0 0 auto', padding: 0, margin: 0 }} className="flex flex-row items-center mr-2">
+                <div style={{ width: 60, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                  <span
+                    style={{
+                      fontSize: 200,
+                      fontWeight: 800,
+                      color: 'rgba(255,255,255,0.18)',
+                      lineHeight: 1,
+                      WebkitTextStroke: '2px rgba(255,255,255, 0.5)',
+                      textShadow: 'none',
+                      WebkitTextFillColor: 'rgba(0,0,0,0.9)',
+                    }}
+                  >
+                    {idx + 1}
+                  </span>
+                </div>
+                <div className="rounded-lg overflow-hidden bg-black/20 aspect-[2/3]" style={{ width: 160, height: 240, position: 'relative', zIndex: 2 }}>
+                  <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: 'linear-gradient(90deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.02) 100%)' }} />
+                  <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', width: '60%', height: '12px', borderRadius: '6px', background: 'rgba(255,255,255,0.10)' }} />
+                  <div style={{ position: 'absolute', bottom: 36, left: '50%', transform: 'translateX(-50%)', width: '40%', height: '10px', borderRadius: '5px', background: 'rgba(255,255,255,0.07)' }} />
+                </div>
               </div>
-              <div className="rounded-lg overflow-hidden aspect-[2/3]" style={{ width: 160, height: 240, position: 'relative', zIndex: 2, background: 'linear-gradient(135deg, #232323 40%, #353535 60%)' }}>
-                <div style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',background:'linear-gradient(90deg,rgba(255,255,255,0.08) 0%,rgba(255,255,255,0.02) 100%)'}} />
-                <div style={{position:'absolute',bottom:16,left:'50%',transform:'translateX(-50%)',width:'60%',height:'12px',borderRadius:'6px',background:'rgba(255,255,255,0.10)'}} />
-                <div style={{position:'absolute',bottom:36,left:'50%',transform:'translateX(-50%)',width:'40%',height:'10px',borderRadius:'5px',background:'rgba(255,255,255,0.07)'}} />
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-row gap-2 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch', paddingRight: '3rem', marginRight: '2rem' }}>
+            {[...Array(10)].map((_, idx) => (
+              <div key={idx} style={{ width: 'auto', height: 320, flex: '0 0 auto', padding: 0, margin: 0 }} className="flex flex-row items-center mr-4">
+                <div style={{ marginRight: '-3rem', width: 150, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                  <span
+                    style={{
+                      fontSize: 230,
+                      fontWeight: 800,
+                      color: 'rgba(255,255,255,0.18)',
+                      lineHeight: 1,
+                      WebkitTextStroke: '2px rgba(255,255,255, 0.5)',
+                      textShadow: 'none',
+                      WebkitTextFillColor: 'rgba(0,0,0,0.9)',
+                    }}
+                  >
+                    {idx + 1}
+                  </span>
+                </div>
+                <div className="rounded-lg overflow-hidden bg-black/20" style={{ width: 190, height: 280, position: 'relative', zIndex: 2 }}>
+                  <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: 'linear-gradient(90deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.02) 100%)' }} />
+                  <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', width: '60%', height: '12px', borderRadius: '6px', background: 'rgba(255,255,255,0.10)' }} />
+                  <div style={{ position: 'absolute', bottom: 36, left: '50%', transform: 'translateX(-50%)', width: '40%', height: '10px', borderRadius: '5px', background: 'rgba(255,255,255,0.07)' }} />
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )
       ) : (
         isMobile ? (
           <div className="flex flex-row gap-2 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>

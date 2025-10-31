@@ -485,6 +485,22 @@ const injectHomepageStyles = () => {
           overscroll-behavior: contain;
         }
       }
+
+      /* Utility to hide scrollbars while preserving touch/trackpad scrolling
+         Applied to a wrapper (e.g. .hide-scrollbar) so child scrollable elements
+         keep momentum scrolling but visual scrollbars are hidden. */
+      .hide-scrollbar,
+      .hide-scrollbar * {
+        -ms-overflow-style: none; /* IE and Edge */
+        scrollbar-width: none; /* Firefox */
+      }
+
+      /* Webkit-based browsers */
+      .hide-scrollbar *::-webkit-scrollbar {
+        display: none;
+        height: 0;
+        width: 0;
+      }
     `;
       document.head.appendChild(scrollStyleSheet);
     }
@@ -9281,7 +9297,7 @@ const HomePage = () => {
                 </VisibleOnDemand>
 
                             {/* Top Ranked / Numbered Section (e.g., Top 10) */}
-            <div className="mt-6">
+            <div className="mt-6 hide-scrollbar">
               <TopRankedSection
                 title={`Top ${Math.min(10, (trendingMovies || []).length)} Series in Netflix Today`}
                 items={(trendingMovies || []).slice(0, 10).map(m => ({
@@ -9317,7 +9333,7 @@ const HomePage = () => {
                 </VisibleOnDemand>
 
                             {/* Top Ranked / Numbered Section (e.g., Top 10) */}
-            <div className="mt-6">
+            <div className="mt-6 hide-scrollbar">
               <Top10MoviesSection
                 title={`Top ${Math.min(10, (trendingMovies || []).length)} Movies in Netflix Today`}
                 items={(trendingMovies || []).slice(0, 10).map(m => ({
@@ -9353,7 +9369,7 @@ const HomePage = () => {
                 </VisibleOnDemand>
 
                 {/* Top Ranked / Numbered Section (e.g., Top 10) */}
-                <div className="mt-6">
+                <div className="mt-6 hide-scrollbar">
                   <TopKoreanMoviesSection
                     title={`Top Korean Movies`}
                     items={(trendingMovies || []).slice(0, 10).map(m => ({
@@ -9389,7 +9405,7 @@ const HomePage = () => {
                 </VisibleOnDemand>
 
                 {/* Top Ranked / Numbered Section (e.g., Top 10) */}
-                <div className="mt-6">
+                <div className="mt-6 hide-scrollbar">
                   <TopKoreanDramasSection
                     title={`Top Korean Movies`}
                     items={(trendingMovies || []).slice(0, 10).map(m => ({
