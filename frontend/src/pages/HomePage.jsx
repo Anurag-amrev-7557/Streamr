@@ -1557,7 +1557,9 @@ const ProgressiveImage = memo(
     const preloadRef = useRef(null);
     const containerRef = useRef(null);
     const imageTimeoutRef = useRef(null);
+  const clearSrcTimeoutRef = useRef(null);
     const mountedRef = useRef(true);
+    const lastGoodSrcRef = useRef(null);
     const [isInView, setIsInView] = useState(() => {
       // Eagerly load images on mobile to avoid IntersectionObserver gating issues
       // (horizontal scrollers and some mobile browsers may not trigger intersection)
@@ -1567,6 +1569,10 @@ const ProgressiveImage = memo(
       }
       return priority === true;
     });
+  const isMobileViewport = typeof window !== 'undefined' && window.innerWidth < 768;
+
+  // DEV: debug id passed from MovieCard to help trace flicker issues
+  const debugid = rest.debugid;
 
     // Compute tiny/placeholder src with optimized regex
     const getTinySrc = useCallback(
@@ -1609,12 +1615,41 @@ const ProgressiveImage = memo(
       // Keep track of mounted state for safety
       mountedRef.current = true;
 
-      // If there's no src, reset state
+      // If there's no src, don't immediately clear the current image.
+      // Parents sometimes briefly unset/replace src which causes a visual flicker.
+      // Debounce clearing to avoid showing the empty state for short flips.
       if (!src) {
-        setCurrentSrc(null);
-        setImageLoaded(false);
-        setImageError(false);
+        // clear any ongoing preload
+        if (preloadRef.current) {
+          try {
+            preloadRef.current.onload = null;
+            preloadRef.current.onerror = null;
+            preloadRef.current.src = '';
+            preloadRef.current.srcset = '';
+          } catch (_) {}
+          preloadRef.current = null;
+        }
+
+        // schedule clearing the visible src after a short delay
+        if (clearSrcTimeoutRef.current) {
+          try { clearTimeout(clearSrcTimeoutRef.current); } catch (_) {}
+          clearSrcTimeoutRef.current = null;
+        }
+        clearSrcTimeoutRef.current = setTimeout(() => {
+          if (!mountedRef.current) return;
+          setCurrentSrc(null);
+          setImageLoaded(false);
+          setImageError(false);
+          setRetry(0);
+        }, isMobileViewport ? 1200 : 360); // longer debounce on mobile to avoid flicker
+
         return undefined;
+      }
+
+      // If a clear timer was pending because src was briefly null, cancel it
+      if (clearSrcTimeoutRef.current) {
+        try { clearTimeout(clearSrcTimeoutRef.current); } catch (_) {}
+        clearSrcTimeoutRef.current = null;
       }
 
       // If not in view and not priority, don't start loading yet
@@ -1648,9 +1683,21 @@ const ProgressiveImage = memo(
       const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
       let optimizedSrc = src;
       if (isMobile && src.includes('/w')) {
-        if (src.includes('/w500')) optimizedSrc = src.replace('/w500', '/w300');
-        else if (src.includes('/w780')) optimizedSrc = src.replace('/w780', '/w300');
-        else if (src.includes('/w1280')) optimizedSrc = src.replace('/w1280', '/w300');
+        // Only downgrade to smaller mobile-sized images when the connection is fast
+        // Otherwise prefer the original to avoid additional network failures / timeouts.
+        const connection = navigator && navigator.connection ? navigator.connection : null;
+        const effective = connection && connection.effectiveType ? connection.effectiveType : null;
+        const downlink = connection && typeof connection.downlink === 'number' ? connection.downlink : null;
+        const connectionFast = effective === '4g' || (downlink && downlink >= 2.5);
+
+        if (connectionFast) {
+          if (src.includes('/w500')) optimizedSrc = src.replace('/w500', '/w300');
+          else if (src.includes('/w780')) optimizedSrc = src.replace('/w780', '/w300');
+          else if (src.includes('/w1280')) optimizedSrc = src.replace('/w1280', '/w300');
+        } else {
+          // keep original optimizedSrc to avoid extra slow requests on poor networks
+          optimizedSrc = src;
+        }
       }
 
       fullImage.src = optimizedSrc;
@@ -1659,8 +1706,9 @@ const ProgressiveImage = memo(
       // Store reference for cleanup
       preloadRef.current = fullImage;
 
-      // Setup load timeout to avoid hanging image loads
-      const IMAGE_LOAD_TIMEOUT = 8000;
+      // Setup load timeout to avoid hanging image loads. Use a larger timeout on mobile
+      // because mobile networks can be slower and we try fallbacks before erroring.
+      const IMAGE_LOAD_TIMEOUT = isMobile ? 15000 : 8000;
       if (imageTimeoutRef.current) {
         clearTimeout(imageTimeoutRef.current);
         imageTimeoutRef.current = null;
@@ -1668,13 +1716,40 @@ const ProgressiveImage = memo(
       imageTimeoutRef.current = setTimeout(() => {
         if (mountedRef.current && !imageLoaded) {
           console.warn('Image load timeout:', optimizedSrc);
-          setImageError(true);
+          // If optimizedSrc differs from original, try falling back to original src
+          // before marking error. This avoids mobile flicker when small-size CDN
+          // variants are slow or flaky.
+          if (optimizedSrc !== src) {
+            try {
+              // attempt to load original src as a fallback
+              fullImage.src = src;
+              if (srcSet) fullImage.srcset = srcSet;
+            } catch (e) {
+              console.warn('Fallback to original src failed:', e);
+              setImageError(true);
+            }
+            // extend timeout once more for the fallback
+            if (imageTimeoutRef.current) {
+              clearTimeout(imageTimeoutRef.current);
+              imageTimeoutRef.current = null;
+            }
+            imageTimeoutRef.current = setTimeout(() => {
+              if (mountedRef.current && !imageLoaded) {
+                console.warn('Image load fallback timeout:', src);
+                setImageError(true);
+              }
+            }, IMAGE_LOAD_TIMEOUT);
+          } else {
+            setImageError(true);
+          }
         }
       }, IMAGE_LOAD_TIMEOUT);
 
       fullImage.onload = () => {
         if (preloadRef.current === fullImage) {
           setCurrentSrc(optimizedSrc);
+          // remember last successfully loaded full-resolution src
+          lastGoodSrcRef.current = optimizedSrc;
           setImageLoaded(true);
           if (onLoad) onLoad();
           if (imageTimeoutRef.current) {
@@ -1774,8 +1849,19 @@ const ProgressiveImage = memo(
           try { clearTimeout(imageTimeoutRef.current); } catch (_) {}
           imageTimeoutRef.current = null;
         }
+        if (clearSrcTimeoutRef.current) {
+          try { clearTimeout(clearSrcTimeoutRef.current); } catch (_) {}
+          clearSrcTimeoutRef.current = null;
+        }
       };
     }, []);
+
+    // DEV: log important lifecycle changes to help track flicker
+    useEffect(() => {
+      if (import.meta.env && import.meta.env.DEV && debugid) {
+        console.debug(`[ProgressiveImage:${debugid}] src=`, src, 'currentSrc=', currentSrc, 'lastGood=', lastGoodSrcRef.current, 'loaded=', imageLoaded, 'error=', imageError);
+      }
+    }, [src, currentSrc, imageLoaded, imageError, debugid]);
 
     // Keyboard accessibility: focusable if onClick or tabIndex provided
     const isInteractive = !!rest.onClick || rest.tabIndex !== undefined;
@@ -1836,10 +1922,15 @@ const ProgressiveImage = memo(
             <div
               className="absolute inset-0 z-20 bg-cover bg-center"
               style={{
-                backgroundImage: currentSrc === src ? `url("${src}")` : "none",
+                // Always use the currentSrc (tiny -> optimized) for the background to ensure
+                // a stable transition. Using a strict equality check with `src` caused
+                // intermittent toggles when `optimizedSrc` differs from `src` (e.g. mobile
+                // optimized variants like /w300 vs /w500).
+                backgroundImage: lastGoodSrcRef.current ? `url("${lastGoodSrcRef.current}")` : (currentSrc ? `url("${currentSrc}")` : 'none'),
                 backgroundPosition: "center 20%",
                 opacity: imageLoaded ? 1 : 0,
-                transition: imageLoaded ? 'none' : 'opacity 0.5s ease-out',
+                transition: 'opacity 0.45s ease-out',
+                willChange: 'opacity',
               }}
               aria-hidden="true"
             />
@@ -2301,6 +2392,12 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
   };
 
   const imageSource = getBestImageSource();
+  // DEV: log imageSource changes to diagnose mobile-only flicker
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      console.debug(`MovieCard:${id} imageSource ->`, imageSource, 'isMobile:', isMobile);
+    }
+  }, [imageSource, id, isMobile]);
   const aspectRatio = getAspectRatio();
   const cardWidth = getCardWidth();
   return (
@@ -2363,6 +2460,8 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
             alt={title}
             className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
             aspectRatio={aspectRatio}
+            // DEV-only id to help trace flicker
+            debugid={import.meta.env.DEV ? `card-${id}` : undefined}
           />
         {/* Click Loader Overlay */}
         {isOpening && (

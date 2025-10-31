@@ -69,6 +69,7 @@ const ProgressiveImage = memo(({
   const [retry, setRetry] = useState(0);
   const imageRef = useRef(null);
   const retryTimeoutRef = useRef(null);
+  const lastGoodSrcRef = useRef(null);
 
   // Compute tiny/placeholder src
   const getTinySrc = useCallback(
@@ -116,6 +117,8 @@ const ProgressiveImage = memo(({
     if (srcSet) fullImage.srcset = srcSet;
     fullImage.onload = () => {
       setCurrentSrc(src);
+      // remember last successfully loaded source to avoid transient background disappearance
+      lastGoodSrcRef.current = src;
       setImageLoaded(true);
       if (onLoad) onLoad();
     };
@@ -178,7 +181,10 @@ const ProgressiveImage = memo(({
               imageLoaded ? "opacity-100 scale-100" : "opacity-0 scale-105"
             }`}
             style={{
-              backgroundImage: currentSrc === src ? `url("${src}")` : "none",
+              // Prefer the last successfully loaded image so quick swaps don't cause
+              // the background to disappear. Fall back to currentSrc (tiny preview)
+              // if nothing full was loaded yet.
+              backgroundImage: lastGoodSrcRef.current ? `url("${lastGoodSrcRef.current}")` : (currentSrc ? `url("${currentSrc}")` : 'none'),
               backgroundPosition: "center 20%",
               imageRendering: "auto",
               WebkitBackfaceVisibility: "hidden",
