@@ -171,10 +171,7 @@ const swiperStyles = `
     overflow: visible;
   }
 
-  .swiper-container {
-    overflow: hidden;
-    position: relative;
-  }
+  /* Removed legacy .swiper-container block (not used in Swiper v9+) */
 
   .swiper-wrapper {
     align-items: flex-start;
@@ -229,8 +226,6 @@ const swiperStyles = `
   .swiper-button-next:focus {
     outline: 2px solid rgba(255, 255, 255, 0.5);
     outline-offset: 2px;
-  }
-    flex-shrink: 0;
   }
 
   /* Enhanced movie card overlay styling - FIXED positioning */
@@ -3545,7 +3540,7 @@ const HeroSection = memo(({ featuredContent, trendingMovies, onMovieSelect, onGe
                 title="Trailer"
                 width="100%"
                 height="100%"
-                src={`https://www.youtube.com/embed/${resolvedTrailerKey}?autoplay=1&rel=0`}
+                src={`https://www.youtube.com/embed/${resolvedTrailerKey}?autoplay=1&rel=0&modestbranding=1&controls=1`}
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen
                 style={{ display: 'block' }}
@@ -5120,8 +5115,7 @@ const HomePage = () => {
 
   // Helper functions for movie details cache
   const movieDetailsCache = useRef({});
-  const MOVIE_DETAILS_TTL = 5 * 60 * 1000; // 5 minutes
-  const MOVIE_DETAILS_CACHE_LIMIT = 50; // Max 50 movie details in cache
+  // Using top-level MOVIE_DETAILS_TTL and MOVIE_DETAILS_CACHE_LIMIT
   const prefetchAnalytics = useRef({
     prefetched: {},
     used: {},
@@ -5181,15 +5175,10 @@ const HomePage = () => {
           setLazyLoadQueue(prev => new Set([...prev, ...newLazyLoadItems]));
         }
       },
-              {
-          rootMargin: '200px 0px', // Increased for better preloading
-          threshold: 0.05, // Reduced threshold for earlier detection
-          // 🚀 OPTIMIZED: Use passive observation for better performance
-          passive: true,
-          // 🚀 ADDITIONAL PERFORMANCE OPTIMIZATIONS
-          trackVisibility: false,
-          delay: 100
-        }
+      {
+        rootMargin: '200px 0px',
+        threshold: 0.05
+      }
     );
     
     return () => {
@@ -5565,13 +5554,7 @@ const HomePage = () => {
     }
 
     // Clear all timeouts and intervals
-    if (window.performanceObserver) {
-      try {
-        window.performanceObserver.disconnect();
-      } catch (error) {
-        console.warn('Failed to disconnect window performance observer:', error);
-      }
-    }
+    // Removed window.performanceObserver cleanup (not used)
 
     // Clear visibility observer
     if (visibilityObserverRef.current) {
@@ -6063,43 +6046,19 @@ const HomePage = () => {
     };
   }, []); // Empty dependency array to prevent infinite loops
 
+  // Second guarded preload run when featured or trending content becomes available
+  const hasPreloadedRef = useRef(false);
+  useEffect(() => {
+    if (hasPreloadedRef.current) return;
+    if (!featuredContent && (!trendingMovies || trendingMovies.length < 1)) return;
+    hasPreloadedRef.current = true;
+    preloadCriticalResources();
+  }, [featuredContent, trendingMovies?.length]);
+
   // 📈 NEW: Performance monitoring setup - FIXED: Observer leaks
   useEffect(() => {
-    // Set up performance observer
-    if ('PerformanceObserver' in window) {
-      try {
-        performanceObserver.current = new PerformanceObserver((list) => {
-          try {
-            list.getEntries().forEach(entry => {
-              if (entry.entryType === 'measure') {
-                // Performance monitoring logic
-              }
-            });
-          } catch (error) {
-            console.warn('Error processing performance entries:', error);
-          }
-        });
-        performanceObserver.current.observe({ entryTypes: ['measure'] });
-      } catch (error) {
-        if (import.meta.env.DEV) {
-          console.warn('Failed to set up performance observer:', error);
-        }
-      }
-    }
-    
-    return () => {
-      if (performanceObserver.current) {
-        try {
-          performanceObserver.current.disconnect();
-        } catch (error) {
-          if (import.meta.env.DEV) {
-            console.warn('Error disconnecting performance observer:', error);
-          }
-        } finally {
-          performanceObserver.current = null;
-        }
-      }
-    };
+    // Removed unused PerformanceObserver to reduce overhead
+    return () => {};
   }, []);
 
 
@@ -7857,9 +7816,6 @@ const HomePage = () => {
       // Start prefetching adjacent categories
       prefetchAdjacentCategories(category);
 
-      // Update active category immediately for responsive UI
-      setActiveCategory(category);
-      
       // Try to get from cache first - use page 1 cache key
       const cacheKey = `${category}-1`;
       const cachedData = dataCache[cacheKey];

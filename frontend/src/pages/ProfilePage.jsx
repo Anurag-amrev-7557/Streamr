@@ -82,6 +82,7 @@ const ProfilePage = () => {
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
   const [isToggling2FA, setIsToggling2FA] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [confirmDeleteInput, setConfirmDeleteInput] = useState('');
   
   // 2FA state
   const [show2FASetup, setShow2FASetup] = useState(false);
@@ -112,6 +113,8 @@ const ProfilePage = () => {
       autoplay: true,
       notifications: true,
       darkMode: true,
+      // track whether watch history is stored/visible
+      watchHistory: true,
       genres: [],
       rating: 'all'
     }
@@ -248,7 +251,10 @@ const ProfilePage = () => {
 
 
   const handleSaveProfile = async (e) => {
-    e.preventDefault();
+    // allow calling without an event (button onClick) or with a form submit event
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+    }
     
     // Validate required fields
     if (!profileData.name?.trim()) {
@@ -622,15 +628,24 @@ const ProfilePage = () => {
   };
 
   const handleDeleteAccount = async () => {
+    if (confirmDeleteInput !== 'DELETE') {
+      toast.error('Please type DELETE to confirm account deletion');
+      return;
+    }
+
     try {
       await userAPI.deleteAccount();
-      
+
       // Clear local storage
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
-      
+
       toast.success('Account deleted successfully');
-      
+
+      // reset confirm input and close confirm UI
+      setConfirmDeleteInput('');
+      setShowDeleteConfirm(false);
+
       // Redirect to home page
       navigate('/');
     } catch (error) {
@@ -1046,7 +1061,12 @@ const ProfilePage = () => {
               <p className="text-white/60 text-sm">Keep track of your viewing history</p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" className="sr-only peer" defaultChecked />
+              <input
+                type="checkbox"
+                className="sr-only peer"
+                checked={!!profileData.preferences.watchHistory}
+                onChange={(e) => handlePreferenceChange('watchHistory', e.target.checked)}
+              />
               <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-white/20 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-white"></div>
             </label>
           </div>
@@ -1425,18 +1445,19 @@ const ProfilePage = () => {
                   type="text"
                   placeholder="Type DELETE to confirm"
                   className="w-full bg-[#1a1d21] border border-red-500/30 rounded-full px-4 py-3 text-white focus:outline-none focus:border-red-400 mb-4 transition-all duration-200"
-                  onChange={(e) => {
-                    if (e.target.value === 'DELETE') {
-                      e.target.dataset.confirmed = 'true';
-                    } else {
-                      e.target.dataset.confirmed = 'false';
-                    }
-                  }}
+                  value={confirmDeleteInput}
+                  onChange={(e) => setConfirmDeleteInput(e.target.value)}
                 />
                 <div className="flex gap-3">
                   <button
-                    onClick={handleDeleteAccount}
-                    disabled={(document.querySelector('input[placeholder="Type DELETE to confirm"]')?.dataset.confirmed !== 'true')}
+                    onClick={async () => {
+                      if (confirmDeleteInput !== 'DELETE') {
+                        toast.error('Please type DELETE to confirm');
+                        return;
+                      }
+                      await handleDeleteAccount();
+                    }}
+                    disabled={(confirmDeleteInput !== 'DELETE')}
                     className="px-6 py-3 bg-red-500 text-white rounded-full hover:bg-red-600 transition-all duration-200 hover:scale-105 active:scale-95 font-semibold disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                   >
                     Yes, Delete My Account
@@ -1737,6 +1758,7 @@ const ProfilePage = () => {
                         <input
                           type="text"
                           placeholder="Twitter URL (optional)"
+                          aria-label="Twitter URL"
                           value={profileData.socialLinks.twitter}
                           onChange={(e) => handleSocialLinkChangeWithValidation('twitter', e.target.value)}
                           className="w-full bg-[#1a1d21] border border-white/10 rounded-full px-4 py-2 text-white focus:outline-none focus:border-white/30 focus:bg-[#1a1d21]/80 transition-all duration-200"
@@ -1744,6 +1766,7 @@ const ProfilePage = () => {
                         <input
                           type="text"
                           placeholder="Instagram URL (optional)"
+                          aria-label="Instagram URL"
                           value={profileData.socialLinks.instagram}
                           onChange={(e) => handleSocialLinkChangeWithValidation('instagram', e.target.value)}
                           className="w-full bg-[#1a1d21] border border-white/10 rounded-full px-4 py-2 text-white focus:outline-none focus:border-white/30 focus:bg-[#1a1d21]/80 transition-all duration-200"
@@ -1751,6 +1774,7 @@ const ProfilePage = () => {
                         <input
                           type="text"
                           placeholder="Letterboxd URL (optional)"
+                          aria-label="Letterboxd URL"
                           value={profileData.socialLinks.letterboxd}
                           onChange={(e) => handleSocialLinkChangeWithValidation('letterboxd', e.target.value)}
                           className="w-full bg-[#1a1d21] border border-white/10 rounded-full px-4 py-2 text-white focus:outline-none focus:border-white/30 focus:bg-[#1a1d21]/80 transition-all duration-200"
@@ -1891,10 +1915,10 @@ const ProfilePage = () => {
           </div>
           <div className="space-y-1">
             <p className="text-lg sm:text-2xl font-bold text-white">
-              {userStats ? userStats.watchTime.formatted : '0h'}
+              {userStats?.watchTime?.formatted ?? '0h'}
             </p>
             <p className="text-xs text-white/40 font-light">
-              {userStats ? `${userStats.watchTime.movies}h movies, ${userStats.watchTime.tv}h TV` : 'Hours watched'}
+              {userStats?.watchTime ? `${userStats.watchTime.movies}h movies, ${userStats.watchTime.tv}h TV` : 'Hours watched'}
             </p>
           </div>
         </div>
@@ -1910,10 +1934,10 @@ const ProfilePage = () => {
           </div>
           <div className="space-y-1">
             <p className="text-lg sm:text-2xl font-bold text-white">
-              {userStats ? userStats.content.completed : '0'}
+              {userStats?.content?.completed ?? '0'}
             </p>
             <p className="text-xs text-white/40 font-light">
-              {userStats ? `${userStats.content.movies} movies, ${userStats.content.tvEpisodes} episodes` : 'Content completed'}
+              {userStats?.content ? `${userStats.content.movies} movies, ${userStats.content.tvEpisodes} episodes` : 'Content completed'}
             </p>
           </div>
         </div>
@@ -1929,10 +1953,10 @@ const ProfilePage = () => {
           </div>
           <div className="space-y-1">
             <p className="text-lg sm:text-2xl font-bold text-white">
-              {userStats ? userStats.reviews.written : '0'}
+              {userStats?.reviews?.written ?? '0'}
             </p>
             <p className="text-xs text-white/40 font-light">
-              {userStats ? `${userStats.content.inProgress} items in progress` : 'Saved items'}
+              {userStats?.content ? `${userStats.content.inProgress} items in progress` : 'Saved items'}
             </p>
           </div>
         </div>
@@ -1949,7 +1973,7 @@ const ProfilePage = () => {
           </div>
           <div className="space-y-1">
             <p className="text-lg sm:text-2xl font-bold text-white">
-              {userStats ? userStats.preferences.viewingStreak : '0'}
+              {userStats?.preferences?.viewingStreak ?? '0'}
             </p>
             <p className="text-xs text-white/40 font-light">
               {userStats ? 'Consecutive days' : 'Days watched'}
@@ -1969,7 +1993,7 @@ const ProfilePage = () => {
           </div>
           <div className="space-y-1">
             <p className="text-lg sm:text-2xl font-bold text-white">
-              {userStats ? userStats.reviews.averageRating.toFixed(1) : '0.0'}
+              {(Number(userStats?.reviews?.averageRating ?? 0)).toFixed(1)}
             </p>
             <p className="text-xs text-white/40 font-light">
               {userStats ? 'Your average score' : 'Rating given'}

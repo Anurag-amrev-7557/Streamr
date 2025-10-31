@@ -158,18 +158,38 @@ if (typeof document !== 'undefined') {
   }
 }
 
-// Detect platform performance characteristics and user preferences
-const isHighPerformanceDevice = () => {
-  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+// 🚀 ADVANCED: Memoized device performance detection with caching
+let cachedPerformanceProfile = null;
+let performanceProfileTimestamp = 0;
+const PERFORMANCE_PROFILE_CACHE_DURATION = 60000; // 1 minute
+
+const getPerformanceProfile = () => {
+  const now = Date.now();
+  if (cachedPerformanceProfile && now - performanceProfileTimestamp < PERFORMANCE_PROFILE_CACHE_DURATION) {
+    return cachedPerformanceProfile;
+  }
+
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return { isHighPerformance: false, cores: 2, dpr: 1, width: 0, memory: 0 };
+  }
+
   try {
-    // Consider CPU cores and pixel ratio as a heuristic
     const cores = navigator.hardwareConcurrency || 2;
     const dpr = window.devicePixelRatio || 1;
-    return cores >= 4 || dpr > 1.5 || window.innerWidth >= 1280;
+    const width = window.innerWidth;
+    const memory = navigator.deviceMemory || 4; // GB
+    
+    const isHighPerformance = cores >= 4 || dpr > 1.5 || width >= 1280 || memory >= 8;
+    
+    cachedPerformanceProfile = { isHighPerformance, cores, dpr, width, memory };
+    performanceProfileTimestamp = now;
+    return cachedPerformanceProfile;
   } catch (e) {
-    return false;
+    return { isHighPerformance: false, cores: 2, dpr: 1, width: 0, memory: 0 };
   }
 };
+
+const isHighPerformanceDevice = () => getPerformanceProfile().isHighPerformance;
 
 const supportsBackdropFilter = () => {
   if (typeof window === 'undefined' || typeof document === 'undefined') return false;
@@ -547,34 +567,21 @@ if (typeof window !== 'undefined') {
     }
     setImageError(true);
     setImageLoaded(false);
-    // Clear the src and remove from DOM to prevent memory leaks
+    // Safe cleanup: null handlers and let browser GC the element
     if (e.target) {
-      e.target.src = '';
-      e.target.srcset = '';
-      e.target.removeAttribute('src');
-      e.target.removeAttribute('srcset');
+      e.target.onload = null;
+      e.target.onerror = null;
     }
   }, []);
 
-  // Aggressive cleanup on unmount
+  // Safe cleanup on unmount: null handlers and let browser GC
   useEffect(() => {
     const currentImageRef = imageRef.current;
     return () => {
       if (currentImageRef) {
-        // Clear image source and attributes
-        currentImageRef.src = '';
-        currentImageRef.srcset = '';
-        currentImageRef.removeAttribute('src');
-        currentImageRef.removeAttribute('srcset');
         currentImageRef.onload = null;
         currentImageRef.onerror = null;
-        
-        // Clear any cached image data
-        if (currentImageRef.complete) {
-          currentImageRef.style.display = 'none';
-        }
       }
-      // Clear ref to prevent memory leaks
       imageRef.current = null;
     };
   }, []);
@@ -681,40 +688,25 @@ if (typeof window !== 'undefined') {
       return;
     }
     
-    // If fallback also failed, show error state and cleanup
+    // If fallback also failed, show error state and safe cleanup
     setImageError(true);
     setImageLoaded(false);
     
-    // Aggressive cleanup to prevent memory leaks
+    // Safe cleanup: null handlers and let browser GC
     if (e.target) {
-      e.target.src = '';
-      e.target.srcset = '';
-      e.target.removeAttribute('src');
-      e.target.removeAttribute('srcset');
-      e.target.removeAttribute('data-fallback-tried');
+      e.target.onload = null;
+      e.target.onerror = null;
     }
   }, [similar?.poster_path, similar?.title, similar?.name]);
 
-  // Aggressive cleanup on unmount
+  // Safe cleanup on unmount: null handlers and let browser GC
   useEffect(() => {
     const currentImageRef = imageRef.current;
     return () => {
       if (currentImageRef) {
-        // Clear image source and attributes
-        currentImageRef.src = '';
-        currentImageRef.srcset = '';
-        currentImageRef.removeAttribute('src');
-        currentImageRef.removeAttribute('srcset');
-        currentImageRef.removeAttribute('data-fallback-tried');
         currentImageRef.onload = null;
         currentImageRef.onerror = null;
-        
-        // Clear any cached image data
-        if (currentImageRef.complete) {
-          currentImageRef.style.display = 'none';
-        }
       }
-      // Clear ref to prevent memory leaks
       imageRef.current = null;
     };
   }, []);
@@ -902,10 +894,6 @@ const SimilarListVirtual = ({ items = [], onClick, itemWidth = 160, height = 280
     return { isMobile, isTablet, isDesktop };
   };
 const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) => {
-  // Debug logging
-  console.log('🎬 [MovieDetailsOverlay] Component rendered with movie:', movie?.title || movie?.name);
-  console.log('🎬 [MovieDetailsOverlay] Movie ID:', movie?.id);
-  
   // 🚀 ENHANCED: Portal management - must be called before any conditional returns
   const portalId = 'movie-details-portal';
   
@@ -961,7 +949,40 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   const { addToWatchlist, removeFromWatchlist, isInWatchlist } = useWatchlist();
   const { startWatchingMovie, startWatchingEpisode, viewingProgress } = useViewingProgress();
 
-  // 🆕 ENHANCED: State persistence and analytics
+  // 🚀 ADVANCED: Request batching and network optimization
+  const requestBatchRef = useRef(new Map());
+  const batchTimeoutRef = useRef(null);
+  const BATCH_WINDOW = 50; // ms to collect requests before batching
+
+  const batchRequest = useCallback((key, requestFn) => {
+    return new Promise((resolve, reject) => {
+      if (!requestBatchRef.current.has(key)) {
+        requestBatchRef.current.set(key, { fn: requestFn, resolvers: [], rejectors: [] });
+      }
+      
+      const batch = requestBatchRef.current.get(key);
+      batch.resolvers.push(resolve);
+      batch.rejectors.push(reject);
+
+      if (batchTimeoutRef.current) clearTimeout(batchTimeoutRef.current);
+      
+      batchTimeoutRef.current = setTimeout(async () => {
+        const entries = Array.from(requestBatchRef.current.entries());
+        requestBatchRef.current.clear();
+
+        for (const [batchKey, { fn, resolvers, rejectors }] of entries) {
+          try {
+            const result = await fn();
+            resolvers.forEach(r => r(result));
+          } catch (err) {
+            rejectors.forEach(r => r(err));
+          }
+        }
+      }, BATCH_WINDOW);
+    });
+  }, []);
+
+  // 🆕 ENHANCED: State persistence and analytics with memoization
   const [savedState, setSavedState] = useState(null);
   const [interactionCount, setInteractionCount] = useState(0);
 

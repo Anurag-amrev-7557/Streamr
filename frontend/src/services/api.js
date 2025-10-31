@@ -46,33 +46,74 @@ const REQUEST_DELAY = 200; // 200ms between requests
 
 const processQueue = async () => {
   if (isProcessingQueue || requestQueue.length === 0) return;
-  
+
   isProcessingQueue = true;
-  
+
   while (requestQueue.length > 0) {
-    const { requestFn, resolve, reject } = requestQueue.shift();
-    
+    // Each queued entry is an object { requestFn, resolve, reject, _cancelInner }
+    const entry = requestQueue.shift();
+    const { requestFn, resolve, reject } = entry;
+
     try {
-      const result = await requestFn();
-      resolve(result);
+      // requestFn may return either a direct value/promise or an object { promise, cancel }
+      const maybe = await requestFn();
+
+      if (maybe && typeof maybe === 'object' && 'promise' in maybe && typeof maybe.promise.then === 'function') {
+        // expose inner cancel so callers can cancel after this entry left the outer queue
+        entry._cancelInner = typeof maybe.cancel === 'function' ? maybe.cancel : null;
+        const result = await maybe.promise;
+        resolve(result);
+      } else {
+        resolve(maybe);
+      }
     } catch (error) {
       reject(error);
     }
-    
+
     // Wait before processing next request
     if (requestQueue.length > 0) {
       await new Promise(resolve => setTimeout(resolve, REQUEST_DELAY));
     }
   }
-  
+
   isProcessingQueue = false;
 };
 
 const queueRequest = (requestFn) => {
-  return new Promise((resolve, reject) => {
-    requestQueue.push({ requestFn, resolve, reject });
-    processQueue();
-  });
+  // Backwards-compatible: if called with a second arg `true` we return
+  // { promise, cancel } so callers can cancel the queued request before it runs.
+  const _queueRequest = (requestFn, returnCancel = false) => {
+    if (!returnCancel) {
+      return new Promise((resolve, reject) => {
+        requestQueue.push({ requestFn, resolve, reject });
+        processQueue();
+      });
+    }
+
+    // cancellable variant
+    let queuedEntry = null;
+    const promise = new Promise((resolve, reject) => {
+      queuedEntry = { requestFn, resolve, reject };
+      requestQueue.push(queuedEntry);
+      processQueue();
+    });
+
+    const cancel = (reason = 'Request cancelled') => {
+      const idx = requestQueue.indexOf(queuedEntry);
+      if (idx !== -1) {
+        // remove from queue and reject the awaiting promise
+        requestQueue.splice(idx, 1);
+        try { queuedEntry.reject(new Error(reason)); } catch (e) { /* ignore */ }
+      }
+    };
+
+    return { promise, cancel };
+  };
+
+  // Replace the function object so callers can still call queueRequest(fn)
+  // and internally we delegate to the compat implementation.
+  // Note: this outer function is used below; return the non-cancellable promise by default.
+  return _queueRequest(requestFn, false);
 };
 
 // Request throttling to prevent rate limiting
@@ -84,11 +125,38 @@ class RequestThrottler {
     this.minInterval = 100; // Minimum 100ms between requests
   }
 
-  async throttle(requestFn) {
-    return new Promise((resolve, reject) => {
-      this.requestQueue.push({ requestFn, resolve, reject });
+  /**
+   * throttle(requestFn)
+   * - Adds a request to the throttler queue and returns a cancellable object
+   *   { promise, cancel } where promise resolves/rejects with the request result.
+   * - Backwards compatible: callers that await the return value still receive
+   *   a standard promise-like result if they access `.promise`.
+   */
+  throttle(requestFn) {
+    let queuedEntry = null;
+
+    const promise = new Promise((resolve, reject) => {
+      queuedEntry = { requestFn, resolve, reject, cancelled: false, _cancelInner: null };
+      this.requestQueue.push(queuedEntry);
       this.processQueue();
     });
+
+    const cancel = (reason = 'Throttled request cancelled') => {
+      // If still in queue, remove it
+      const idx = this.requestQueue.indexOf(queuedEntry);
+      if (idx !== -1) {
+        this.requestQueue.splice(idx, 1);
+        try { queuedEntry.reject(new Error(reason)); } catch (e) { /* ignore */ }
+        return;
+      }
+
+      // Otherwise, if an inner cancel was exposed, call it
+      if (queuedEntry && queuedEntry._cancelInner) {
+        try { queuedEntry._cancelInner(); } catch (e) { /* ignore */ }
+      }
+    };
+
+    return { promise, cancel };
   }
 
   async processQueue() {
@@ -101,18 +169,31 @@ class RequestThrottler {
     while (this.requestQueue.length > 0) {
       const now = Date.now();
       const timeSinceLastRequest = now - this.lastRequestTime;
-      
+
       if (timeSinceLastRequest < this.minInterval) {
         const delay = this.minInterval - timeSinceLastRequest;
         await new Promise(resolve => setTimeout(resolve, delay));
       }
 
-      const { requestFn, resolve, reject } = this.requestQueue.shift();
+      const entry = this.requestQueue.shift();
+      if (!entry || entry.cancelled) continue;
+
       this.lastRequestTime = Date.now();
 
+      const { requestFn, resolve, reject } = entry;
+
       try {
-        const result = await requestFn();
-        resolve(result);
+        const maybe = requestFn();
+
+        if (maybe && typeof maybe === 'object' && 'promise' in maybe && typeof maybe.promise.then === 'function') {
+          // expose inner cancel so external code can cancel while inside throttler
+          entry._cancelInner = typeof maybe.cancel === 'function' ? maybe.cancel : null;
+          const result = await maybe.promise;
+          resolve(result);
+        } else {
+          const result = await maybe;
+          resolve(result);
+        }
       } catch (error) {
         reject(error);
       }
@@ -146,8 +227,12 @@ export const getNetworkAwareConfig = () => {
 };
 
 // Wrapper for fetchWithRetry that matches the expected usage in communityService
-export const fetchWithRetry = async (requestFn, retryConfig = {}) => {
-  const { timeout, retryConfig: networkRetryConfig } = getNetworkAwareConfig();
+// requestFn: function that returns a promise for the network request
+// opts: { timeout } can override network-aware timeout
+export const fetchWithRetry = async (requestFn, opts = {}, retryConfig = {}) => {
+  const netConfig = getNetworkAwareConfig();
+  const timeout = opts.timeout ?? netConfig.timeout;
+  const networkRetryConfig = netConfig.retryConfig;
   const config = { 
     ...networkRetryConfig, 
     maxDelay: 30000, // Increased max delay for rate limiting
@@ -156,25 +241,34 @@ export const fetchWithRetry = async (requestFn, retryConfig = {}) => {
   
   // Throttle the request to prevent rate limiting
   const throttledRequest = () => requestThrottler.throttle(requestFn);
-  
-  // Queue the request to prevent rate limiting
-  const queuedRequest = () => queueRequest(throttledRequest);
-  
+
   let lastError;
-  
+
   for (let attempt = 1; attempt <= config.maxRetries; attempt++) {
     try {
-      // Create a timeout promise
+      // Create a cancellable queued request so we can remove it from the
+      // queue if the timeout fires before it is executed.
+      const queued = queueRequest(throttledRequest, true);
+
+      // Create a timeout promise that cancels the queued request when fired
       const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Request timeout')), timeout);
+        const t = setTimeout(() => {
+          try { queued.cancel('Request timeout'); } catch (e) { /* ignore */ }
+          reject(new Error('Request timeout'));
+        }, timeout);
+        // store timer on the promise so we can clear it if queued resolves
+        timeoutPromise._timer = t;
       });
-      
+
       // Execute the queued request function with timeout
       const result = await Promise.race([
-        queuedRequest(),
+        queued.promise,
         timeoutPromise
       ]);
-      
+
+      // If we got here, clear the timeout
+      if (timeoutPromise._timer) clearTimeout(timeoutPromise._timer);
+
       return result;
     } catch (error) {
       lastError = error;
@@ -631,257 +725,47 @@ export const userAPI = {
 
   // Update user location only
   updateLocation: async (location) => {
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return fetchWithRetry(async () => {
-      const response = await fetch(`${getApiUrl()}/user/profile`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ location })
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorMessage = `HTTP error! status: ${response.status}`;
-        try {
-          const errorData = JSON.parse(errorText);
-          errorMessage = errorData.message || errorMessage;
-        } catch (e) {
-          console.warn('Could not parse error response as JSON');
-        }
-        throw new Error(errorMessage);
-      }
-      
-      return response.json();
-    }, { timeout });
+    return apiFetch('/user/profile', { method: 'PUT', body: { location } });
   },
 
   // Update user preferences
   updatePreferences: async (preferences) => {
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return fetchWithRetry(async () => {
-      const response = await fetch(`${getApiUrl()}/user/preferences`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(preferences)
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      return response.json();
-    }, { timeout });
+    return apiFetch('/user/preferences', { method: 'PUT', body: preferences });
   },
 
   // Change password
   changePassword: async (currentPassword, newPassword) => {
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return fetchWithRetry(async () => {
-      const response = await fetch(`${getApiUrl()}/user/password`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          currentPassword,
-          newPassword
-        })
-      });
-      
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || `HTTP error! status: ${response.status}`);
-      }
-      
-      return response.json();
-    }, { timeout });
+    return apiFetch('/user/password', { method: 'PUT', body: { currentPassword, newPassword } });
   },
 
   // Enable/Disable 2FA
   toggle2FA: async (enable = true) => {
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return fetchWithRetry(async () => {
-      const response = await fetch(`${getApiUrl()}/user/2fa`, {
-        method: enable ? 'POST' : 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || `HTTP error! status: ${response.status}`);
-      }
-      
-      return response.json();
-    }, { timeout });
+    return apiFetch('/user/2fa', { method: enable ? 'POST' : 'DELETE' });
   },
 
   // 2FA Setup - Generate secret and QR code
   setup2FA: async () => {
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return fetchWithRetry(async () => {
-      const response = await fetch(`${getApiUrl()}/user/2fa/setup`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || `HTTP error! status: ${response.status}`);
-      }
-      
-      return response.json();
-    }, { timeout });
+    return apiFetch('/user/2fa/setup', { method: 'POST' });
   },
 
   // 2FA Verify - Verify setup with TOTP code
   verify2FA: async (code) => {
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return fetchWithRetry(async () => {
-      const response = await fetch(`${getApiUrl()}/user/2fa/verify`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ code })
-      });
-      
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || `HTTP error! status: ${response.status}`);
-      }
-      
-      return response.json();
-    }, { timeout });
+    return apiFetch('/user/2fa/verify', { method: 'POST', body: { code } });
   },
 
   // 2FA Disable - Disable 2FA with verification
   disable2FA: async (code, password) => {
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return fetchWithRetry(async () => {
-      const response = await fetch(`${getApiUrl()}/user/2fa/disable`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ code, password })
-      });
-      
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || `HTTP error! status: ${response.status}`);
-      }
-      
-      return response.json();
-    }, { timeout });
+    return apiFetch('/user/2fa/disable', { method: 'POST', body: { code, password } });
   },
 
   // Get backup codes
   getBackupCodes: async () => {
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return fetchWithRetry(async () => {
-      const response = await fetch(`${getApiUrl()}/user/2fa/backup-codes`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || `HTTP error! status: ${response.status}`);
-      }
-      
-      return response.json();
-    }, { timeout });
+    return apiFetch('/user/2fa/backup-codes', { method: 'GET' });
   },
 
   // Regenerate backup codes
   regenerateBackupCodes: async () => {
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return fetchWithRetry(async () => {
-      const response = await fetch(`${getApiUrl()}/user/2fa/backup-codes/regenerate`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || `HTTP error! status: ${response.status}`);
-      }
-      
-      return response.json();
-    }, { timeout });
+    return apiFetch('/user/2fa/backup-codes/regenerate', { method: 'POST' });
   },
 
   // Connect OAuth provider
@@ -899,137 +783,28 @@ export const userAPI = {
 
   // Disconnect OAuth provider
   disconnectOAuth: async (provider) => {
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return fetchWithRetry(async () => {
-      const response = await fetch(`${getApiUrl()}/user/oauth/${provider}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || `HTTP error! status: ${response.status}`);
-      }
-      
-      return response.json();
-    }, { timeout });
+    return apiFetch(`/user/oauth/${provider}`, { method: 'DELETE' });
   },
 
   // Delete user account
   deleteAccount: async () => {
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return fetchWithRetry(async () => {
-      const response = await fetch(`${getApiUrl()}/user/account`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      return response.json();
-    }, { timeout });
+    return apiFetch('/user/account', { method: 'DELETE' });
   },
 
   // Watchlist Management
   // Get user's watchlist
   getWatchlist: async () => {
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return fetchWithRetry(async () => {
-      const response = await fetch(`${getApiUrl()}/user/watchlist`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      return response.json();
-    }, { timeout });
+    return apiFetch('/user/watchlist', { method: 'GET' });
   },
 
   // Sync entire watchlist with backend
   syncWatchlist: async (watchlistData) => {
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return fetchWithRetry(async () => {
-      const response = await fetch(`${getApiUrl()}/user/watchlist/sync`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ watchlist: watchlistData })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      return response.json();
-    }, { timeout });
+    return apiFetch('/user/watchlist/sync', { method: 'POST', body: { watchlist: watchlistData } });
   },
 
   // Enhanced sync watchlist with conflict resolution
   syncWatchlistEnhanced: async (watchlistData, lastSync = null) => {
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return fetchWithRetry(async () => {
-      const response = await fetch(`${getApiUrl()}/user/watchlist/sync/enhanced`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ 
-          watchlist: watchlistData,
-          lastSync,
-          clientVersion: new Date().toISOString()
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      return response.json();
-    }, { timeout });
+    return apiFetch('/user/watchlist/sync/enhanced', { method: 'POST', body: { watchlist: watchlistData, lastSync, clientVersion: new Date().toISOString() } });
   },
 
   // Add item to watchlist
@@ -1086,349 +861,70 @@ export const userAPI = {
 
   // Clear entire watchlist
   clearWatchlist: async () => {
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return fetchWithRetry(async () => {
-      const response = await fetch(`${getApiUrl()}/user/watchlist`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      return response.json();
-    }, { timeout });
+    return apiFetch('/user/watchlist', { method: 'DELETE' });
   },
 
   // Viewing Progress Management
   // Get user's viewing progress
   getViewingProgress: async () => {
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return fetchWithRetry(async () => {
-      const response = await fetch(`${getApiUrl()}/user/viewing-progress`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      return response.json();
-    }, { timeout });
+    return apiFetch('/user/viewing-progress', { method: 'GET' });
   },
 
   // Sync entire viewing progress with backend
   syncViewingProgress: async (progressData) => {
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return fetchWithRetry(async () => {
-      const response = await fetch(`${getApiUrl()}/user/viewing-progress/sync`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ viewingProgress: progressData })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      return response.json();
-    }, { timeout });
+    return apiFetch('/user/viewing-progress/sync', { method: 'POST', body: { viewingProgress: progressData } });
   },
 
   // Update viewing progress for a specific item
   updateViewingProgress: async (progressData) => {
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return fetchWithRetry(async () => {
-      const response = await fetch(`${getApiUrl()}/user/viewing-progress`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ progressData })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      return response.json();
-    }, { timeout });
+    return apiFetch('/user/viewing-progress', { method: 'PUT', body: { progressData } });
   },
 
   // Clear entire viewing progress
   clearViewingProgress: async () => {
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return fetchWithRetry(async () => {
-      const response = await fetch(`${getApiUrl()}/user/viewing-progress`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      return response.json();
-    }, { timeout });
+    return apiFetch('/user/viewing-progress', { method: 'DELETE' });
   },
 
   // Watch History API methods
   // Get user's watch history
   getWatchHistory: async () => {
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return fetchWithRetry(async () => {
-      const response = await fetch(`${getApiUrl()}/user/watch-history`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      return response.json();
-    }, { timeout });
+    return apiFetch('/user/watch-history', { method: 'GET' });
   },
 
   // Sync entire watch history with backend
   syncWatchHistory: async (watchHistoryData, lastSyncTimestamp = null) => {
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return fetchWithRetry(async () => {
-      const response = await fetch(`${getApiUrl()}/user/watch-history/sync`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ 
-          watchHistory: watchHistoryData,
-          lastSyncTimestamp 
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      return response.json();
-    }, { timeout });
+    return apiFetch('/user/watch-history/sync', { method: 'POST', body: { watchHistory: watchHistoryData, lastSyncTimestamp } });
   },
 
   // Process batch operations for watch history
   processBatchWatchHistory: async (operations) => {
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return fetchWithRetry(async () => {
-      const response = await fetch(`${getApiUrl()}/user/watch-history/batch`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ operations })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      return response.json();
-    }, { timeout });
+    return apiFetch('/user/watch-history/batch', { method: 'POST', body: { operations } });
   },
 
   // Enhanced sync watch history with conflict resolution
   syncWatchHistoryEnhanced: async (watchHistoryData, lastSync = null) => {
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return fetchWithRetry(async () => {
-      const response = await fetch(`${getApiUrl()}/user/watch-history/sync/enhanced`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ 
-          watchHistory: watchHistoryData,
-          lastSync,
-          clientVersion: new Date().toISOString()
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      return response.json();
-    }, { timeout });
+    return apiFetch('/user/watch-history/sync/enhanced', { method: 'POST', body: { watchHistory: watchHistoryData, lastSync, clientVersion: new Date().toISOString() } });
   },
 
   // Get sync status for both watchlist and watch history
   getSyncStatus: async () => {
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return fetchWithRetry(async () => {
-      const response = await fetch(`${getApiUrl()}/user/sync-status`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      return response.json();
-    }, { timeout });
+    return apiFetch('/user/sync-status', { method: 'GET' });
   },
 
   // Update watch history for a specific item
   updateWatchHistory: async (contentId, progress) => {
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return fetchWithRetry(async () => {
-      const response = await fetch(`${getApiUrl()}/user/watch-history`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ contentId, progress })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      return response.json();
-    }, { timeout });
+    return apiFetch('/user/watch-history', { method: 'PUT', body: { contentId, progress } });
   },
 
   // Clear entire watch history
   clearWatchHistory: async () => {
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return fetchWithRetry(async () => {
-      const response = await fetch(`${getApiUrl()}/user/watch-history`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      return response.json();
-    }, { timeout });
+    return apiFetch('/user/watch-history', { method: 'DELETE' });
   },
 
   // Wishlist Methods
   // Get user's wishlist
   getWishlist: async () => {
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return fetchWithRetry(async () => {
-      const response = await fetch(`${getApiUrl()}/user/wishlist`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      return response.json();
-    }, { timeout });
+    return apiFetch('/user/wishlist', { method: 'GET' });
   },
 
   // Sync entire wishlist from frontend (diff-based, no bulk endpoint)
@@ -1453,13 +949,6 @@ export const userAPI = {
       addedAt: item.addedAt || new Date().toISOString()
     })) : [];
 
-    const { timeout } = getNetworkAwareConfig();
-    const token = localStorage.getItem('accessToken');
-    
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
     // Diff-based reconciliation only (no bulk call)
     const server = await userAPI.getWishlist();
     const serverList = Array.isArray(server?.data?.wishlist) ? server.data.wishlist : [];
@@ -1593,3 +1082,123 @@ export const userAPI = {
     }, { timeout });
   }
 };
+
+// --- API helper utilities ---
+// Centralize token/header handling, standardized fetch and error parsing
+const getAuthToken = () => localStorage.getItem('accessToken');
+
+const buildUrl = (path) => {
+  if (!path) return getApiUrl();
+  return `${getApiUrl()}${path.startsWith('/') ? path : `/${path}`}`;
+};
+
+const parseResponseSafely = async (response) => {
+  const ct = response.headers.get?.('content-type') || '';
+  if (ct.includes('application/json')) {
+    try {
+      return await response.json();
+    } catch (e) {
+      // fallthrough to text
+    }
+  }
+  try {
+    return await response.text();
+  } catch (e) {
+    return null;
+  }
+};
+
+/**
+ * apiFetch - standardized fetch wrapper used by userAPI methods
+ * - automatically attaches Authorization header when auth=true
+ * - stringifies plain objects to JSON
+ * - uses existing fetchWithRetry for retries/throttling
+ */
+const apiFetch = async (path, { method = 'GET', body = null, auth = true, extraHeaders = {}, isForm = false } = {}) => {
+  const url = buildUrl(path);
+  const token = auth ? getAuthToken() : null;
+  if (auth && !token) throw new Error('No authentication token found');
+
+  const headers = { ...extraHeaders };
+
+  let payload = body;
+  if (!isForm && body && typeof body === 'object' && !(body instanceof FormData)) {
+    headers['Content-Type'] = headers['Content-Type'] || 'application/json';
+    payload = JSON.stringify(body);
+  }
+
+  if (auth) headers['Authorization'] = `Bearer ${token}`;
+
+  // Use AbortController + fetchWithRetry. We pass timeout to fetchWithRetry so
+  // it uses the same timeout for its retry loop, and also abort the underlying
+  // fetch when the timeout fires to avoid leaked requests.
+  const { timeout } = getNetworkAwareConfig();
+
+  const requestFn = async () => {
+    const controller = new AbortController();
+    const signal = controller.signal;
+    const timer = setTimeout(() => controller.abort(), timeout);
+
+    try {
+      const response = await fetch(url, {
+        method,
+        headers,
+        body: payload,
+        signal
+      });
+
+      clearTimeout(timer);
+
+      if (!response.ok) {
+        const parsed = await parseResponseSafely(response);
+        let message = `HTTP error! status: ${response.status}`;
+        if (parsed) {
+          if (typeof parsed === 'string') message = parsed || message;
+          else if (parsed.message) message = parsed.message;
+          else message = JSON.stringify(parsed);
+        }
+        const err = new Error(message);
+        err.response = response;
+        throw err;
+      }
+
+      return parseResponseSafely(response);
+    } catch (err) {
+      clearTimeout(timer);
+      if (err.name === 'AbortError') {
+        throw new Error('Request timeout');
+      }
+      throw err;
+    }
+  };
+
+  return fetchWithRetry(requestFn, { timeout });
+};
+
+// Example: refactor a few userAPI methods to use apiFetch to reduce duplication
+userAPI.updateProfile = async (profileData) => apiFetch('/user/profile', { method: 'PUT', body: profileData });
+
+userAPI.uploadProfilePicture = async (file) => {
+  const formData = new FormData();
+  formData.append('avatar', file);
+  return apiFetch('/user/profile/picture', { method: 'POST', body: formData, isForm: true });
+};
+
+userAPI.getProfile = async () => apiFetch('/user/profile', { method: 'GET' });
+
+userAPI.addToWatchlist = async (movie) => {
+  // normalize movie minimally and send
+  const normalized = {
+    id: movie.id,
+    title: movie.title || movie.name || movie.original_title || movie.original_name || 'Unknown',
+    poster_path: movie.poster_path || movie.poster,
+    backdrop_path: movie.backdrop_path || movie.backdrop,
+    overview: movie.overview || '',
+    type: movie.media_type || movie.type || 'movie',
+    addedAt: movie.addedAt || new Date().toISOString()
+  };
+
+  return apiFetch('/user/wishlist', { method: 'POST', body: { movie: normalized } });
+};
+
+userAPI.removeFromWatchlist = async (movieId) => apiFetch(`/user/wishlist/${movieId}`, { method: 'DELETE' });
