@@ -878,10 +878,54 @@ const MemoizedMovieCard = memo(({ onClick, onPrefetch, ...movie }) => (
 const CategorySwiper = memo(({ categories, activeCategory, onCategoryClick, isMobile }) => {
   const categorySwiperRef = useRef(null);
   const isMountedRef = useRef(true);
-  
+
+  // Normalize categories and keep stable reference when possible
+  const categoriesList = useMemo(() => Array.isArray(categories) ? categories : [], [categories]);
+
+  // Stable per-category click handlers map to avoid recreating closures on every render
+  const handlersMap = useMemo(() => {
+    const m = new Map();
+    for (const cat of categoriesList) {
+      // Keep a tiny wrapper to bind the category object; this map is recreated only when categories or handler changes
+      m.set(cat.id, () => onCategoryClick && onCategoryClick(cat));
+    }
+    return m;
+  }, [categoriesList, onCategoryClick]);
+
+  // Memoize commonly reused Swiper option objects so prop equality is stable across renders
+  const memoizedFreeMode = useMemo(() => ({
+    enabled: true,
+    momentum: true,
+    momentumVelocityRatio: 0.8,
+    momentumRatio: 0.8,
+    momentumBounce: true,
+    momentumBounceRatio: 0.1
+  }), []);
+
+  const memoizedMousewheel = useMemo(() => ({
+    forceToAxis: true,
+    sensitivity: 0.7,
+    releaseOnEdges: true,
+    thresholdDelta: 40,
+    thresholdTime: 150
+  }), []);
+
+  const memoizedKeyboard = useMemo(() => ({
+    enabled: true,
+    onlyInViewport: true,
+    pageUpDown: true
+  }), []);
+
+  const memoizedBreakpoints = useMemo(() => ({
+    768: { spaceBetween: 12, slidesPerView: 'auto' },
+    1024: { spaceBetween: 16, slidesPerView: 'auto' },
+    1280: { spaceBetween: 20, slidesPerView: 'auto' },
+    1536: { spaceBetween: 24, slidesPerView: 'auto' }
+  }), []);
+
   useEffect(() => {
     isMountedRef.current = true;
-    
+
     return () => {
       isMountedRef.current = false;
       try {
@@ -895,7 +939,17 @@ const CategorySwiper = memo(({ categories, activeCategory, onCategoryClick, isMo
       }
     };
   }, []);
-  
+
+  // Ensure Swiper layout updates when categories change in size
+  useEffect(() => {
+    const s = categorySwiperRef.current;
+    if (s) {
+      try {
+        s.update();
+      } catch (_) {}
+    }
+  }, [categoriesList.length]);
+
   if (isMobile) {
     return (
       <div className="relative mt-6 px-4">
@@ -910,10 +964,10 @@ const CategorySwiper = memo(({ categories, activeCategory, onCategoryClick, isMo
             padding: '0 20px'
           }}
         >
-          {categories.map(category => (
+          {categoriesList.map(category => (
             <button
               key={category.id}
-              onClick={() => onCategoryClick(category)}
+              onClick={handlersMap.get(category.id)}
               className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all duration-300 whitespace-nowrap flex-shrink-0 ${
                 activeCategory === category.id
                   ? 'bg-white text-black hover:bg-white/90'
@@ -930,86 +984,66 @@ const CategorySwiper = memo(({ categories, activeCategory, onCategoryClick, isMo
   }
 
   return (
-  <MotionConfig reducedMotion={getReducedMotionOrLowPower() ? 'always' : 'user'} transition={{ type: 'tween' }}>
+    <MotionConfig reducedMotion={getReducedMotionOrLowPower() ? 'always' : 'user'} transition={{ type: 'tween' }}>
       <div className="relative mt-6 group">
-      <div className="absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-[#121417] to-transparent z-10 pointer-events-none"></div>
-      <div className="absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-[#121417] to-transparent z-10 pointer-events-none"></div>
-      <Swiper
-        modules={[Navigation, A11y, Mousewheel, Keyboard, FreeMode]}
-        spaceBetween={12}
-        slidesPerView="auto"
-        speed={500}
-        easing="cubic-bezier(0.25, 0.46, 0.45, 0.94)"
-        // navigation disabled for category swiper (arrows hidden)
-        navigation={false}
-        onSwiper={(swiper) => { categorySwiperRef.current = swiper; }}
-        
-        freeMode={{
-          enabled: true,
-          momentum: true,
-          momentumVelocityRatio: 0.8,
-          momentumRatio: 0.8,
-          momentumBounce: true,
-          momentumBounceRatio: 0.1
-        }}
-        mousewheel={{
-          forceToAxis: true,
-          sensitivity: 0.7,
-          releaseOnEdges: true,
-          thresholdDelta: 40,
-          thresholdTime: 150
-        }}
-        keyboard={{
-          enabled: true,
-          onlyInViewport: true,
-          pageUpDown: true
-        }}
-        grabCursor={true}
-        touchRatio={1.1}
-        touchAngle={45}
-        resistance={true}
-        resistanceRatio={0.8}
-        watchSlidesProgress={true}
-        className="px-4 pb-2"
-        breakpoints={{
-          768: {
-            spaceBetween: 12,
-            slidesPerView: "auto"
-          },
-          1024: {
-            spaceBetween: 16,
-            slidesPerView: "auto"
-          },
-          1280: {
-            spaceBetween: 20,
-            slidesPerView: "auto"
-          },
-          1536: {
-            spaceBetween: 24,
-            slidesPerView: "auto"
-          }
-        }}
-      >
-        {categories.map((category) => (
-          <SwiperSlide key={category.id} className="!w-auto">
-            <button
-              onClick={() => onCategoryClick(category)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all duration-300 whitespace-nowrap ${
-                activeCategory === category.id
-                  ? 'bg-white text-black hover:bg-white/90'
-                  : 'bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
-              }`}
-            >
-              <span className="flex-shrink-0">{category.icon}</span>
-              <span>{category.label}</span>
-            </button>
-          </SwiperSlide>
-        ))}
-      </Swiper>
-      {/* Navigation buttons removed for category swiper */}
+        <div className="absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-[#121417] to-transparent z-10 pointer-events-none"></div>
+        <div className="absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-[#121417] to-transparent z-10 pointer-events-none"></div>
+        <Swiper
+          modules={[Navigation, A11y, Mousewheel, Keyboard, FreeMode]}
+          spaceBetween={12}
+          slidesPerView="auto"
+          speed={500}
+          easing="cubic-bezier(0.25, 0.46, 0.45, 0.94)"
+          // navigation disabled for category swiper (arrows hidden)
+          navigation={false}
+          onSwiper={(swiper) => { categorySwiperRef.current = swiper; }}
+          freeMode={memoizedFreeMode}
+          mousewheel={memoizedMousewheel}
+          keyboard={memoizedKeyboard}
+          grabCursor={true}
+          touchRatio={1.1}
+          touchAngle={45}
+          resistance={true}
+          resistanceRatio={0.8}
+          watchSlidesProgress={true}
+          className="px-4 pb-2"
+          breakpoints={memoizedBreakpoints}
+        >
+          {categoriesList.map((category) => (
+            <SwiperSlide key={category.id} className="!w-auto">
+              <button
+                onClick={handlersMap.get(category.id)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all duration-300 whitespace-nowrap ${
+                  activeCategory === category.id
+                    ? 'bg-white text-black hover:bg-white/90'
+                    : 'bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <span className="flex-shrink-0">{category.icon}</span>
+                <span>{category.label}</span>
+              </button>
+            </SwiperSlide>
+          ))}
+        </Swiper>
+        {/* Navigation buttons removed for category swiper */}
       </div>
     </MotionConfig>
   );
+}, (prev, next) => {
+  // Custom comparison to avoid unnecessary re-renders:
+  // - isMobile and activeCategory are compared strictly
+  // - categories compared by length and id sequence (cheap check)
+  if (prev.isMobile !== next.isMobile) return false;
+  if (prev.activeCategory !== next.activeCategory) return false;
+  const a = Array.isArray(prev.categories) ? prev.categories : [];
+  const b = Array.isArray(next.categories) ? next.categories : [];
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i]?.id !== b[i]?.id || a[i]?.label !== b[i]?.label) return false;
+  }
+  // If onCategoryClick identity changed, still allow re-render (caller probably changed behavior)
+  if (prev.onCategoryClick !== next.onCategoryClick) return false;
+  return true;
 });
 
 CategorySwiper.displayName = 'CategorySwiper';
@@ -1020,13 +1054,14 @@ const MovieSectionSwiper = memo(({ title, movies, loading, onLoadMore, hasMore, 
   // Refs to track scheduled callbacks so they can be cancelled on cleanup
   const _idleCallbackRef = useRef(null);
   const _rafRef = useRef(null);
-  
+  const mountedRef = useRef(true);
+
   // Track when content is ready to animate
   const [isContentReady, setIsContentReady] = useState(false);
-  
+
   // Check for reduced motion preference
   const prefersReducedMotion = useMemo(() => {
-    return isLowPower || (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    return isLowPower || (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   }, [isLowPower]);
 
   // Progressive list rendering for better performance
@@ -1051,7 +1086,9 @@ const MovieSectionSwiper = memo(({ title, movies, loading, onLoadMore, hasMore, 
 
   // Cleanup on unmount
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       try {
         if (swiperRef.current?.destroy) {
           swiperRef.current.destroy(true, true);
@@ -1060,6 +1097,18 @@ const MovieSectionSwiper = memo(({ title, movies, loading, onLoadMore, hasMore, 
         console.warn('Error destroying movie section swiper:', error);
       } finally {
         swiperRef.current = null;
+      }
+      // Clear any scheduled idle/raf callbacks
+      if (_idleCallbackRef.current) {
+        try {
+          if (typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(_idleCallbackRef.current);
+          else clearTimeout(_idleCallbackRef.current);
+        } catch (_) {}
+        _idleCallbackRef.current = null;
+      }
+      if (_rafRef.current) {
+        try { cancelRaf(_rafRef.current); } catch (_) {}
+        _rafRef.current = null;
       }
     };
   }, []);
@@ -1070,10 +1119,10 @@ const MovieSectionSwiper = memo(({ title, movies, loading, onLoadMore, hasMore, 
     if (s && s.navigation && typeof s.navigation.update === 'function') {
       try { s.navigation.update(); } catch (_) {}
     }
-  }, [movies?.length, sectionKey]);
+  }, [sectionKey]);
 
-  // Update swiper when movies change to ensure proper scrolling
-  useEffect(() => {
+  // Update swiper when movies change to ensure proper scrolling. Throttle updates to avoid layout thrash.
+  const updateSwiper = useCallback(() => {
     const s = swiperRef.current;
     if (s) {
       try {
@@ -1083,7 +1132,35 @@ const MovieSectionSwiper = memo(({ title, movies, loading, onLoadMore, hasMore, 
         s.updateSize();
       } catch (_) {}
     }
-  }, [movies, renderCount]);
+  }, []);
+
+  useEffect(() => {
+    // Avoid running updates on every render — schedule via requestIdleCallback or RAF
+    if (!mountedRef.current) return;
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      try {
+        _idleCallbackRef.current = window.requestIdleCallback(() => updateSwiper(), { timeout: 200 });
+      } catch (e) {
+        _idleCallbackRef.current = window.setTimeout(() => updateSwiper(), 120);
+      }
+    } else {
+      _rafRef.current = scheduleRaf(() => updateSwiper());
+    }
+
+    return () => {
+      if (_idleCallbackRef.current) {
+        try {
+          if (typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(_idleCallbackRef.current);
+          else clearTimeout(_idleCallbackRef.current);
+        } catch (_) {}
+        _idleCallbackRef.current = null;
+      }
+      if (_rafRef.current) {
+        try { cancelRaf(_rafRef.current); } catch (_) {}
+        _rafRef.current = null;
+      }
+    };
+  }, [movies?.length, renderCount, updateSwiper]);
 
   // Force swiper update after render to ensure proper scrolling
   useEffect(() => {
@@ -1111,11 +1188,8 @@ const MovieSectionSwiper = memo(({ title, movies, loading, onLoadMore, hasMore, 
     // Clear any previous scheduled ids
     if (_idleCallbackRef.current) {
       try {
-        if (typeof window.cancelIdleCallback === 'function') {
-          window.cancelIdleCallback(_idleCallbackRef.current);
-        } else {
-          clearTimeout(_idleCallbackRef.current);
-        }
+        if (typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(_idleCallbackRef.current);
+        else clearTimeout(_idleCallbackRef.current);
       } catch (_) {}
       _idleCallbackRef.current = null;
     }
@@ -1125,20 +1199,27 @@ const MovieSectionSwiper = memo(({ title, movies, loading, onLoadMore, hasMore, 
     }
 
     const schedule = () => {
-      if (typeof window !== 'undefined' && 'requestIdleCallback' in window && typeof window.requestIdleCallback === 'function') {
+      if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
         const timeout = Math.min(400, Math.max(100, total * 2));
         try {
-          _idleCallbackRef.current = window.requestIdleCallback(() => setRenderCount(total), { timeout });
+          _idleCallbackRef.current = window.requestIdleCallback(() => {
+            if (!mountedRef.current) return;
+            setRenderCount(total);
+          }, { timeout });
         } catch (e) {
-          // Fallback to timeout
-          _idleCallbackRef.current = window.setTimeout(() => setRenderCount(total), timeout);
+          _idleCallbackRef.current = window.setTimeout(() => {
+            if (!mountedRef.current) return;
+            setRenderCount(total);
+          }, timeout);
         }
       } else {
         // Fallback with requestAnimationFrame via scheduleRaf
         _rafRef.current = scheduleRaf(() => {
           Promise.resolve().then(() => {
-            _idleCallbackRef.current = window.setTimeout(() => setRenderCount(total), 50);
-            // store timeout id in idleCallbackRef so cleanup clears it
+            _idleCallbackRef.current = window.setTimeout(() => {
+              if (!mountedRef.current) return;
+              setRenderCount(total);
+            }, 50);
           });
         });
       }
@@ -1149,11 +1230,8 @@ const MovieSectionSwiper = memo(({ title, movies, loading, onLoadMore, hasMore, 
     return () => {
       if (_idleCallbackRef.current) {
         try {
-          if (typeof window.cancelIdleCallback === 'function') {
-            window.cancelIdleCallback(_idleCallbackRef.current);
-          } else {
-            clearTimeout(_idleCallbackRef.current);
-          }
+          if (typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(_idleCallbackRef.current);
+          else clearTimeout(_idleCallbackRef.current);
         } catch (_) {}
         _idleCallbackRef.current = null;
       }
@@ -1245,7 +1323,7 @@ const MovieSectionSwiper = memo(({ title, movies, loading, onLoadMore, hasMore, 
               />
             </motion.div>
           ))}
-          {loading && (
+          {loading && (!Array.isArray(movies) || movies.length === 0) && (
             <div className="flex-shrink-0">
               <div className="group flex flex-col gap-4 rounded-lg w-80 flex-shrink-0">
                 <div className="relative aspect-[16/10] rounded-lg overflow-hidden bg-black/20 w-full">
@@ -1259,8 +1337,44 @@ const MovieSectionSwiper = memo(({ title, movies, loading, onLoadMore, hasMore, 
     );
   }
 
-  const items = Array.isArray(movies) ? movies : [];
-  const itemsToRender = items.slice(0, renderCount);
+  // Memoize items so shallow equality holds between renders when movies doesn't change
+  const items = useMemo(() => Array.isArray(movies) ? movies : [], [movies]);
+  const itemsToRender = useMemo(() => items.slice(0, renderCount), [items, renderCount]);
+
+  // Stable handlers to avoid recreating closures per render
+  const handleMovieSelect = useCallback((movie) => {
+    onMovieSelect && onMovieSelect(movie);
+  }, [onMovieSelect]);
+
+  const handleMovieHover = useCallback((movie, index) => {
+    onMovieHover && onMovieHover(movie, index, items);
+  }, [onMovieHover, items]);
+
+  const handlePrefetch = useCallback((movieId) => {
+    onPrefetch && onPrefetch(movieId);
+  }, [onPrefetch]);
+
+  // Create memoized Maps of handlers per movie id to avoid recreating closures within map loop
+  const movieSelectHandlers = useMemo(() => {
+    const m = new Map();
+    for (const mv of itemsToRender) m.set(mv.id, () => handleMovieSelect(mv));
+    return m;
+  }, [itemsToRender, handleMovieSelect]);
+
+  const movieHoverHandlers = useMemo(() => {
+    const m = new Map();
+    for (let i = 0; i < itemsToRender.length; i++) {
+      const mv = itemsToRender[i];
+      m.set(mv.id, () => handleMovieHover(mv, i));
+    }
+    return m;
+  }, [itemsToRender, handleMovieHover]);
+
+  const moviePrefetchHandlers = useMemo(() => {
+    const m = new Map();
+    for (const mv of itemsToRender) m.set(mv.id, () => handlePrefetch(mv.id));
+    return m;
+  }, [itemsToRender, handlePrefetch]);
 
   return (
     <div className="mt-8">
@@ -1331,19 +1445,9 @@ const MovieSectionSwiper = memo(({ title, movies, loading, onLoadMore, hasMore, 
             slidesPerView="auto"
             speed={400}
             onSwiper={(swiper) => { swiperRef.current = swiper; }}
-            navigation={{
-              nextEl: `.${sectionKey}-swiper-next`,
-              prevEl: `.${sectionKey}-swiper-prev`,
-            }}
-            mousewheel={{
-              forceToAxis: true,
-              sensitivity: 1,
-              releaseOnEdges: true
-            }}
-            keyboard={{
-              enabled: true,
-              onlyInViewport: true
-            }}
+            navigation={useMemo(() => ({ nextEl: `.${sectionKey}-swiper-next`, prevEl: `.${sectionKey}-swiper-prev` }), [sectionKey])}
+            mousewheel={useMemo(() => ({ forceToAxis: true, sensitivity: 1, releaseOnEdges: true }), [])}
+            keyboard={useMemo(() => ({ enabled: true, onlyInViewport: true }), [])}
             grabCursor={true}
             touchRatio={1}
             touchAngle={45}
@@ -1353,44 +1457,39 @@ const MovieSectionSwiper = memo(({ title, movies, loading, onLoadMore, hasMore, 
             allowSlideNext={true}
             allowSlidePrev={true}
             watchSlidesProgress={true}
-            freeMode={{
-              enabled: true,
-              momentum: true,
-              momentumVelocityRatio: 0.75,
-              sticky: false
-            }}
+            freeMode={useMemo(() => ({ enabled: true, momentum: true, momentumVelocityRatio: 0.75, sticky: false }), [])}
             observer={true}
             observeParents={true}
             updateOnWindowResize={true}
             className="px-6 pb-4 overflow-hidden"
           >
                       {itemsToRender.map((movie, index) => (
-              <SwiperSlide key={`${sectionKey}-${movie.id}-${index}`} className="!w-auto">
-                {/* ✨ PERFORMANCE OPTIMIZED: Faster animations with reduced stagger */}
-                <motion.div
-                  onMouseEnter={() => onMovieHover && onMovieHover(movie, index, movies)}
-                  initial={prefersReducedMotion ? false : { opacity: 0, y: 20, scale: 0.97 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  transition={prefersReducedMotion ? { duration: 0 } : { 
-                    duration: 0.3, // Reduced from 0.4s for faster feel
-                    ease: [0.25, 0.46, 0.45, 0.94],
-                    delay: Math.min(0.2 + (index * 0.04), 0.8) // Faster stagger with cap at 0.8s
-                  }}
-                  style={{
-                    transform: 'translateZ(0)', // Force GPU acceleration
-                    willChange: index < 10 ? 'transform, opacity' : 'auto', // Only first 10 cards
-                  }}
-                >
-                  <MovieCard 
-                    {...movie} 
-                    onClick={() => onMovieSelect(movie)} 
-                    id={movie.id} 
-                    onPrefetch={() => onPrefetch && onPrefetch(movie.id)} 
-                  />
-                </motion.div>
-              </SwiperSlide>
-            ))}
-            {loading && (
+                        <SwiperSlide key={`${sectionKey}-${movie.id}`} className="!w-auto">
+                          {/* ✨ PERFORMANCE OPTIMIZED: Faster animations with reduced stagger */}
+                          <motion.div
+                          onMouseEnter={movieHoverHandlers.get(movie.id)}
+                            initial={prefersReducedMotion ? false : { opacity: 0, y: 20, scale: 0.97 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            transition={prefersReducedMotion ? { duration: 0 } : { 
+                              duration: 0.3, // Reduced from 0.4s for faster feel
+                              ease: [0.25, 0.46, 0.45, 0.94],
+                              delay: Math.min(0.2 + (index * 0.04), 0.8) // Faster stagger with cap at 0.8s
+                            }}
+                            style={{
+                              transform: 'translateZ(0)', // Force GPU acceleration
+                              willChange: index < 10 ? 'transform, opacity' : 'auto', // Only first 10 cards
+                            }}
+                          >
+                            <MovieCard 
+                              {...movie} 
+                              onClick={movieSelectHandlers.get(movie.id)} 
+                              id={movie.id} 
+                              onPrefetch={moviePrefetchHandlers.get(movie.id)} 
+                            />
+                          </motion.div>
+                        </SwiperSlide>
+                      ))}
+            {loading && itemsToRender.length === 0 && (
               <SwiperSlide className="!w-auto">
                 <div className="flex flex-col gap-4 rounded-lg w-64 sm:w-72 md:w-80 flex-shrink-0">
                   <div className="relative aspect-[16/10] rounded-lg overflow-hidden bg-black/20 w-full">
@@ -1456,6 +1555,18 @@ const ProgressiveImage = memo(
   const retryRafRef = useRef(null);
   const retryTimerRef = useRef(null);
     const preloadRef = useRef(null);
+    const containerRef = useRef(null);
+    const imageTimeoutRef = useRef(null);
+    const mountedRef = useRef(true);
+    const [isInView, setIsInView] = useState(() => {
+      // Eagerly load images on mobile to avoid IntersectionObserver gating issues
+      // (horizontal scrollers and some mobile browsers may not trigger intersection)
+      if (typeof window !== 'undefined') {
+        const isMobileViewport = window.innerWidth < 768;
+        return priority === true || isMobileViewport;
+      }
+      return priority === true;
+    });
 
     // Compute tiny/placeholder src with optimized regex
     const getTinySrc = useCallback(
@@ -1493,15 +1604,30 @@ const ProgressiveImage = memo(
       };
     }, [imageError, retry, retryCount, src]);
 
-    // Ultra-optimized image loading with priority handling - FIXED: Image leaks
+    // Ultra-optimized image loading with priority handling and IntersectionObserver gating
     useEffect(() => {
+      // Keep track of mounted state for safety
+      mountedRef.current = true;
+
+      // If there's no src, reset state
       if (!src) {
         setCurrentSrc(null);
         setImageLoaded(false);
         setImageError(false);
-        return;
+        return undefined;
       }
-      
+
+      // If not in view and not priority, don't start loading yet
+      if (!isInView && !priority) {
+        // set tiny preview if available but avoid creating full Image
+        const tiny = getTinySrc(src);
+        setCurrentSrc(tiny);
+        setImageLoaded(false);
+        setImageError(false);
+        setRetry(0);
+        return undefined;
+      }
+
       setImageLoaded(false);
       setImageError(false);
       setRetry(0);
@@ -1512,52 +1638,65 @@ const ProgressiveImage = memo(
       // Create image with priority handling
       const fullImage = new window.Image();
       if (priority) {
-        // fullImage.fetchPriority = 'high';
         fullImage.fetchpriority = 'high';
         fullImage.loading = 'eager';
       } else {
         fullImage.loading = 'lazy';
       }
-      
-      // FIXED: Mobile-specific image loading optimization
-      // Use smaller image sizes for mobile to improve loading performance
-      const isMobile = window.innerWidth < 768;
+
+      // Mobile-specific image loading optimization
+      const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
       let optimizedSrc = src;
-      
       if (isMobile && src.includes('/w')) {
-        // For mobile, use smaller image sizes if available
-        if (src.includes('/w500')) {
-          optimizedSrc = src.replace('/w500', '/w300');
-        } else if (src.includes('/w780')) {
-          optimizedSrc = src.replace('/w780', '/w300');
-        } else if (src.includes('/w1280')) {
-          optimizedSrc = src.replace('/w1280', '/w300');
-        }
+        if (src.includes('/w500')) optimizedSrc = src.replace('/w500', '/w300');
+        else if (src.includes('/w780')) optimizedSrc = src.replace('/w780', '/w300');
+        else if (src.includes('/w1280')) optimizedSrc = src.replace('/w1280', '/w300');
       }
-      
+
       fullImage.src = optimizedSrc;
       if (srcSet) fullImage.srcset = srcSet;
-      
+
       // Store reference for cleanup
       preloadRef.current = fullImage;
-      
+
+      // Setup load timeout to avoid hanging image loads
+      const IMAGE_LOAD_TIMEOUT = 8000;
+      if (imageTimeoutRef.current) {
+        clearTimeout(imageTimeoutRef.current);
+        imageTimeoutRef.current = null;
+      }
+      imageTimeoutRef.current = setTimeout(() => {
+        if (mountedRef.current && !imageLoaded) {
+          console.warn('Image load timeout:', optimizedSrc);
+          setImageError(true);
+        }
+      }, IMAGE_LOAD_TIMEOUT);
+
       fullImage.onload = () => {
-        if (preloadRef.current === fullImage) { // Check if still the same image
+        if (preloadRef.current === fullImage) {
           setCurrentSrc(optimizedSrc);
           setImageLoaded(true);
           if (onLoad) onLoad();
+          if (imageTimeoutRef.current) {
+            clearTimeout(imageTimeoutRef.current);
+            imageTimeoutRef.current = null;
+          }
         }
       };
-      
+
       fullImage.onerror = (e) => {
-        if (preloadRef.current === fullImage) { // Check if still the same image
+        if (preloadRef.current === fullImage) {
           console.warn('Image failed to load:', optimizedSrc, 'Error:', e);
           setImageError(true);
           if (onError) onError(e);
+          if (imageTimeoutRef.current) {
+            clearTimeout(imageTimeoutRef.current);
+            imageTimeoutRef.current = null;
+          }
         }
       };
-      
-      // Cleanup function - FIXED: Proper image cleanup
+
+      // Cleanup function
       return () => {
         if (preloadRef.current === fullImage) {
           try {
@@ -1571,12 +1710,45 @@ const ProgressiveImage = memo(
             preloadRef.current = null;
           }
         }
+        if (imageTimeoutRef.current) {
+          try { clearTimeout(imageTimeoutRef.current); } catch (_) {}
+          imageTimeoutRef.current = null;
+        }
       };
-    }, [src, srcSet, getTinySrc, retry, priority, onLoad, onError]);
+    }, [src, srcSet, getTinySrc, retry, priority, onLoad, onError, isInView]);
+
+    // Intersection Observer to gate loading for non-priority images
+    useEffect(() => {
+      if (typeof window === 'undefined') return undefined;
+
+      if (isInView || priority) return undefined; // already will load
+
+      const el = containerRef.current;
+      if (!el) return undefined;
+
+      const INTERSECTION_THRESHOLD = 0.05; // 5%
+      const INTERSECTION_ROOT_MARGIN = '100px';
+
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && mountedRef.current) {
+            setIsInView(true);
+            try { observer.disconnect(); } catch (_) {}
+          }
+        });
+      }, { threshold: INTERSECTION_THRESHOLD, rootMargin: INTERSECTION_ROOT_MARGIN });
+
+      observer.observe(el);
+
+      return () => {
+        try { observer.disconnect(); } catch (_) {}
+      };
+    }, [priority, isInView]);
 
     // Cleanup on unmount
     useEffect(() => {
       return () => {
+        mountedRef.current = false;
         if (retryRafRef.current) {
           try { cancelRaf(retryRafRef.current); } catch (_) {}
           retryRafRef.current = null;
@@ -1590,11 +1762,17 @@ const ProgressiveImage = memo(
           retryTimeoutRef.current = null;
         }
         if (preloadRef.current) {
-          preloadRef.current.onload = null;
-          preloadRef.current.onerror = null;
-          preloadRef.current.src = '';
-          preloadRef.current.srcset = '';
+          try {
+            preloadRef.current.onload = null;
+            preloadRef.current.onerror = null;
+            preloadRef.current.src = '';
+            preloadRef.current.srcset = '';
+          } catch (_) {}
           preloadRef.current = null;
+        }
+        if (imageTimeoutRef.current) {
+          try { clearTimeout(imageTimeoutRef.current); } catch (_) {}
+          imageTimeoutRef.current = null;
         }
       };
     }, []);
@@ -1604,6 +1782,7 @@ const ProgressiveImage = memo(
 
     return (
       <div
+        ref={containerRef}
         className={`relative overflow-hidden ${className}`}
         style={{
           aspectRatio,
@@ -2971,6 +3150,8 @@ const HeroSection = memo(({ featuredContent, trendingMovies, onMovieSelect, onGe
   const heroRef = useRef(null);
   const [isTrailerOpen, setIsTrailerOpen] = useState(false);
   const [resolvedTrailerKey, setResolvedTrailerKey] = useState(null);
+  // Keep a ref for trailer clear timeout to avoid leaks
+  const trailerClearTimeoutRef = useRef(null);
 
   // Memoized computed values for performance
   const isMovieInWatchlist = useMemo(() => 
@@ -3044,7 +3225,23 @@ const HeroSection = memo(({ featuredContent, trendingMovies, onMovieSelect, onGe
   const handleCloseTrailer = useCallback(() => {
     setIsTrailerOpen(false);
     // Delay clearing key to allow iframe to unmount cleanly
-    setTimeout(() => setResolvedTrailerKey(null), 200);
+    if (trailerClearTimeoutRef.current) {
+      clearTimeout(trailerClearTimeoutRef.current);
+    }
+    trailerClearTimeoutRef.current = setTimeout(() => {
+      setResolvedTrailerKey(null);
+      trailerClearTimeoutRef.current = null;
+    }, 200);
+  }, []);
+
+  // Cleanup trailer timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (trailerClearTimeoutRef.current) {
+        clearTimeout(trailerClearTimeoutRef.current);
+        trailerClearTimeoutRef.current = null;
+      }
+    };
   }, []);
 
   const handleWatchlistClick = useCallback((e) => {
@@ -3120,8 +3317,8 @@ const HeroSection = memo(({ featuredContent, trendingMovies, onMovieSelect, onGe
     }
   }, [featuredContent, isMovieInWatchlist, addToWatchlist, removeFromWatchlist]);
 
-  if (!featuredContent) return null;
-
+  // Do not early-return here because hooks must be called in the same order
+  // across renders. We'll guard rendering below instead.
     // 🚀 OPTIMIZED: Animation variants optimized to prevent jitter and improve performance
   const titleVariants = {
     hidden: { 
@@ -3187,10 +3384,32 @@ const HeroSection = memo(({ featuredContent, trendingMovies, onMovieSelect, onGe
     })
   };
 
+  // Memoize backdrop props once per featuredContent to avoid recomputation and to keep hooks at top-level
+  const backdropProps = useMemo(() => {
+    if (!featuredContent) return {};
+    return getBackdropProps(featuredContent, 'w1280') || {};
+  }, [featuredContent]);
+
+  // Stable handlers for logo image to avoid inline function allocations
+  const handleLogoError = useCallback((e) => {
+    const target = e?.currentTarget || e?.target;
+    if (target && target.style) {
+      target.style.display = 'none';
+    }
+  }, []);
+
+  const handleLogoLoad = useCallback((e) => {
+    const target = e?.currentTarget || e?.target;
+    if (target && target.style) {
+      target.style.transition = 'opacity 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+      target.style.opacity = '1';
+    }
+  }, []);
+
   return (
   <MotionConfig reducedMotion={getReducedMotionOrLowPower() ? 'always' : 'user'} transition={{ type: 'tween' }}>
     {/** Use responsive backdrop props for better desktop performance */}
-    {(() => {})()}
+  {/* removed no-op IIFE to avoid unnecessary execution */}
     { /* eslint-disable no-unused-expressions */ }
     { /* Prepare responsive backdrop sources */ }
     { /* Using local const ensures no re-computation in JSX props */ }
@@ -3233,15 +3452,17 @@ const HeroSection = memo(({ featuredContent, trendingMovies, onMovieSelect, onGe
     { /* */ }
     { /* */ }
     { /* compute end */ }
-    <div
-      ref={heroRef}
-      className="relative min-h-[55vh] sm:min-h-[60vh] min-h-[420px] sm:min-h-[480px] lg:min-h-[70vh] xl:min-h-[80vh] 2xl:min-h-[90vh] xl:max-h-[850px] 2xl:max-h-[950px] w-full overflow-hidden flex items-stretch scrollbar-hide hero-section"
-    >
+    {featuredContent && (
+      <div
+        ref={heroRef}
+        className="relative min-h-[55vh] sm:min-h-[60vh] min-h-[420px] sm:min-h-[480px] lg:min-h-[70vh] xl:min-h-[80vh] 2xl:min-h-[90vh] xl:max-h-[850px] 2xl:max-h-[950px] w-full overflow-hidden flex items-stretch scrollbar-hide hero-section"
+      >
       {/* 🚀 OPTIMIZED: Background Image with smooth fade-in to prevent jitter */}
+      {/** Backdrop props are memoized above in `backdropProps` */}
       <motion.img
         className="absolute inset-0 w-full h-full object-cover transform-gpu"
-        src={getBackdropProps(featuredContent, 'w1280').src}
-        srcSet={getBackdropProps(featuredContent, 'w1280').srcSet}
+        src={backdropProps.src}
+        srcSet={backdropProps.srcSet}
         alt={`${featuredContent.title || featuredContent.name || 'Featured'} backdrop`}
         decoding="async"
         loading="eager"
@@ -3292,19 +3513,11 @@ const HeroSection = memo(({ featuredContent, trendingMovies, onMovieSelect, onGe
                    className="w-[180px] sm:w-[220px] md:w-[280px] lg:w-[320px] xl:w-[340px] max-w-full h-auto object-contain transform-gpu hero-logo"
                   style={{
                     backfaceVisibility: 'hidden',
-                    imageRendering: 'optimizeQuality'
+                    imageRendering: 'optimizeQuality',
+                    opacity: 0
                   }}
-                  onError={e => {
-                    const target = e?.currentTarget || e?.target;
-                    if (target && target.style) {
-                      target.style.display = 'none';
-                    }
-                  }}
-                  onLoad={e => { 
-                    // Smooth fade-in without CSS animation to prevent jitter
-                    e.target.style.transition = 'opacity 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
-                    e.target.style.opacity = '1';
-                  }}
+                  onError={handleLogoError}
+                  onLoad={handleLogoLoad}
                   loading="eager"
                   fetchpriority="high"
                 />
@@ -3567,6 +3780,7 @@ const HeroSection = memo(({ featuredContent, trendingMovies, onMovieSelect, onGe
         <span className="text-xs text-white/50 sm:text-white/60 mt-1">Scroll</span>
       </div>
     </div>
+    )}
     </MotionConfig>
   );
 });
@@ -4847,7 +5061,7 @@ const HomePage = () => {
   const [retryCounts, setRetryCounts] = useState({});
   
   // Hooks
-  const { loadingStates, setLoadingState } = useLoading();
+  const { loadingStates, setLoadingState, resetLoadingStates, setBatchLoadingStates } = useLoading();
   const { addToWatchlist, isInWatchlist, removeFromWatchlist } = useWatchlist();
   const { refreshFromStorage, viewingProgress, hasContinueWatching } = useViewingProgress();
 
@@ -5826,9 +6040,28 @@ const HomePage = () => {
       
       if (success) {
         // Update loading states based on what was loaded
+        // Some sections are set directly by the performance service via state setters
+        // which means the LoadingContext flags might still be true. Resetting the
+        // relevant loading states here ensures skeletons/spinners are hidden when
+        // content is already present.
         setLoadingState('initial', false);
         setLoadingState('trending', false);
         setLoadingState('popular', false);
+
+        // Reset any other lingering loading flags to their default (false) state.
+        // Use resetLoadingStates to restore the default LOADING_STATES (all false)
+        // while preserving optional behavior elsewhere. This avoids showing
+        // loaders on cards when the data is already populated by the performance
+        // service.
+        try {
+          resetLoadingStates();
+        } catch (e) {
+          // Fallback: clear all known keys conservatively
+          const allKeys = Object.keys(loadingStates || {});
+          const updates = {};
+          allKeys.forEach(k => { updates[k] = false; });
+          try { setBatchLoadingStates(updates); } catch (_) {}
+        }
         
         // Set up observer for performance events
         performanceOptimizationService.addObserver((event, data) => {

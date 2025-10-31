@@ -616,6 +616,9 @@ const StreamingPlayer = ({
   const startProgressTracking = useCallback(() => {
     const currentContent = latestContentRef.current;
     if (!currentContent) return;
+    // Initialize last progress update timestamp to now to avoid false-positive stall detection
+    // when no postMessage/timeupdate has been received yet from some streaming servers.
+    lastProgressUpdateRef.current = Date.now();
 
   if (process.env.NODE_ENV === 'development') console.log('🎬 Starting progress tracking for:', currentContent);
 
@@ -1008,6 +1011,9 @@ const StreamingPlayer = ({
       clearTimeout(iframeInitTimeoutRef.current);
       iframeInitTimeoutRef.current = null;
     }
+    // Mark last progress update as now on load to prevent immediate recovery triggers
+    lastProgressUpdateRef.current = Date.now();
+
     iframeInitTimeoutRef.current = setTimeout(() => {
       const currentContent = latestContentRef.current;
       if (isOpen && currentContent) { // Only start if still open and has content
@@ -1418,8 +1424,16 @@ const StreamingPlayer = ({
         setIframeSrc(embedUrl);
       }, 200);
     } else {
-      // Clear src when closed
-      setIframeSrc(null);
+      // Delay clearing src when modal closes to avoid immediate iframe teardown
+      // which can cause a visible reset if the modal briefly toggles.
+      if (iframeSrcTimeoutRef.current) {
+        clearTimeout(iframeSrcTimeoutRef.current);
+        iframeSrcTimeoutRef.current = null;
+      }
+      iframeSrcTimeoutRef.current = setTimeout(() => {
+        setIframeSrc(null);
+        iframeSrcTimeoutRef.current = null;
+      }, 500);
       if (iframeSrcTimeoutRef.current) {
         clearTimeout(iframeSrcTimeoutRef.current);
         iframeSrcTimeoutRef.current = null;

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo, useTransition, Suspense, lazy } from 'react';
-import { createPortal } from 'react-dom';
+import { usePortal } from '../hooks/usePortal';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getPersonDetails, searchPeople } from '../services/tmdbService';
 
@@ -170,6 +170,14 @@ const CastDetailsOverlay = memo(({ person, onClose, onMovieSelect, onSeriesSelec
   const memoryCleanupIntervalRef = useRef(null);
   const imageLoadTimeoutsRef = useRef(new Set());
   const scrollPositionRef = useRef(0);
+
+  // Use centralized portal so stacking/z-index is coordinated with other overlays
+  const { createPortal: createPortalContent, container: portalContainer, isReady: portalReady } = usePortal('cast-details-overlay', {
+    group: 'overlays',
+    priority: 'high',
+    stacking: true,
+    accessibility: true
+  });
 
   // Memoized values for performance
   const memoizedPersonId = useMemo(() => person?.id, [person?.id]);
@@ -459,7 +467,7 @@ const CastDetailsOverlay = memo(({ person, onClose, onMovieSelect, onSeriesSelec
   }, []);
 
   if (loading) {
-    return createPortal(
+    return createPortalContent(
       <AnimatePresence>
         <motion.div
           className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[1000000004] flex items-center justify-center cast-details-backdrop"
@@ -493,13 +501,12 @@ const CastDetailsOverlay = memo(({ person, onClose, onMovieSelect, onSeriesSelec
             </div>
           </motion.div>
         </motion.div>
-      </AnimatePresence>,
-      document.body
+      </AnimatePresence>
     );
   }
 
   if (error) {
-    return createPortal(
+    return createPortalContent(
       <AnimatePresence>
         <motion.div
           className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[1000000004] flex items-center justify-center cast-details-backdrop"
@@ -569,14 +576,13 @@ const CastDetailsOverlay = memo(({ person, onClose, onMovieSelect, onSeriesSelec
             </div>
           </motion.div>
         </motion.div>
-      </AnimatePresence>,
-      document.body
+      </AnimatePresence>
     );
   }
 
   // Show basic info if we have person data but couldn't fetch details
   if (!personDetails && person?.name) {
-    return createPortal(
+    return createPortalContent(
       <AnimatePresence>
         <motion.div
           ref={overlayRef}
@@ -681,14 +687,13 @@ const CastDetailsOverlay = memo(({ person, onClose, onMovieSelect, onSeriesSelec
             </motion.div>
           </div>
         </motion.div>
-      </AnimatePresence>,
-      document.body
+      </AnimatePresence>
     );
   }
 
   if (!personDetails) return null;
 
-  return createPortal(
+  return createPortalContent(
     <AnimatePresence>
       <motion.div
         ref={overlayRef}
