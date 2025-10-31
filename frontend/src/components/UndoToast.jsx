@@ -12,44 +12,82 @@ const UndoToast = ({ section, item, onUndo, onDismiss }) => {
   const keyframesNameRef = useRef('');
   const styleElRef = useRef(null);
   const timeoutRef = useRef(null);
+  const isMountedRef = useRef(true);
+  const onDismissRef = useRef(null);
+  const onUndoRef = useRef(null);
   const [animState, setAnimState] = useState({ name: '', durationMs: 0 });
-  // Always allow full animations on all devices
-  const prefersReducedMotion = false;
+  // Respect user reduced-motion preference when available
+  const prefersReducedMotion = useMemo(() => {
+    if (typeof window !== 'undefined' && window.matchMedia) {
+      try {
+        return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      } catch (e) {
+        return false;
+      }
+    }
+    return false;
+  }, []);
 
   // Setup progress keyframes and auto-dismiss timer
+  // Keep refs to latest callbacks to avoid stale closures
   useEffect(() => {
-    const { remainingMs } = getCountdown(section, item);
+    onDismissRef.current = onDismiss;
+    onUndoRef.current = onUndo;
+  }, [onDismiss, onUndo]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const keyframesName = useMemo(() => {
+    const unique = `${section}-${item?.id || 'x'}-${item?.deletedAt || '0'}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+    return `undo_progress_${unique}`;
+  }, [section, item?.id, item?.deletedAt]);
+
+  useEffect(() => {
+    const { remainingMs } = getCountdown(section, item) || {};
     const ms = Math.max(0, remainingMs || 0);
     durationMsRef.current = ms;
+    keyframesNameRef.current = keyframesName;
 
-    const unique = `${section}-${item?.id || 'x'}-${item?.deletedAt || '0'}`.replace(/[^a-zA-Z0-9_-]/g, '_');
-    keyframesNameRef.current = `undo_progress_${unique}`;
-
-    // Always create progress animation for all devices
-    const styleEl = document.createElement('style');
-    styleEl.setAttribute('data-undo-progress', keyframesNameRef.current);
-    styleEl.textContent = `@keyframes ${keyframesNameRef.current} { 0% { transform: scaleX(1) } 100% { transform: scaleX(0) } }`;
-    document.head.appendChild(styleEl);
-    styleElRef.current = styleEl;
-
-    // Trigger re-render with ready animation name/duration
-    setAnimState({ name: keyframesNameRef.current, durationMs: ms });
-
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    if (ms > 0) {
-      timeoutRef.current = setTimeout(() => {
-        if (onDismiss) onDismiss('down');
-      }, ms + 50);
-    }
-
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    // Only recreate style element when name changed
+    if (!styleElRef.current || styleElRef.current.getAttribute('data-undo-progress') !== keyframesName) {
       if (styleElRef.current && styleElRef.current.parentNode) {
         styleElRef.current.parentNode.removeChild(styleElRef.current);
       }
-      styleElRef.current = null;
+      const styleEl = document.createElement('style');
+      styleEl.setAttribute('data-undo-progress', keyframesName);
+      styleEl.textContent = `@keyframes ${keyframesName} { 0% { transform: scaleX(1) } 100% { transform: scaleX(0) } }`;
+      document.head.appendChild(styleEl);
+      styleElRef.current = styleEl;
+    }
+
+    setAnimState({ name: keyframesName, durationMs: ms });
+
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+
+    if (ms > 0 && !prefersReducedMotion) {
+      timeoutRef.current = setTimeout(() => {
+        if (isMountedRef.current) onDismissRef.current?.('down');
+      }, ms + 50);
+    } else if (ms <= 0) {
+      // If there's no time remaining, dismiss immediately (next tick) to avoid leaving stale toasts
+      setTimeout(() => {
+        if (isMountedRef.current) onDismissRef.current?.('down');
+      }, 0);
+    }
+
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      // keep style element until replaced by another with a new name to avoid flicker
     };
-  }, [section, item, getCountdown, onDismiss, prefersReducedMotion]);
+  }, [section, item, getCountdown, keyframesName, prefersReducedMotion]);
 
   const sectionLabel = useMemo(() => (
     section === 'continueWatching' ? 'Removed from Continue Watching' : 'Removed from Watchlist'
@@ -64,17 +102,31 @@ const UndoToast = ({ section, item, onUndo, onDismiss }) => {
 
   // Progress is driven by CSS keyframes; timer triggers onDismiss when complete.
 
-  const handleUndo = useCallback(() => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    const restoredItem = undoDelete(section, item);
-    if (onUndo) onUndo(restoredItem);
-    if (onDismiss) onDismiss('right');
-  }, [section, item, undoDelete, onUndo, onDismiss]);
+  const handleUndo = useCallback(async () => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    try {
+      const maybePromise = undoDelete(section, item);
+      const restoredItem = await Promise.resolve(maybePromise);
+      onUndoRef.current?.(restoredItem);
+    } catch (err) {
+      // swallow errors from undoDelete here; parent may surface if needed
+      // eslint-disable-next-line no-console
+      console.error('undoDelete failed', err);
+    } finally {
+      onDismissRef.current?.('right');
+    }
+  }, [section, item, undoDelete]);
 
   const handleDismiss = useCallback(() => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    if (onDismiss) onDismiss('down');
-  }, [onDismiss]);
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    onDismissRef.current?.('down');
+  }, []);
 
 
 
@@ -100,13 +152,14 @@ const UndoToast = ({ section, item, onUndo, onDismiss }) => {
           if (info.offset.x >= H_SWIPE_DISMISS_THRESHOLD) {
             handleUndo();
           } else if (info.offset.x <= -H_SWIPE_DISMISS_THRESHOLD) {
-            if (onDismiss) onDismiss('left');
+            onDismissRef.current?.('left');
           }
         }}
         className="relative mx-auto max-w-7xl bg-white/90 dark:bg-black/75 backdrop-blur-xl border border-black/10 dark:border-white/10 rounded-2xl shadow-xl px-3.5 py-3 md:px-4 md:py-3.5 text-sm md:text-[13px] text-black dark:text-white cursor-grab active:cursor-grabbing"
         tabIndex={0}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
+          const isActivate = e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar' || e.code === 'Space';
+          if (isActivate) {
             e.preventDefault();
             handleUndo();
           } else if (e.key === 'Escape') {
@@ -117,16 +170,16 @@ const UndoToast = ({ section, item, onUndo, onDismiss }) => {
       >
         <div className="absolute left-2 md:left-2.5 top-[0.3px] md:top-[0.3px] right-2 md:right-2.5 h-[2px] bg-black/10 dark:bg-white/10 overflow-hidden rounded-full" aria-hidden="true">
           <div
-            style={{
+              style={{
               transformOrigin: 'left',
               animationName: animState.name,
-              animationDuration: `${animState.durationMs}ms`,
+              animationDuration: `${prefersReducedMotion ? 0 : animState.durationMs}ms`,
               animationTimingFunction: 'linear',
               animationFillMode: 'forwards',
               animationIterationCount: 1,
               animationDirection: 'normal',
               animationDelay: '0ms',
-              animationPlayState: isDragging ? 'paused' : 'running',
+              animationPlayState: (isDragging || prefersReducedMotion) ? 'paused' : 'running',
               willChange: 'transform'
             }}
             className="h-full bg-black/70 dark:bg-white/80 rounded-full"

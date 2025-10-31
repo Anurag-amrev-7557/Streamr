@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useUndo } from '../contexts/UndoContext';
 import { useViewingProgress } from '../contexts/ViewingProgressContext';
@@ -6,6 +6,8 @@ import { useWatchlist } from '../contexts/WatchlistContext';
 import UndoToast from './UndoToast';
 
 const MOBILE_NAV_HEIGHT_PX = 64; // approximate BottomNav height including padding
+
+const EXIT_ANIM_MS = 300; // keep in sync with motion transition duration
 
 const exitVariants = {
   exit: (custom) => {
@@ -27,63 +29,128 @@ const UndoManager = () => {
   const { restoreToContinueWatching } = useViewingProgress();
   const { restoreToWatchlist } = useWatchlist();
   const [activeToasts, setActiveToasts] = useState([]);
+  const dismissalTimersRef = useRef(new Map());
+  const mountedRef = useRef(true);
 
   // Compute only the latest item per section to prevent stale toasts on rapid triggers
+  // Build a stable key per toast to allow merges and safe removal
   const latestToasts = useMemo(() => {
     const latest = [];
+    const makeEntry = (cur, section) => {
+      if (!cur) return null;
+      const idPart = cur.id || cur.tmdb_id || 'x';
+      const ts = cur.deletedAt || '0';
+      const key = `${section}-${idPart}-${ts}`;
+      return { ...cur, section, __key: key };
+    };
+
     if (deletedItems?.continueWatching?.length) {
       const cw = deletedItems.continueWatching.reduce((acc, cur) => {
         if (!acc) return cur;
         return (cur.deletedAt || 0) > (acc.deletedAt || 0) ? cur : acc;
       }, null);
-      if (cw) latest.push({ ...cw, section: 'continueWatching' });
+      const entry = makeEntry(cw, 'continueWatching');
+      if (entry) latest.push(entry);
     }
     if (deletedItems?.watchlist?.length) {
       const wl = deletedItems.watchlist.reduce((acc, cur) => {
         if (!acc) return cur;
         return (cur.deletedAt || 0) > (acc.deletedAt || 0) ? cur : acc;
       }, null);
-      if (wl) latest.push({ ...wl, section: 'watchlist' });
+      const entry = makeEntry(wl, 'watchlist');
+      if (entry) latest.push(entry);
     }
     return latest;
   }, [deletedItems]);
 
-  // Update active toasts from computed latest
+  // Merge latest toasts into activeToasts while preserving exiting state
   useEffect(() => {
-    setActiveToasts(latestToasts);
+    setActiveToasts(prev => {
+      // Keep existing toasts (unless replaced) to preserve __isExiting and __exitDirection
+      const byKey = new Map(prev.map(t => [t.__key || `${t.section}-${t.deletedAt || '0'}`, t]));
+      // Add or replace with latest entries
+      latestToasts.forEach(item => {
+        const existing = byKey.get(item.__key);
+        if (existing) {
+          // merge fields but keep exit flags
+          byKey.set(item.__key, { ...item, __isExiting: existing.__isExiting, __exitDirection: existing.__exitDirection });
+        } else {
+          byKey.set(item.__key, item);
+        }
+      });
+      // Return as array preserving insertion order of latestToasts first, then any remaining older ones
+      const ordered = [];
+      latestToasts.forEach(item => {
+        const v = byKey.get(item.__key);
+        if (v) ordered.push(v);
+        byKey.delete(item.__key);
+      });
+      // append others (unlikely)
+      for (const v of byKey.values()) ordered.push(v);
+      return ordered;
+    });
   }, [latestToasts]);
 
-  const handleUndo = (section, item) => {
-    const restoredItem = undoDelete(section, item);
-    if (section === 'continueWatching') {
-      restoreToContinueWatching(restoredItem);
-    } else if (section === 'watchlist') {
-      restoreToWatchlist(restoredItem);
+  const removeToastByKey = useCallback((key) => {
+    // clear any pending timer
+    const t = dismissalTimersRef.current.get(key);
+    if (t) {
+      clearTimeout(t);
+      dismissalTimersRef.current.delete(key);
     }
-  };
+    setActiveToasts(prev => prev.filter(toast => toast.__key !== key));
+  }, []);
 
-  const handleToastDismiss = (section, item, direction = 'down') => {
-    const keyToRemove = `${section}-${item.deletedAt || '0'}`;
-    // Mark the toast as exiting with direction, then remove after animation duration
-    setActiveToasts(prev => prev.map(toast => {
-      const key = `${toast.section}-${toast.deletedAt || '0'}`;
-      if (key === keyToRemove) {
-        return { ...toast, __exitDirection: direction, __isExiting: true };
+  const handleUndo = useCallback(async (section, item) => {
+    const key = item.__key;
+    // clear any pending removal
+    const timer = dismissalTimersRef.current.get(key);
+    if (timer) {
+      clearTimeout(timer);
+      dismissalTimersRef.current.delete(key);
+    }
+    try {
+      const maybe = undoDelete(section, item);
+      const restoredItem = await Promise.resolve(maybe);
+      if (section === 'continueWatching') {
+        restoreToContinueWatching(restoredItem);
+      } else if (section === 'watchlist') {
+        restoreToWatchlist(restoredItem);
       }
-      return toast;
-    }));
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Undo failed', err);
+    } finally {
+      removeToastByKey(key);
+    }
+  }, [undoDelete, restoreToContinueWatching, restoreToWatchlist, removeToastByKey]);
 
-    // Remove after the exit animation completes
-    const timeoutId = setTimeout(() => {
-      setActiveToasts(prev => prev.filter(toast => {
-        const key = `${toast.section}-${toast.deletedAt || '0'}`;
-        return key !== keyToRemove;
-      }));
-    }, 300);
-    
-    // Store timeout ID for potential cleanup (though this function doesn't have cleanup)
-    // The timeout will be cleared when the component unmounts via the main cleanup
-  };
+  const handleToastDismiss = useCallback((section, item, direction = 'down') => {
+    const key = item.__key;
+    setActiveToasts(prev => prev.map(toast => toast.__key === key ? { ...toast, __exitDirection: direction, __isExiting: true } : toast));
+
+    // schedule removal after exit animation
+    const t = setTimeout(() => {
+      // avoid setState if unmounted
+      if (!mountedRef.current) return;
+      setActiveToasts(prev => prev.filter(toast => toast.__key !== key));
+      dismissalTimersRef.current.delete(key);
+    }, EXIT_ANIM_MS);
+    // store timer so it can be cleared if undo happens
+    dismissalTimersRef.current.set(key, t);
+  }, []);
+
+  // cleanup timers on unmount
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      for (const t of dismissalTimersRef.current.values()) {
+        clearTimeout(t);
+      }
+      dismissalTimersRef.current.clear();
+    };
+  }, []);
 
   if (activeToasts.length === 0) return null;
 

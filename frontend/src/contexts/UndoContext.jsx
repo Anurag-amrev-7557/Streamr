@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 
-const UndoContext = createContext();
+// default to null so hooks can detect missing provider
+const UndoContext = createContext(null);
 
 export const useUndo = () => {
   const context = useContext(UndoContext);
@@ -33,10 +34,17 @@ export const UndoProvider = ({ children }) => {
 
   // Helper: build unique key per item
   const buildItemKey = useCallback((section, item) => {
+    // Defensive: ensure item exists and id is a stable string
+    if (!item) return 'unknown';
+    const idStr = String(item.id ?? item._id ?? 'unknown');
     if (section === 'continueWatching') {
-      return `${item.id}-${item.type}-${item.season || 'movie'}-${item.episode || 'movie'}`;
+      const type = String(item.type ?? 'unknown');
+      const season = String(item.season ?? 'movie');
+      const episode = String(item.episode ?? 'movie');
+      // encode components to avoid accidental pipe/sep collisions
+      return `${encodeURIComponent(idStr)}-${encodeURIComponent(type)}-${encodeURIComponent(season)}-${encodeURIComponent(episode)}`;
     }
-    return item.id.toString();
+    return encodeURIComponent(idStr);
   }, []);
 
   // Cleanup expired items and timeouts (low-frequency + on visibility change)
@@ -79,6 +87,14 @@ export const UndoProvider = ({ children }) => {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('focus', cleanup);
+      // Clear any pending timeouts to avoid callbacks after unmount
+      try {
+        undoTimeoutsRef.current.forEach((t) => {
+          if (t?.timeoutId) clearTimeout(t.timeoutId);
+        });
+      } catch (e) {
+        // defensive: if map mutated during iteration just ignore
+      }
     };
   }, [buildItemKey]);
 

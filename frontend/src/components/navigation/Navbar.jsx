@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { searchCombined, transformMovieData } from '../../services/tmdbService';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { HomeIcon, FilmIcon, TvIcon, UserGroupIcon, BookmarkIcon, ChevronRightIcon, EllipsisHorizontalIcon, BookOpenIcon } from '@heroicons/react/24/outline';
 import { BookOpenIcon as BookOpenIconSolid } from '@heroicons/react/24/solid';
 import { useWatchlistSafe } from '../../contexts/WatchlistContext';
@@ -1085,6 +1085,8 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
 
   // Performance-optimized animation variants with reduced motion support
   const animations = useOptimizedAnimations();
+  // Respect user's reduced motion preference to avoid continuous repaints / flashing
+  const reducedMotion = useReducedMotion();
   // Performance-optimized event handlers with debouncing and throttling
   const { handleClickOutside, handleEscapeKey, handleTouchStart } = useOptimizedEventHandlers(closeMenu);
   // Performance-optimized haptic feedback with battery consideration
@@ -2712,16 +2714,18 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
               {/* Animated Background Glow */}
               <motion.div
                 className="absolute inset-0 rounded-lg bg-gradient-to-br from-white/20 via-white/10 to-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-md"
-                animate={{
-                  scale: [1, 1.1, 1],
-                  rotate: [0, 5, -5, 0],
-                }}
-                transition={{
-                  duration: 4,
-                  repeat: Infinity,
-                  ease: "easeInOut",
-                  delay: 0.5
-                }}
+                {...(reducedMotion ? {} : {
+                  animate: {
+                    scale: [1, 1.1, 1],
+                    rotate: [0, 5, -5, 0],
+                  },
+                  transition: {
+                    duration: 4,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                    delay: 0.5
+                  }
+                })}
               />
               
               {/* Main Logo Container */}
@@ -2732,16 +2736,18 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
                   fill="none" 
                   xmlns="http://www.w3.org/2000/svg"
                   className="h-5 w-5 text-white transform transition-transform duration-300 group-hover:scale-110"
-                  animate={{
-                    scale: [1, 1.05, 1],
-                    rotate: [0, 2, -2, 0],
-                  }}
-                  transition={{
-                    duration: 3,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                    delay: 1
-                  }}
+                  {...(reducedMotion ? {} : {
+                    animate: {
+                      scale: [1, 1.05, 1],
+                      rotate: [0, 2, -2, 0],
+                    },
+                    transition: {
+                      duration: 3,
+                      repeat: Infinity,
+                      ease: "easeInOut",
+                      delay: 1
+                    }
+                  })}
                 >
                   <path 
                     fillRule="evenodd" 
@@ -2797,16 +2803,18 @@ const Navbar = ({ onMovieSelect, onCastSelect }) => {
               {/* Animated Ring Effect */}
               <motion.div
                 className="absolute inset-0 rounded-lg border border-white/20 opacity-0 group-hover:opacity-100"
-                animate={{
-                  scale: [1, 1.2, 1],
-                  opacity: [0, 0.5, 0],
-                }}
-                transition={{
-                  duration: 2,
-                  repeat: Infinity,
-                  ease: "easeInOut",
-                  delay: 0.3
-                }}
+                {...(reducedMotion ? {} : {
+                  animate: {
+                    scale: [1, 1.2, 1],
+                    opacity: [0, 0.5, 0],
+                  },
+                  transition: {
+                    duration: 2,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                    delay: 0.3
+                  }
+                })}
               />
             </div>
             
