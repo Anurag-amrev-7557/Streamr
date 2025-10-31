@@ -88,6 +88,7 @@ import memoryOptimizationService from '../utils/memoryOptimizationService';
 import { trackPageLoad, trackApiCall } from '../utils/performanceMonitor';
 import performanceOptimizationService from '../services/performanceOptimizationService';
 import enhancedPerformanceService from '../services/enhancedPerformanceService';
+import portalManagerService from '../services/portalManagerService';
 import { throttle, debounce, isLowEndDevice, getNetworkSpeed } from '../utils/performanceUtils';
 
 // Runtime helper: detect prefers-reduced-motion, Save-Data, or slow network
@@ -1557,6 +1558,38 @@ const ProgressiveImage = memo(
     const preloadRef = useRef(null);
     const containerRef = useRef(null);
     const imageTimeoutRef = useRef(null);
+  // Module-level (file) rate-limited image warning cache to avoid spammy logs
+  // Stored here so multiple instances share the same cache.
+  // Keyed by src+tag so different failure modes are tracked separately.
+  const _imageWarnTimestamps = (function () {
+    // Use a global on window when available so hot-reload / HMR doesn't reset the cache.
+    try {
+      if (typeof window !== 'undefined') {
+        window.__STREAMR_IMAGE_WARN_TS = window.__STREAMR_IMAGE_WARN_TS || new Map();
+        return window.__STREAMR_IMAGE_WARN_TS;
+      }
+    } catch (_) {}
+    return new Map();
+  })();
+
+  const imageWarn = (key, ...args) => {
+    try {
+      // Only produce visible warnings in DEV. In production keep it quiet.
+      if (!(import.meta && import.meta.env && import.meta.env.DEV)) return;
+      const now = Date.now();
+      const last = _imageWarnTimestamps.get(key) || 0;
+      const RATE_LIMIT_MS = 60 * 1000; // 1 minute per key
+      if (now - last > RATE_LIMIT_MS) {
+        _imageWarnTimestamps.set(key, now);
+        // eslint-disable-next-line no-console
+        console.warn(...args);
+      } else {
+        // degrade to debug to preserve some traceability during development
+        // eslint-disable-next-line no-console
+        console.debug('[throttled image warn]', ...args);
+      }
+    } catch (_) {}
+  };
   const clearSrcTimeoutRef = useRef(null);
     const mountedRef = useRef(true);
     const lastGoodSrcRef = useRef(null);
@@ -1706,16 +1739,28 @@ const ProgressiveImage = memo(
       // Store reference for cleanup
       preloadRef.current = fullImage;
 
-      // Setup load timeout to avoid hanging image loads. Use a larger timeout on mobile
-      // because mobile networks can be slower and we try fallbacks before erroring.
-      const IMAGE_LOAD_TIMEOUT = isMobile ? 15000 : 8000;
+      // Setup load timeout to avoid hanging image loads.
+      // Adjust timeout based on detected network conditions when available.
+      const connection = navigator && navigator.connection ? navigator.connection : null;
+      const effective = connection && connection.effectiveType ? connection.effectiveType : null;
+      const downlink = connection && typeof connection.downlink === 'number' ? connection.downlink : null;
+      // Base timeouts
+      let IMAGE_LOAD_TIMEOUT = isMobile ? 18000 : 9000;
+      // If network is slow or unknown, increase timeout generously to avoid false negatives
+      if (effective && (effective === '2g' || effective === 'slow-2g')) {
+        IMAGE_LOAD_TIMEOUT = Math.max(IMAGE_LOAD_TIMEOUT, 30000);
+      } else if (effective && effective === '3g') {
+        IMAGE_LOAD_TIMEOUT = Math.max(IMAGE_LOAD_TIMEOUT, 20000);
+      } else if (downlink && downlink < 1) {
+        IMAGE_LOAD_TIMEOUT = Math.max(IMAGE_LOAD_TIMEOUT, 25000);
+      }
       if (imageTimeoutRef.current) {
         clearTimeout(imageTimeoutRef.current);
         imageTimeoutRef.current = null;
       }
       imageTimeoutRef.current = setTimeout(() => {
         if (mountedRef.current && !imageLoaded) {
-          console.warn('Image load timeout:', optimizedSrc);
+          imageWarn(optimizedSrc + ':timeout', 'Image load timeout:', optimizedSrc);
           // If optimizedSrc differs from original, try falling back to original src
           // before marking error. This avoids mobile flicker when small-size CDN
           // variants are slow or flaky.
@@ -1725,7 +1770,7 @@ const ProgressiveImage = memo(
               fullImage.src = src;
               if (srcSet) fullImage.srcset = srcSet;
             } catch (e) {
-              console.warn('Fallback to original src failed:', e);
+              imageWarn(optimizedSrc + ':fallback-failed', 'Fallback to original src failed:', e);
               setImageError(true);
             }
             // extend timeout once more for the fallback
@@ -1735,7 +1780,7 @@ const ProgressiveImage = memo(
             }
             imageTimeoutRef.current = setTimeout(() => {
               if (mountedRef.current && !imageLoaded) {
-                console.warn('Image load fallback timeout:', src);
+                imageWarn(src + ':fallback-timeout', 'Image load fallback timeout:', src);
                 setImageError(true);
               }
             }, IMAGE_LOAD_TIMEOUT);
@@ -1761,7 +1806,7 @@ const ProgressiveImage = memo(
 
       fullImage.onerror = (e) => {
         if (preloadRef.current === fullImage) {
-          console.warn('Image failed to load:', optimizedSrc, 'Error:', e);
+          imageWarn(optimizedSrc + ':error', 'Image failed to load:', optimizedSrc, 'Error:', e);
           setImageError(true);
           if (onError) onError(e);
           if (imageTimeoutRef.current) {
@@ -5109,6 +5154,8 @@ const HomePage = () => {
   // UI state variables
   const [selectedMovie, setSelectedMovie] = useState(null);
   const [error, setError] = useState(null);
+  // Non-fatal initialization timeout flag to avoid escalating to ErrorBoundary
+  const [initTimedOut, setInitTimedOut] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [currentFeaturedIndex, setCurrentFeaturedIndex] = useState(0);
   const [activeCategory, setActiveCategory] = useState('all');
@@ -7103,9 +7150,10 @@ const HomePage = () => {
         console.warn('Portal cleanup call failed during init timeout:', e);
       }
 
-      // Surface an error to the UI (best-effort)
+      // Mark a non-fatal init timeout so UI can show a gentle message without
+      // escalating to an ErrorBoundary. We'll clear this if retry succeeds.
       try {
-        if (isMounted) setError && setError('Initialization timed out. Retrying...');
+        if (isMounted) setInitTimedOut(true);
       } catch (e) {
         // ignore
       }
@@ -7117,7 +7165,9 @@ const HomePage = () => {
           if (!isMounted) return;
           console.log('Retrying initialization after timeout (single attempt)');
           try {
-            initializeData();
+              // Clear the timed-out flag when retrying to avoid stale UI state
+              try { setInitTimedOut(false); } catch (_) {}
+              initializeData();
           } catch (e) {
             console.error('Retry of initializeData failed:', e);
           }

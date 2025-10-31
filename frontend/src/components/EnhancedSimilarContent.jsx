@@ -396,12 +396,26 @@ const EnhancedSimilarCard = React.memo(({
       
       // Only log in development and if it's not a localhost issue
       if (import.meta.env.DEV && !e.target.src.includes('localhost')) {
-        console.warn('Similar content image failed to load:', {
-          src: e.target.src,
-          poster_path: item.poster_path,
-          title: displayTitle,
-          expectedSrc: getTmdbImageUrl(item.poster_path, 'w500')
-        });
+        try {
+          // rate-limited warn cache on window to survive HMR
+          const _ts = (function () { try { if (typeof window !== 'undefined') { window.__STREAMR_ESIM_WARN = window.__STREAMR_ESIM_WARN || new Map(); return window.__STREAMR_ESIM_WARN; } } catch (_) {} return new Map(); })();
+          const key = `similar:${e.target.src}`;
+          const now = Date.now();
+          const last = _ts.get(key) || 0;
+          if (now - last > 60 * 1000) {
+            _ts.set(key, now);
+            // eslint-disable-next-line no-console
+            console.warn('Similar content image failed to load:', {
+              src: e.target.src,
+              poster_path: item.poster_path,
+              title: displayTitle,
+              expectedSrc: getTmdbImageUrl(item.poster_path, 'w500')
+            });
+          } else {
+            // eslint-disable-next-line no-console
+            console.debug('[throttled similar image warn]', e.target.src);
+          }
+        } catch (_) {}
       }
       
       // Don't try fallback if src has been changed to localhost (likely by another component)

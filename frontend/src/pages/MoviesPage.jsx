@@ -2343,16 +2343,10 @@ const MoviesPage = () => {
       clearTimeout(timer);
       clearTimeout(filtersTimer);
       clearTimeout(moviesTimer);
-      
-      // Reset loaded sections on cleanup
-      setLoadedSections({
-        header: false,
-        filters: false,
-        movies: false
-      });
-      
-      // Clear any pending loading operations
-      setIsTransitioning(false);
+      // Only perform non-state cleanup here. Avoid calling setState during
+      // cleanup/unmount to prevent React warnings and potential memory leaks.
+      // State reset will be handled by React when the component unmounts or
+      // by explicit user actions elsewhere.
     };
   }, []); // FIXED: Empty dependency array to run only once on mount
 
@@ -2406,13 +2400,9 @@ const MoviesPage = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
-      
-      // Close all dropdowns on cleanup
-      setShowGenreDropdown(false);
-      setShowYearDropdown(false);
-      setShowSortDropdown(false);
-      setGenreDropdownOpen(false);
-      setYearDropdownOpen(false);
+      // Do not set React state during unmount here. Removing listeners is
+      // sufficient cleanup. Dropdown state will be discarded when the
+      // component unmounts.
     };
   }, []); // FIXED: Empty dependency array to run only once on mount
 
@@ -2429,13 +2419,7 @@ const MoviesPage = () => {
     document.addEventListener('keydown', handleEscape);
     return () => {
       document.removeEventListener('keydown', handleEscape);
-      
-      // Close all dropdowns on cleanup
-      setShowGenreDropdown(false);
-      setShowYearDropdown(false);
-      setShowSortDropdown(false);
-      setGenreDropdownOpen(false);
-      setYearDropdownOpen(false);
+      // Avoid setting state during unmount. Only remove the event listener.
     };
   }, []); // FIXED: Empty dependency array to run only once on mount
 
@@ -3052,15 +3036,10 @@ const MoviesPage = () => {
   // Memory optimization: Clear displayMovies when component unmounts
   useEffect(() => {
     return () => {
-      // Clear any pending display operations
-      setIsTransitioning(false);
-      
-      // Don't clear loaded images immediately - let them persist for better UX
-      // setLoadedImages({});
-      // Clear loaded images after a delay to prevent memory accumulation
-      setTimeout(() => {
-        setLoadedImages({});
-      }, 30000); // Clear after 30 seconds
+      // Avoid calling setState during unmount. Clear only non-state resources
+      // (if any) here. Loaded images and transition state will be naturally
+      // discarded with the component; explicit state mutation on unmount
+      // can cause React warnings.
     };
   }, []);
 

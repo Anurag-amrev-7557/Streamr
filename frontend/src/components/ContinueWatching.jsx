@@ -298,10 +298,36 @@ const ContinueWatchingCard = React.memo(({ item, onClick, isMobile, onRemove, in
   // Image load timeout handler for better UX
   useEffect(() => {
     if (!isInView || !imageUrl || imageLoaded || imageError) return;
-    
+    // Rate-limited warning helper (DEV-only)
+    const _warnTs = (function () {
+      try {
+        if (typeof window !== 'undefined') {
+          window.__STREAMR_CW_WARN_TS = window.__STREAMR_CW_WARN_TS || new Map();
+          return window.__STREAMR_CW_WARN_TS;
+        }
+      } catch (_) {}
+      return new Map();
+    })();
+    const imageWarn = (key, ...args) => {
+      try {
+        if (!(import.meta && import.meta.env && import.meta.env.DEV)) return;
+        const now = Date.now();
+        const last = _warnTs.get(key) || 0;
+        const RATE_LIMIT_MS = 60 * 1000;
+        if (now - last > RATE_LIMIT_MS) {
+          _warnTs.set(key, now);
+          // eslint-disable-next-line no-console
+          console.warn(...args);
+        } else {
+          // eslint-disable-next-line no-console
+          console.debug('[throttled continue-watching image warn]', ...args);
+        }
+      } catch (_) {}
+    };
+
     imageTimeoutRef.current = setTimeout(() => {
       if (mountedRef.current && !imageLoaded) {
-        console.warn(`Image load timeout for: ${item.title}`);
+        imageWarn(item.id + ':timeout', `Image load timeout for: ${item.title}`);
         setImageError(true);
       }
     }, IMAGE_LOAD_TIMEOUT);

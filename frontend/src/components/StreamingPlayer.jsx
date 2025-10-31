@@ -11,14 +11,14 @@ import { scheduleRaf, cancelRaf } from '../utils/throttledRaf';
 import PropTypes from 'prop-types';
 
 const StreamingPlayer = ({ 
-  streamingUrl, 
-  title, 
-  isOpen, 
+  streamingUrl = null, 
+  title = '', 
+  isOpen = false, 
   onClose, 
-  onError,
-  content,
-  currentService,
-  onServiceChange
+  onError = null,
+  content = null,
+  currentService = null,
+  onServiceChange = null
 }) => {
   // 🚀 FIXED: Add mounted ref to prevent state updates on unmounted components
   const isMountedRef = useRef(true);
@@ -1705,15 +1705,8 @@ StreamingPlayer.propTypes = {
   onServiceChange: PropTypes.func
 };
 
-StreamingPlayer.defaultProps = {
-  streamingUrl: null,
-  title: '',
-  isOpen: false,
-  onError: null,
-  content: null,
-  currentService: null,
-  onServiceChange: null
-};
+// NOTE: defaultProps removed for function component; defaults are provided via
+// JavaScript default parameters in the function signature above.
 
 // Memoize component to prevent unnecessary re-renders
 // Only re-render if essential props change
