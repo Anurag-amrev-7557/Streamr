@@ -525,7 +525,8 @@ const ContinueWatchingCard = React.memo(({ item, onClick, isMobile, onRemove, in
                   <div className="mt-3">
                     <div className="flex items-center justify-between text-white/70 text-xs mb-1.5">
                       <span className="font-medium">Season {item.season || 'N/A'}</span>
-                      <span className="font-mono">
+                      {/* Announce season progress updates to assistive tech */}
+                      <span className="font-mono" aria-live="polite" aria-atomic="true">
                         {seasonProgress ? (
                           `${seasonProgress.watched}/${seasonProgress.total} eps`
                         ) : isLoadingSeasonData ? (
@@ -560,7 +561,8 @@ const ContinueWatchingCard = React.memo(({ item, onClick, isMobile, onRemove, in
                   <div className="mt-3">
                     <div className="flex items-center justify-between text-white/70 text-xs mb-1.5">
                       <span className="font-medium">Watch Progress</span>
-                      <span className="font-mono">{getProgressPercentage.toFixed(0)}%</span>
+                      {/* Announce progress updates for screen readers */}
+                      <span className="font-mono" aria-live="polite" aria-atomic="true">{getProgressPercentage.toFixed(0)}%</span>
                     </div>
                     <div className="w-full bg-white/20 rounded-full h-1 relative overflow-hidden">
                       <div 
@@ -588,9 +590,10 @@ const ContinueWatchingCard = React.memo(({ item, onClick, isMobile, onRemove, in
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.95 }}
               aria-label={`Remove ${item.title} from Continue Watching`}
+              aria-pressed={isRemoving}
               onClick={handleRemoveClick}
               disabled={isRemoving}
-              className="absolute top-2 right-2 z-30 w-9 h-9 sm:w-8 sm:h-8 bg-black/70 hover:bg-red-600/90 disabled:bg-gray-600/70 rounded-full flex items-center justify-center transition-all duration-200 pointer-events-auto shadow-md shadow-black/30 group/btn"
+              className="absolute top-2 right-2 z-40 w-9 h-9 sm:w-8 sm:h-8 bg-black/70 hover:bg-red-600/90 disabled:bg-gray-600/70 rounded-full flex items-center justify-center transition-all duration-200 pointer-events-auto shadow-md shadow-black/30 group/btn"
               style={{
                 WebkitTapHighlightColor: 'transparent',
                 WebkitTouchCallout: 'none',
@@ -600,83 +603,47 @@ const ContinueWatchingCard = React.memo(({ item, onClick, isMobile, onRemove, in
               }}
             >
               {isRemoving ? (
-                <svg className="w-4 h-4 text-white animate-spin" fill="none" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 text-white animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
                 </svg>
               ) : (
-                <svg className="w-4 h-4 text-white group-hover/btn:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 text-white group-hover/btn:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               )}
+              {/* Hidden label for screen readers */}
+              <span className="sr-only">Remove {item.title} from Continue Watching</span>
             </motion.button>
           )}
         </div>
         
-        {/* Mobile Progress Bar - Enhanced version - Black & White Theme */}
-        <div 
-          style={{
-            display: typeof window !== 'undefined' && window.innerWidth < 768 ? 'block' : 'none',
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            padding: '10px',
+        {/* Mobile Progress Bar - Minimal, always-visible on mobile */}
+        {isMobileState && (
+          <div className="absolute bottom-0 left-0 right-0 p-2 md:hidden z-20" style={{
             background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.6) 60%, transparent 100%)',
-            zIndex: 9999,
             pointerEvents: 'none'
-          }}
-        >
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            color: 'rgba(255,255,255,0.95)',
-            fontSize: '11px',
-            fontWeight: '500',
-            marginBottom: '6px'
           }}>
-            <span>
-              {item.type === 'tv' 
-                ? `S${item.season || 'N/A'}`
-                : 'Progress'
-              }
-            </span>
-            <span style={{ fontFamily: 'monospace' }}>
-              {item.type === 'tv' 
-                ? (seasonProgress ? `${seasonProgress.watched}/${seasonProgress.total}` : `${item.episode || 0} eps`)
-                : `${getProgressPercentage.toFixed(0)}%`
-              }
-            </span>
+            <div className="flex items-center justify-between text-white/95 text-[11px] font-medium mb-1 px-1">
+              <span className="truncate">{item.type === 'tv' ? `S${item.season || 'N/A'}` : 'Progress'}</span>
+              <span className="font-mono text-[11px]">
+                {item.type === 'tv'
+                  ? (seasonProgress ? `${seasonProgress.watched}/${seasonProgress.total}` : `${item.episode || 0} eps`)
+                  : `${getProgressPercentage.toFixed(0)}%`
+                }
+              </span>
+            </div>
+            <div className="w-full h-0.5 rounded-full bg-white/20 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-white"
+                style={{
+                  width: item.type === 'tv' ? (seasonProgress ? `${seasonProgress.percentage}%` : '0%') : `${Math.max(getProgressPercentage, 1)}%`,
+                  transition: 'width 0.6s cubic-bezier(0.4, 0, 0.2, 1)'
+                }}
+              />
+            </div>
           </div>
-          <div style={{
-            width: '100%',
-            height: '2px',
-            backgroundColor: 'rgba(255,255,255,0.25)',
-            borderRadius: '9999px',
-            overflow: 'hidden',
-            position: 'relative'
-          }}>
-            <div 
-              style={{
-                height: '100%',
-                backgroundColor: item.type === 'tv'
-                  ? (seasonProgress ? 'rgba(255, 255, 255, 1)' : 'rgba(255,255,255,0.4)')
-                  : (getProgressPercentage > 0 
-                    ? 'rgba(255, 255, 255, 1)'
-                    : 'rgba(255,255,255,0.4)'),
-                borderRadius: '9999px',
-                transition: 'width 0.6s cubic-bezier(0.4, 0, 0.2, 1)',
-                width: item.type === 'tv' 
-                  ? (seasonProgress ? `${seasonProgress.percentage}%` : '0%')
-                  : `${Math.max(getProgressPercentage, 1)}%`,
-                boxShadow: getProgressPercentage > 0 ? '0 0 6px rgba(255, 255, 255, 0.5)' : 'none',
-                transform: 'translateZ(0)',
-                willChange: 'width',
-              }}
-            />
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );
@@ -1260,6 +1227,11 @@ const ContinueWatching = ({ onMovieSelect, isMobile }) => {
             sensitivity: 1,
             releaseOnEdges: true
           }}
+          // Allow desktop mouse dragging and pointer interactions
+          simulateTouch={true}
+          touchStartPreventDefault={false}
+          touchStartForcePreventDefault={false}
+          pointerEventsTarget="container"
           keyboard={{
             enabled: true,
             onlyInViewport: true

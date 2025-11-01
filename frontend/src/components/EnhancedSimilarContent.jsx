@@ -594,7 +594,7 @@ const EnhancedSimilarCard = React.memo(({
         
         {/* Click Loader Overlay or Play Button */}
         {isOpening ? (
-          <CenteredLogoLoader />
+          <CenteredLogoLoader visible={true} />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
             <motion.div 

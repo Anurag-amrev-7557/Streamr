@@ -300,6 +300,14 @@ const CustomDropdown = React.memo(({
   );
 });
 
+// Small helper to avoid noisy console output in production
+const devLog = {
+  log: (...args) => { if (process.env.NODE_ENV === 'development') console.log(...args); },
+  debug: (...args) => { if (process.env.NODE_ENV === 'development') console.debug(...args); },
+  warn: (...args) => { if (process.env.NODE_ENV === 'development') console.warn(...args); },
+  error: (...args) => { if (process.env.NODE_ENV === 'development') console.error(...args); }
+};
+
   // 🚀 FIXED: Advanced caching with optimized memory management
   const DETAILS_CACHE = new Map();
   const CACHE_DURATION = 3 * 60 * 1000; // Reduced to 3 minutes for better memory management
@@ -371,12 +379,55 @@ const CustomDropdown = React.memo(({
         });
       } catch (err) {
         // fallthrough to main-thread fallback
-        console.warn('[MovieDetailsOverlay] Worker failed, falling back to main thread:', err);
+        devLog.warn('[MovieDetailsOverlay] Worker failed, falling back to main thread:', err);
       }
     }
 
-    // Fallback: use createShareCardBlob on main thread
-    return await createShareCardBlob(details, cfg);
+    // Fallback: use createShareCardBlob on main thread (only if available)
+    if (typeof createShareCardBlob === 'function') {
+      return await createShareCardBlob(details, cfg);
+    }
+    throw new Error('Share generation function not available');
+  };
+
+  // Schedule share generation during idle time to avoid blocking main thread
+  const scheduleShareGeneration = (details, cfg, timeout = 8000) => {
+    return new Promise((resolve, reject) => {
+      let called = false;
+      const runGeneration = async () => {
+        try {
+          const blob = await createShareCardBlobWithWorker(details, cfg);
+          if (!called) { called = true; resolve(blob); }
+        } catch (err) {
+          if (!called) { called = true; reject(err); }
+        }
+      };
+
+      // Use requestIdleCallback if available, else setTimeout to defer
+      try {
+        if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+          const id = window.requestIdleCallback(async () => runGeneration(), { timeout });
+          // Safety: cancel if still pending after timeout
+          setTimeout(() => {
+            try { window.cancelIdleCallback && window.cancelIdleCallback(id); } catch (e) {}
+          }, timeout + 50);
+        } else {
+          // Defer to next macrotask to avoid blocking immediate render
+          setTimeout(runGeneration, 50);
+        }
+      } catch (err) {
+        // If scheduling fails, run immediately but still guarded by timeout
+        runGeneration();
+      }
+      // Timeout guard
+      const to = setTimeout(() => {
+        if (!called) {
+          called = true;
+          reject('Share generation timeout');
+        }
+        clearTimeout(to);
+      }, timeout + 100);
+    });
   };
 
   // 🎯 NEW: Cache management utilities with enhanced memory optimization
@@ -550,7 +601,7 @@ if (typeof window !== 'undefined') {
 // Preload trailer data function removed to improve performance
 
   // 🚀 FIXED: Ultra-optimized Cast Card with strict memory management
-  const CastCard = React.memo(function CastCard({ person, onClick }) {
+  const CastCard = React.memo(function CastCard({ person, onClick, small = false }) {
     const [imageLoaded, setImageLoaded] = useState(false);
     const [imageError, setImageError] = useState(false);
     const imageRef = useRef(null);
@@ -562,9 +613,7 @@ if (typeof window !== 'undefined') {
   }, []);
 
   const handleImageError = useCallback((e) => {
-    if (import.meta.env.DEV) {
-      console.warn('Failed to load cast image:', e.target.src);
-    }
+    devLog.warn('Failed to load cast image:', e?.target?.src);
     setImageError(true);
     setImageLoaded(false);
     // Safe cleanup: null handlers and let browser GC the element
@@ -586,9 +635,12 @@ if (typeof window !== 'undefined') {
     };
   }, []);
 
-  return (
+  const avatarSizeClass = small ? 'w-11 h-11' : 'w-24 h-24';
+  const avatarContainerSizeClass = small ? 'w-11 h-11 mx-0 mb-0' : 'w-24 h-24 mx-auto mb-3';
+
+    return (
     <div className="text-center group cursor-pointer" onClick={() => onClick && onClick(person)}>
-      <div className="relative w-24 h-24 mx-auto mb-3">
+      <div className={`relative ${avatarContainerSizeClass}`}>
   <div className={`rounded-full overflow-hidden w-full h-full transition-all duration-300 ${isHighPerformanceDevice() ? 'transform group-hover:scale-110 will-change-transform shadow-lg' : 'shadow-sm'}`}>
           {person.image && !imageError ? (
             <>
@@ -600,11 +652,13 @@ if (typeof window !== 'undefined') {
               {/* Optimized image with enhanced loading */}
               <img 
                 ref={imageRef}
-                src={person.image} 
-                alt={person.name} 
-                className={`w-full h-full object-cover ${isHighPerformanceDevice() ? 'will-change-transform' : ''} ${
+                src={person.image}
+                alt={person.name}
+                className={`object-cover ${isHighPerformanceDevice() ? 'will-change-transform' : ''} ${
                   imageLoaded ? 'opacity-100' : 'opacity-0'
-                }`}
+                } ${small ? 'w-full h-full' : 'w-full h-full'}`}
+                width={small ? 44 : 96}
+                height={small ? 44 : 96}
                 loading="lazy" 
                 decoding="async"
                 fetchpriority="low"
@@ -628,8 +682,14 @@ if (typeof window !== 'undefined') {
         </div>
         <div className="absolute inset-0 rounded-full ring-2 ring-white/10 ring-inset opacity-50 group-hover:opacity-100 transition-opacity duration-300"></div>
       </div>
-      <h4 className="text-white font-medium text-sm truncate transition-colors group-hover:text-white">{person.name}</h4>
-      <p className="text-white/60 text-xs truncate">{person.character}</p>
+      {small ? (
+        <div className="mt-1 text-xs text-white truncate w-full">{person.name}</div>
+      ) : (
+        <>
+          <h4 className="text-white font-medium text-sm truncate transition-colors group-hover:text-white">{person.name}</h4>
+          <p className="text-white/60 text-xs truncate">{person.character}</p>
+        </>
+      )}
     </div>
   );
 });
@@ -670,13 +730,11 @@ if (typeof window !== 'undefined') {
   }, [similar?.poster_path, displayTitle]);
 
   const handleImageError = useCallback((e) => {
-    if (import.meta.env.DEV) {
-      console.warn('Failed to load similar movie poster:', {
-        src: e.target.src,
-        poster_path: similar?.poster_path,
-        title: similar?.title || similar?.name || 'Untitled'
-      });
-    }
+    devLog.warn('Failed to load similar movie poster:', {
+      src: e?.target?.src,
+      poster_path: similar?.poster_path,
+      title: similar?.title || similar?.name || 'Untitled'
+    });
     
     // Try fallback URL if this was a CORS error and we haven't tried the fallback yet
     if (e.target && similar?.poster_path && !e.target.dataset.fallbackTried) {
@@ -730,6 +788,8 @@ if (typeof window !== 'undefined') {
                 imageLoaded ? 'opacity-100' : 'opacity-0'
               }`}
               style={imageStyle}
+              width={500}
+              height={500}
               loading="lazy"
               sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, (max-width: 1280px) 25vw, 20vw"
               fetchpriority="low"
@@ -784,7 +844,13 @@ const CastListVirtual = ({ items = [], onClick, width = '100%', itemHeight = 92 
     const person = items[index];
     return (
       <div style={style} className="p-2">
-        <CastCard person={person} onClick={onClick} />
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.28, delay: Math.min(index * 0.02, 0.6), ease: [0.2, 0.8, 0.2, 1] }}
+        >
+          <CastCard person={person} onClick={onClick} small />
+        </motion.div>
       </div>
     );
   };
@@ -909,19 +975,13 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     statePersistence: true,
     theme: 'movie-details',
     onFocus: (id) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.debug(`[MovieDetailsOverlay] Portal ${id} focused`);
-      }
+      devLog.debug(`[MovieDetailsOverlay] Portal ${id} focused`);
     },
     onBlur: (id) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.debug(`[MovieDetailsOverlay] Portal ${id} blurred`);
-      }
+      devLog.debug(`[MovieDetailsOverlay] Portal ${id} blurred`);
     },
     onEscape: (id) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.debug(`[MovieDetailsOverlay] Escape key pressed on portal ${id}`);
-      }
+      devLog.debug(`[MovieDetailsOverlay] Escape key pressed on portal ${id}`);
       // Handle escape key if needed
       if (onClose) {
         onClose();
@@ -943,8 +1003,168 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     analytics
   } = usePortal(portalId, portalOptions);
 
+  // Memoize device/capability checks to avoid calling them on every render
+  const _isHighPerfDevice = useMemo(() => isHighPerformanceDevice(), []);
+  const _supportsBackdrop = useMemo(() => supportsBackdropFilter(), []);
+  const _prefersReducedMotion = useMemo(() => prefersReducedMotion(), []);
+
   // 🆕 SIMPLIFIED: Basic content pre-rendering
   const [contentPreRendered, setContentPreRendered] = useState(false);
+
+  // ---- Cast tooltip state & helpers (modern minimalist tooltip on long hover) ----
+  const hoverTimeoutRef = useRef(null);
+  const leaveTimeoutRef = useRef(null);
+  const tooltipRef = useRef(null);
+  const castButtonRefs = useRef({});
+
+  const [tooltipState, setTooltipState] = useState({
+    visible: false,
+    person: null,
+    x: 0,
+    y: 0,
+    placement: 'top'
+  });
+
+  // Clean up timers on unmount
+  useEffect(() => {
+    return () => {
+      if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+      if (leaveTimeoutRef.current) clearTimeout(leaveTimeoutRef.current);
+    };
+  }, []);
+
+  const showTooltipFor = useCallback((targetEl, person) => {
+    try {
+      const rect = targetEl.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+  // Anchor tooltip to the avatar's top so it appears above the avatar
+      const y = rect.top;
+      const placement = 'top';
+
+      // debug bounding rect and scroll offsets
+      devLog.debug('[MovieDetailsOverlay] showTooltipFor rect', {
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
+        centerX,
+        scrollX: window.scrollX || window.pageXOffset,
+        scrollY: window.scrollY || window.pageYOffset,
+        viewportW: document.documentElement.clientWidth,
+        viewportH: document.documentElement.clientHeight
+      });
+
+  devLog.debug('[MovieDetailsOverlay] showTooltipFor', person?.name, { x: Math.round(centerX), y: Math.round(y), placement });
+      setTooltipState({ visible: true, person, x: Math.round(centerX), y: Math.round(y), placement });
+    } catch (e) {
+      // safe fallback
+      setTooltipState({ visible: true, person, x: window.innerWidth / 2, y: window.innerHeight / 2, placement: 'top' });
+    }
+  }, []);
+
+  const hideTooltip = useCallback(() => {
+    setTooltipState(s => ({ ...s, visible: false }));
+  }, []);
+
+  const handleCastHoverEnter = useCallback((e, person) => {
+    if (leaveTimeoutRef.current) {
+      clearTimeout(leaveTimeoutRef.current);
+      leaveTimeoutRef.current = null;
+    }
+    const target = e.currentTarget || e.target;
+    devLog.debug('[MovieDetailsOverlay] hover enter for', person?.name);
+    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+    // long hover: 480ms
+    hoverTimeoutRef.current = setTimeout(() => showTooltipFor(target, person), 480);
+  }, [showTooltipFor]);
+
+  const handleCastHoverLeave = useCallback(() => {
+    devLog.debug('[MovieDetailsOverlay] hover leave');
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+    if (leaveTimeoutRef.current) clearTimeout(leaveTimeoutRef.current);
+    // small delay to allow entering tooltip without flicker
+    leaveTimeoutRef.current = setTimeout(() => hideTooltip(), 120);
+  }, [hideTooltip]);
+
+  // Allow hovering the tooltip itself to keep it open
+  const handleTooltipPointerEnter = useCallback(() => {
+    if (leaveTimeoutRef.current) {
+      clearTimeout(leaveTimeoutRef.current);
+      leaveTimeoutRef.current = null;
+    }
+  }, []);
+
+  const handleTooltipPointerLeave = useCallback(() => {
+    if (leaveTimeoutRef.current) clearTimeout(leaveTimeoutRef.current);
+    leaveTimeoutRef.current = setTimeout(() => hideTooltip(), 80);
+  }, [hideTooltip]);
+
+  // Minimalist Cast Tooltip renderer (uses portal to avoid clipping)
+  const CastTooltip = useCallback(() => {
+    const s = tooltipState;
+    devLog.debug('[MovieDetailsOverlay] CastTooltip render', { visible: s.visible, person: s.person?.name });
+    // If there's no person selected at all, nothing to render
+    if (!s.person) return null;
+
+    const person = s.person || {};
+    const imgSrc = person.image || (person.profile_path ? getTmdbImageUrl(person.profile_path, 'w185') : null);
+    const name = person.name || person.original_name || 'Unknown';
+    const role = person.character || person.role || '';
+    const extra = person.known_for_department || person.department || '';
+
+    const style = {
+      position: 'fixed',
+      left: `${s.x - 90}px`,
+      top: `${s.y - 90}px`,
+      // use calc to push it slightly above the avatar (more consistent than -100%)
+      transform: 'translate(-50%, calc(-100% - 8px))',
+      zIndex: (typeof portalZIndex === 'number' ? portalZIndex + 2000 : 2147483647),
+      pointerEvents: 'auto'
+    };
+
+    return createPortal(
+      <AnimatePresence>
+        {s.visible && (
+          <motion.div
+            key={`cast-tooltip-${s.person?.id || 'unknown'}`}
+            id={`cast-tooltip-${s.person?.id || 'unknown'}`}
+            ref={tooltipRef}
+            initial={{ opacity: 0, y: s.placement === 'top' ? 6 : -6, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: s.placement === 'top' ? 6 : -6, scale: 0.98 }}
+            transition={{ duration: _prefersReducedMotion ? 0.02 : 0.18, ease: 'easeOut' }}
+            onMouseEnter={handleTooltipPointerEnter}
+            onMouseLeave={handleTooltipPointerLeave}
+            role="tooltip"
+            aria-hidden={!s.visible}
+            className={`max-w-xs w-[220px] bg-transparent text-white rounded-full shadow-xl overflow-hidden p-3 flex gap-3 items-center border border-white/10 ${supportsBackdropFilter() && _isHighPerfDevice ? 'backdrop-blur-md bg-white/5' : ''}`}
+            style={style}
+          >
+            {imgSrc ? (
+              <img src={imgSrc} alt={name} className="w-12 h-12 rounded-full object-cover flex-shrink-0" width={48} height={48} loading="lazy" />
+            ) : (
+              <div className="w-12 h-12 rounded-full bg-white/6 flex items-center justify-center flex-shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white/40" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                </svg>
+              </div>
+            )}
+
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold leading-tight truncate">{name}</div>
+              {role && <div className="text-xs text-white/60 mt-1 truncate">{role}</div>}
+              {extra && <div className="text-xs text-white/50 mt-2">{extra}</div>}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>,
+      (typeof document !== 'undefined' && document.body) ? document.body : document.createElement('div')
+    );
+  }, [_isHighPerfDevice, _prefersReducedMotion, tooltipState, handleTooltipPointerEnter, handleTooltipPointerLeave]);
+
 
   const { addToWatchlist, removeFromWatchlist, isInWatchlist } = useWatchlist();
   const { startWatchingMovie, startWatchingEpisode, viewingProgress } = useViewingProgress();
@@ -992,9 +1212,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       const saved = loadPortalState();
       if (saved) {
         setSavedState(saved);
-        if (process.env.NODE_ENV === 'development') {
-          console.debug('[MovieDetailsOverlay] Loaded saved state:', saved);
-        }
+        devLog.debug('[MovieDetailsOverlay] Loaded saved state:', saved);
       }
     }
   }, [loadPortalState]);
@@ -1022,6 +1240,12 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       });
     }
   }, [trackInteraction, savePortalState, movie?.id, movie?.title, interactionCount]);
+
+  // Stable close handler used by close buttons
+  const handleCloseCallback = useCallback(() => {
+    handleInteraction('close_button_clicked', { method: 'close_button' });
+    if (onClose) onClose();
+  }, [handleInteraction, onClose]);
 
   // Coordinate animations on open
   useEffect(() => {
@@ -1159,6 +1383,10 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   const isMountedRef = useRef(true);
   const latestRequestRef = useRef(0);
   const retryTimeoutRef = useRef(null);
+  // Refs for timeouts created by handlers (like/feedback) so they can be cleared on unmount
+  const likeAnimationTimeoutRef = useRef(null);
+  const likeFeedbackTimeoutRef = useRef(null);
+  const watchlistFeedbackTimeoutRef = useRef(null);
   // 🚀 CONSOLIDATED: Single loading state to prevent excessive re-renders
   const [loadingStates, setLoadingStates] = useState({
     cast: true,
@@ -1258,7 +1486,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
           URL.revokeObjectURL(shareImageUrl);
           setShareImageUrl(null); // Clear state to prevent memory leaks
         } catch (error) {
-          console.warn('[MovieDetailsOverlay] Failed to revoke share image URL:', error);
+            devLog.warn('[MovieDetailsOverlay] Failed to revoke share image URL:', error);
         }
       }
       if (prevShareUrlRef.current) {
@@ -1266,7 +1494,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
           URL.revokeObjectURL(prevShareUrlRef.current);
           prevShareUrlRef.current = null;
         } catch (error) {
-          console.warn('[MovieDetailsOverlay] Failed to revoke previous share image URL:', error);
+          devLog.warn('[MovieDetailsOverlay] Failed to revoke previous share image URL:', error);
         }
       }
     };
@@ -1327,6 +1555,13 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   }, []);
 
   const [shareConfig, setShareConfig] = useState(getDefaultShareConfig());
+
+  // Compute preview image intrinsic size to prevent layout shift
+  const sharePreviewSize = useMemo(() => {
+    const isLandscape = shareConfig?.layout === 'landscape' || false;
+    if (isLandscape) return { width: 1020, height: 576 };
+    return { width: 520, height: 780 };
+  }, [shareConfig?.layout]);
 
   const shareRegenTimeoutRef = useRef(null);
   const prevShareUrlRef = useRef(null);
@@ -1433,12 +1668,13 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       scale: 1,
       y: 0,
       transition: {
-        // use a short ease for the backdrop; child content will use springs
-        duration: 0.22,
-        ease: 'easeOut',
-        // slight stagger for children to improve perceived smoothness
-        staggerChildren: 0.03,
-        when: 'beforeChildren'
+        // smoother timing & easing for a natural entrance
+        duration: 0.32,
+        ease: [0.22, 1, 0.36, 1], // gentle cubic-bezier
+        // slightly larger stagger so children flow in smoothly
+        staggerChildren: 0.045,
+        when: 'beforeChildren',
+        type: 'tween'
       },
     },
     exit: {
@@ -1465,9 +1701,9 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       transition: {
         // spring gives a more natural, less mechanical pop-in
         type: 'spring',
-        stiffness: 300,
-        damping: 28,
-        mass: 0.7
+        stiffness: 160,
+        damping: 20,
+        mass: 0.6
       },
     },
     exit: {
@@ -1556,7 +1792,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
             try {
             if (!isMountedRef.current) return;
             setIsGeneratingShare(true);
-            const blob = await createShareCardBlobWithWorker(movieDetails, shareConfig);
+            const blob = await scheduleShareGeneration(movieDetails, shareConfig);
             if (!isMountedRef.current) return;
             setIsGeneratingShare(false);
             if (blob) {
@@ -1566,7 +1802,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
               setShareImageUrl(url);
             }
           } catch (error) {
-            console.warn('[MovieDetailsOverlay] Failed to generate share image:', error);
+            devLog.warn('[MovieDetailsOverlay] Failed to generate share image:', error);
             if (isMountedRef.current) setIsGeneratingShare(false);
           }
         })();
@@ -1830,7 +2066,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
           ctx.globalAlpha = 1;
         } catch (e) {
           // Fallback to a simple geometric shape if icon fails to load
-          console.debug('Icon load failed, using fallback shape:', e.message);
+          devLog.debug('Icon load failed, using fallback shape:', e.message);
           ctx.globalAlpha = 0.97;
           ctx.fillStyle = config.textColor || '#FFFFFF';
           ctx.fillRect(logoX, logoY, logoSize, logoSize);
@@ -1987,7 +2223,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         try {
           return await canvas.convertToBlob({ type: 'image/png' });
         } catch (e) {
-          console.warn('OffscreenCanvas.convertToBlob failed, falling back to toBlob', e);
+          devLog.warn('OffscreenCanvas.convertToBlob failed, falling back to toBlob', e);
         }
       }
 
@@ -2007,7 +2243,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
 
       return null;
     } catch (err) {
-      console.warn('createShareCardBlob error:', err);
+      devLog.warn('createShareCardBlob error:', err);
       return null;
     }
   };
@@ -2496,14 +2732,14 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
           existingStyle.parentNode.removeChild(existingStyle);
         }
       } catch (error) {
-        console.warn('[MovieDetailsOverlay] Failed to remove scrollbar style:', error);
+    devLog.warn('[MovieDetailsOverlay] Failed to remove scrollbar style:', error);
         // Fallback: try to remove even if contains check failed
         try {
           if (existingStyle && existingStyle.parentNode) {
             existingStyle.parentNode.removeChild(existingStyle);
           }
         } catch (fallbackError) {
-          console.warn('[MovieDetailsOverlay] Fallback scrollbar style removal also failed:', fallbackError);
+          devLog.warn('[MovieDetailsOverlay] Fallback scrollbar style removal also failed:', fallbackError);
         }
       }
     };
@@ -2806,7 +3042,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         setHasMoreSimilar(false);
       }
     } catch (error) {
-      console.warn('Failed to load more similar movies:', error);
+      devLog.warn('Failed to load more similar movies:', error);
       setHasMoreSimilar(false);
     } finally {
       setIsSimilarLoadingMore(false);
@@ -2850,7 +3086,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                 })
                 .catch(error => {
                   if (!isMountedRef.current) return; // Check if still mounted
-                  console.warn('Failed to load more similar movies:', error);
+                  devLog.warn('Failed to load more similar movies:', error);
                   setHasMoreSimilar(false);
                 })
                 .finally(() => {
@@ -2935,6 +3171,25 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   const memoizedVideos = useMemo(() => videos, [videos?.results?.length]);
   const memoizedSimilarMovies = useMemo(() => similarMovies, [similarMovies?.length]);
 
+  // Always memoize the content object passed to StreamingPlayer so hooks are
+  // called in a stable order and we avoid calling hooks conditionally inside JSX.
+  const streamingPlayerContent = useMemo(() => {
+    if (!movieDetails) return null;
+    if (movieDetails?.type === 'tv') {
+      return {
+        id: movieDetails.id,
+        type: 'tv',
+        season: movieDetails.season,
+        episode: movieDetails.episode,
+        title: movieDetails.name || movieDetails.title,
+        name: movieDetails.name || movieDetails.title,
+        poster_path: movieDetails.poster_path || movieDetails.poster,
+        backdrop_path: movieDetails.backdrop_path || movieDetails.backdrop
+      };
+    }
+    return movieDetails;
+  }, [movieDetails]);
+
   // Memoize expensive calculations
   const isResumeAvailable = useMemo(() => {
     if (!movie || !movie.id || !viewingProgress) return false;
@@ -2983,7 +3238,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   // 🚀 FIXED: Simplified fetchMovieData with desktop-specific optimizations and infinite loop prevention
   const fetchMovieData = useCallback(async (attempt = 0) => {
     if (!movie?.id) {
-      console.warn('Invalid movie data provided to fetchMovieData');
+      devLog.warn('Invalid movie data provided to fetchMovieData');
       return;
     }
     
@@ -3067,7 +3322,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       setRetryCount(0);
 
     } catch (err) {
-      console.error(`Fetch attempt ${attempt + 1} failed:`, err);
+      devLog.error(`Fetch attempt ${attempt + 1} failed:`, err);
       
       if (attempt < 1 && isMountedRef.current) { // Simple retry logic
         setRetryCount(attempt + 1);
@@ -3107,7 +3362,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
 
     // Prevent unnecessary fetches with comprehensive validation
     if (!movie?.id) {
-      console.debug('Fetch blocked: No movie ID');
+      devLog.debug('Fetch blocked: No movie ID');
       return;
     }
     
@@ -3148,7 +3403,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       
       // Enhanced performance metrics logging
       if (fetchDuration > 2000) {
-        console.warn(`⚠️ Slow fetch detected: ${fetchDuration.toFixed(2)}ms`);
+        devLog.warn(`⚠️ Slow fetch detected: ${fetchDuration.toFixed(2)}ms`);
       }
     });
 
@@ -3170,7 +3425,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   const handleRetry = useCallback(() => {
     // Validate current state before retry
     if (!movie?.id) {
-      console.warn('Retry blocked: Invalid movie data');
+      devLog.warn('Retry blocked: Invalid movie data');
       return;
     }
     
@@ -3200,7 +3455,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   const handleOptimizedRetry = useCallback(() => {
     // Validate current state before retry
     if (!movie?.id) {
-      console.warn('Retry blocked: Invalid movie data');
+      devLog.warn('Retry blocked: Invalid movie data');
       return;
     }
     
@@ -3253,7 +3508,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       const observer = new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) {
           if (entry.entryType === 'measure' && entry.duration > 100) {
-            console.warn('[MovieDetailsOverlay] Slow operation detected:', entry.name, entry.duration + 'ms');
+            devLog.warn('[MovieDetailsOverlay] Slow operation detected:', entry.name, entry.duration + 'ms');
           }
         }
       });
@@ -3304,7 +3559,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
           document.body.offsetHeight;
         }
       } catch (error) {
-        console.warn('[MovieDetailsOverlay] Failed to restore body styles:', error);
+  devLog.warn('[MovieDetailsOverlay] Failed to restore body styles:', error);
       }
     };
   }, []); // Empty dependency array ensures this runs only on mount/unmount
@@ -3387,7 +3642,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       } catch (error) {
         // Handle AbortError silently - this is expected when component unmounts
         if (error.name !== 'AbortError') {
-          console.warn('[MovieDetailsOverlay] Error pausing video:', error);
+          devLog.warn('[MovieDetailsOverlay] Error pausing video:', error);
         }
       }
     }
@@ -3401,7 +3656,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
           trailerBtn.focus();
         }
       } catch (error) {
-        console.warn('[MovieDetailsOverlay] Failed to focus trailer button:', error);
+        devLog.warn('[MovieDetailsOverlay] Failed to focus trailer button:', error);
       }
     }, 200);
 
@@ -3446,7 +3701,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         } catch (error) {
           // Handle AbortError silently - this is expected when component unmounts
           if (error.name !== 'AbortError') {
-            console.warn('[MovieDetailsOverlay] Error cleaning up YouTube player:', error);
+            devLog.warn('[MovieDetailsOverlay] Error cleaning up YouTube player:', error);
           }
         } finally {
           // Always clear reference to prevent memory leaks
@@ -3517,7 +3772,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   }, [movie]);
 
   const handleStreamingError = useCallback((error) => {
-    console.error('Streaming error:', error);
+  devLog.error('Streaming error:', error);
     setShowStreamingPlayer(false);
     setStreamingUrl(null);
     
@@ -3573,7 +3828,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       // Dev warning
       if (process.env.NODE_ENV === "development") {
          
-        console.warn('[MovieDetailsOverlay] Invalid similar movie data:', similarMovie);
+  devLog.warn('[MovieDetailsOverlay] Invalid similar movie data:', similarMovie);
       }
       return;
     }
@@ -3629,7 +3884,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     if (movieData.type === 'tv' || 
         (similarMovie.name && !similarMovie.title) || 
         (similarMovie.media_type === 'tv')) {
-      console.log('[Similar Content] Enhanced TV show data for:', movieData.title || movieData.name);
+      devLog.log('[Similar Content] Enhanced TV show data for:', movieData.title || movieData.name);
       
       // Ensure TV shows have the correct structure
       movieData.media_type = 'tv';
@@ -3645,7 +3900,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     }
 
     // Enhanced: Log the processed movie data for debugging
-    console.log('[Similar Content] Processed movie data:', {
+    devLog.log('[Similar Content] Processed movie data:', {
       id: movieData.id,
       title: movieData.title,
       name: movieData.name,
@@ -3685,6 +3940,9 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   // Compute current optimistic state
   const isOptimisticallyInWatchlist =
     optimisticWatchlist !== null ? optimisticWatchlist : isInWatchlist(movie.id);
+
+  // Memoize optimistic value to prevent recalculation on each render
+  const memoIsOptimisticallyInWatchlist = useMemo(() => isOptimisticallyInWatchlist, [isOptimisticallyInWatchlist]);
 
   // Optimistic UI for watchlist with feedback
   const handleWatchlistClick = (e) => {
@@ -3729,37 +3987,38 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       }
     }
     
-    // Clear feedback message after delay
-    setTimeout(() => {
-      setWatchlistFeedback(null);
+    // Clear feedback message after delay with ref so we can cleanup
+    if (watchlistFeedbackTimeoutRef.current) clearTimeout(watchlistFeedbackTimeoutRef.current);
+    watchlistFeedbackTimeoutRef.current = setTimeout(() => {
+      if (isMountedRef.current) setWatchlistFeedback(null);
+      watchlistFeedbackTimeoutRef.current = null;
     }, 2000);
   };
   // Enhanced like handler with mobile feedback
   const handleLikeClick = useCallback((e) => {
     e.stopPropagation();
-    
+
     // Toggle like state
     const newLikeState = !isLiked;
     setIsLiked(newLikeState);
-    
+
     // Trigger animation
     setLikeAnimation(true);
-    
+
     // Set feedback message
     setLikeFeedback(newLikeState ? 'Liked!' : 'Removed from likes');
-    
+
     // Enhanced haptic feedback for mobile devices
-    if ('vibrate' in navigator) {
-      // Different vibration patterns for like vs unlike
-      if (newLikeState) {
-        // Like: short double vibration
-        navigator.vibrate([30, 50, 30]);
-      } else {
-        // Unlike: single vibration
-        navigator.vibrate([50]);
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      try {
+        // Different vibration patterns for like vs unlike
+        if (newLikeState) navigator.vibrate([30, 50, 30]);
+        else navigator.vibrate([50]);
+      } catch (err) {
+        devLog.debug('Vibration failed:', err);
       }
     }
-    
+
     // Optional: Play subtle sound effect for desktop users
     if (!isMobile && typeof window !== 'undefined') {
       try {
@@ -3783,12 +4042,12 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
           try {
             audioContext.close();
           } catch (error) {
-            console.debug('Audio context cleanup failed:', error);
+            devLog.debug('Audio context cleanup failed:', error);
           }
         }, 200);
       } catch (error) {
         // Silently fail if audio context is not available
-        console.debug('Audio feedback not available:', error);
+  devLog.debug('Audio feedback not available:', error);
       }
     }
     
@@ -3801,16 +4060,20 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       });
     }
     
-    // Clear animation after delay with proper cleanup
-    const animationTimeout = setTimeout(() => {
+    // Clear animation after delay with proper cleanup using refs
+    if (likeAnimationTimeoutRef.current) clearTimeout(likeAnimationTimeoutRef.current);
+    likeAnimationTimeoutRef.current = setTimeout(() => {
       if (!isMountedRef.current) return;
       setLikeAnimation(false);
+      likeAnimationTimeoutRef.current = null;
     }, 600);
-    
-    // Clear feedback message after delay with proper cleanup
-    const feedbackTimeout = setTimeout(() => {
+
+    // Clear feedback message after delay with proper cleanup using refs
+    if (likeFeedbackTimeoutRef.current) clearTimeout(likeFeedbackTimeoutRef.current);
+    likeFeedbackTimeoutRef.current = setTimeout(() => {
       if (!isMountedRef.current) return;
       setLikeFeedback(null);
+      likeFeedbackTimeoutRef.current = null;
     }, 2000);
     
     // Here you would typically make an API call to save the like state
@@ -3826,6 +4089,10 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     setLikeAnimation(false);
     setLikeFeedback(null);
     setWatchlistFeedback(null);
+    // Clear any pending timeouts from previous movie
+    if (likeAnimationTimeoutRef.current) { clearTimeout(likeAnimationTimeoutRef.current); likeAnimationTimeoutRef.current = null; }
+    if (likeFeedbackTimeoutRef.current) { clearTimeout(likeFeedbackTimeoutRef.current); likeFeedbackTimeoutRef.current = null; }
+    if (watchlistFeedbackTimeoutRef.current) { clearTimeout(watchlistFeedbackTimeoutRef.current); watchlistFeedbackTimeoutRef.current = null; }
   }, [movie.id]);
 
   const formatRuntime = (minutes) => {
@@ -3859,7 +4126,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       }
       if (process.env.NODE_ENV === "development") {
          
-        console.warn('[MovieDetailsOverlay] fetchBasicInfo: Invalid movie object:', movie);
+  devLog.warn('[MovieDetailsOverlay] fetchBasicInfo: Invalid movie object:', movie);
       }
       return;
     }
@@ -3903,10 +4170,10 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       // Performance tracking
       const fetchDuration = performance.now() - fetchStart;
       if (process.env.NODE_ENV === "development") {
-        console.debug(`[MovieDetailsOverlay] fetchBasicInfo: Fetched in ${fetchDuration.toFixed(2)}ms`);
+  devLog.debug(`[MovieDetailsOverlay] fetchBasicInfo: Fetched in ${fetchDuration.toFixed(2)}ms`);
       }
       if (fetchDuration > 2000) {
-        console.warn(`[MovieDetailsOverlay] fetchBasicInfo: Slow fetch (${fetchDuration.toFixed(2)}ms) for movie ID ${movie.id}`);
+  devLog.warn(`[MovieDetailsOverlay] fetchBasicInfo: Slow fetch (${fetchDuration.toFixed(2)}ms) for movie ID ${movie.id}`);
       }
 
       // Analytics: Track fetch duration
@@ -3946,7 +4213,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       setBasicLoading(false);
       if (process.env.NODE_ENV === "development") {
          
-        console.warn('[MovieDetailsOverlay] fetchBasicInfo failed:', error);
+  devLog.warn('[MovieDetailsOverlay] fetchBasicInfo failed:', error);
       }
     }
   }, [movie]);
@@ -4015,7 +4282,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       */
     } catch (err) {
       // Show partial data, but log error
-      console.error('Failed to fetch extra info:', err);
+  devLog.error('Failed to fetch extra info:', err);
     } finally {
       if (isMountedRef.current && latestRequestRef.current === requestId) {
         setIsCastLoading(false);
@@ -4027,7 +4294,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   // Consolidated episode loading function to prevent race conditions and flashing
   const loadEpisodesForSeason = useCallback(async (seasonNumber) => {
     if (!movie?.id || !seasonNumber || isEpisodesLoading) {
-      console.log('[Episode Loading] Skipping load - conditions not met:', { 
+      devLog.log('[Episode Loading] Skipping load - conditions not met:', { 
         hasMovieId: !!movie?.id, 
         seasonNumber, 
         isEpisodesLoading 
@@ -4037,11 +4304,11 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     
     // Check if we've already attempted to load this season to prevent infinite loops
     if (attemptedSeasons.has(seasonNumber)) {
-      console.log('[Episode Loading] Already attempted to load season:', seasonNumber, '- skipping to prevent infinite loop');
+      devLog.log('[Episode Loading] Already attempted to load season:', seasonNumber, '- skipping to prevent infinite loop');
       return;
     }
     
-    console.log('[Episode Loading] Loading episodes for season:', seasonNumber);
+    devLog.log('[Episode Loading] Loading episodes for season:', seasonNumber);
     setIsEpisodesLoading(true);
     
     // Mark this season as attempted
@@ -4051,7 +4318,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       const seasonData = await getTVSeason(movie.id, seasonNumber);
       const episodeList = seasonData.episodes || [];
       
-      console.log('[Episode Loading] Successfully loaded episodes:', {
+      devLog.log('[Episode Loading] Successfully loaded episodes:', {
         seasonNumber,
         episodeCount: episodeList.length,
         firstEpisode: episodeList[0]?.name || 'N/A'
@@ -4063,19 +4330,19 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       } else {
         // Don't clear episodes if the season has no episodes - keep previous episodes
         // This prevents flashing when switching between seasons
-        console.log('[Episode Loading] Season has no episodes, keeping previous episodes');
+  devLog.log('[Episode Loading] Season has no episodes, keeping previous episodes');
       }
       
     } catch (err) {
-      console.error('[Episode Loading] Failed to fetch season episodes:', err);
+  devLog.error('[Episode Loading] Failed to fetch season episodes:', err);
       
       // Don't clear episodes on error - this prevents flashing
       // Instead, keep the previous episodes and just log the error
-      console.warn('[Episode Loading] Keeping previous episodes due to error');
+  devLog.warn('[Episode Loading] Keeping previous episodes due to error');
       
       // Show user-friendly error message
       if (import.meta.env.DEV) {
-        console.error('Episode loading error details:', {
+        devLog.error('Episode loading error details:', {
           movieId: movie.id,
           seasonNumber,
           error: err.message,
@@ -4089,7 +4356,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
 
   // Keep the old function for backward compatibility but mark as deprecated
   const fetchSeasonEpisodes = useCallback(async (seasonNumber) => {
-    console.warn('[DEPRECATED] fetchSeasonEpisodes is deprecated, use loadEpisodesForSeason instead');
+    devLog.warn('[DEPRECATED] fetchSeasonEpisodes is deprecated, use loadEpisodesForSeason instead');
     return loadEpisodesForSeason(seasonNumber);
   }, [loadEpisodesForSeason]);
 
@@ -4101,7 +4368,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                      (movie?.id && movie?.name && !movie?.title); // Fallback: if it has 'name' instead of 'title', likely TV
     
     if (isTVShow && movie?.id) {
-      console.log('[TV Detection] Detected TV show:', {
+      devLog.log('[TV Detection] Detected TV show:', {
         movieId: movie.id,
         title: movie.title || movie.name,
         mediaType: movie.media_type,
@@ -4116,11 +4383,11 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       // Load seasons and episodes immediately for TV shows, don't wait for other content
       const loadTVContent = async () => {
         try {
-          console.log('[TV Loading] Starting to load TV content for:', movie.id);
+          devLog.log('[TV Loading] Starting to load TV content for:', movie.id);
           const seasonsData = await getTVSeasons(movie.id);
           
                       if (seasonsData && seasonsData.length > 0) {
-              console.log('[TV Loading] Successfully loaded seasons:', seasonsData.length);
+              devLog.log('[TV Loading] Successfully loaded seasons:', seasonsData.length);
               setSeasons(seasonsData);
               
               // Always set current season for new TV shows to ensure episodes load automatically
@@ -4129,19 +4396,19 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
               
               // Load episodes for the latest season automatically
               if (import.meta.env.DEV) {
-                console.log('[Episode Loading] Auto-loading episodes for season:', latestSeason.season_number);
+                devLog.log('[Episode Loading] Auto-loading episodes for season:', latestSeason.season_number);
               }
               
               // Load episodes for the latest season
               await loadEpisodesForSeason(latestSeason.season_number);
             } else {
-              console.warn('[TV Loading] No seasons found for TV show:', movie.id);
+              devLog.warn('[TV Loading] No seasons found for TV show:', movie.id);
               setSeasons([]);
               // Don't clear episodes here - keep them to prevent flashing
               // setEpisodes([]);
             }
         } catch (err) {
-          console.error('[TV Loading] Failed to load TV content independently:', err);
+          devLog.error('[TV Loading] Failed to load TV content independently:', err);
           // Set empty states on error to prevent UI from showing stale data
           setSeasons([]);
           // Don't clear episodes here - keep them to prevent flashing
@@ -4151,7 +4418,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
       
       loadTVContent();
     } else if (movie?.id) {
-      console.log('[TV Detection] Not a TV show:', {
+      devLog.log('[TV Detection] Not a TV show:', {
         movieId: movie.id,
         title: movie.title || movie.name,
         mediaType: movie.media_type,
@@ -4164,7 +4431,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
 
   const handleSeasonChange = useCallback((season) => {
     if (import.meta.env.DEV) {
-      console.log('[Season Change] User manually selected season:', season.season_number);
+      devLog.log('[Season Change] User manually selected season:', season.season_number);
     }
     setCurrentSeason(season);
     
@@ -4181,14 +4448,14 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
               setEpisodes(episodeList);
             } else {
               // Don't clear episodes if the season has no episodes - keep previous episodes
-              console.log('[Season Change] Season has no episodes, keeping previous episodes');
+              devLog.log('[Season Change] Season has no episodes, keeping previous episodes');
             }
             // Mark this season as attempted
             setAttemptedSeasons(prev => new Set([...prev, season.season_number]));
           } catch (err) {
-            console.error('[Episode Loading] Failed to fetch season episodes:', err);
+            devLog.error('[Episode Loading] Failed to fetch season episodes:', err);
             // Don't clear episodes on error - this prevents flashing
-            console.warn('[Season Change] Keeping previous episodes due to error');
+            devLog.warn('[Season Change] Keeping previous episodes due to error');
             // Mark this season as attempted even on error
             setAttemptedSeasons(prev => new Set([...prev, season.season_number]));
           }
@@ -4201,7 +4468,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   // Debug effect to monitor episodes state changes
   useEffect(() => {
     if (import.meta.env.DEV && movie?.media_type === 'tv') {
-      console.log('[Episode Debug] Episodes state changed:', {
+      devLog.log('[Episode Debug] Episodes state changed:', {
         episodeCount: episodes.length,
         isEpisodesLoading,
         currentSeason: currentSeason?.season_number,
@@ -4217,12 +4484,12 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         episodes.length === 0 && 
         !isEpisodesLoading) {
       
-      console.log('[Episode Fallback] No episodes loaded, retrying for season:', currentSeason.season_number);
+  devLog.log('[Episode Fallback] No episodes loaded, retrying for season:', currentSeason.season_number);
       
       // Small delay to prevent immediate retry
       const retryTimer = setTimeout(() => {
         if (episodes.length === 0 && !isEpisodesLoading) {
-          console.log('[Episode Fallback] Retrying episode load...');
+          devLog.log('[Episode Fallback] Retrying episode load...');
           loadEpisodesForSeason(currentSeason.season_number);
         }
       }, 1000);
@@ -4238,19 +4505,19 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         seasons.length === 0 && 
         !isEpisodesLoading) {
       
-      console.log('[TV Fallback] No seasons loaded, retrying TV content load for:', movie.id);
+  devLog.log('[TV Fallback] No seasons loaded, retrying TV content load for:', movie.id);
       
       // Small delay to prevent immediate retry
       const retryTimer = setTimeout(() => {
         if (seasons.length === 0 && !isEpisodesLoading) {
-          console.log('[TV Fallback] Retrying TV content load...');
+          devLog.log('[TV Fallback] Retrying TV content load...');
           
           // Force reload TV content
           const loadTVContent = async () => {
             try {
               const seasonsData = await getTVSeasons(movie.id);
               if (seasonsData && seasonsData.length > 0) {
-                console.log('[TV Fallback] Successfully loaded seasons on retry:', seasonsData.length);
+                devLog.log('[TV Fallback] Successfully loaded seasons on retry:', seasonsData.length);
                 setSeasons(seasonsData);
                 
                 if (!currentSeason) {
@@ -4260,7 +4527,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                 }
               }
             } catch (err) {
-              console.error('[TV Fallback] Failed to load TV content on retry:', err);
+              devLog.error('[TV Fallback] Failed to load TV content on retry:', err);
             }
           };
           
@@ -4281,7 +4548,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         episodes.length === 0 && 
         !isEpisodesLoading) {
       
-      console.log('[Episode Force Load] Seasons available but no episodes, forcing load for season:', currentSeason.season_number);
+  devLog.log('[Episode Force Load] Seasons available but no episodes, forcing load for season:', currentSeason.season_number);
       
       // Force load episodes for the current season
       loadEpisodesForSeason(currentSeason.season_number);
@@ -4293,12 +4560,12 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
     if (movie?.id && 
         (movie?.media_type === 'tv' || movie?.type === 'tv' || (movie?.name && !movie?.title))) {
       
-      console.log('[Movie Change] TV show detected, ensuring episodes load automatically');
+  devLog.log('[Movie Change] TV show detected, ensuring episodes load automatically');
       
       // Small delay to allow seasons to load first
       const episodeLoadTimer = setTimeout(() => {
         if (seasons.length > 0 && currentSeason?.season_number && episodes.length === 0 && !isEpisodesLoading) {
-          console.log('[Movie Change] Auto-loading episodes for season:', currentSeason.season_number);
+          devLog.log('[Movie Change] Auto-loading episodes for season:', currentSeason.season_number);
           loadEpisodesForSeason(currentSeason.season_number);
         }
       }, 500); // Wait 500ms for seasons to load
@@ -4382,7 +4649,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         })
         .catch(err => {
           if (!isMountedRef.current) return; // Check if still mounted
-          console.error('Failed to fetch extra info:', err);
+          devLog.error('Failed to fetch extra info:', err);
         })
         .finally(() => {
           if (!isMountedRef.current) return; // Check if still mounted
@@ -4419,13 +4686,13 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
           }
           
           if (import.meta.env.DEV && isMountedRef.current) {
-            console.log(`🚀 Preloaded ${similarData.results.length} similar items for ${movie.title || movie.name}`);
+            devLog.log(`🚀 Preloaded ${similarData.results.length} similar items for ${movie.title || movie.name}`);
           }
         }
       } catch (error) {
         if (!isMountedRef.current) return; // Check if still mounted
         if (import.meta.env.DEV) {
-          console.warn(`Failed to preload similar content for ${movie.title || movie.name}:`, error);
+          devLog.warn(`Failed to preload similar content for ${movie.title || movie.name}:`, error);
         }
       }
     };
@@ -4487,7 +4754,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         if (abortController.signal.aborted || !isMountedRef.current) {
           // Optionally log abort
           if (process.env.NODE_ENV === "development") {
-            console.debug("[MovieDetailsOverlay] Fetch aborted due to unmount/movie change.");
+            devLog.debug("[MovieDetailsOverlay] Fetch aborted due to unmount/movie change.");
           }
         } else {
           // Error already handled in fetchBasicInfo/fetchExtraInfo
@@ -4574,10 +4841,10 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         // Let the browser handle image cleanup naturally
         
         if (import.meta.env.DEV) {
-          console.debug('[MovieDetailsOverlay] Unmount cleanup completed');
+          devLog.debug('[MovieDetailsOverlay] Unmount cleanup completed');
         }
       } catch (e) {
-        console.warn('[MovieDetailsOverlay] Failed to perform unmount cleanup:', e);
+  devLog.warn('[MovieDetailsOverlay] Failed to perform unmount cleanup:', e);
       }
     };
   }, []);
@@ -4771,7 +5038,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
   useEffect(() => {
     if (process.env.NODE_ENV === 'development' && portalReady) {
       const portalInfo = portalManagerService.getPortalInfo(portalIdActual);
-      console.debug('[MovieDetailsOverlay] Portal Info:', {
+  devLog.debug('[MovieDetailsOverlay] Portal Info:', {
         id: portalIdActual,
         zIndex: portalZIndex,
         movieId: movieDetails?.id,
@@ -4783,11 +5050,11 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
 
   // Enhanced rendering check with portal readiness
   if (typeof window === "undefined" || !portalReady || !portalContainer) {
-    console.warn('🎬 [MovieDetailsOverlay] Not rendering - window:', typeof window !== "undefined", 'portalReady:', portalReady, 'portalContainer:', !!portalContainer);
+  devLog.warn('🎬 [MovieDetailsOverlay] Not rendering - window:', typeof window !== "undefined", 'portalReady:', portalReady, 'portalContainer:', !!portalContainer);
     return null;
   }
   
-  console.log('🎬 [MovieDetailsOverlay] About to render overlay content');
+  devLog.log('🎬 [MovieDetailsOverlay] About to render overlay content');
   
   const overlayContent = (
     <AnimatePresence>
@@ -4802,7 +5069,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
         exit="exit"
         onClick={handleClickOutside}
         tabIndex={-1}
-        style={{ zIndex: 999999999 }}
+        style={{ zIndex: 999999999, willChange: _prefersReducedMotion ? 'auto' : 'opacity, transform' }}
       >
         {/* Main content - parallax removed */}
         <motion.div
@@ -4818,7 +5085,9 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
           onClick={(e) => e.stopPropagation()}
           tabIndex={-1}
           style={{ 
-            zIndex: 1000000000
+            zIndex: 1000000000,
+            // hint the browser to prepare compositing for entry animations
+            willChange: _prefersReducedMotion ? 'auto' : 'transform, opacity'
           }}
         >
           {/* 🆕 NEW: Memory usage display for debugging */}
@@ -4861,7 +5130,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                     onClick={async () => {
                       try {
                         setIsGeneratingShare(true);
-                        const blob = await createShareCardBlobWithWorker(movieDetails, shareConfig);
+                        const blob = await scheduleShareGeneration(movieDetails, shareConfig);
                         if (blob) {
                           const url = URL.createObjectURL(blob);
                           // Create a promise that resolves when the image is loaded
@@ -4878,7 +5147,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                           setShowShareSheet(true);
                         }
                       } catch (error) {
-                        console.error('Error generating share card:', error);
+                        devLog.error('Error generating share card:', error);
     } finally {
                         setIsGeneratingShare(false);
                       }
@@ -4935,7 +5204,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                         initial="initial"
                         animate="loaded"
                         onError={(e) => {
-                          console.warn('Failed to load backdrop image:', e.target.src);
+                          devLog.warn('Failed to load backdrop image:', e.target.src);
                           // Clear failed image to prevent memory leaks
                           if (e.target) {
                             e.target.src = '';
@@ -4991,7 +5260,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                             initial="initial"
                             animate="loaded"
                             onError={(e) => {
-                              console.warn('Failed to load movie poster:', e.target.src);
+                              devLog.warn('Failed to load movie poster:', e.target.src);
                               // Clear failed image to prevent memory leaks
                               if (e.target) {
                                 e.target.src = '';
@@ -5061,7 +5330,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                       </motion.div>
                       
 
-                      <div className="flex flex-row items-center justify-center sm:justify-start gap-6 sm:gap-3 text-white/60 text-sm mb-4 sm:mb-6">
+                      <div className="flex flex-row items-center justify-center sm:justify-start gap-6 sm:gap-3 text-white/60 text-sm mb-4 sm:mb-6 lg:mb-0">
                         {movieDetails.type === 'movie' && movieDetails.release_date && (
                           <>
                             <div className="flex items-center gap-1">
@@ -5132,7 +5401,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                       </div>
 
                       {movieDetails.genres && (
-                        <div className="flex flex-wrap justify-center sm:justify-start gap-1.5 sm:gap-2 mb-3 sm:mb-6">
+                        <div className="flex flex-wrap justify-center sm:justify-start gap-1.5 sm:gap-2 lg:hidden mb-5">
                           {movieDetails.genres.map((genre, idx) => {
                             let key = '';
                             if (genre.id && typeof genre.id !== 'undefined' && genre.id !== null && genre.id !== '') {
@@ -5152,12 +5421,12 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                               </span>
                             );
                           })}
-                        </div>
+                          </div>
                       )}
 
                       {/* Action Buttons and Info Section */}
                       <motion.div 
-                        className="flex flex-col sm:flex-row items-center sm:items-end justify-between gap-4 my-4 sm:my-6"
+                        className="flex flex-col sm:flex-row items-center sm:items-end justify-between gap-4 mb-4 sm:mb-6 mt-0"
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ 
@@ -5167,7 +5436,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                       >
                       {/* Action Buttons */}
                         <motion.div 
-                          className="flex flex-row items-center justify-center sm:justify-start gap-3 sm:gap-4 w-full"
+                          className="flex flex-row items-center justify-center sm:justify-start gap-3 sm:gap-4 w-full mt-5 sm:mt-0"
                           variants={window.innerWidth > 1024 ? desktopStaggerItemVariants : staggerItemVariants}
                           initial="hidden"
                           animate="visible"
@@ -5289,25 +5558,71 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                           {/* Top Cast */}
                           {movieDetails.cast && movieDetails.cast.length > 0 && (
                             <div className="mb-2">
-                                                              <span className="block">
-                                  <span className="font-medium">Cast: </span>
-                                  {movieDetails.cast.length > 8 ? (
-                                    <div className="w-64 inline-block text-left">
-                                      <CastListVirtual items={movieDetails.cast} onClick={handleCastMemberClick} itemHeight={36} />
-                                    </div>
-                                  ) : (
-                                    movieDetails.cast.map((person, idx) => (
-                                      <span 
-                                        key={person.id || idx}
-                                        onClick={() => handleCastMemberClick(person)}
-                                        className="hover:text-white hover:cursor-pointer transition-colors duration-200"
-                                      >
-                                        {person.name}
-                                        {idx < movieDetails.cast.length - 1 ? ', ' : ''}
-                                      </span>
-                                    ))
-                                  )}
-                                </span>
+                                                              <div>
+                                                                {/* Desktop-only genres above cast */}
+                                                                {movieDetails.genres && (
+                                                                  <div className="hidden lg:flex flex-wrap justify-end gap-2 mb-3">
+                                                                    {movieDetails.genres.map((genre, idx) => (
+                                                                      <button
+                                                                        key={`cast-genre-${idx}`}
+                                                                        onClick={() => onGenreClick && onGenreClick(genre)}
+                                                                        className="px-2.5 py-0.5 text-white/50 bg-[rgb(255,255,255,0.03)] border-t-[1px] border-b-[1px] border-white/30 rounded-full text-xs hover:bg-white/10"
+                                                                      >
+                                                                        {genre.name}
+                                                                      </button>
+                                                                    ))}
+                                                                  </div>
+                                                                )}
+                                                                {movieDetails.cast.length > 8 ? (
+                                                                  <div className="w-64 inline-block text-left">
+                                                                    <CastListVirtual items={movieDetails.cast} onClick={handleCastMemberClick} itemHeight={36} />
+                                                                  </div>
+                                                                ) : (
+                                                                  <div className="flex items-start gap-6 overflow-x-auto whitespace-nowrap py-1" style={{ WebkitOverflowScrolling: 'touch' }}>
+                                                                    {movieDetails.cast.map((person, idx) => {
+                                                                        const imgSrc = person.image || (person.profile_path ? getTmdbImageUrl(person.profile_path, 'w154') : null);
+                                                                        const delay = Math.min(idx * 0.03, 0.6);
+                                                                        const key = person.id || idx;
+                                                                        return (
+                                                                          <motion.button
+                                                                            key={key}
+                                                                            ref={el => { if (el) castButtonRefs.current[key] = el; }}
+                                                                            type="button"
+                                                                            onClick={() => handleCastMemberClick(person)}
+                                                                            onMouseEnter={(e) => handleCastHoverEnter(e, person)}
+                                                                            onMouseLeave={() => handleCastHoverLeave()}
+                                                                            onFocus={(e) => handleCastHoverEnter(e, person)}
+                                                                            onBlur={() => handleCastHoverLeave()}
+                                                                            initial={{ opacity: 0, y: 6, scale: 0.98 }}
+                                                                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                                            transition={{ duration: 0.28, ease: [0.2, 0.8, 0.2, 1], delay }}
+                                                                            className="inline-flex flex-col items-center hover:text-white hover:cursor-pointer transition-colors duration-200 text-center w-12 flex-shrink-0"
+                                                                            aria-haspopup="true"
+                                                                            aria-expanded={tooltipState.visible && tooltipState.person && tooltipState.person.id === person.id}
+                                                                            aria-controls={`cast-tooltip-${key}`}
+                                                                          >
+                                                                            {imgSrc ? (
+                                                                              <img
+                                                                                src={imgSrc}
+                                                                                alt={person.name}
+                                                                                className="w-12 h-12 rounded-full object-cover flex-shrink-0"
+                                                                                loading="lazy"
+                                                                                width={48}
+                                                                                height={48}
+                                                                              />
+                                                                            ) : (
+                                                                              <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center text-white/30 flex-shrink-0">
+                                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                                                                                  <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                                                                                </svg>
+                                                                              </div>
+                                                                            )}
+                                                                          </motion.button>
+                                                                        );
+                                                                      })}
+                                                                  </div>
+                                                                )}
+                                                              </div>
                             </div>
                           )}
                           
@@ -5421,7 +5736,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                         </motion.div>
                       </motion.div>
 
-                                                                                         {/* Mobile Action Buttons - Above Overview */}
+                                            {/* Mobile Action Buttons - Above Overview */}
                                              <motion.div 
                                                className="flex sm:hidden items-center justify-center gap-8 mt-4"
                                                variants={staggerContainerVariants}
@@ -5573,7 +5888,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                             onClick={async () => {
                               try {
                                 setIsGeneratingShare(true);
-                                const blob = await createShareCardBlobWithWorker(movieDetails, shareConfig);
+                                const blob = await scheduleShareGeneration(movieDetails, shareConfig);
                                 if (blob) {
                                   const url = URL.createObjectURL(blob);
                                   // Create a promise that resolves when the image is loaded
@@ -5590,7 +5905,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                                   setShowShareSheet(true);
                                 }
                               } catch (error) {
-                                console.error('Error generating share card:', error);
+                                devLog.error('Error generating share card:', error);
                               } finally {
                                 setIsGeneratingShare(false);
                               }
@@ -5719,6 +6034,17 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                               src={shareImageUrl}
                               alt="Share preview"
                               className="w-full h-full object-contain"
+                              width={sharePreviewSize.width}
+                              height={sharePreviewSize.height}
+                              loading="lazy"
+                              decoding="async"
+                              onLoad={() => {
+                                setIsImageReady(true);
+                              }}
+                              onError={(e) => {
+                                devLog.warn('Share preview failed to load:', e?.target?.src);
+                                setIsImageReady(false);
+                              }}
                               initial={{ opacity: 0, y: isMobile ? 6 : 6, scale: 1, filter: 'none' }}
                               animate={{ opacity: 1, y: 0, scale: 1, filter: 'none' }}
                               exit={{ opacity: 0, y: isMobile ? 4 : 4, scale: 1, filter: 'none' }}
@@ -6448,12 +6774,15 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                                                                               <img
                                           src={getOptimizedImageUrl(episode.still_path, 'w500')}
                                           alt={episode.name}
-                                          className="w-full h-full object-cover transition-opacity duration-300"
-                                          loading="lazy"
-                                          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                                          fetchpriority="low"
+                                                                                  className="w-full h-full object-cover transition-opacity duration-300"
+                                                                                  width={500}
+                                                                                  height={281}
+                                                                                  loading="lazy"
+                                                                                  decoding="async"
+                                                                                  sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                                                                                  fetchpriority="low"
                                           onError={(e) => {
-                                            console.warn('Failed to load episode still:', e.target.src);
+                                            devLog.warn('Failed to load episode still:', e.target.src);
                                           }}
                                         />
                                     ) : (
@@ -6587,7 +6916,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                                           sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                                           fetchpriority="low"
                                           onError={(e) => {
-                                            console.warn('Failed to load episode still (list view):', e.target.src);
+                                            devLog.warn('Failed to load episode still (list view):', e.target.src);
                                           }}
                                         />
                                       ) : (
@@ -6984,7 +7313,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
                               // Use the YouTube error handler utility
                               const wasHandled = handleYouTubeError(error, import.meta.env.DEV);
                               if (!wasHandled) {
-                                console.warn('YouTube player error:', error);
+                                devLog.warn('YouTube player error:', error);
                               }
                               setIsTrailerLoading(false);
                             }}
@@ -7031,23 +7360,7 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
               isOpen={showStreamingPlayer}
               onClose={handleCloseStreaming}
               onError={handleStreamingError}
-              content={(() => {
-                if (movieDetails?.type === 'tv') {
-                  const content = {
-                    id: movieDetails.id,
-                    type: 'tv',
-                    season: movieDetails.season,
-                    episode: movieDetails.episode,
-                    title: movieDetails.name || movieDetails.title,
-                    name: movieDetails.name || movieDetails.title,
-                    poster_path: movieDetails.poster_path || movieDetails.poster,
-                    backdrop_path: movieDetails.backdrop_path || movieDetails.backdrop
-                  };
-                 
-                  return content;
-                }
-                return movieDetails;
-              })()}
+                  content={streamingPlayerContent}
               currentService={currentService}
               onServiceChange={handleServiceChange}
             />
@@ -7063,11 +7376,15 @@ const MovieDetailsOverlay = ({ movie, onClose, onMovieSelect, onGenreClick }) =>
             onSeriesSelect={onMovieSelect}
           />
         )}
+        {/* Cast Tooltip Portal (minimalist, smooth) - always mount so it can measure/log; internal returns null when hidden */}
+        {typeof document !== 'undefined' && (
+          <CastTooltip />
+        )}
       </motion.div>
     </AnimatePresence>
   );
 
-  console.log('🎬 [MovieDetailsOverlay] Rendering portal content, portalReady:', portalReady);
+  devLog.log('🎬 [MovieDetailsOverlay] Rendering portal content, portalReady:', portalReady);
   return createPortalContent(overlayContent);
 };
 
@@ -7076,6 +7393,7 @@ const MemoizedMovieDetailsOverlay = React.memo(MovieDetailsOverlay, (prevProps, 
   // Only re-render if movie ID changes or onClose function changes
   return (
     prevProps.movie?.id === nextProps.movie?.id &&
+    (prevProps.movie?.type || prevProps.movie?.media_type) === (nextProps.movie?.type || nextProps.movie?.media_type) &&
     prevProps.onClose === nextProps.onClose &&
     prevProps.onMovieSelect === nextProps.onMovieSelect &&
     prevProps.onGenreClick === nextProps.onGenreClick

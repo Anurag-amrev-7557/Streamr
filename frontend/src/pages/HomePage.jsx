@@ -19,6 +19,7 @@ import { Link } from 'react-router-dom';
 import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import CenteredLogoLoader from '../components/CenteredLogoLoader';
 import useReducedMotion from '../hooks/useReducedMotion';
+import VisibleOnDemand from '../components/VisibleOnDemand';
 import { defaultTransition, fadeUpVariant } from '../utils/animationVariants';
 
 // Core Services and Configuration
@@ -218,8 +219,12 @@ const swiperStyles = `
   }
 
   /* Enhanced touch feedback */
+  /* Allow pointer/mouse dragging on desktop and touch on mobile. Setting to 'auto'
+     prevents horizontal drag from being blocked by restrictive touch-action rules. */
+  .swiper,
+  .swiper-wrapper,
   .swiper-slide {
-    touch-action: pan-y pinch-zoom;
+    touch-action: auto;
   }
 
   /* Improved focus states for accessibility */
@@ -515,86 +520,7 @@ const MovieDetailsOverlay = lazy(() => import('../components/MovieDetailsOverlay
 
 
 
-// Optimized visibility gate for better performance and immediate rendering
-const VisibleOnDemand = ({ children, rootMargin = '400px', placeholderHeight = 300 }) => {
-  // start hidden to defer rendering until visible
-  const [isVisible, setIsVisible] = useState(false);
-  const [shouldAnimate, setShouldAnimate] = useState(false);
-  const ref = useRef(null);
-  const shouldReduceMotion = getReducedMotionOrLowPower() || useReducedMotion();
 
-  useEffect(() => {
-  if (!ref.current || isVisible) return;
-    
-    let observer;
-    try {
-      observer = new IntersectionObserver((entries) => {
-        const entry = entries[0];
-        if (entry && (entry.isIntersecting || entry.intersectionRatio > 0)) {
-          // Make visible immediately so data can load
-          setIsVisible(true);
-          observer.disconnect();
-          
-          // Delay animation until after content is likely rendered to avoid jank
-          // Use two nested requestAnimationFrame calls to wait for paint
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              setShouldAnimate(true);
-            });
-          });
-        }
-      }, {
-        root: null, 
-        rootMargin, 
-        threshold: 0.01 
-      });
-      
-      observer.observe(ref.current);
-    } catch (_) {
-      // Fallback: render immediately if IntersectionObserver not available
-      setIsVisible(true);
-      setShouldAnimate(true);
-    }
-    
-    return () => {
-      if (observer) {
-        try { 
-          observer.disconnect(); 
-        } catch (_) {}
-      }
-    };
-  }, [rootMargin, isVisible]);
-
-  return (
-    <div ref={ref} style={{ minHeight: placeholderHeight }}>
-      {isVisible ? (
-        shouldReduceMotion ? (
-          // 🚀 OPTIMIZED: Use plain div for low-end devices to avoid GPU overhead
-          <div style={{ contain: 'layout style paint' }}>
-            {children}
-          </div>
-        ) : (
-          <motion.div 
-            style={{ 
-              contain: 'layout style paint',
-              // 🚀 OPTIMIZED: Minimal GPU usage for smooth performance
-              backfaceVisibility: 'hidden',
-              WebkitBackfaceVisibility: 'hidden',
-              perspective: 1000,
-            }}
-            initial={{ opacity: 0, y: 20 }}
-            animate={shouldAnimate ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-            transition={shouldReduceMotion ? { duration: 0 } : { ...defaultTransition, duration: 0.5 }}
-          >
-            {children}
-          </motion.div>
-        )
-      ) : (
-        <div style={{ height: placeholderHeight }} aria-hidden="true" />
-      )}
-    </div>
-  );
-};
 
 // Optimized device capability detection for better performance
 const useDevicePerformanceHints = () => {
@@ -999,6 +925,12 @@ const CategorySwiper = memo(({ categories, activeCategory, onCategoryClick, isMo
           navigation={false}
           onSwiper={(swiper) => { categorySwiperRef.current = swiper; }}
           freeMode={memoizedFreeMode}
+          // Allow desktop mouse dragging and ensure pointer events are respected
+          simulateTouch={true}
+          touchStartPreventDefault={false}
+          touchStartForcePreventDefault={false}
+          // For pointer events (pen/mouse) ensure Swiper handles them
+          pointerEventsTarget="container"
           mousewheel={memoizedMousewheel}
           keyboard={memoizedKeyboard}
           grabCursor={true}
@@ -1242,6 +1174,45 @@ const MovieSectionSwiper = memo(({ title, movies, loading, onLoadMore, hasMore, 
       }
     };
   }, [movies, renderCount]);
+  // Memoize items so shallow equality holds between renders when movies doesn't change
+  const items = useMemo(() => Array.isArray(movies) ? movies : [], [movies]);
+  const itemsToRender = useMemo(() => items.slice(0, renderCount), [items, renderCount]);
+
+  // Stable handlers to avoid recreating closures per render
+  const handleMovieSelect = useCallback((movie) => {
+    onMovieSelect && onMovieSelect(movie);
+  }, [onMovieSelect]);
+
+  const handleMovieHover = useCallback((movie, index) => {
+    onMovieHover && onMovieHover(movie, index, items);
+  }, [onMovieHover, items]);
+
+  const handlePrefetch = useCallback((movieId) => {
+    onPrefetch && onPrefetch(movieId);
+  }, [onPrefetch]);
+
+  // Create memoized Maps of handlers per movie id to avoid recreating closures within map loop
+  const movieSelectHandlers = useMemo(() => {
+    const m = new Map();
+    for (const mv of itemsToRender) m.set(mv.id, () => handleMovieSelect(mv));
+    return m;
+  }, [itemsToRender, handleMovieSelect]);
+
+  const movieHoverHandlers = useMemo(() => {
+    const m = new Map();
+    for (let i = 0; i < itemsToRender.length; i++) {
+      const mv = itemsToRender[i];
+      m.set(mv.id, () => handleMovieHover(mv, i));
+    }
+    return m;
+  }, [itemsToRender, handleMovieHover]);
+
+  const moviePrefetchHandlers = useMemo(() => {
+    const m = new Map();
+    for (const mv of itemsToRender) m.set(mv.id, () => handlePrefetch(mv.id));
+    return m;
+  }, [itemsToRender, handlePrefetch]);
+
   if (isMobile) {
     return (
       <div className="mt-8 px-4">
@@ -1338,44 +1309,6 @@ const MovieSectionSwiper = memo(({ title, movies, loading, onLoadMore, hasMore, 
     );
   }
 
-  // Memoize items so shallow equality holds between renders when movies doesn't change
-  const items = useMemo(() => Array.isArray(movies) ? movies : [], [movies]);
-  const itemsToRender = useMemo(() => items.slice(0, renderCount), [items, renderCount]);
-
-  // Stable handlers to avoid recreating closures per render
-  const handleMovieSelect = useCallback((movie) => {
-    onMovieSelect && onMovieSelect(movie);
-  }, [onMovieSelect]);
-
-  const handleMovieHover = useCallback((movie, index) => {
-    onMovieHover && onMovieHover(movie, index, items);
-  }, [onMovieHover, items]);
-
-  const handlePrefetch = useCallback((movieId) => {
-    onPrefetch && onPrefetch(movieId);
-  }, [onPrefetch]);
-
-  // Create memoized Maps of handlers per movie id to avoid recreating closures within map loop
-  const movieSelectHandlers = useMemo(() => {
-    const m = new Map();
-    for (const mv of itemsToRender) m.set(mv.id, () => handleMovieSelect(mv));
-    return m;
-  }, [itemsToRender, handleMovieSelect]);
-
-  const movieHoverHandlers = useMemo(() => {
-    const m = new Map();
-    for (let i = 0; i < itemsToRender.length; i++) {
-      const mv = itemsToRender[i];
-      m.set(mv.id, () => handleMovieHover(mv, i));
-    }
-    return m;
-  }, [itemsToRender, handleMovieHover]);
-
-  const moviePrefetchHandlers = useMemo(() => {
-    const m = new Map();
-    for (const mv of itemsToRender) m.set(mv.id, () => handlePrefetch(mv.id));
-    return m;
-  }, [itemsToRender, handlePrefetch]);
 
   return (
     <div className="mt-8">
@@ -1448,6 +1381,11 @@ const MovieSectionSwiper = memo(({ title, movies, loading, onLoadMore, hasMore, 
             onSwiper={(swiper) => { swiperRef.current = swiper; }}
             navigation={useMemo(() => ({ nextEl: `.${sectionKey}-swiper-next`, prevEl: `.${sectionKey}-swiper-prev` }), [sectionKey])}
             mousewheel={useMemo(() => ({ forceToAxis: true, sensitivity: 1, releaseOnEdges: true }), [])}
+            // Enable mouse dragging on desktop
+            simulateTouch={true}
+            touchStartPreventDefault={false}
+            touchStartForcePreventDefault={false}
+            pointerEventsTarget="container"
             keyboard={useMemo(() => ({ enabled: true, onlyInViewport: true }), [])}
             grabCursor={true}
             touchRatio={1}
@@ -2046,6 +1984,8 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
   const [prefetchComplete, setPrefetchComplete] = useState(false);
   const hoverTimeoutRef = useRef(null);
   const prefetchTimeoutRef = useRef(null);
+  // Keep references to prefetch images so we can cancel on unmount
+  const prefetchImagesRef = useRef([]);
   const { isMobile } = useViewport();
   const [isOpening, setIsOpening] = useState(false);
   const rootRef = useRef(null);
@@ -2151,21 +2091,23 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
       }
       
       // 🚀 OPTIMIZED: Parallel image loading with priority-based execution
-      const imagePrefetches = imageUrls.map(
-        ({ url, priority }) =>
-          new Promise(resolve => {
+      const imagePrefetches = imageUrls.map(({ url, priority }) =>
+        new Promise((resolve) => {
+          try {
             const img = new window.Image();
             img.crossOrigin = 'anonymous';
             // Set loading attribute for better performance
-            if (priority === 'high') {
-              img.loading = 'eager';
-            } else {
-              img.loading = 'lazy';
-            }
+            img.loading = priority === 'high' ? 'eager' : 'lazy';
             img.onload = () => resolve(true);
             img.onerror = () => resolve(false);
+            // store ref for cleanup
+            prefetchImagesRef.current.push(img);
             img.src = url;
-          })
+          } catch (e) {
+            // resolve gracefully on environments that don't support Image
+            resolve(false);
+          }
+        })
       );
       if (imagePrefetches.length > 0) {
         prefetchPromises.push(Promise.all(imagePrefetches));
@@ -2199,6 +2141,22 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
     poster_path,
     backdrop_path
   ]);
+
+  // Cleanup any prefetch images on unmount to avoid lingering network activity
+  useEffect(() => {
+    return () => {
+      try {
+        prefetchImagesRef.current.forEach((img) => {
+          try {
+            img.onload = null;
+            img.onerror = null;
+            img.src = '';
+          } catch (_) {}
+        });
+      } catch (_) {}
+      prefetchImagesRef.current = [];
+    };
+  }, []);
 
   // Enhanced: smarter debouncing, touch support, and analytics
   // Handle mouse enter/touch start with debouncing and analytics
@@ -2357,22 +2315,49 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
   // Mobile detection handled by useViewport hook
 
   // Modified click handler that prevents clicks during dragging
+  const imageSource = getBestImageSource();
+  // DEV: log imageSource changes to diagnose mobile-only flicker
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      console.debug(`MovieCard:${id} imageSource ->`, imageSource, 'isMobile:', isMobile);
+    }
+  }, [imageSource, id, isMobile]);
+
   const handleCardClick = useCallback((event) => {
     // Prevent click if user was dragging (mouse pressed + moved)
     if (isMousePressed && hasMoved) {
-      event.preventDefault();
-      event.stopPropagation();
+      event && event.preventDefault();
+      event && event.stopPropagation();
+      // eslint-disable-next-line no-console
       console.log('Click prevented - mouse was pressed and moved');
       return;
     }
-    
-    // Call the original onClick handler
+
+    // Call the original onClick handler with a normalized movie object
     if (onClick) {
-      onClick();
+      try {
+        const movieObject = {
+          id,
+          title,
+          poster_path: poster || poster_path || imageSource || '',
+          backdrop_path: backdrop || backdrop_path || imageSource || '',
+          media_type: media_type || type || 'movie',
+          overview: overview || '',
+          runtime,
+          release_date,
+          first_air_date,
+          vote_average: typeof vote_average === 'number' ? vote_average : rating
+        };
+        onClick(movieObject);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('MovieCard onClick error', err);
+      }
     } else {
+      // eslint-disable-next-line no-console
       console.log('No onClick handler provided');
     }
-  }, [isMousePressed, hasMoved, onClick]);
+  }, [isMousePressed, hasMoved, onClick, id, title, poster, poster_path, imageSource, backdrop, backdrop_path, media_type, type, overview, runtime, release_date, first_air_date, vote_average, rating]);
 
   const handleWatchlistClick = (e) => {
     e.preventDefault();
@@ -2436,13 +2421,6 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
     return "w-80 xl:w-[340px]";
   };
 
-  const imageSource = getBestImageSource();
-  // DEV: log imageSource changes to diagnose mobile-only flicker
-  useEffect(() => {
-    if (import.meta.env.DEV) {
-      console.debug(`MovieCard:${id} imageSource ->`, imageSource, 'isMobile:', isMobile);
-    }
-  }, [imageSource, id, isMobile]);
   const aspectRatio = getAspectRatio();
   const cardWidth = getCardWidth();
   return (
@@ -2468,10 +2446,13 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
         {/* Clickable area for movie details */}
         <div 
           className="w-full h-full cursor-pointer group"
+          role="button"
+          tabIndex={0}
+          aria-label={`Open details for ${title}`}
           onClick={async (e) => {
             if (isMousePressed && hasMoved) {
-              e.preventDefault();
-              e.stopPropagation();
+              e && e.preventDefault();
+              e && e.stopPropagation();
               return;
             }
             try {
@@ -2482,6 +2463,19 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
               }
             } finally {
               setIsOpening(false);
+            }
+          }}
+          onKeyDown={(e) => {
+            const k = e.key;
+            if (k === 'Enter' || k === ' ') {
+              e.preventDefault();
+              e.stopPropagation();
+              try {
+                handleCardClick(e);
+              } catch (err) {
+                // eslint-disable-next-line no-console
+                console.error('Keyboard activation error', err);
+              }
             }
           }}
           onMouseEnter={handleMouseEnter}
@@ -2510,7 +2504,7 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
           />
         {/* Click Loader Overlay */}
         {isOpening && (
-          <CenteredLogoLoader />
+          <CenteredLogoLoader visible={true} />
         )}
         </div>
         

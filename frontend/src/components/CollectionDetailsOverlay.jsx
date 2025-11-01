@@ -383,9 +383,7 @@ const CollectionDetailsOverlay = ({ collection, onClose, onMovieSelect }) => {
                         
                         {/* Click Loader Overlay */}
                         {openingMovieId === movie.id && (
-                          <>
-                            <CenteredLogoLoader />
-                          </>
+                          <CenteredLogoLoader visible={true} />
                         )}
                         
                         {/* Overlay with movie info */}

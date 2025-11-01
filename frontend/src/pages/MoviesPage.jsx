@@ -650,7 +650,7 @@ const MovieCard = memo(({ movie, index, onClick, onPrefetch, onImageLoad, onImag
 
         {/* Click Loader Overlay */}
         {isOpening && (
-          <CenteredLogoLoader />
+          <CenteredLogoLoader visible={true} />
         )}
 
         
@@ -1093,6 +1093,8 @@ const MoviesPage = () => {
       clearTimeout(timeoutId);
     };
   }, [searchQuery]); // Re-run when searchQuery changes (when category selector appears/disappears)
+
+  
 
   // Add back missing state variables
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -1952,6 +1954,42 @@ const MoviesPage = () => {
     { id: 'disney', name: 'Disney+', networkId: 2 },
     { id: 'apple', name: 'Apple TV+', networkId: 284 }
   ], []);
+
+  // ⌨️ Keyboard navigation for category selector (ArrowLeft / ArrowRight / Home / End)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const categorySelector = categorySelectorRef.current;
+      if (!categorySelector || searchQuery) return; // disable when searching
+
+      const buttons = Array.from(categorySelector.querySelectorAll('button'));
+      const currentIndex = categories.findIndex(c => c.id === activeCategory);
+
+      if (e.key === 'ArrowLeft' && currentIndex > 0) {
+        e.preventDefault();
+        const prevCategory = categories[currentIndex - 1];
+        handleCategoryChange(prevCategory.id);
+        buttons[currentIndex - 1]?.focus();
+      } else if (e.key === 'ArrowRight' && currentIndex < categories.length - 1) {
+        e.preventDefault();
+        const nextCategory = categories[currentIndex + 1];
+        handleCategoryChange(nextCategory.id);
+        buttons[currentIndex + 1]?.focus();
+      } else if (e.key === 'Home') {
+        e.preventDefault();
+        const firstCategory = categories[0];
+        handleCategoryChange(firstCategory.id);
+        buttons[0]?.focus();
+      } else if (e.key === 'End') {
+        e.preventDefault();
+        const lastCategory = categories[categories.length - 1];
+        handleCategoryChange(lastCategory.id);
+        buttons[buttons.length - 1]?.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [activeCategory, categories, searchQuery, handleCategoryChange]);
 
   const getImageUrl = (path) => {
     if (!path) return null;

@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useAnimation } from 'framer-motion';
+import FocusTrap from 'focus-trap-react';
 import useReducedMotion from '../../hooks/useReducedMotion';
 import { springEntrance, defaultTransition, reducedMotionTransition } from '../../utils/animationVariants';
 import { HomeIcon, FilmIcon, TvIcon, UserGroupIcon, BookmarkIcon, EllipsisHorizontalIcon, BookOpenIcon, AdjustmentsHorizontalIcon } from '@heroicons/react/24/outline';
 import { useLoading } from '../../contexts/LoadingContext';
 import { scheduleRaf, cancelRaf } from '../../utils/throttledRaf';
+import { useStreamingIconAnimation } from '../../hooks/useStreamingIconAnimation';
 
 const navItems = [
   { to: '/', label: 'Home', icon: <HomeIcon className="w-6 h-6" /> },
@@ -25,13 +27,51 @@ const BottomNav = () => {
   const containerRef = useRef(null);
   const itemRefs = useRef(new Map());
   const indicatorRef = useRef(null);
+  const menuSheetRef = useRef(null);
   
   // Performance optimization refs
-  const lastIndicatorMetricsRef = useRef({ x: 0, y: 4, width: 60, height: 48 });
+  // We animate the indicator using translate3d + scaleX to avoid layout thrashing.
+  // Keep a fixed base width/height and scale the X axis for smooth GPU-only transforms.
+  const INDICATOR_BASE_WIDTH = 60;
+  const INDICATOR_HEIGHT = 48;
+  const lastIndicatorMetricsRef = useRef({ x: 0, scale: 1 });
   const rafIdRef = useRef(null);
   const resizeObserverRef = useRef(null);
+  // Cache of measured item metrics to avoid calling getBoundingClientRect too often
+  const itemMetricsRef = useRef(new Map());
   const isDocHiddenRef = useRef(false);
   const isFirstMount = useRef(true);
+  // idle callback id for deferring non-urgent work
+  const idleIdRef = useRef(null);
+
+  // Framer-motion controls and streaming animation hook are declared after activeKey
+  // (moved below) to avoid using activeKey before it's initialized.
+
+  // requestIdleCallback wrapper with fallback
+  const scheduleIdle = useCallback((fn, options) => {
+    try {
+      if ('requestIdleCallback' in window) {
+        const id = window.requestIdleCallback(fn, options);
+        idleIdRef.current = id;
+        return id;
+      }
+    } catch (_) {}
+    // fallback to setTimeout when requestIdleCallback not available
+    const id = setTimeout(fn, 200);
+    idleIdRef.current = id;
+    return id;
+  }, []);
+
+  const cancelIdle = useCallback(() => {
+    try {
+      if ('cancelIdleCallback' in window && idleIdRef.current) {
+        window.cancelIdleCallback(idleIdRef.current);
+      } else if (idleIdRef.current) {
+        clearTimeout(idleIdRef.current);
+      }
+    } catch (_) {}
+    idleIdRef.current = null;
+  }, []);
   
   // Timer management to prevent memory leaks
   const timersRef = useRef(new Set());
@@ -46,6 +86,9 @@ const BottomNav = () => {
     timersRef.current.forEach(timer => clearTimeout(timer));
     timersRef.current.clear();
   }, []);
+
+  // Manage focus for accessibility: remember the element that opened the menu
+  const openerRef = useRef(null);
 
   // Centralized RAF scheduler to reduce repetition and ensure previous RAF is canceled
   const scheduleUpdate = useCallback((fn) => {
@@ -134,6 +177,10 @@ const BottomNav = () => {
     return result;
   }, [location.pathname, isMenuActive]);
 
+  // Framer-motion controls so we can trigger spring animations (rubber band) like MoviesPage
+  const indicatorControls = useAnimation();
+  const { getBackgroundTransition, getRubberBandVariants } = useStreamingIconAnimation(activeKey);
+
   // Optimized indicator update function with throttling
   const updateIndicator = useCallback(() => {
     // Early returns for invalid states
@@ -151,44 +198,76 @@ const BottomNav = () => {
     }
     
     try {
-      const rect = activeElement.getBoundingClientRect();
-      const navRect = containerRef.current.getBoundingClientRect();
+      // Prefer cached metrics when available
+      let metrics = itemMetricsRef.current.get(activeKey);
+      // If no cached metrics or forced measure, compute them
+      if (!metrics) {
+        const rect = activeElement.getBoundingClientRect();
+        const navRect = containerRef.current.getBoundingClientRect();
       
       if (!navRect || rect.width === 0 || rect.height === 0) {
         // console.log('BottomNav: Invalid rects:', { rect, navRect });
         return;
       }
       
-      const x = Math.max(0, rect.left - navRect.left);
-      const width = Math.max(60, rect.width);
-      const height = Math.max(48, rect.height);
-      
-      // console.log('BottomNav: Updating indicator:', { x, width, height, activeKey });
-      
-      // Always update the indicator for smooth movement
-      lastIndicatorMetricsRef.current = { x, y: 4, width, height };
-      
-      if (indicatorRef.current) {
-        const el = indicatorRef.current;
-        // Use transform3d for GPU acceleration
-        el.style.transform = `translate3d(${x}px, 0, 0)`;
-        el.style.width = `${width}px`;
-        el.style.height = `${height}px`;
-        
-        // console.log('BottomNav: Indicator updated successfully');
+        const x = Math.max(0, rect.left - navRect.left);
+        const width = Math.max(INDICATOR_BASE_WIDTH, rect.width);
+        metrics = { x, width };
+        itemMetricsRef.current.set(activeKey, metrics);
+      }
+
+      const x = metrics.x;
+      const width = Math.max(INDICATOR_BASE_WIDTH, metrics.width);
+      const scale = width / INDICATOR_BASE_WIDTH;
+      const height = INDICATOR_HEIGHT;
+
+      // Always update the indicator metrics
+      lastIndicatorMetricsRef.current = { x, scale };
+
+      // Animate using framer-motion spring to match MoviesPage rubber-band
+      try {
+        indicatorControls.start({
+          x,
+          scaleX: scale,
+          transition: getBackgroundTransition()
+        });
+      } catch (_) {
+        // fallback to direct style update if controls not ready
+        if (indicatorRef.current) {
+          const el = indicatorRef.current;
+          el.style.transform = `translate3d(${x}px, 0, 0) scaleX(${scale})`;
+          el.style.height = `${height}px`;
+        }
       }
     } catch (error) {
       // console.warn('BottomNav: Error updating indicator:', error);
-      // Fallback to default safe values without causing React re-render
-      lastIndicatorMetricsRef.current = { x: 0, y: 4, width: 60, height: 48 };
+      // Fallback to default safe transform-only values
+      lastIndicatorMetricsRef.current = { x: 0, scale: 1 };
       if (indicatorRef.current) {
         const el = indicatorRef.current;
-        el.style.transform = 'translate3d(0px, 0, 0)';
-        el.style.width = '60px';
-        el.style.height = '48px';
+        el.style.transform = 'translate3d(0px, 0, 0) scaleX(1)';
+        el.style.height = `${INDICATOR_HEIGHT}px`;
       }
     }
   }, [activeKey, isAuthOrProfilePage]);
+
+  // Measure all item rects and cache them. Call when refs change or on resize.
+  const measureItemRects = useCallback(() => {
+    // Schedule measurement on the next RAF to avoid reading layout mid-frame.
+    scheduleUpdate(() => {
+      try {
+        const navRect = containerRef.current?.getBoundingClientRect();
+        if (!navRect) return;
+        itemRefs.current.forEach((el, key) => {
+          try {
+            if (!el) return;
+            const r = el.getBoundingClientRect();
+            itemMetricsRef.current.set(key, { x: Math.max(0, r.left - navRect.left), width: r.width });
+          } catch (_) {}
+        });
+      } catch (_) {}
+    });
+  }, []);
 
   // Optimized ref callback to prevent memory leaks
   const setItemRef = useCallback((element, key) => {
@@ -287,7 +366,11 @@ const BottomNav = () => {
     
     // Use ResizeObserver for more reliable sizing
     if ('ResizeObserver' in window && containerRef.current) {
-      resizeObserverRef.current = new ResizeObserver(handleResize);
+      resizeObserverRef.current = new ResizeObserver((entries) => {
+        handleResize();
+        // Re-measure cached item rects
+        measureItemRects();
+      });
       resizeObserverRef.current.observe(containerRef.current);
     }
 
@@ -308,6 +391,14 @@ const BottomNav = () => {
       rafIdRef.current = null;
     };
   }, [updateIndicator]);
+
+  // Re-measure item rects when refs change or window width changes
+  useEffect(() => {
+    measureItemRects();
+    // schedule a delayed re-measure to catch layout shifts
+    const t = addTimer(setTimeout(() => measureItemRects(), 50));
+    return () => clearTimeout(t);
+  }, [refVersion, windowWidth, measureItemRects]);
 
   // Initial positioning with delay for mobile devices
   useEffect(() => {
@@ -342,6 +433,14 @@ const BottomNav = () => {
     };
   }, [updateIndicator]);
 
+  // Initialize indicator controls on mount to cached metrics (prevents jump)
+  useEffect(() => {
+    try {
+      const { x = 0, scale = 1 } = lastIndicatorMetricsRef.current || {};
+      indicatorControls.set({ x, scaleX: scale });
+    } catch (_) {}
+  }, []);
+
   // Handle route changes
   useEffect(() => {
     if (isFirstMount.current) return;
@@ -350,11 +449,20 @@ const BottomNav = () => {
     
     // Update immediately for better responsiveness
     updateIndicator();
+
+    // Defer measurement-heavy follow-ups to idle time to avoid blocking route transition
+    const idle = scheduleIdle(() => {
+      if (!isMounted) return;
+      try {
+        measureItemRects();
+        updateIndicator();
+        scheduleUpdate(() => { if (isMounted) updateIndicator(); });
+      } catch (_) {}
+    });
     
     const timer = addTimer(setTimeout(() => {
       if (isMounted) {
         updateIndicator();
-        scheduleUpdate(() => { if (isMounted) updateIndicator(); });
       }
     }, 50)); // Reduced delay for better responsiveness
 
@@ -368,6 +476,7 @@ const BottomNav = () => {
     return () => {
       isMounted = false;
       clearTimeout(timer);
+      cancelIdle();
       clearTimeout(refCheckTimer);
     };
   }, [activeKey, updateIndicator]);
@@ -381,6 +490,12 @@ const BottomNav = () => {
       // Clear RAF
       try { if (rafIdRef.current) cancelRaf(rafIdRef.current); } catch (_) {}
       rafIdRef.current = null;
+
+  // Cancel any scheduled idle callbacks
+  try { cancelIdle(); } catch (_) {}
+
+  // Stop any running framer-motion animations
+  try { indicatorControls.stop(); } catch (_) {}
 
       if (resizeObserverRef.current) {
         resizeObserverRef.current.disconnect();
@@ -465,6 +580,80 @@ const BottomNav = () => {
     }, 50));
   }, [updateIndicator]);
 
+  // Keyboard navigation between nav items (Left/Right/Home/End)
+  const focusNavItemByIndex = useCallback((index) => {
+    const keys = Array.from(itemRefs.current.keys());
+    const key = keys[index];
+    const el = itemRefs.current.get(key);
+    if (el && typeof el.focus === 'function') el.focus();
+  }, []);
+
+  const handleKeyDownOnNav = useCallback((e) => {
+    // Only handle keyboard navigation for arrow keys and home/end
+    const keys = Array.from(itemRefs.current.keys());
+    if (!keys || keys.length === 0) return;
+
+    // Find currently focused item's index
+    const activeEl = document.activeElement;
+    const currentIndex = keys.findIndex(k => itemRefs.current.get(k) === activeEl);
+
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      const next = (currentIndex + 1) % keys.length;
+      focusNavItemByIndex(next);
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      const prev = (currentIndex - 1 + keys.length) % keys.length;
+      focusNavItemByIndex(prev);
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      focusNavItemByIndex(0);
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      focusNavItemByIndex(keys.length - 1);
+    }
+  }, [focusNavItemByIndex]);
+
+  // Close menu helper (used in keyboard handlers and click-outside)
+  const closeMenu = useCallback(() => {
+    setIsMenuOpen(false);
+    // restore focus to opener if available
+    try {
+      // Focus the opener if it exists and is still in the document
+      const opener = openerRef.current;
+      if (opener && typeof opener.focus === 'function' && document.contains(opener)) {
+        opener.focus();
+      }
+    } catch (_) {}
+  }, []);
+
+  // When menu opens, move focus to first focusable element and prevent background scroll
+  useEffect(() => {
+    if (!isMenuOpen) {
+      document.body.style.overflow = '';
+      return;
+    }
+
+    // prevent background scrolling on mobile
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    // move focus into sheet
+    const timer = setTimeout(() => {
+      try {
+        const focusable = menuSheetRef.current?.querySelectorAll('a, button, [tabindex]:not([tabindex="-1"])') || [];
+        if (focusable.length > 0) {
+          focusable[0].focus();
+        }
+      } catch (_) {}
+    }, 50);
+
+    return () => {
+      clearTimeout(timer);
+      document.body.style.overflow = previous;
+    };
+  }, [isMenuOpen]);
+
   // Don't render if should hide
   if (shouldHide) {
     return null;
@@ -475,6 +664,7 @@ const BottomNav = () => {
       <motion.nav
         key="bottom-nav"
         className="fixed bottom-0 left-0 right-0 z-50 md:hidden"
+        onKeyDown={handleKeyDownOnNav}
         style={{ 
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
           WebkitOverflowScrolling: 'touch',
@@ -524,9 +714,9 @@ const BottomNav = () => {
                   >
                     <NavLink
                       to={item.to}
-                      className={`relative overflow-hidden flex flex-col items-center justify-center gap-0.5 h-12 px-2 rounded-xl transition-all duration-150 ${
-                        isActive ? 'text-black' : 'text-white/70 hover:text-white active:text-white/90'
-                      }`}
+                        className={`relative overflow-hidden flex flex-col items-center justify-center gap-0.5 h-12 px-2 rounded-xl transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-white/30 ${
+                          isActive ? 'text-black' : 'text-white/70 hover:text-white active:text-white/90'
+                        }`}
                       aria-current={isActive ? 'page' : undefined}
                       onPointerDown={() => {
                         // console.log(`BottomNav: NavLink ${item.to} pointer down`);
@@ -543,6 +733,10 @@ const BottomNav = () => {
                     >
                       <span className="relative z-10">{item.icon}</span>
                       <span className="text-[11px] leading-none relative z-10 font-medium">{item.label}</span>
+                      {/* Screen reader-only status for active item */}
+                      {isActive && (
+                        <span className="sr-only" aria-hidden={false}>Current page</span>
+                      )}
                     </NavLink>
                   </motion.li>
                 );
@@ -563,15 +757,20 @@ const BottomNav = () => {
                   aria-haspopup="dialog"
                   aria-expanded={isMenuOpen}
                   aria-controls="bottom-sheet-menu"
-                  onClick={() => setIsMenuOpen(prev => !prev)}
+                  onClick={(e) => {
+                    // remember opener for focus restore
+                    openerRef.current = e.currentTarget;
+                    setIsMenuOpen(prev => !prev);
+                  }}
                   onKeyDown={(e) => {
                     // Toggle on Enter or Space for keyboard users
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
+                      openerRef.current = e.currentTarget;
                       setIsMenuOpen(prev => !prev);
                     }
                   }}
-                  className={`relative overflow-hidden flex flex-col items-center justify-center gap-0.5 h-12 px-2 rounded-xl transition-all duration-150 ${
+                  className={`relative overflow-hidden flex flex-col items-center justify-center gap-0.5 h-12 px-2 rounded-xl transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-white/30 ${
                     isMenuActive ? 'text-black' : 'text-white/70 hover:text-white active:text-white/90'
                   }`}
                   style={{ WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}
@@ -584,33 +783,26 @@ const BottomNav = () => {
             
             {/* Optimized background indicator (CSS transitions + GPU transforms) - Hidden on auth/profile pages */}
             {!isAuthOrProfilePage && (
-              <div
+              <motion.div
                 ref={(el) => {
                   indicatorRef.current = el;
-                  if (el) {
-                    // console.log('BottomNav: Indicator ref set:', el);
-                  } else {
-                    // console.log('BottomNav: Indicator ref cleared');
-                  }
                 }}
-                className="absolute rounded-xl bg-white pointer-events-none shadow-lg"
+                className="absolute rounded-lg bg-white pointer-events-none shadow-lg"
                 style={{
                   top: 4,
                   left: 0,
-                  transform: `translate3d(${lastIndicatorMetricsRef.current.x}px, 0, 0)`,
-                  width: `${lastIndicatorMetricsRef.current.width}px`,
-                  height: `${lastIndicatorMetricsRef.current.height}px`,
+                  width: `${INDICATOR_BASE_WIDTH}px`,
+                  height: `${INDICATOR_HEIGHT}px`,
                   backfaceVisibility: 'hidden',
-                  minWidth: '60px',
-                  minHeight: '48px',
-                  willChange: 'transform,width,height',
-                  transitionProperty: 'transform,width,height',
-                  transitionDuration: '180ms',
-                  transitionTimingFunction: 'cubic-bezier(0.2, 0.8, 0.2, 1)'
+                  minWidth: `${INDICATOR_BASE_WIDTH}px`,
+                  minHeight: `${INDICATOR_HEIGHT}px`,
+                  willChange: 'transform',
+                  transformOrigin: 'left center'
                 }}
+                animate={indicatorControls}
+                initial={false}
                 aria-hidden="true"
-                // onLoad={() => console.log('BottomNav: Indicator element loaded')}
-                data-debug={`x:${lastIndicatorMetricsRef.current.x},w:${lastIndicatorMetricsRef.current.width},h:${lastIndicatorMetricsRef.current.height}`}
+                data-debug={`x:${lastIndicatorMetricsRef.current.x},scale:${lastIndicatorMetricsRef.current.scale}`}
               />
             )}
           </div>
@@ -627,7 +819,7 @@ const BottomNav = () => {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.15 }}
-                onClick={() => setIsMenuOpen(false)}
+                onClick={closeMenu}
               />
               {/* Sheet */}
               <motion.div
@@ -635,38 +827,61 @@ const BottomNav = () => {
                 id="bottom-sheet-menu"
                 role="dialog"
                 aria-modal="true"
+                aria-label="More navigation options"
                 className="absolute left-0 right-0 z-[70] bottom-[calc(100%+8px)]"
                 initial={{ y: 24, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 exit={{ y: 24, opacity: 0 }}
                 transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+                ref={menuSheetRef}
               >
                 <div
                   className="mx-auto max-w-7xl p-1"
                   style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
                 >
-                  <div className="bg-[#1a1d21]/95 border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
-                    <div className="p-3">
-                      <div className="grid grid-cols-2 gap-2">
-                        <NavLink
-                          to="/manga"
-                          onClick={() => setIsMenuOpen(false)}
-                          className="group flex items-center gap-2 px-3 py-3 rounded-xl bg-white/5 hover:bg-white/10 active:bg-white/15 text-white transition-colors"
-                        >
-                          <BookOpenIcon className="w-5 h-5 text-white/80 group-hover:text-white" />
-                          <span className="text-sm font-medium">Manga</span>
-                        </NavLink>
-                        <NavLink
-                          to="/community"
-                          onClick={() => setIsMenuOpen(false)}
-                          className="group flex items-center gap-2 px-3 py-3 rounded-xl bg-white/5 hover:bg-white/10 active:bg-white/15 text-white transition-colors"
-                        >
-                          <UserGroupIcon className="w-5 h-5 text-white/80 group-hover:text-white" />
-                          <span className="text-sm font-medium">Community</span>
-                        </NavLink>
+                  <FocusTrap
+                    active={isMenuOpen}
+                    focusTrapOptions={{
+                      initialFocus: () => menuSheetRef.current?.querySelector('a, button, [tabindex]:not([tabindex="-1"])') || menuSheetRef.current,
+                      // Let FocusTrap handle Escape and focus restoration back to openerRef
+                      escapeDeactivates: true,
+                      clickOutsideDeactivates: true,
+                      // prop-types for focus-trap-react expect a boolean here
+                      returnFocusOnDeactivate: true,
+                      // Use onDeactivate to perform safe focus restoration to openerRef
+                      onDeactivate: () => {
+                        try {
+                          const opener = openerRef.current;
+                          if (opener && typeof opener.focus === 'function' && document.contains(opener)) {
+                            opener.focus();
+                          }
+                        } catch (_) {}
+                      }
+                    }}
+                  >
+                    <div className="bg-[#1a1d21]/95 border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+                      <div className="p-3">
+                        <div className="grid grid-cols-2 gap-2">
+                          <NavLink
+                            to="/manga"
+                            onClick={() => setIsMenuOpen(false)}
+                            className="group flex items-center gap-2 px-3 py-3 rounded-xl bg-white/5 hover:bg-white/10 active:bg-white/15 text-white transition-colors"
+                          >
+                            <BookOpenIcon className="w-5 h-5 text-white/80 group-hover:text-white" />
+                            <span className="text-sm font-medium">Manga</span>
+                          </NavLink>
+                          <NavLink
+                            to="/community"
+                            onClick={() => setIsMenuOpen(false)}
+                            className="group flex items-center gap-2 px-3 py-3 rounded-xl bg-white/5 hover:bg-white/10 active:bg-white/15 text-white transition-colors"
+                          >
+                            <UserGroupIcon className="w-5 h-5 text-white/80 group-hover:text-white" />
+                            <span className="text-sm font-medium">Community</span>
+                          </NavLink>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  </FocusTrap>
                 </div>
               </motion.div>
             </>

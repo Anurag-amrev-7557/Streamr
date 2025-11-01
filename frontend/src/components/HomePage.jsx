@@ -2052,7 +2052,7 @@ const MovieCard = memo(({ title, type, image, backdrop, seasons, rating, year, d
           />
         {/* Click Loader Overlay */}
         {isOpening && (
-          <CenteredLogoLoader />
+          <CenteredLogoLoader visible={true} />
         )}
           {/* Movie info overlay - only show on desktop for landscape cards - FIXED positioning */}
           {!isMobile && !isScrolling && (

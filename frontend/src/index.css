@@ -137,8 +137,9 @@
 @media (max-width: 768px) {
   /* Ensure movie cards are visible on mobile */
   .swiper-slide {
-    min-width: 160px !important;
-    max-width: 200px !important;
+    /* Slightly larger cards on mobile for better tap targets and visibility */
+    min-width: 180px !important;
+    max-width: 220px !important;
   }
   
   /* Ensure movie sections are visible */

@@ -413,7 +413,7 @@ const seriesRating =
 
         {/* Click Loader Overlay */}
         {isOpening && (
-          <CenteredLogoLoader />
+          <CenteredLogoLoader visible={true} />
         )}
         <div 
           className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex items-end p-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300 ease-out"
