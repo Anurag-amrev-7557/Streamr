@@ -358,7 +358,7 @@ const WatchlistPage = () => {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-[#0f1114]">
+  <div className="flex items-center justify-center min-h-screen app-bg">
         <div className="text-white text-xl">{error}</div>
       </div>
     );

@@ -7,12 +7,17 @@
 /* Base Theme Styles */
 @layer base {
   body {
-    background-color: #121417;
+    background-color: #0f1114;
     color: white;
   }
   html {
-    background-color: #121417;
+    background-color: #0f1114;
   }
+}
+
+/* Application background utility for consistent dark theme across pages */
+.app-bg {
+  background-color: #0f1114 !important;
 }
 
 /* Animation Keyframes */

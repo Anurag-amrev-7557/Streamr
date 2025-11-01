@@ -137,7 +137,7 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#0f1114] text-white flex items-center justify-center px-2 sm:px-0">
+  <div className="min-h-screen app-bg text-white flex items-center justify-center px-2 sm:px-0">
       <div className="w-full max-w-md mx-auto px-2 sm:px-6 py-8 sm:py-12 flex flex-col items-center">
         {/* Logo/Brand */}
         <div className="text-center mb-5 sm:mb-8">

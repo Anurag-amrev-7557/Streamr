@@ -2086,7 +2086,7 @@ const ProfilePage = () => {
   );
 
   return (
-    <div className="min-h-screen bg-[#0f1114] text-white">
+  <div className="min-h-screen app-bg text-white">
       <div className="container mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-6">
           <aside className="lg:col-span-4 xl:col-span-3 order-2 lg:order-1">

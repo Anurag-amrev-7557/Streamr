@@ -1590,7 +1590,7 @@ const SeriesPage = () => {
   }, []); // FIXED: Empty dependency array to prevent infinite loops
 
   return (
-    <div className="min-h-screen bg-[#141414] text-white">
+  <div className="min-h-screen app-bg text-white">
       <div className="w-full px-4 py-8">
 
 

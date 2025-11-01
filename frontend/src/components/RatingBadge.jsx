@@ -87,7 +87,8 @@ const RatingBadge = ({
   const validPosition = validPositions.includes(position) ? position : 'top-left';
   
   const positionClasses = {
-    'top-left': 'top-1 sm:top-2 -left-1 sm:-left-1',
+    // Avoid negative left offset on mobile so badges aren't clipped by parent overflow:hidden
+    'top-left': 'top-1 sm:top-2 left-1 sm:-left-1',
     'top-right': 'top-2 sm:top-3 right-2 sm:right-3',
     'bottom-left': 'bottom-2 sm:bottom-3 left-0 sm:left-0',
     'bottom-right': 'bottom-2 sm:bottom-3 right-2 sm:right-3'

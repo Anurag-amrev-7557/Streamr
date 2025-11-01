@@ -3588,7 +3588,7 @@ const MoviesPage = () => {
   return (
     <motion.div 
       ref={(el) => { scrollContainerRef.current = el; setScrollRootEl(el); }}
-      className="min-h-screen bg-[#0F0F0F] text-white overflow-y-auto scrollbar-gutter-stable ultra-smooth-scroll momentum-scroll"
+      className="min-h-screen bg-[#0f1114] text-white overflow-y-auto scrollbar-gutter-stable ultra-smooth-scroll momentum-scroll"
       exit={{ opacity: 0 }}
     >
       <div className="w-full px-4 py-8">
