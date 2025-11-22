@@ -1,7 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import useListStore from '../store/useListStore';
 import Navbar from '../components/Navbar';
-import BottomNavbar from '../components/BottomNavbar';
 import { useState, useMemo, useRef, useEffect } from 'react';
 import Modal from '../components/Modal';
 import StreamingPlayer from '../components/StreamingPlayer';
@@ -304,7 +303,6 @@ const MyList = () => {
                 confirmText="Clear All"
                 cancelText="Cancel"
             />
-            <BottomNavbar />
         </div >
     );
 };

@@ -39,6 +39,9 @@ const Signup = () => {
 
     return (
         <div className="relative min-h-screen w-full bg-[url('https://assets.nflxext.com/ffe/siteui/vlv3/f841d4c7-10e1-40af-bcae-07a3f8dc141a/f6d7434e-d6de-4185-a6d4-c77a2d08737b/US-en-20220502-popsignuptwoweeks-perspective_alpha_website_medium.jpg')] bg-no-repeat bg-center bg-cover">
+            <Link to="/" className="absolute top-4 left-4 md:top-8 md:left-8 z-50 text-white/80 hover:text-white font-medium text-sm md:text-base transition-colors flex items-center gap-2 bg-black/40 px-4 py-2 rounded-full backdrop-blur-sm border border-white/10 hover:bg-black/60">
+                ← Back to Home
+            </Link>
             <div className="bg-black/60 w-full min-h-screen flex items-center justify-center px-4">
                 <div className="bg-black/80 p-8 md:p-16 rounded-xl w-full max-w-md shadow-2xl border border-white/10 backdrop-blur-sm">
                     <h1 className="text-white text-3xl font-bold mb-8">Sign Up</h1>

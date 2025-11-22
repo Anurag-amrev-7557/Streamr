@@ -73,100 +73,72 @@ const Modal = ({ movie, onClose }) => {
         };
     }, [isDropdownOpen]);
 
+    const [isLoading, setIsLoading] = useState(true);
+
     // Only fetch data when modal has been opened
     useEffect(() => {
         if (!hasOpenedRef.current || !movie?.id) return;
 
-        const fetchLogo = async () => {
+        const fetchModalData = async () => {
+            setIsLoading(true);
             try {
-                const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
-                const endpoint = movie.first_air_date
-                    ? `/tv/${movie.id}/images?api_key=${API_KEY}`
-                    : `/movie/${movie.id}/images?api_key=${API_KEY}`;
+                const isTv = !!movie.first_air_date;
+                const type = isTv ? 'tv' : 'movie';
+                const id = movie.id;
 
-                const response = await axios.get(endpoint);
-                const logos = response.data.logos;
-                const englishLogo = logos?.find(logo => logo.iso_639_1 === 'en');
-                const logo = englishLogo || logos?.[0];
+                const results = await Promise.allSettled([
+                    axios.get(`/${type}/${id}/images`),
+                    axios.get(`/${type}/${id}`),
+                    axios.get(`/${type}/${id}/credits`),
+                    axios.get(`/${type}/${id}/similar`),
+                    axios.get(`/${type}/${id}/videos`)
+                ]);
 
-                if (logo) {
-                    setLogoPath(logo.file_path);
+                const [imagesRes, detailsRes, creditsRes, similarRes, videosRes] = results;
+
+                // Process Logo
+                if (imagesRes.status === 'fulfilled') {
+                    const logos = imagesRes.value.data.logos;
+                    const englishLogo = logos?.find(logo => logo.iso_639_1 === 'en');
+                    const logo = englishLogo || logos?.[0];
+                    if (logo) setLogoPath(logo.file_path);
                 }
-            } catch (error) {
-                console.log('Logo not available:', error.message);
-            }
-        };
 
-        const fetchMovieDetails = async () => {
-            try {
-                const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
-                const endpoint = movie.first_air_date
-                    ? `/tv/${movie.id}?api_key=${API_KEY}`
-                    : `/movie/${movie.id}?api_key=${API_KEY}`;
-
-                const response = await axios.get(endpoint);
-                setMovieDetails(response.data);
-            } catch (error) {
-                console.log('Details not available:', error.message);
-            }
-        };
-
-        const fetchCast = async () => {
-            try {
-                const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
-                const endpoint = movie.first_air_date
-                    ? `/tv/${movie.id}/credits?api_key=${API_KEY}`
-                    : `/movie/${movie.id}/credits?api_key=${API_KEY}`;
-
-                const response = await axios.get(endpoint);
-                setCast(response.data.cast?.slice(0, 4) || []);
-            } catch (error) {
-                console.log('Cast not available:', error.message);
-            }
-        };
-
-        const fetchSimilarMovies = async () => {
-            try {
-                const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
-                const endpoint = movie.first_air_date
-                    ? `/tv/${movie.id}/similar?api_key=${API_KEY}`
-                    : `/movie/${movie.id}/similar?api_key=${API_KEY}`;
-
-                const response = await axios.get(endpoint);
-                setSimilarMovies(response.data.results?.slice(0, 8) || []);
-            } catch (error) {
-                console.log('Similar content not available:', error.message);
-            }
-        };
-
-        const fetchTrailer = async () => {
-            try {
-                const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
-                const endpoint = movie.first_air_date
-                    ? `/tv/${movie.id}/videos?api_key=${API_KEY}`
-                    : `/movie/${movie.id}/videos?api_key=${API_KEY}`;
-
-                const response = await axios.get(endpoint);
-                const videos = response.data.results;
-
-                const trailer = videos.find(video =>
-                    video.type === 'Trailer' && video.site === 'YouTube'
-                ) || videos.find(video => video.site === 'YouTube');
-
-                if (trailer) {
-                    setTrailerKey(trailer.key);
+                // Process Details
+                if (detailsRes.status === 'fulfilled') {
+                    setMovieDetails(detailsRes.value.data);
                 }
+
+                // Process Cast
+                if (creditsRes.status === 'fulfilled') {
+                    setCast(creditsRes.value.data.cast?.slice(0, 4) || []);
+                }
+
+                // Process Similar
+                if (similarRes.status === 'fulfilled') {
+                    setSimilarMovies(similarRes.value.data.results?.slice(0, 8) || []);
+                }
+
+                // Process Trailer
+                if (videosRes.status === 'fulfilled') {
+                    const videos = videosRes.value.data.results;
+                    const trailer = videos.find(video =>
+                        video.type === 'Trailer' && video.site === 'YouTube'
+                    ) || videos.find(video => video.site === 'YouTube');
+                    if (trailer) setTrailerKey(trailer.key);
+                }
+
             } catch (error) {
-                console.log('Trailer not available:', error.message);
+                console.error('Error fetching modal data:', error);
+            } finally {
+                setIsLoading(false);
             }
         };
 
-        fetchLogo();
-        fetchMovieDetails();
-        fetchCast();
-        fetchSimilarMovies();
-        fetchTrailer();
+        fetchModalData();
     }, [movie]);
+
+    const [isEpisodesLoading, setIsEpisodesLoading] = useState(false);
 
     // Fetch episodes when season changes (only for TV shows)
     useEffect(() => {
@@ -175,13 +147,15 @@ const Modal = ({ movie, onClose }) => {
         const fetchEpisodes = async () => {
             if (!movie?.id || !movie.first_air_date) return;
 
+            setIsEpisodesLoading(true);
             try {
-                const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
-                const response = await axios.get(`/tv/${movie.id}/season/${selectedSeason}?api_key=${API_KEY}`);
+                const response = await axios.get(`/tv/${movie.id}/season/${selectedSeason}`);
                 setEpisodes(response.data.episodes || []);
             } catch (error) {
                 console.log('Episodes not available:', error.message);
                 setEpisodes([]);
+            } finally {
+                setIsEpisodesLoading(false);
             }
         };
 
@@ -450,118 +424,170 @@ const Modal = ({ movie, onClose }) => {
                         </div>
 
                         {/* Episodes list with animation on season change */}
-                        <motion.div
-                            key={selectedSeason + viewMode}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            transition={{ duration: 0.3 }}
-                            className={clsx(
+                        {isEpisodesLoading ? (
+                            <div className={clsx(
                                 viewMode === 'grid' ? "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4" : "space-y-3 md:space-y-4"
-                            )}
-                        >
-                            {episodes.length > 0 ? (
-                                episodes.slice(0, displayedCount).map((episode, index) => (
+                            )}>
+                                {Array.from({ length: 6 }).map((_, i) => (
                                     viewMode === 'list' ? (
-                                        // List View Item
-                                        <div
-                                            key={episode.id}
-                                            onClick={() => setPlayerState({ isOpen: true, type: 'tv', season: selectedSeason, episode: episode.episode_number })}
-                                            className={`flex gap-2 md:gap-4 p-3 md:p-4 py-4 md:py-6 mb-0 rounded-lg hover:bg-[#2a2a2a] transition cursor-pointer group ${index !== episodes.length - 1 ? 'border-b border-white/10' : ''}`}
-                                        >
-                                            {/* Episode Number */}
-                                            <div className="hidden md:flex items-center justify-center flex-shrink-0 w-10 text-xl font-bold text-gray-500 group-hover:text-white transition">
-                                                {index + 1}
+                                        <div key={i} className="flex gap-2 md:gap-4 p-3 md:p-4 py-4 md:py-6 mb-0 rounded-lg animate-pulse border-b border-white/5">
+                                            {/* Episode Number Skeleton */}
+                                            <div className="hidden md:flex items-center justify-center flex-shrink-0 w-10">
+                                                <div className="w-6 h-6 bg-white/10 rounded-full"></div>
                                             </div>
 
-                                            {/* Episode Thumbnail */}
-                                            <div className="flex-shrink-0 w-24 md:w-40 mr-2 md:mr-3 h-16 md:h-24 bg-gradient-to-br from-gray-700 to-gray-900 rounded overflow-hidden">
-                                                {episode.still_path ? (
-                                                    <img
-                                                        src={`https://image.tmdb.org/t/p/w300${episode.still_path}`}
-                                                        alt={episode.name}
-                                                        className="w-full h-full object-cover"
-                                                    />
-                                                ) : (
-                                                    <div className="w-full h-full flex items-center justify-center text-gray-600">
-                                                        <ImageIcon className="w-8 h-8" />
-                                                    </div>
-                                                )}
-                                            </div>
+                                            {/* Thumbnail Skeleton */}
+                                            <div className="flex-shrink-0 w-24 md:w-40 mr-2 md:mr-3 h-16 md:h-24 bg-white/10 rounded"></div>
 
-                                            {/* Episode Info */}
-                                            <div className="flex-1 min-w-0">
-                                                <h4 className="text-sm md:text-base text-white font-semibold mb-1 md:mb-2 line-clamp-1">{episode.name}</h4>
-                                                <p className="text-xs md:text-sm text-gray-400 line-clamp-2 mb-1 md:mb-2">{episode.overview || 'No description available.'}</p>
-                                                <div className="flex items-center gap-3 text-xs text-gray-500">
-                                                    {episode.air_date && (
-                                                        <span className="flex items-center gap-1">
-                                                            <Calendar className="w-3 h-3" />
-                                                            {new Date(episode.air_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                                                        </span>
-                                                    )}
-                                                    {episode.runtime && (
-                                                        <span className="flex items-center gap-1">
-                                                            <Clock className="w-3 h-3" /> {episode.runtime}m
-                                                        </span>
-                                                    )}
+                                            {/* Info Skeleton */}
+                                            <div className="flex-1 min-w-0 space-y-2 py-1">
+                                                <div className="h-5 bg-white/10 rounded w-1/3 mb-2"></div>
+                                                <div className="h-3 bg-white/10 rounded w-full"></div>
+                                                <div className="h-3 bg-white/10 rounded w-2/3"></div>
+                                                <div className="flex gap-3 mt-2">
+                                                    <div className="h-3 bg-white/10 rounded w-20"></div>
+                                                    <div className="h-3 bg-white/10 rounded w-16"></div>
                                                 </div>
                                             </div>
                                         </div>
                                     ) : (
-                                        // Grid View Item
-                                        <div
-                                            key={episode.id}
-                                            onClick={() => setPlayerState({ isOpen: true, type: 'tv', season: selectedSeason, episode: episode.episode_number })}
-                                            className="bg-black/20 rounded-xl overflow-hidden hover:ring-2 hover:ring-white/20 transition group cursor-pointer flex flex-col"
-                                        >
-                                            {/* Thumbnail */}
-                                            <div className="relative aspect-video bg-gray-800">
-                                                {episode.still_path ? (
-                                                    <img
-                                                        src={`https://image.tmdb.org/t/p/w500${episode.still_path}`}
-                                                        alt={episode.name}
-                                                        className="w-full h-full object-cover"
-                                                    />
-                                                ) : (
-                                                    <div className="w-full h-full flex items-center justify-center text-gray-600">
-                                                        <ImageIcon className="w-10 h-10" />
-                                                    </div>
-                                                )}
-                                                <div className="absolute bottom-2 right-2 bg-black/60 px-2 py-1 rounded text-xs text-white font-medium">
-                                                    {episode.runtime ? `${episode.runtime}m` : 'N/A'}
-                                                </div>
-                                                <div className="absolute top-2 left-2 bg-black/60 w-8 h-8 flex items-center justify-center rounded-full text-sm font-bold text-white border border-white/10">
-                                                    {index + 1}
-                                                </div>
+                                        <div key={i} className="bg-black/20 rounded-xl overflow-hidden animate-pulse flex flex-col h-full">
+                                            {/* Thumbnail Skeleton */}
+                                            <div className="relative aspect-video bg-white/5">
+                                                <div className="absolute top-2 left-2 w-8 h-8 bg-white/10 rounded-full"></div>
+                                                <div className="absolute bottom-2 right-2 w-12 h-5 bg-white/10 rounded"></div>
                                             </div>
 
-                                            {/* Info */}
-                                            <div className="p-4 flex-1 flex flex-col">
-                                                <h4 className="text-white font-semibold mb-2 line-clamp-1 transition-colors">
-                                                    {episode.name}
-                                                </h4>
-                                                <p className="text-xs text-gray-400 line-clamp-3 mb-4 flex-1">
-                                                    {episode.overview || 'No description available.'}
-                                                </p>
-                                                <div className="flex items-center justify-between text-xs text-gray-500 mt-auto pt-3 border-t border-white/5">
-                                                    {episode.air_date && (
-                                                        <span className="flex items-center gap-1">
-                                                            <Calendar className="w-3 h-3" />
-                                                            {new Date(episode.air_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                                                        </span>
-                                                    )}
+                                            {/* Info Skeleton */}
+                                            <div className="p-4 flex-1 flex flex-col space-y-3">
+                                                <div className="h-5 bg-white/10 rounded w-3/4"></div>
+                                                <div className="space-y-2 flex-1">
+                                                    <div className="h-3 bg-white/10 rounded w-full"></div>
+                                                    <div className="h-3 bg-white/10 rounded w-full"></div>
+                                                    <div className="h-3 bg-white/10 rounded w-2/3"></div>
+                                                </div>
+                                                <div className="pt-3 border-t border-white/5 mt-auto">
+                                                    <div className="h-3 bg-white/10 rounded w-24"></div>
                                                 </div>
                                             </div>
                                         </div>
                                     )
-                                ))
-                            ) : (
-                                <div className="col-span-full text-center text-gray-400 py-8">
-                                    No episodes available for this season
-                                </div>
-                            )}
-                        </motion.div>
+                                ))}
+                            </div>
+                        ) : (
+                            <motion.div
+                                key={selectedSeason + viewMode}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -10 }}
+                                transition={{ duration: 0.3 }}
+                                className={clsx(
+                                    viewMode === 'grid' ? "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4" : "space-y-3 md:space-y-4"
+                                )}
+                            >
+                                {episodes.length > 0 ? (
+                                    episodes.slice(0, displayedCount).map((episode, index) => (
+                                        viewMode === 'list' ? (
+                                            // List View Item
+                                            <div
+                                                key={episode.id}
+                                                onClick={() => setPlayerState({ isOpen: true, type: 'tv', season: selectedSeason, episode: episode.episode_number })}
+                                                className={`flex gap-2 md:gap-4 p-3 md:p-4 py-4 md:py-6 mb-0 rounded-lg hover:bg-[#2a2a2a] transition cursor-pointer group ${index !== episodes.length - 1 ? 'border-b border-white/10' : ''}`}
+                                            >
+                                                {/* Episode Number */}
+                                                <div className="hidden md:flex items-center justify-center flex-shrink-0 w-10 text-xl font-bold text-gray-500 group-hover:text-white transition">
+                                                    {index + 1}
+                                                </div>
+
+                                                {/* Episode Thumbnail */}
+                                                <div className="flex-shrink-0 w-24 md:w-40 mr-2 md:mr-3 h-16 md:h-24 bg-gradient-to-br from-gray-700 to-gray-900 rounded overflow-hidden">
+                                                    {episode.still_path ? (
+                                                        <img
+                                                            src={`https://image.tmdb.org/t/p/w300${episode.still_path}`}
+                                                            alt={episode.name}
+                                                            className="w-full h-full object-cover"
+                                                        />
+                                                    ) : (
+                                                        <div className="w-full h-full flex items-center justify-center text-gray-600">
+                                                            <ImageIcon className="w-8 h-8" />
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {/* Episode Info */}
+                                                <div className="flex-1 min-w-0">
+                                                    <h4 className="text-sm md:text-base text-white font-semibold mb-1 md:mb-2 line-clamp-1">{episode.name}</h4>
+                                                    <p className="text-xs md:text-sm text-gray-400 line-clamp-2 mb-1 md:mb-2">{episode.overview || 'No description available.'}</p>
+                                                    <div className="flex items-center gap-3 text-xs text-gray-500">
+                                                        {episode.air_date && (
+                                                            <span className="flex items-center gap-1">
+                                                                <Calendar className="w-3 h-3" />
+                                                                {new Date(episode.air_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                                            </span>
+                                                        )}
+                                                        {episode.runtime && (
+                                                            <span className="flex items-center gap-1">
+                                                                <Clock className="w-3 h-3" /> {episode.runtime}m
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            // Grid View Item
+                                            <div
+                                                key={episode.id}
+                                                onClick={() => setPlayerState({ isOpen: true, type: 'tv', season: selectedSeason, episode: episode.episode_number })}
+                                                className="bg-black/20 rounded-xl overflow-hidden hover:ring-2 hover:ring-white/20 transition group cursor-pointer flex flex-col"
+                                            >
+                                                {/* Thumbnail */}
+                                                <div className="relative aspect-video bg-gray-800">
+                                                    {episode.still_path ? (
+                                                        <img
+                                                            src={`https://image.tmdb.org/t/p/w500${episode.still_path}`}
+                                                            alt={episode.name}
+                                                            className="w-full h-full object-cover"
+                                                        />
+                                                    ) : (
+                                                        <div className="w-full h-full flex items-center justify-center text-gray-600">
+                                                            <ImageIcon className="w-10 h-10" />
+                                                        </div>
+                                                    )}
+                                                    <div className="absolute bottom-2 right-2 bg-black/60 px-2 py-1 rounded text-xs text-white font-medium">
+                                                        {episode.runtime ? `${episode.runtime}m` : 'N/A'}
+                                                    </div>
+                                                    <div className="absolute top-2 left-2 bg-black/60 w-8 h-8 flex items-center justify-center rounded-full text-sm font-bold text-white border border-white/10">
+                                                        {index + 1}
+                                                    </div>
+                                                </div>
+
+                                                {/* Info */}
+                                                <div className="p-4 flex-1 flex flex-col">
+                                                    <h4 className="text-white font-semibold mb-2 line-clamp-1 transition-colors">
+                                                        {episode.name}
+                                                    </h4>
+                                                    <p className="text-xs text-gray-400 line-clamp-3 mb-4 flex-1">
+                                                        {episode.overview || 'No description available.'}
+                                                    </p>
+                                                    <div className="flex items-center justify-between text-xs text-gray-500 mt-auto pt-3 border-t border-white/5">
+                                                        {episode.air_date && (
+                                                            <span className="flex items-center gap-1">
+                                                                <Calendar className="w-3 h-3" />
+                                                                {new Date(episode.air_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )
+                                    ))
+                                ) : (
+                                    <div className="col-span-full text-center text-gray-400 py-8">
+                                        No episodes available for this season
+                                    </div>
+                                )}
+                            </motion.div>
+                        )}
                         {displayedCount < episodes.length && (
                             <div className="flex justify-center mt-4">
                                 <button
@@ -610,59 +636,74 @@ const Modal = ({ movie, onClose }) => {
                         {activeTab === 'about' ? (
                             /* About Section */
                             <div className="space-y-6 max-w-2xl">
-                                {/* Cast & Crew */}
-                                {cast.length > 0 && (
-                                    <div>
-                                        <p className="text-sm text-gray-500 mb-2">Cast</p>
-                                        <p className="text-sm text-gray-300">
-                                            {cast.map(person => person.name).join(', ')}
-                                        </p>
+                                {isLoading ? (
+                                    <div className="animate-pulse space-y-4">
+                                        <div className="h-4 bg-white/10 rounded w-1/4"></div>
+                                        <div className="h-4 bg-white/10 rounded w-3/4"></div>
+                                        <div className="h-4 bg-white/10 rounded w-1/4"></div>
+                                        <div className="h-4 bg-white/10 rounded w-1/2"></div>
                                     </div>
-                                )}
+                                ) : (
+                                    <>
+                                        {/* Cast & Crew */}
+                                        {cast.length > 0 && (
+                                            <div>
+                                                <p className="text-sm text-gray-500 mb-2">Cast</p>
+                                                <p className="text-sm text-gray-300">
+                                                    {cast.map(person => person.name).join(', ')}
+                                                </p>
+                                            </div>
+                                        )}
 
-                                {/* Genres */}
-                                {movieDetails?.genres && movieDetails.genres.length > 0 && (
-                                    <div>
-                                        <p className="text-sm text-gray-500 mb-2">Genres</p>
-                                        <p className="text-sm text-gray-300">
-                                            {movieDetails.genres.map(genre => genre.name).join(', ')}
-                                        </p>
-                                    </div>
-                                )}
+                                        {/* Genres */}
+                                        {movieDetails?.genres && movieDetails.genres.length > 0 && (
+                                            <div>
+                                                <p className="text-sm text-gray-500 mb-2">Genres</p>
+                                                <p className="text-sm text-gray-300">
+                                                    {movieDetails.genres.map(genre => genre.name).join(', ')}
+                                                </p>
+                                            </div>
+                                        )}
 
-                                {/* Details Grid */}
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                    <div>
-                                        <p className="text-sm text-gray-500 mb-1">Maturity Rating</p>
-                                        <p className="text-sm text-white font-semibold">
-                                            {movie.adult ? '18+' : '13+'}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-gray-500 mb-1">Language</p>
-                                        <p className="text-sm text-white font-semibold">
-                                            {movie.original_language?.toUpperCase() || 'EN'}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-gray-500 mb-1">Release Year</p>
-                                        <p className="text-sm text-white font-semibold">
-                                            {movie.release_date?.substring(0, 4) || movie.first_air_date?.substring(0, 4) || '2023'}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-gray-500 mb-1">Rating</p>
-                                        <p className="text-sm text-white font-semibold flex items-center gap-1">
-                                            <span className="text-yellow-400">★</span>
-                                            {movie.vote_average?.toFixed(1) || '8.0'}
-                                        </p>
-                                    </div>
-                                </div>
+                                        {/* Details Grid */}
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                            <div>
+                                                <p className="text-sm text-gray-500 mb-1">Maturity Rating</p>
+                                                <p className="text-sm text-white font-semibold">
+                                                    {movie.adult ? '18+' : '13+'}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <p className="text-sm text-gray-500 mb-1">Language</p>
+                                                <p className="text-sm text-white font-semibold">
+                                                    {movie.original_language?.toUpperCase() || 'EN'}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <p className="text-sm text-gray-500 mb-1">Release Year</p>
+                                                <p className="text-sm text-white font-semibold">
+                                                    {movie.release_date?.substring(0, 4) || movie.first_air_date?.substring(0, 4) || '2023'}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <p className="text-sm text-gray-500 mb-1">Rating</p>
+                                                <p className="text-sm text-white font-semibold flex items-center gap-1">
+                                                    <span className="text-yellow-400">★</span>
+                                                    {movie.vote_average?.toFixed(1) || '8.0'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
                             </div>
                         ) : (
                             /* More Like This Section */
                             <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-3 md:gap-4">
-                                {similarMovies.length > 0 ? (
+                                {isLoading ? (
+                                    Array.from({ length: 6 }).map((_, i) => (
+                                        <div key={i} className="aspect-[2/3] bg-white/5 animate-pulse rounded-lg"></div>
+                                    ))
+                                ) : similarMovies.length > 0 ? (
                                     similarMovies.map((item) => (
                                         <div
                                             key={item.id}

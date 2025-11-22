@@ -7,6 +7,10 @@ const BottomNavbar = () => {
     const location = useLocation();
     const currentPath = location.pathname;
 
+    const isHidden = ['/login', '/signup', '/watch'].some(path => currentPath.includes(path));
+
+    if (isHidden) return null;
+
     const navItems = [
         {
             name: 'Home',
@@ -35,20 +39,19 @@ const BottomNavbar = () => {
     ];
 
     return (
-        <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 pb-safe" style={{ willChange: 'transform' }}>
-            {/* Glassmorphism Background */}
-            <div className="relative bg-black/80 backdrop-blur-xl border-t border-white/10">
+        <div className="md:hidden fixed bottom-6 left-4 right-4 z-50 flex justify-center pointer-events-none" style={{ willChange: 'transform' }}>
+            {/* Glassmorphism Pill Container */}
+            <div className="pointer-events-auto bg-black/30 backdrop-blur-xl border border-white/10 rounded-full shadow-2xl p-1 w-full max-w-[280px]">
                 {/* Navigation Items */}
-                <div className="relative flex items-center py-2">
+                <div className="relative flex items-center justify-between">
                     {/* White Moving Background */}
                     <motion.div
                         layoutId="whiteActiveTab"
-                        className="absolute bg-white rounded-xl mx-2"
+                        className="absolute bg-white rounded-full"
                         style={{
                             left: `${navItems.findIndex(item => item.active) * 25}%`,
-                            width: '22%',
-                            height: 'calc(100% - 8px)',
-                            top: '4px'
+                            width: '25%',
+                            height: '100%',
                         }}
                         initial={false}
                         animate={{
@@ -67,33 +70,21 @@ const BottomNavbar = () => {
                             <Link
                                 key={item.name}
                                 to={item.path}
-                                className="relative flex flex-col items-center justify-center gap-0.5 py-1.5 transition-all duration-300 group"
+                                className="relative flex items-center justify-center py-2 transition-all duration-300 group"
                                 style={{ width: '25%' }}
                             >
                                 {/* Icon */}
                                 <div className="relative z-10">
                                     <Icon
                                         className={clsx(
-                                            'w-5 h-5 transition-all duration-300',
+                                            'w-6 h-6 transition-all duration-300',
                                             item.active
-                                                ? 'text-black scale-105'
+                                                ? 'text-black scale-110'
                                                 : 'text-gray-400 group-hover:text-gray-200'
                                         )}
                                         strokeWidth={1.5}
                                     />
                                 </div>
-
-                                {/* Label */}
-                                <span
-                                    className={clsx(
-                                        'relative z-10 text-[10px] font-medium transition-all duration-300',
-                                        item.active
-                                            ? 'text-black font-semibold'
-                                            : 'text-gray-400 group-hover:text-gray-200'
-                                    )}
-                                >
-                                    {item.name}
-                                </span>
                             </Link>
                         );
                     })}

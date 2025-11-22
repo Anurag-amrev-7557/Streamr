@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import axios from '../lib/axios';
+import { useState, useRef } from 'react';
+import { useRowData } from '../hooks/useTMDB';
 import clsx from 'clsx';
 import Skeleton from './Skeleton';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -7,19 +7,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 
 const Row = ({ title, fetchUrl, isLargeRow, onMovieClick }) => {
-    const [movies, setMovies] = useState([]);
-    const [loading, setLoading] = useState(true);
-
-    useEffect(() => {
-        async function fetchData() {
-            setLoading(true);
-            const request = await axios.get(fetchUrl);
-            setMovies(request.data.results);
-            setLoading(false);
-            return request;
-        }
-        fetchData();
-    }, [fetchUrl]);
+    const { data: movies = [], isLoading: loading } = useRowData(fetchUrl, title);
 
     const rowRef = useRef(null);
     const [isDown, setIsDown] = useState(false);
@@ -132,7 +120,12 @@ const Row = ({ title, fetchUrl, isLargeRow, onMovieClick }) => {
 
     return (
         <div className="text-white mb-4 md:mb-6 group relative">
-            <h2 className="text-lg md:text-2xl font-semibold mb-3 md:mb-4 pl-2 md:pl-3 border-l-4 border-[#fff] ml-3 md:ml-6">{title}</h2>
+            <h2 className="text-sm md:text-xl font-bold mb-2 md:mb-3 px-4 md:px-12 flex items-center gap-2 text-[#e5e5e5] hover:text-white transition-colors cursor-pointer group/title">
+                {title.toUpperCase()}
+                <span className="text-xs md:text-sm opacity-0 group-hover/title:opacity-100 group-hover/title:translate-x-1 transition-all duration-300 flex items-center text-[#54b9c5] font-bold">
+                    Explore All <ChevronRight className="w-4 h-4" />
+                </span>
+            </h2>
 
             <div className="relative group">
                 <ChevronLeft

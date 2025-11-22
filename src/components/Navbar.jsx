@@ -37,10 +37,9 @@ const Navbar = ({ onMovieClick }) => {
         if (!notifOpen) return;
         const fetchNotifications = async () => {
             try {
-                const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
                 const [movieRes, tvRes] = await Promise.all([
-                    axios.get(`/movie/upcoming?api_key=${API_KEY}`),
-                    axios.get(`/tv/on_the_air?api_key=${API_KEY}`)
+                    axios.get(`/movie/upcoming`),
+                    axios.get(`/tv/on_the_air`)
                 ]);
                 const movies = (movieRes.data.results || []).map(item => ({
                     id: item.id,
@@ -90,8 +89,7 @@ const Navbar = ({ onMovieClick }) => {
 
             setIsSearching(true);
             try {
-                const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
-                const response = await axios.get(`/search/multi?api_key=${API_KEY}&query=${encodeURIComponent(searchQuery)}`);
+                const response = await axios.get(`/search/multi?query=${encodeURIComponent(searchQuery)}`);
 
                 // Filter only movies and tv shows
                 const filteredResults = response.data.results?.filter(
@@ -102,8 +100,8 @@ const Navbar = ({ onMovieClick }) => {
                 const detailedResults = await Promise.all(filteredResults.map(async (item) => {
                     try {
                         const detailsEndpoint = item.media_type === 'movie'
-                            ? `/movie/${item.id}?api_key=${API_KEY}`
-                            : `/tv/${item.id}?api_key=${API_KEY}`;
+                            ? `/movie/${item.id}`
+                            : `/tv/${item.id}`;
                         const details = await axios.get(detailsEndpoint);
                         return { ...item, ...details.data };
                     } catch (e) {
@@ -194,7 +192,7 @@ const Navbar = ({ onMovieClick }) => {
                                     initial={{ width: 0, opacity: 0 }}
                                     animate={{ width: window.innerWidth < 768 ? 240 : 320, opacity: 1 }}
                                     exit={{ width: 0, opacity: 0 }}
-                                    transition={{ duration: 0.3, ease: "easeOut" }}
+                                    transition={{ duration: 0.2, ease: "easeOut" }}
                                     className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-2 bg-black/80 border border-white/20 rounded-full px-3 py-2 md:py-2.5 overflow-hidden backdrop-blur-md"
                                 >
                                     <Search className="w-4 h-4 text-gray-400 flex-shrink-0" />
@@ -284,7 +282,7 @@ const Navbar = ({ onMovieClick }) => {
                         </AnimatePresence>
                     </div>
 
-                    <div className="flex items-center gap-6 text-white">
+                    <div className="flex items-center gap-4 text-white">
                         {user ? (
                             <>
                                 <div className="relative inline-block">
@@ -342,7 +340,7 @@ const Navbar = ({ onMovieClick }) => {
                                 </div>
                             </>
                         ) : (
-                            <Link to="/login" className="bg-red-600 hover:bg-red-700 text-white px-4 py-1.5 rounded font-medium text-sm transition-colors">
+                            <Link to="/login" className="bg-white hover:bg-white/90 text-black px-4 py-1.5 rounded-full font-medium text-sm transition-colors">
                                 Sign In
                             </Link>
                         )}
@@ -388,7 +386,7 @@ const Navbar = ({ onMovieClick }) => {
                                 )}
                             </div>
                         ) : (
-                            <Link to="/login" className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap">
+                            <Link to="/login" className="bg-white hover:bg-white/70 text-black px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap">
                                 Sign In
                             </Link>
                         )}

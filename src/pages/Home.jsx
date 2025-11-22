@@ -3,7 +3,7 @@ import Banner from '../components/Banner';
 import Row from '../components/Row';
 import Modal from '../components/Modal';
 import Navbar from '../components/Navbar';
-import BottomNavbar from '../components/BottomNavbar';
+import MobileHero from '../components/MobileHero';
 import requests from '../lib/requests';
 
 import { AnimatePresence } from 'framer-motion';
@@ -18,8 +18,13 @@ const Home = () => {
     return (
         <div className="bg-[#141414] min-h-screen pb-10 overflow-x-hidden font-sans">
             <Navbar onMovieClick={handleMovieClick} />
-            <Banner onMovieClick={handleMovieClick} />
-            <div className="flex flex-col gap-1 md:gap-2 relative z-10 pl-0 md:pl-2 pb-16 md:pb-20 -mt-8 md:-mt-20">
+
+            <div className="hidden md:block">
+                <Banner onMovieClick={handleMovieClick} />
+            </div>
+            <MobileHero onMovieClick={handleMovieClick} />
+
+            <div className="flex flex-col gap-1 md:gap-2 relative z-10 pl-0 md:pl-2 pb-16 md:pb-20 mt-0 md:-mt-20">
                 <Row title="Trending Now" fetchUrl={requests.fetchTrending} isLargeRow onMovieClick={handleMovieClick} />
                 <Row title="Top Rated Movies" fetchUrl={requests.fetchTopRated} onMovieClick={handleMovieClick} />
                 <Row title="Top Rated" fetchUrl={requests.fetchTopRated} onMovieClick={handleMovieClick} />
@@ -32,7 +37,6 @@ const Home = () => {
             <AnimatePresence>
                 {selectedMovie && <Modal movie={selectedMovie} onClose={() => setSelectedMovie(null)} />}
             </AnimatePresence>
-            <BottomNavbar />
         </div>
     );
 };

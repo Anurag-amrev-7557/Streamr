@@ -8,6 +8,7 @@ import MyList from './pages/MyList';
 import AuthCallback from './pages/AuthCallback';
 import ProtectedRoute from './components/ProtectedRoute';
 import useAuthStore from './store/useAuthStore';
+import BottomNavbar from './components/BottomNavbar';
 
 function App() {
   const { user, checkAuth, isCheckingAuth } = useAuthStore();
@@ -40,6 +41,7 @@ function App() {
           </ProtectedRoute>
         } />
       </Routes>
+      <BottomNavbar />
     </Router>
   );
 }

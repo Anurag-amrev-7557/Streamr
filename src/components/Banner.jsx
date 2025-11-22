@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from '../lib/axios';
-import requests from '../lib/requests';
+import { useNetflixOriginals, useMovieImages } from '../hooks/useTMDB';
 import { Play, Plus, Check } from 'lucide-react';
 import useListStore from '../store/useListStore';
 import useAuthStore from '../store/useAuthStore';
@@ -17,52 +16,30 @@ const Banner = ({ onMovieClick }) => {
     const { user } = useAuthStore();
     const navigate = useNavigate();
 
+    const { data: movies } = useNetflixOriginals();
+
     useEffect(() => {
-        async function fetchData() {
-            const request = await axios.get(requests.fetchNetflixOriginals);
-            const selectedMovie = request.data.results[
-                Math.floor(Math.random() * request.data.results.length - 1)
-            ];
+        if (movies && movies.length > 0) {
+            const selectedMovie = movies[Math.floor(Math.random() * movies.length)];
             setMovie(selectedMovie);
-            // Reset logo when movie changes to prevent mismatch
             setLogoPath(null);
             setLogoLoaded(false);
-            return request;
         }
-        fetchData();
-    }, []);
+    }, [movies]);
+
+    const { data: images } = useMovieImages(movie?.id, movie?.first_air_date ? 'tv' : 'movie');
 
     useEffect(() => {
-        const fetchLogo = async () => {
-            if (!movie?.id) return;
-
-            // Reset loaded state when fetching new logo
+        if (images?.logos) {
+            const logos = images.logos;
+            const englishLogo = logos.find(logo => logo.iso_639_1 === 'en');
+            const logo = englishLogo || logos[0];
+            setLogoPath(logo ? logo.file_path : null);
             setLogoLoaded(false);
-
-            try {
-                const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
-                const endpoint = movie.first_air_date
-                    ? `/tv/${movie.id}/images?api_key=${API_KEY}`
-                    : `/movie/${movie.id}/images?api_key=${API_KEY}`;
-
-                const response = await axios.get(endpoint);
-                const logos = response.data.logos;
-                const englishLogo = logos?.find(logo => logo.iso_639_1 === 'en');
-                const logo = englishLogo || logos?.[0];
-
-                if (logo) {
-                    setLogoPath(logo.file_path);
-                } else {
-                    setLogoPath(null);
-                }
-            } catch (error) {
-                console.log('Logo not available:', error.message);
-                setLogoPath(null);
-            }
-        };
-
-        fetchLogo();
-    }, [movie?.id]); // Only re-fetch when movie ID changes
+        } else {
+            setLogoPath(null);
+        }
+    }, [images]);
 
     function truncate(str, n) {
         return str?.length > n ? str.substr(0, n - 1) + "..." : str;
@@ -94,11 +71,9 @@ const Banner = ({ onMovieClick }) => {
     return (
         <>
             <header
-                className="relative h-[45vh] md:h-[80vh] object-contain text-white"
+                className="relative h-[45vh] md:h-[80vh] object-contain text-white bg-cover bg-center md:[background-position:center_10%]"
                 style={{
-                    backgroundSize: "cover",
                     backgroundImage: `url("https://image.tmdb.org/t/p/original/${movie?.backdrop_path || movie?.poster_path}")`,
-                    backgroundPosition: "center center",
                 }}
             >
                 <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[#141414]" />
@@ -142,7 +117,7 @@ const Banner = ({ onMovieClick }) => {
                             onClick={() => onMovieClick(movie)}
                             className="flex items-center gap-2 md:gap-3 cursor-pointer text-black outline-none border-none font-bold rounded-full px-4 md:px-8 py-2.5 md:py-4 text-sm md:text-base bg-white transition duration-300 shadow-lg hover:scale-105 active:scale-95"
                         >
-                            <Play className="w-4 h-4 md:w-6 md:h-6 fill-black" /> <span className="hidden sm:inline">Watch Now</span><span className="sm:hidden">Play</span>
+                            <Play className="w-4 h-4 md:w-6 md:h-6" /> <span className="hidden sm:inline">Watch Now</span><span className="sm:hidden">Play</span>
                         </button>
                         <button
                             onClick={handleListToggle}

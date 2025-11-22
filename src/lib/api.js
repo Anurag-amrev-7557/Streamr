@@ -12,18 +12,6 @@ const api = axios.create({
 api.interceptors.response.use(
     (response) => response,
     (error) => {
-        if (error.response?.status === 401) {
-            // Don't redirect if checking auth status
-            if (error.config?.url?.includes('/auth/me')) {
-                return Promise.reject(error);
-            }
-
-            // If 401, clear local storage and redirect to login if not already there
-            localStorage.removeItem('netflix-user');
-            if (!window.location.pathname.includes('/login') && !window.location.pathname.includes('/signup')) {
-                window.location.href = '/login';
-            }
-        }
         return Promise.reject(error);
     }
 );
