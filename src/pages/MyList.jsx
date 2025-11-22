@@ -10,7 +10,7 @@ import { X, Play, Info, Search, ChevronDown } from 'lucide-react';
 import watchlistImage from '../assets/watchlist.webp';
 
 const MyList = () => {
-    const { list, removeMovie } = useListStore();
+    const { list, removeMovie, clearList } = useListStore();
     const [selectedMovie, setSelectedMovie] = useState(null);
     const [playerState, setPlayerState] = useState({ isOpen: false, movie: null });
     const [searchQuery, setSearchQuery] = useState('');
@@ -36,7 +36,7 @@ const MyList = () => {
     };
 
     const confirmClearAll = () => {
-        list.forEach(item => removeMovie(item.id));
+        clearList();
     };
 
     // Update indicator position when filter changes
@@ -269,7 +269,7 @@ const MyList = () => {
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             transition={{ delay: 0.6 }}
-                            className="text-sm text-gray-500"
+                            className="text-base text-gray-500 text-center"
                         >
                             {searchQuery || filter !== 'all'
                                 ? 'Try adjusting your search or filters'

@@ -1,10 +1,11 @@
 import { X, Play, Plus, Check, Calendar, Clock, Tv, Grid, List, Image as ImageIcon, Star } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import axios from '../lib/axios';
 import useListStore from '../store/useListStore';
 import useAuthStore from '../store/useAuthStore';
+import { useEpisodes, usePrefetchSeasonEpisodes } from '../hooks/useTMDB';
 import StreamingPlayer from './StreamingPlayer';
 import CustomDropdown from './CustomDropdown';
 import clsx from 'clsx';
@@ -16,7 +17,6 @@ const Modal = ({ movie, onClose }) => {
     const [movieDetails, setMovieDetails] = useState(null);
     const [cast, setCast] = useState([]);
     const [similarMovies, setSimilarMovies] = useState([]);
-    const [episodes, setEpisodes] = useState([]);
     const [selectedSeason, setSelectedSeason] = useState(1);
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [trailerKey, setTrailerKey] = useState(null);
@@ -24,7 +24,7 @@ const Modal = ({ movie, onClose }) => {
     const [viewMode, setViewMode] = useState('list'); // 'list' or 'grid'
     const dropdownRef = useRef(null);
     const hasOpenedRef = useRef(false);
-    const { addMovie, removeMovie, isInList } = useListStore();
+    const { addMovie, removeMovie, isInList, list } = useListStore();
     const { user } = useAuthStore();
     const [playerState, setPlayerState] = useState({ isOpen: false, type: 'movie', season: 1, episode: 1 });
     const [displayedCount, setDisplayedCount] = useState(10);
@@ -49,7 +49,8 @@ const Modal = ({ movie, onClose }) => {
         }
     }, [isInList, movie, removeMovie, addMovie, user, navigate]);
 
-    const inList = useMemo(() => isInList(movie?.id), [isInList, movie?.id]);
+    // Track list changes by including list in dependencies
+    const inList = useMemo(() => isInList(movie?.id), [isInList, movie?.id, list]);
 
     // Mark modal as opened (using ref to avoid re-renders)
     if (movie && !hasOpenedRef.current) {
@@ -138,29 +139,40 @@ const Modal = ({ movie, onClose }) => {
         fetchModalData();
     }, [movie]);
 
-    const [isEpisodesLoading, setIsEpisodesLoading] = useState(false);
+    // Use React Query for episodes with caching
+    const isTv = !!movie?.first_air_date;
+    const { data: episodes = [], isLoading: isEpisodesLoading } = useEpisodes(
+        movie?.id,
+        selectedSeason,
+        isTv && hasOpenedRef.current
+    );
 
-    // Fetch episodes when season changes (only for TV shows)
+    // Prefetch hook for next/previous seasons
+    const { prefetchSeasonEpisodes } = usePrefetchSeasonEpisodes();
+
+    // Prefetch adjacent seasons AFTER initial modal data is loaded
     useEffect(() => {
-        if (!hasOpenedRef.current) return;
+        if (!movie?.id || !isTv || !movieDetails?.number_of_seasons) return;
+        if (isLoading || isEpisodesLoading) return; // Wait for initial load to complete
 
-        const fetchEpisodes = async () => {
-            if (!movie?.id || !movie.first_air_date) return;
+        const totalSeasons = movieDetails.number_of_seasons;
 
-            setIsEpisodesLoading(true);
-            try {
-                const response = await axios.get(`/tv/${movie.id}/season/${selectedSeason}`);
-                setEpisodes(response.data.episodes || []);
-            } catch (error) {
-                console.log('Episodes not available:', error.message);
-                setEpisodes([]);
-            } finally {
-                setIsEpisodesLoading(false);
+        // Use setTimeout to defer prefetching until after render
+        const timeoutId = setTimeout(() => {
+            // Prefetch next season if it exists
+            if (selectedSeason < totalSeasons) {
+                prefetchSeasonEpisodes(movie.id, selectedSeason + 1);
             }
-        };
 
-        fetchEpisodes();
-    }, [movie, selectedSeason]);
+            // Prefetch previous season if it exists
+            if (selectedSeason > 1) {
+                prefetchSeasonEpisodes(movie.id, selectedSeason - 1);
+            }
+        }, 500); // Wait 500ms after loading completes to start prefetching
+
+        return () => clearTimeout(timeoutId);
+    }, [movie?.id, selectedSeason, movieDetails?.number_of_seasons, isTv, isLoading, isEpisodesLoading, prefetchSeasonEpisodes]);
+
 
     const handleClose = useCallback(() => {
         onClose();
@@ -809,4 +821,4 @@ const Modal = ({ movie, onClose }) => {
     );
 };
 
-export default memo(Modal);
+export default Modal;

@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useNetflixOriginals, useMovieImages } from '../hooks/useTMDB';
+import { useNetflixOriginals, useMovieImages, usePrefetchModalData } from '../hooks/useTMDB';
 import { Play, Plus, Check } from 'lucide-react';
 import useListStore from '../store/useListStore';
 import useAuthStore from '../store/useAuthStore';
@@ -8,12 +8,14 @@ import StreamingPlayer from './StreamingPlayer';
 import { AnimatePresence } from 'framer-motion';
 
 const Banner = ({ onMovieClick }) => {
-    const [movie, setMovie] = useState([]);
+    const [movie, setMovie] = useState(null);
     const [showPlayer, setShowPlayer] = useState(false);
     const [logoPath, setLogoPath] = useState(null);
     const [logoLoaded, setLogoLoaded] = useState(false);
-    const { addMovie, removeMovie, isInList } = useListStore();
+    const { addMovie, removeMovie, isInList, list } = useListStore();
     const { user } = useAuthStore();
+    const { prefetchModalData } = usePrefetchModalData();
+    const hoverTimeoutRef = useRef(null);
     const navigate = useNavigate();
 
     const { data: movies } = useNetflixOriginals();
@@ -56,6 +58,19 @@ const Banner = ({ onMovieClick }) => {
             addMovie(movie);
         }
     };
+
+    const handleButtonHover = useCallback(() => {
+        hoverTimeoutRef.current = setTimeout(() => {
+            prefetchModalData(movie);
+        }, 300);
+    }, [movie, prefetchModalData]);
+
+    const handleButtonLeave = useCallback(() => {
+        if (hoverTimeoutRef.current) {
+            clearTimeout(hoverTimeoutRef.current);
+            hoverTimeoutRef.current = null;
+        }
+    }, []);
 
     const inList = isInList(movie?.id);
 
@@ -115,6 +130,8 @@ const Banner = ({ onMovieClick }) => {
                     <div className="flex gap-2 md:gap-4">
                         <button
                             onClick={() => onMovieClick(movie)}
+                            onMouseEnter={handleButtonHover}
+                            onMouseLeave={handleButtonLeave}
                             className="flex items-center gap-2 md:gap-3 cursor-pointer text-black outline-none border-none font-bold rounded-full px-4 md:px-8 py-2.5 md:py-4 text-sm md:text-base bg-white transition duration-300 shadow-lg hover:scale-105 active:scale-95"
                         >
                             <Play className="w-4 h-4 md:w-6 md:h-6" /> <span className="hidden sm:inline">Watch Now</span><span className="sm:hidden">Play</span>

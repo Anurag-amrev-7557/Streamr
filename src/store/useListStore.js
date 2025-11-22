@@ -15,6 +15,9 @@ const useListStore = create(
                 const { list } = get();
                 set({ list: list.filter((item) => item.id !== movieId) });
             },
+            clearList: () => {
+                set({ list: [] });
+            },
             isInList: (movieId) => {
                 const { list } = get();
                 return list.some((item) => item.id === movieId);

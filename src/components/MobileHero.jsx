@@ -1,12 +1,15 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import axios from '../lib/axios';
 import requests from '../lib/requests';
 import { Play, Plus, Check } from 'lucide-react';
 import useListStore from '../store/useListStore';
+import { usePrefetchModalData } from '../hooks/useTMDB';
 
 const MobileHeroCard = ({ movie, onMovieClick }) => {
     const [logoPath, setLogoPath] = useState(null);
-    const { addMovie, removeMovie, isInList } = useListStore();
+    const { addMovie, removeMovie, isInList, list } = useListStore();
+    const { prefetchModalData } = usePrefetchModalData();
+    const hoverTimeoutRef = useRef(null);
 
     useEffect(() => {
         const fetchLogo = async () => {
@@ -40,10 +43,25 @@ const MobileHeroCard = ({ movie, onMovieClick }) => {
         }
     };
 
+    const handleHover = useCallback(() => {
+        hoverTimeoutRef.current = setTimeout(() => {
+            prefetchModalData(movie);
+        }, 300);
+    }, [movie, prefetchModalData]);
+
+    const handleLeave = useCallback(() => {
+        if (hoverTimeoutRef.current) {
+            clearTimeout(hoverTimeoutRef.current);
+            hoverTimeoutRef.current = null;
+        }
+    }, []);
+
     return (
         <div
             onClick={() => onMovieClick(movie)}
-            className="relative flex-shrink-0 w-[calc(100vw-32px)] snap-center rounded-xl overflow-hidden aspect-[6/3] shadow-lg group"
+            onMouseEnter={handleHover}
+            onMouseLeave={handleLeave}
+            className="relative flex-shrink-0 w-[calc(100vw-32px)] snap-center rounded-xl overflow-hidden aspect-[5/3] shadow-lg group"
         >
             <img
                 src={`https://image.tmdb.org/t/p/w500${movie.backdrop_path || movie.poster_path}`}

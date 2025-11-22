@@ -1,19 +1,23 @@
-import { useState, useRef } from 'react';
-import { useRowData } from '../hooks/useTMDB';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { useRowData, usePrefetchModalData } from '../hooks/useTMDB';
 import clsx from 'clsx';
 import Skeleton from './Skeleton';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 
 
+import { memo } from 'react';
+
 const Row = ({ title, fetchUrl, isLargeRow, onMovieClick }) => {
     const { data: movies = [], isLoading: loading } = useRowData(fetchUrl, title);
+    const { prefetchModalData } = usePrefetchModalData();
 
     const rowRef = useRef(null);
     const [isDown, setIsDown] = useState(false);
     const [startX, setStartX] = useState(0);
     const [scrollLeft, setScrollLeft] = useState(0);
     const isDragging = useRef(false);
+    const hoverTimeoutRef = useRef(null);
 
     // Momentum refs
     const velocity = useRef(0);
@@ -113,6 +117,33 @@ const Row = ({ title, fetchUrl, isLargeRow, onMovieClick }) => {
         momentumLoop();
     };
 
+    const handleMovieHover = useCallback((movie) => {
+        // Debounce prefetching - only prefetch if user hovers for 300ms
+        hoverTimeoutRef.current = setTimeout(() => {
+            prefetchModalData(movie);
+        }, 300);
+    }, [prefetchModalData]);
+
+    const handleMovieLeave = useCallback(() => {
+        // Clear the prefetch timeout if user moves away quickly
+        if (hoverTimeoutRef.current) {
+            clearTimeout(hoverTimeoutRef.current);
+            hoverTimeoutRef.current = null;
+        }
+    }, []);
+
+    // Cleanup effect to prevent memory leaks
+    useEffect(() => {
+        return () => {
+            // Cancel any ongoing animation frames
+            cancelMomentum();
+            // Clear any pending hover timeouts
+            if (hoverTimeoutRef.current) {
+                clearTimeout(hoverTimeoutRef.current);
+            }
+        };
+    }, []);
+
     const handleMovieClick = (movie) => {
         if (isDragging.current) return;
         onMovieClick(movie);
@@ -153,6 +184,8 @@ const Row = ({ title, fetchUrl, isLargeRow, onMovieClick }) => {
                             <div
                                 key={movie.id}
                                 onClick={() => handleMovieClick(movie)}
+                                onMouseEnter={() => handleMovieHover(movie)}
+                                onMouseLeave={handleMovieLeave}
                                 className="relative flex-shrink-0 w-[170px] md:w-[360px] group/item cursor-pointer"
                             >
                                 {/* Mobile: Portrait (2:3), Desktop: Landscape (16:9) */}
@@ -186,4 +219,4 @@ const Row = ({ title, fetchUrl, isLargeRow, onMovieClick }) => {
     );
 };
 
-export default Row;
+export default memo(Row);

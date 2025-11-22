@@ -1,10 +1,13 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Search, Bell, User, X, Calendar, Star } from 'lucide-react';
 import useAuthStore from '../store/useAuthStore';
 import clsx from 'clsx';
 import axios from '../lib/axios';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useSearch, usePrefetchModalData } from '../hooks/useTMDB';
+import { useDebounce } from '../hooks/useDebounce';
+import useSearchHistoryStore from '../store/useSearchHistoryStore';
 
 const Navbar = ({ onMovieClick }) => {
     const { user, logout } = useAuthStore();
@@ -15,9 +18,23 @@ const Navbar = ({ onMovieClick }) => {
     const notifRef = useRef(null);
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    const [searchResults, setSearchResults] = useState([]);
-    const [isSearching, setIsSearching] = useState(false);
     const searchInputRef = useRef(null);
+    const pillSearchInputRef = useRef(null);
+    const hoverTimeoutRef = useRef(null);
+    const blurTimeoutRef = useRef(null);
+    const [isSearchFocused, setIsSearchFocused] = useState(false);
+
+    // Debounce search query
+    const debouncedSearchQuery = useDebounce(searchQuery, 300);
+
+    // Use React Query for search with caching
+    const { data: searchResults = [], isLoading: isSearching } = useSearch(debouncedSearchQuery);
+
+    // Prefetch hook for result hover
+    const { prefetchModalData } = usePrefetchModalData();
+
+    // Search history
+    const { searches, addSearch, clearHistory, removeSearch } = useSearchHistoryStore();
 
     useEffect(() => {
         const handleScroll = () => {
@@ -79,63 +96,52 @@ const Navbar = ({ onMovieClick }) => {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [notifOpen]);
 
-    // Search functionality with debounce
+    // Hover prefetching for search results
+    const handleResultHover = useCallback((result) => {
+        hoverTimeoutRef.current = setTimeout(() => {
+            prefetchModalData(result);
+        }, 300);
+    }, [prefetchModalData]);
+
+    const handleResultLeave = useCallback(() => {
+        if (hoverTimeoutRef.current) {
+            clearTimeout(hoverTimeoutRef.current);
+            hoverTimeoutRef.current = null;
+        }
+    }, []);
+
+    // Cleanup effect to prevent memory leaks
     useEffect(() => {
-        const searchMovies = async () => {
-            if (!searchQuery.trim()) {
-                setSearchResults([]);
-                return;
+        return () => {
+            // Clear all pending timeouts
+            if (hoverTimeoutRef.current) {
+                clearTimeout(hoverTimeoutRef.current);
             }
-
-            setIsSearching(true);
-            try {
-                const response = await axios.get(`/search/multi?query=${encodeURIComponent(searchQuery)}`);
-
-                // Filter only movies and tv shows
-                const filteredResults = response.data.results?.filter(
-                    item => item.media_type === 'movie' || item.media_type === 'tv'
-                ).slice(0, 5) || [];
-
-                // Fetch details for each result to get runtime/seasons
-                const detailedResults = await Promise.all(filteredResults.map(async (item) => {
-                    try {
-                        const detailsEndpoint = item.media_type === 'movie'
-                            ? `/movie/${item.id}`
-                            : `/tv/${item.id}`;
-                        const details = await axios.get(detailsEndpoint);
-                        return { ...item, ...details.data };
-                    } catch (e) {
-                        return item;
-                    }
-                }));
-
-                setSearchResults(detailedResults);
-            } catch (error) {
-                console.log('Search error:', error);
-                setSearchResults([]);
-            } finally {
-                setIsSearching(false);
+            if (blurTimeoutRef.current) {
+                clearTimeout(blurTimeoutRef.current);
             }
         };
-
-        const timeoutId = setTimeout(searchMovies, 300);
-        return () => clearTimeout(timeoutId);
-    }, [searchQuery]);
+    }, []);
 
     const handleSearchClose = () => {
         setSearchOpen(false);
         setSearchQuery('');
-        setSearchResults([]);
     };
 
     const handleResultClick = (result) => {
+        // Save to search history
+        addSearch(result.title || result.name);
+
         if (onMovieClick) {
             onMovieClick(result);
         } else {
-            // Fallback if onMovieClick is not provided (though it should be)
             navigate(`/?movie=${result.id}`);
         }
         handleSearchClose();
+    };
+
+    const handleHistoryClick = (query) => {
+        setSearchQuery(query);
     };
 
     return (
@@ -176,7 +182,10 @@ const Navbar = ({ onMovieClick }) => {
                                     initial={{ opacity: 0, scale: 0.8 }}
                                     animate={{ opacity: 1, scale: 1 }}
                                     exit={{ opacity: 0, scale: 0.8 }}
-                                    transition={{ duration: 0.2 }}
+                                    transition={{
+                                        duration: 0.15,
+                                        ease: [0.4, 0, 0.2, 1]
+                                    }}
                                 >
                                     <Search
                                         className="w-5 h-5 cursor-pointer hover:text-gray-300 transition-colors"
@@ -190,10 +199,26 @@ const Navbar = ({ onMovieClick }) => {
                                 <motion.div
                                     key="search-input"
                                     initial={{ width: 0, opacity: 0 }}
-                                    animate={{ width: window.innerWidth < 768 ? 240 : 320, opacity: 1 }}
-                                    exit={{ width: 0, opacity: 0 }}
-                                    transition={{ duration: 0.2, ease: "easeOut" }}
-                                    className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-2 bg-black/80 border border-white/20 rounded-full px-3 py-2 md:py-2.5 overflow-hidden backdrop-blur-md"
+                                    animate={{
+                                        width: window.innerWidth < 768 ? 240 : 320,
+                                        opacity: 1
+                                    }}
+                                    exit={{
+                                        width: 0,
+                                        opacity: 0
+                                    }}
+                                    transition={{
+                                        width: {
+                                            type: "spring",
+                                            stiffness: 300,
+                                            damping: 30
+                                        },
+                                        opacity: {
+                                            duration: 0.2,
+                                            ease: "easeOut"
+                                        }
+                                    }}
+                                    className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-2 bg-black/80 border border-white/20 rounded-full px-3 py-2 md:py-3 overflow-hidden backdrop-blur-md"
                                 >
                                     <Search className="w-4 h-4 text-gray-400 flex-shrink-0" />
                                     <input
@@ -201,82 +226,139 @@ const Navbar = ({ onMovieClick }) => {
                                         type="text"
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
+                                        onFocus={() => setIsSearchFocused(true)}
+                                        onBlur={() => {
+                                            blurTimeoutRef.current = setTimeout(() => setIsSearchFocused(false), 200);
+                                        }}
                                         placeholder="Titles, people, genres"
                                         className="bg-transparent outline-none text-white placeholder-gray-400 text-sm w-full min-w-0"
                                         autoFocus
                                     />
                                     <X
-                                        className="w-4 h-4 cursor-pointer hover:text-gray-300 flex-shrink-0"
+                                        className="w-4 h-4 cursor-pointer hover:text-gray-300 flex-shrink-0 transition-colors"
                                         onClick={handleSearchClose}
                                     />
                                 </motion.div>
                             )}
                         </AnimatePresence>
 
-                        {/* Search Results Dropdown */}
+                        {/* Search Results / History Dropdown */}
                         <AnimatePresence>
-                            {searchOpen && searchResults.length > 0 && (
+                            {searchOpen && (searchResults.length > 0 || (!debouncedSearchQuery && searches.length > 0 && isSearchFocused)) && (
                                 <motion.div
-                                    initial={{ opacity: 0, y: 10 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, y: 10 }}
+                                    initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                                    transition={{
+                                        type: "spring",
+                                        stiffness: 400,
+                                        damping: 30,
+                                        opacity: { duration: 0.15 }
+                                    }}
                                     className="absolute top-full right-0 mt-8 w-[calc(100vw-2rem)] md:w-[450px] max-w-md bg-[#181818] border border-white/10 rounded-xl overflow-hidden shadow-2xl z-50"
                                 >
-                                    <div className="max-h-[70vh] overflow-y-auto custom-scrollbar">
-                                        {searchResults.map((result) => (
-                                            <div
-                                                key={result.id}
-                                                onClick={() => handleResultClick(result)}
-                                                className="flex gap-4 p-3 hover:bg-white/10 cursor-pointer transition border-b border-white/5 last:border-none group"
-                                            >
-                                                {/* Portrait Thumbnail */}
-                                                <div className="flex-shrink-0 w-16 h-24 bg-gray-800 rounded overflow-hidden shadow-md group-hover:scale-105 transition-transform duration-300">
-                                                    {result.poster_path ? (
-                                                        <img
-                                                            src={`https://image.tmdb.org/t/p/w154${result.poster_path}`}
-                                                            alt={result.title || result.name}
-                                                            className="w-full h-full object-cover"
-                                                        />
-                                                    ) : (
-                                                        <div className="w-full h-full flex items-center justify-center text-gray-600">
-                                                            <Search className="w-6 h-6 opacity-20" />
-                                                        </div>
-                                                    )}
-                                                </div>
-
-                                                {/* Info */}
-                                                <div className="flex-1 flex flex-col justify-center min-w-0">
-                                                    <h4 className="text-white font-semibold text-sm line-clamp-2 mb-1 transition-colors">
-                                                        {result.title || result.name}
-                                                    </h4>
-                                                    <div className="flex items-center gap-3 text-xs text-gray-400 flex-wrap">
-                                                        <span className="flex items-center gap-1">
-                                                            <Calendar className="w-3 h-3" />
-                                                            {result.release_date?.substring(0, 4) || result.first_air_date?.substring(0, 4) || 'N/A'}
-                                                        </span>
-                                                        <span className="flex items-center gap-1 text-yellow-500/80">
-                                                            <Star className="w-3 h-3 fill-current" />
-                                                            {result.vote_average?.toFixed(1) || 'N/A'}
-                                                        </span>
-                                                        {/* Runtime or Seasons */}
-                                                        {result.media_type === 'movie' && result.runtime > 0 && (
-                                                            <span className="text-gray-400">
-                                                                {Math.floor(result.runtime / 60)}h {result.runtime % 60}m
-                                                            </span>
-                                                        )}
-                                                        {result.media_type === 'tv' && result.number_of_seasons && (
-                                                            <span className="text-gray-400">
-                                                                {result.number_of_seasons} {result.number_of_seasons === 1 ? 'Season' : 'Seasons'}
-                                                            </span>
+                                    {/* Search Results */}
+                                    {searchResults.length > 0 ? (
+                                        <div className="max-h-[70vh] overflow-y-auto custom-scrollbar">
+                                            {searchResults.map((result) => (
+                                                <div
+                                                    key={result.id}
+                                                    onClick={() => handleResultClick(result)}
+                                                    onMouseEnter={() => handleResultHover(result)}
+                                                    onMouseLeave={handleResultLeave}
+                                                    className="flex gap-4 p-3 hover:bg-white/10 cursor-pointer transition border-b border-white/5 last:border-none group"
+                                                >
+                                                    {/* Portrait Thumbnail */}
+                                                    <div className="flex-shrink-0 w-16 h-24 bg-gray-800 rounded overflow-hidden shadow-md group-hover:scale-105 transition-transform duration-300">
+                                                        {result.poster_path ? (
+                                                            <img
+                                                                src={`https://image.tmdb.org/t/p/w154${result.poster_path}`}
+                                                                alt={result.title || result.name}
+                                                                className="w-full h-full object-cover"
+                                                            />
+                                                        ) : (
+                                                            <div className="w-full h-full flex items-center justify-center text-gray-600">
+                                                                <Search className="w-6 h-6 opacity-20" />
+                                                            </div>
                                                         )}
                                                     </div>
-                                                    <p className="text-xs text-gray-500 mt-2 line-clamp-1">
-                                                        {result.overview || 'No description available.'}
-                                                    </p>
+
+                                                    {/* Info */}
+                                                    <div className="flex-1 flex flex-col justify-center min-w-0">
+                                                        <h4 className="text-white font-semibold text-sm line-clamp-2 mb-1 transition-colors">
+                                                            {result.title || result.name}
+                                                        </h4>
+                                                        <div className="flex items-center gap-3 text-xs text-gray-400 flex-wrap">
+                                                            <span className="flex items-center gap-1">
+                                                                <Calendar className="w-3 h-3" />
+                                                                {result.release_date?.substring(0, 4) || result.first_air_date?.substring(0, 4) || 'N/A'}
+                                                            </span>
+                                                            <span className="flex items-center gap-1 text-yellow-500/80">
+                                                                <Star className="w-3 h-3 fill-current" />
+                                                                {result.vote_average?.toFixed(1) || 'N/A'}
+                                                            </span>
+                                                            {/* Runtime or Seasons */}
+                                                            {result.media_type === 'movie' && result.runtime > 0 && (
+                                                                <span className="text-gray-400">
+                                                                    {Math.floor(result.runtime / 60)}h {result.runtime % 60}m
+                                                                </span>
+                                                            )}
+                                                            {result.media_type === 'tv' && result.number_of_seasons && (
+                                                                <span className="text-gray-400">
+                                                                    {result.number_of_seasons} {result.number_of_seasons === 1 ? 'Season' : 'Seasons'}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-xs text-gray-500 mt-2 line-clamp-1">
+                                                            {result.overview || 'No description available.'}
+                                                        </p>
+                                                    </div>
                                                 </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        /* Search History */
+                                        <div className="p-3">
+                                            <div className="flex items-center justify-between mb-2 px-2">
+                                                <h4 className="text-gray-400 text-xs font-semibold uppercase tracking-wide">Recent Searches</h4>
+                                                {searches.length > 0 && (
+                                                    <button
+                                                        onClick={clearHistory}
+                                                        className="text-xs text-gray-500 hover:text-white transition-colors"
+                                                    >
+                                                        Clear All
+                                                    </button>
+                                                )}
                                             </div>
-                                        ))}
-                                    </div>
+                                            {searches.length > 0 ? (
+                                                <div className="space-y-1">
+                                                    {searches.map((search) => (
+                                                        <div
+                                                            key={search.timestamp}
+                                                            className="flex items-center gap-3 px-2 py-2 hover:bg-white/5 rounded-lg cursor-pointer group"
+                                                        >
+                                                            <Search className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                                                            <span
+                                                                onClick={() => handleHistoryClick(search.query)}
+                                                                className="flex-1 text-sm text-gray-300 group-hover:text-white transition-colors truncate"
+                                                            >
+                                                                {search.query}
+                                                            </span>
+                                                            <X
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    removeSearch(search.query);
+                                                                }}
+                                                                className="w-4 h-4 text-gray-600 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                                                            />
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <p className="text-gray-500 text-sm text-center py-4">No recent searches</p>
+                                            )}
+                                        </div>
+                                    )}
                                 </motion.div>
                             )}
                         </AnimatePresence>
@@ -357,14 +439,19 @@ const Navbar = ({ onMovieClick }) => {
                     <div className="bg-black/70 backdrop-blur-xl border border-white/10 rounded-full px-4 py-2.5 flex items-center gap-3 shadow-2xl ring-1 ring-white/5">
                         <Search className="w-5 h-5 text-gray-400" />
                         <input
+                            ref={pillSearchInputRef}
                             type="text"
                             value={searchQuery}
                             onChange={(e) => {
                                 setSearchQuery(e.target.value);
                                 if (!searchOpen) setSearchOpen(true);
                             }}
+                            onFocus={() => setIsSearchFocused(true)}
+                            onBlur={() => {
+                                blurTimeoutRef.current = setTimeout(() => setIsSearchFocused(false), 200);
+                            }}
                             placeholder="Search movies, shows..."
-                            className="bg-transparent border-none outline-none text-white placeholder-gray-400 text-sm flex-1 min-w-0"
+                            className="bg-transparent border-none outline-none text-white placeholder-gray-400 text-base flex-1 min-w-0"
                         />
                         {searchQuery && (
                             <X
@@ -372,87 +459,135 @@ const Navbar = ({ onMovieClick }) => {
                                 onClick={() => setSearchQuery('')}
                             />
                         )}
-                        <div className="w-px h-5 bg-white/10 mx-1"></div>
-                        {user ? (
-                            <div
-                                className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold cursor-pointer hover:scale-105 transition-transform overflow-hidden border border-white/20"
-                                onClick={() => { logout(); navigate('/login'); }}
-                                title="Sign Out"
-                            >
-                                {user?.avatar ? (
-                                    <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
-                                ) : (
-                                    (user?.name?.[0] || user?.email?.[0] || 'U').toUpperCase()
-                                )}
-                            </div>
-                        ) : (
-                            <Link to="/login" className="bg-white hover:bg-white/70 text-black px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap">
-                                Sign In
-                            </Link>
-                        )}
+                        <div className="hidden md:flex w-px h-5 bg-white/10 mx-1"></div>
+                        <div className="hidden md:flex items-center gap-3">
+                            {user ? (
+                                <div
+                                    className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold cursor-pointer hover:scale-105 transition-transform overflow-hidden border border-white/20"
+                                    onClick={() => { logout(); navigate('/login'); }}
+                                    title="Sign Out"
+                                >
+                                    {user?.avatar ? (
+                                        <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
+                                    ) : (
+                                        (user?.name?.[0] || user?.email?.[0] || 'U').toUpperCase()
+                                    )}
+                                </div>
+                            ) : (
+                                <Link to="/login" className="bg-white hover:bg-white/70 text-black px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap">
+                                    Sign In
+                                </Link>
+                            )}
+                        </div>
                     </div>
 
-                    {/* Scrolled Search Results */}
+                    {/* Scrolled Search Results / History */}
                     <AnimatePresence>
-                        {isScrolled && searchQuery.trim() && searchResults.length > 0 && (
+                        {isScrolled && (searchResults.length > 0 || (!debouncedSearchQuery.trim() && searches.length > 0 && isSearchFocused)) && (
                             <motion.div
                                 initial={{ opacity: 0, y: 10, scale: 0.95 }}
                                 animate={{ opacity: 1, y: 0, scale: 1 }}
                                 exit={{ opacity: 0, y: 10, scale: 0.95 }}
                                 className="absolute top-full left-0 right-0 mt-3 bg-[#181818] border border-white/10 rounded-2xl overflow-hidden shadow-2xl z-50"
                             >
-                                <div className="max-h-[60vh] overflow-y-auto custom-scrollbar p-2">
-                                    {searchResults.map((result) => (
-                                        <div
-                                            key={result.id}
-                                            onClick={() => handleResultClick(result)}
-                                            className="flex gap-4 p-4 hover:bg-white/10 rounded-xl cursor-pointer transition group"
-                                        >
-                                            <div className="flex-shrink-0 w-20 h-28 bg-gray-800 rounded-lg overflow-hidden">
-                                                {result.poster_path ? (
-                                                    <img
-                                                        src={`https://image.tmdb.org/t/p/w154${result.poster_path}`}
-                                                        alt={result.title}
-                                                        className="w-full h-full object-cover"
-                                                    />
-                                                ) : (
-                                                    <div className="w-full h-full flex items-center justify-center text-gray-600">
-                                                        <Search className="w-6 h-6 opacity-20" />
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div className="flex-1 flex flex-col justify-center min-w-0">
-                                                <h4 className="text-white font-semibold text-base line-clamp-1 transition-colors">
-                                                    {result.title || result.name}
-                                                </h4>
-                                                <div className="flex items-center gap-2 text-sm text-gray-400 mt-1.5 flex-wrap">
-                                                    <span>{result.release_date?.substring(0, 4) || 'N/A'}</span>
-                                                    <span>•</span>
-                                                    <span className="flex items-center gap-1 text-yellow-500">
-                                                        <Star className="w-3.5 h-3.5 fill-current" />
-                                                        {result.vote_average?.toFixed(1)}
-                                                    </span>
-                                                    {/* Runtime or Seasons */}
-                                                    {result.media_type === 'movie' && result.runtime > 0 && (
-                                                        <>
-                                                            <span>•</span>
-                                                            <span>{Math.floor(result.runtime / 60)}h {result.runtime % 60}m</span>
-                                                        </>
-                                                    )}
-                                                    {result.media_type === 'tv' && result.number_of_seasons && (
-                                                        <>
-                                                            <span>•</span>
-                                                            <span>{result.number_of_seasons} {result.number_of_seasons === 1 ? 'Season' : 'Seasons'}</span>
-                                                        </>
+                                {searchResults.length > 0 ? (
+                                    /* Search Results */
+                                    <div className="max-h-[60vh] overflow-y-auto custom-scrollbar p-2">
+                                        {searchResults.map((result) => (
+                                            <div
+                                                key={result.id}
+                                                onClick={() => handleResultClick(result)}
+                                                onMouseEnter={() => handleResultHover(result)}
+                                                onMouseLeave={handleResultLeave}
+                                                className="flex gap-4 p-4 hover:bg-white/10 rounded-xl cursor-pointer transition group"
+                                            >
+                                                <div className="flex-shrink-0 w-20 h-28 bg-gray-800 rounded-lg overflow-hidden">
+                                                    {result.poster_path ? (
+                                                        <img
+                                                            src={`https://image.tmdb.org/t/p/w154${result.poster_path}`}
+                                                            alt={result.title}
+                                                            className="w-full h-full object-cover"
+                                                        />
+                                                    ) : (
+                                                        <div className="w-full h-full flex items-center justify-center text-gray-600">
+                                                            <Search className="w-6 h-6 opacity-20" />
+                                                        </div>
                                                     )}
                                                 </div>
-                                                <p className="text-sm text-gray-500 mt-2 line-clamp-2">
-                                                    {result.overview || 'No description available.'}
-                                                </p>
+                                                <div className="flex-1 flex flex-col justify-center min-w-0">
+                                                    <h4 className="text-white font-semibold text-base line-clamp-1 transition-colors">
+                                                        {result.title || result.name}
+                                                    </h4>
+                                                    <div className="flex items-center gap-2 text-sm text-gray-400 mt-1.5 flex-wrap">
+                                                        <span>{result.release_date?.substring(0, 4) || 'N/A'}</span>
+                                                        <span>•</span>
+                                                        <span className="flex items-center gap-1 text-yellow-500">
+                                                            <Star className="w-3.5 h-3.5 fill-current" />
+                                                            {result.vote_average?.toFixed(1)}
+                                                        </span>
+                                                        {result.media_type === 'movie' && result.runtime > 0 && (
+                                                            <>
+                                                                <span>•</span>
+                                                                <span>{Math.floor(result.runtime / 60)}h {result.runtime % 60}m</span>
+                                                            </>
+                                                        )}
+                                                        {result.media_type === 'tv' && result.number_of_seasons && (
+                                                            <>
+                                                                <span>•</span>
+                                                                <span>{result.number_of_seasons} {result.number_of_seasons === 1 ? 'Season' : 'Seasons'}</span>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-sm text-gray-500 mt-2 line-clamp-2">
+                                                        {result.overview || 'No description available.'}
+                                                    </p>
+                                                </div>
                                             </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    /* Search History */
+                                    <div className="p-4">
+                                        <div className="flex items-center justify-between mb-3 px-2">
+                                            <h4 className="text-gray-400 text-xs font-semibold uppercase tracking-wide">Recent Searches</h4>
+                                            {searches.length > 0 && (
+                                                <button
+                                                    onClick={clearHistory}
+                                                    className="text-xs text-gray-500 hover:text-white transition-colors"
+                                                >
+                                                    Clear All
+                                                </button>
+                                            )}
                                         </div>
-                                    ))}
-                                </div>
+                                        {searches.length > 0 ? (
+                                            <div className="space-y-1">
+                                                {searches.map((search) => (
+                                                    <div
+                                                        key={search.timestamp}
+                                                        className="flex items-center gap-3 px-3 py-2.5 hover:bg-white/5 rounded-xl cursor-pointer group"
+                                                    >
+                                                        <Search className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                                                        <span
+                                                            onClick={() => handleHistoryClick(search.query)}
+                                                            className="flex-1 text-sm text-gray-300 group-hover:text-white transition-colors truncate"
+                                                        >
+                                                            {search.query}
+                                                        </span>
+                                                        <X
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                removeSearch(search.query);
+                                                            }}
+                                                            className="w-4 h-4 text-gray-600 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <p className="text-gray-500 text-sm text-center py-6">No recent searches</p>
+                                        )}
+                                    </div>
+                                )}
                             </motion.div>
                         )}
                     </AnimatePresence>

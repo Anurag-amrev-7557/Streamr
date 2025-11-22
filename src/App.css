@@ -5,6 +5,20 @@
   text-align: center;
 }
 
+:root {
+  --safe-bottom: env(safe-area-inset-bottom);
+}
+
+html, body {
+  background-color: black;
+}
+
+
+.bottom-padding {
+  height: var(--safe-bottom);
+  background: #000; /* same black as theme */
+}
+
 .logo {
   height: 6em;
   padding: 1.5em;
