@@ -7,6 +7,11 @@ import session from 'express-session';
 import connectDB from './config/database.js';
 import passportConfig from './config/passport.js';
 import authRoutes from './routes/auth.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Load environment variables
 dotenv.config();
@@ -42,6 +47,10 @@ passportConfig(passport);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+
+if (process.env.NODE_ENV === 'production') {
+    app.use(express.static(path.join(__dirname, '../dist')));
+}
 
 // CORS configuration
 app.use(cors({
@@ -79,6 +88,13 @@ app.get('/health', (req, res) => {
     });
 });
 
+if (process.env.NODE_ENV === 'production') {
+    app.get('*', (req, res, next) => {
+        if (req.path.startsWith('/api')) return next();
+        res.sendFile(path.resolve(__dirname, '../dist', 'index.html'));
+    });
+}
+
 // 404 handler
 app.use((req, res) => {
     res.status(404).json({
@@ -102,19 +118,5 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`🚀 Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
 });
-
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-if (process.env.NODE_ENV === 'production') {
-    app.use(express.static(path.join(__dirname, '../dist')));
-
-    app.get('*', (req, res) => {
-        res.sendFile(path.resolve(__dirname, '../dist', 'index.html'));
-    });
-}
 
 export default app;
