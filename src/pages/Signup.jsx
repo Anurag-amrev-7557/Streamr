@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import useAuthStore from '../store/useAuthStore';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Eye, EyeOff } from 'lucide-react';
 
 const Signup = () => {
     const [formData, setFormData] = useState({
@@ -11,6 +11,7 @@ const Signup = () => {
     });
     const [isLoading, setIsLoading] = useState(false);
     const [focusedInput, setFocusedInput] = useState(null);
+    const [showPassword, setShowPassword] = useState(false);
 
     const { signup, error } = useAuthStore();
     const navigate = useNavigate();

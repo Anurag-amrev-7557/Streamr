@@ -7,6 +7,7 @@ import StreamingPlayer from '../components/StreamingPlayer';
 import CustomDropdown from '../components/CustomDropdown';
 import ConfirmModal from '../components/ConfirmModal';
 import { X, Play, Info, Search, ChevronDown } from 'lucide-react';
+import watchlistImage from '../assets/watchlist.webp';
 
 const MyList = () => {
     const { list, removeMovie } = useListStore();
@@ -258,7 +259,7 @@ const MyList = () => {
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: 0.2 }}
-                            src="/src/assets/Watchlist Logo.webp"
+                            src={watchlistImage}
                             alt="Watchlist Logo"
                             className="w-48 h-48 mb-6 opacity-30 drop-shadow-2xl"
                         />

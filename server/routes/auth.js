@@ -140,7 +140,8 @@ router.get(
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
             sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+            maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+            path: '/'
         });
 
         // Redirect to frontend
@@ -174,9 +175,11 @@ router.get('/me', protect, async (req, res) => {
 // @desc    Logout user / clear cookie
 // @access  Private
 router.post('/logout', protect, (req, res) => {
-    res.cookie('token', 'none', {
-        expires: new Date(Date.now() + 1 * 1000),
-        httpOnly: true
+    res.clearCookie('token', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        path: '/'
     });
 
     res.status(200).json({
