@@ -9,6 +9,7 @@ import passportConfig from './config/passport.js';
 import authRoutes from './routes/auth.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -49,7 +50,10 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 if (process.env.NODE_ENV === 'production') {
-    app.use(express.static(path.join(__dirname, '../dist')));
+    const distPath = path.join(__dirname, '../dist');
+    if (fs.existsSync(distPath)) {
+        app.use(express.static(distPath));
+    }
 }
 
 // CORS configuration
@@ -89,10 +93,13 @@ app.get('/health', (req, res) => {
 });
 
 if (process.env.NODE_ENV === 'production') {
-    app.get('*', (req, res, next) => {
-        if (req.path.startsWith('/api')) return next();
-        res.sendFile(path.resolve(__dirname, '../dist', 'index.html'));
-    });
+    const distPath = path.join(__dirname, '../dist');
+    if (fs.existsSync(distPath)) {
+        app.get('*', (req, res, next) => {
+            if (req.path.startsWith('/api')) return next();
+            res.sendFile(path.join(distPath, 'index.html'));
+        });
+    }
 }
 
 // 404 handler
