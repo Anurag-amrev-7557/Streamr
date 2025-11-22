@@ -62,9 +62,6 @@ const StreamingPlayer = ({ movie, type = 'movie', season = 1, episode = 1, onClo
                             <span className="font-medium text-sm hidden md:inline">
                                 Server: {STREAMING_SERVICES[val].name}
                             </span>
-                            <span className="font-medium text-sm md:inline">
-                                {STREAMING_SERVICES[val].name}
-                            </span>
                         </>
                     )}
                     renderOption={(option) => (

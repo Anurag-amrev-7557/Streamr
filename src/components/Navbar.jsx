@@ -144,12 +144,12 @@ const Navbar = ({ onMovieClick }) => {
         <>
             {/* Standard Navbar */}
             <div className={clsx(
-                "fixed top-0 w-full z-50 px-4 md:px-8 py-4 flex items-center justify-between transition-all duration-500 ease-in-out",
+                "fixed top-0 w-full z-50 px-3 md:px-8 py-3 md:py-4 flex items-center justify-between transition-all duration-500 ease-in-out",
                 isScrolled ? "-translate-y-full opacity-0 pointer-events-none" : "translate-y-0 opacity-100 bg-gradient-to-b from-black/80 to-transparent"
             )}>
-                <div className="flex items-center gap-8 md:gap-12">
+                <div className="flex items-center gap-4 md:gap-12">
                     <Link to="/" className="flex items-center gap-2 group">
-                        <svg width="26" height="26" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" className="group-hover:scale-110 transition-transform">
+                        <svg width="22" height="22" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" className="md:w-[26px] md:h-[26px] group-hover:scale-110 transition-transform">
                             <path
                                 fillRule="evenodd"
                                 clipRule="evenodd"
@@ -157,7 +157,7 @@ const Navbar = ({ onMovieClick }) => {
                                 fill="#fff"
                             />
                         </svg>
-                        <span className="text-[1.5rem] font-bold text-white tracking-tighter hidden sm:block">Streamr</span>
+                        <span className="text-xl md:text-[1.5rem] font-bold text-white tracking-tighter hidden sm:block">Streamr</span>
                     </Link>
                     <div className="hidden md:flex gap-6 text-sm font-medium text-gray-300">
                         <Link to="/" className="text-white hover:text-gray-300 transition-colors">Home</Link>
@@ -168,7 +168,7 @@ const Navbar = ({ onMovieClick }) => {
                     </div>
                 </div>
 
-                <div className="flex items-center gap-6 text-white">
+                <div className="flex items-center gap-4 md:gap-6 text-white">
                     {/* Search Section */}
                     <div className="relative">
                         <AnimatePresence mode="wait">
@@ -192,10 +192,10 @@ const Navbar = ({ onMovieClick }) => {
                                 <motion.div
                                     key="search-input"
                                     initial={{ width: 0, opacity: 0 }}
-                                    animate={{ width: 320, opacity: 1 }}
+                                    animate={{ width: window.innerWidth < 768 ? 240 : 320, opacity: 1 }}
                                     exit={{ width: 0, opacity: 0 }}
                                     transition={{ duration: 0.3, ease: "easeOut" }}
-                                    className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-2 bg-black/80 border border-white/20 rounded-full px-3 py-2.5 overflow-hidden backdrop-blur-md"
+                                    className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-2 bg-black/80 border border-white/20 rounded-full px-3 py-2 md:py-2.5 overflow-hidden backdrop-blur-md"
                                 >
                                     <Search className="w-4 h-4 text-gray-400 flex-shrink-0" />
                                     <input
@@ -222,7 +222,7 @@ const Navbar = ({ onMovieClick }) => {
                                     initial={{ opacity: 0, y: 10 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     exit={{ opacity: 0, y: 10 }}
-                                    className="absolute top-full right-0 mt-8 w-96 md:w-[450px] bg-[#181818] border border-white/10 rounded-xl overflow-hidden shadow-2xl z-50"
+                                    className="absolute top-full right-0 mt-8 w-[calc(100vw-2rem)] md:w-[450px] max-w-md bg-[#181818] border border-white/10 rounded-xl overflow-hidden shadow-2xl z-50"
                                 >
                                     <div className="max-h-[70vh] overflow-y-auto custom-scrollbar">
                                         {searchResults.map((result) => (
@@ -285,59 +285,67 @@ const Navbar = ({ onMovieClick }) => {
                     </div>
 
                     <div className="flex items-center gap-6 text-white">
-                        <div className="relative inline-block">
-                            <Bell className="w-5 h-5 cursor-pointer hover:text-gray-300 transition-colors" onClick={() => setNotifOpen(prev => !prev)} />
-                            {notifications.length > 0 && (
-                                <span className="absolute -top-1 -right-1 bg-red-600 text-xs text-white rounded-full w-4 h-4 flex items-center justify-center">
-                                    {notifications.length}
-                                </span>
-                            )}
-                        </div>
-                        <div className="group relative flex items-center gap-2 cursor-pointer" ref={notifRef}>
-                            {/* Notification Dropdown */}
-                            {notifOpen && (
-                                <div className="absolute top-full right-0 mt-2 w-80 max-h-96 bg-[#181818] border border-white/10 rounded-xl shadow-xl overflow-y-auto z-50">
-                                    <div className="p-2">
-                                        <h4 className="text-white font-semibold mb-2">New Releases</h4>
-                                        {notifications.length === 0 && (
-                                            <p className="text-gray-400 text-sm">No new notifications</p>
-                                        )}
-                                        {notifications.map((n) => (
-                                            <div key={`${n.type}-${n.id}`} className="flex items-center gap-3 p-2 hover:bg-white/5 rounded-md">
-                                                {n.poster_path ? (
-                                                    <img
-                                                        src={`https://image.tmdb.org/t/p/w92${n.poster_path}`}
-                                                        alt={n.title}
-                                                        className="w-12 h-16 object-cover rounded"
-                                                    />
-                                                ) : (
-                                                    <div className="w-12 h-16 bg-gray-700 flex items-center justify-center text-xs text-gray-400">N/A</div>
+                        {user ? (
+                            <>
+                                <div className="relative inline-block">
+                                    <Bell className="w-5 h-5 cursor-pointer hover:text-gray-300 transition-colors" onClick={() => setNotifOpen(prev => !prev)} />
+                                    {notifications.length > 0 && (
+                                        <span className="absolute -top-1 -right-1 bg-red-600 text-xs text-white rounded-full w-4 h-4 flex items-center justify-center">
+                                            {notifications.length}
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="group relative flex items-center gap-2 cursor-pointer" ref={notifRef}>
+                                    {/* Notification Dropdown */}
+                                    {notifOpen && (
+                                        <div className="absolute top-full right-0 mt-2 w-[calc(100vw-2rem)] md:w-80 max-w-sm max-h-96 bg-[#181818] border border-white/10 rounded-xl shadow-xl overflow-y-auto z-50">
+                                            <div className="p-2">
+                                                <h4 className="text-white font-semibold mb-2">New Releases</h4>
+                                                {notifications.length === 0 && (
+                                                    <p className="text-gray-400 text-sm">No new notifications</p>
                                                 )}
-                                                <div className="flex-1">
-                                                    <p className="text-white text-sm font-medium truncate">{n.title}</p>
-                                                    <p className="text-gray-400 text-xs">{new Date(n.release_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} • {n.type.toUpperCase()}</p>
-                                                </div>
+                                                {notifications.map((n) => (
+                                                    <div key={`${n.type}-${n.id}`} className="flex items-center gap-3 p-2 hover:bg-white/5 rounded-md">
+                                                        {n.poster_path ? (
+                                                            <img
+                                                                src={`https://image.tmdb.org/t/p/w92${n.poster_path}`}
+                                                                alt={n.title}
+                                                                className="w-12 h-16 object-cover rounded"
+                                                            />
+                                                        ) : (
+                                                            <div className="w-12 h-16 bg-gray-700 flex items-center justify-center text-xs text-gray-400">N/A</div>
+                                                        )}
+                                                        <div className="flex-1">
+                                                            <p className="text-white text-sm font-medium truncate">{n.title}</p>
+                                                            <p className="text-gray-400 text-xs">{new Date(n.release_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} • {n.type.toUpperCase()}</p>
+                                                        </div>
+                                                    </div>
+                                                ))}
                                             </div>
-                                        ))}
+                                        </div>
+                                    )}
+                                    <div className="w-8 h-8 md:w-9 md:h-9 rounded-full flex items-center justify-center text-white font-bold text-xs md:text-sm overflow-hidden border border-white/20">
+                                        {user?.avatar ? (
+                                            <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
+                                        ) : (
+                                            (user?.name?.[0] || user?.email?.[0] || 'U').toUpperCase()
+                                        )}
+                                    </div>
+                                    <div className="absolute top-full right-0 mt-2 w-32 bg-black/90 border border-white/10 rounded-full shadow-xl overflow-hidden opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200">
+                                        <button
+                                            onClick={() => { logout(); navigate('/login'); }}
+                                            className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/70 hover:text-black transition-colors"
+                                        >
+                                            Sign Out
+                                        </button>
                                     </div>
                                 </div>
-                            )}
-                            <div className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm overflow-hidden border border-white/20">
-                                {user?.avatar ? (
-                                    <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
-                                ) : (
-                                    (user?.name?.[0] || user?.email?.[0] || 'U').toUpperCase()
-                                )}
-                            </div>
-                            <div className="absolute top-full right-0 mt-2 w-32 bg-black/90 border border-white/10 rounded-full shadow-xl overflow-hidden opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200">
-                                <button
-                                    onClick={() => { logout(); navigate('/login'); }}
-                                    className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/70 hover:text-black transition-colors"
-                                >
-                                    Sign Out
-                                </button>
-                            </div>
-                        </div>
+                            </>
+                        ) : (
+                            <Link to="/login" className="bg-red-600 hover:bg-red-700 text-white px-4 py-1.5 rounded font-medium text-sm transition-colors">
+                                Sign In
+                            </Link>
+                        )}
                     </div>
                 </div>
             </div>
@@ -367,17 +375,23 @@ const Navbar = ({ onMovieClick }) => {
                             />
                         )}
                         <div className="w-px h-5 bg-white/10 mx-1"></div>
-                        <div
-                            className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold cursor-pointer hover:scale-105 transition-transform overflow-hidden border border-white/20"
-                            onClick={() => { logout(); navigate('/login'); }}
-                            title="Sign Out"
-                        >
-                            {user?.avatar ? (
-                                <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
-                            ) : (
-                                (user?.name?.[0] || user?.email?.[0] || 'U').toUpperCase()
-                            )}
-                        </div>
+                        {user ? (
+                            <div
+                                className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold cursor-pointer hover:scale-105 transition-transform overflow-hidden border border-white/20"
+                                onClick={() => { logout(); navigate('/login'); }}
+                                title="Sign Out"
+                            >
+                                {user?.avatar ? (
+                                    <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
+                                ) : (
+                                    (user?.name?.[0] || user?.email?.[0] || 'U').toUpperCase()
+                                )}
+                            </div>
+                        ) : (
+                            <Link to="/login" className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap">
+                                Sign In
+                            </Link>
+                        )}
                     </div>
 
                     {/* Scrolled Search Results */}

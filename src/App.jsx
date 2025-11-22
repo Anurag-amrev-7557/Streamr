@@ -28,11 +28,7 @@ function App() {
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/oauth-success" element={<AuthCallback />} />
 
-        <Route path="/" element={
-          <ProtectedRoute>
-            <Home />
-          </ProtectedRoute>
-        } />
+        <Route path="/" element={<Home />} />
         <Route path="/watch/:id" element={
           <ProtectedRoute>
             <Watch />

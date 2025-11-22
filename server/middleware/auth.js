@@ -14,6 +14,19 @@ export const protect = async (req, res, next) => {
     }
 
     if (!token) {
+        // Development Bypass
+        if (process.env.NODE_ENV === 'development') {
+            try {
+                const devUser = await User.findOne();
+                if (devUser) {
+                    req.user = devUser;
+                    return next();
+                }
+            } catch (error) {
+                console.error('Dev auth bypass failed:', error);
+            }
+        }
+
         return res.status(401).json({
             success: false,
             message: 'Not authorized to access this route'

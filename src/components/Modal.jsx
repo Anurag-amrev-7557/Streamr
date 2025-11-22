@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import axios from '../lib/axios';
 import useListStore from '../store/useListStore';
+import useAuthStore from '../store/useAuthStore';
 import StreamingPlayer from './StreamingPlayer';
 import CustomDropdown from './CustomDropdown';
 import clsx from 'clsx';
@@ -24,6 +25,7 @@ const Modal = ({ movie, onClose }) => {
     const dropdownRef = useRef(null);
     const hasOpenedRef = useRef(false);
     const { addMovie, removeMovie, isInList } = useListStore();
+    const { user } = useAuthStore();
     const [playerState, setPlayerState] = useState({ isOpen: false, type: 'movie', season: 1, episode: 1 });
     const [displayedCount, setDisplayedCount] = useState(10);
 
@@ -36,12 +38,16 @@ const Modal = ({ movie, onClose }) => {
     }, []);
 
     const handleListToggle = useCallback(() => {
+        if (!user) {
+            navigate('/login');
+            return;
+        }
         if (isInList(movie.id)) {
             removeMovie(movie.id);
         } else {
             addMovie(movie);
         }
-    }, [isInList, movie, removeMovie, addMovie]);
+    }, [isInList, movie, removeMovie, addMovie, user, navigate]);
 
     const inList = useMemo(() => isInList(movie?.id), [isInList, movie?.id]);
 
@@ -203,7 +209,7 @@ const Modal = ({ movie, onClose }) => {
             exit={{ opacity: 0, pointerEvents: 'none' }}
             transition={{ duration: 0.2 }}
             onClick={handleClose}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-0 md:p-4"
             style={{ willChange: 'opacity' }}
         >
             <motion.div
@@ -217,18 +223,18 @@ const Modal = ({ movie, onClose }) => {
                     duration: 0.4
                 }}
                 onClick={(e) => e.stopPropagation()}
-                className="relative w-full max-w-7xl bg-[#181818] rounded-4xl overflow-hidden shadow-2xl max-h-[93vh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                className="relative w-full max-w-7xl bg-[#181818] rounded-none md:rounded-4xl overflow-hidden shadow-2xl max-h-[100vh] md:max-h-[93vh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 style={{ willChange: 'transform, opacity' }}
             >
                 {/* Close Button */}
                 <button
                     onClick={onClose}
-                    className="absolute top-4 right-4 z-[100] bg-[#181818]/80 rounded-full p-2 hover:bg-[#2a2a2a] transition ring-1 ring-white/20"
+                    className="absolute top-3 right-3 md:top-4 md:right-4 z-[100] bg-[#181818]/80 rounded-full p-2 md:p-2 hover:bg-[#2a2a2a] transition ring-1 ring-white/20"
                 >
-                    <X className="w-6 h-6 text-white" />
+                    <X className="w-5 h-5 md:w-6 md:h-6 text-white" />
                 </button>
 
-                <div className="relative h-[600px] md:h-[700px]">
+                <div className="relative h-[400px] md:h-[700px]">
                     <div className="absolute inset-0 bg-gradient-to-t from-[#181818] via-[#181818]/60 to-transparent z-10" />
                     <div className="absolute inset-0 bg-gradient-to-r from-[#181818] via-transparent to-transparent z-10" />
                     <img
@@ -238,10 +244,10 @@ const Modal = ({ movie, onClose }) => {
                     />
 
                     {/* Content Grid */}
-                    <div className="absolute inset-0 z-20 p-8 md:p-12 flex flex-col justify-end">
-                        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-6 items-end">
+                    <div className="absolute inset-0 z-20 p-4 md:p-12 flex flex-col justify-end">
+                        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-4 md:gap-6 items-end">
                             {/* Left Side - Title, Metadata, Buttons, Description */}
-                            <div className="space-y-8">
+                            <div className="space-y-3 md:space-y-8">
                                 <AnimatePresence mode="wait">
                                     {logoPath ? (
                                         <motion.img
@@ -252,7 +258,7 @@ const Modal = ({ movie, onClose }) => {
                                             transition={{ duration: 0.3 }}
                                             src={`https://image.tmdb.org/t/p/w500${logoPath}`}
                                             alt={movie.title || movie.name}
-                                            className="max-w-sm max-h-24 object-contain drop-shadow-2xl"
+                                            className="max-w-[180px] md:max-w-sm max-h-16 md:max-h-24 object-contain drop-shadow-2xl"
                                         />
                                     ) : (
                                         <motion.h2
@@ -261,7 +267,7 @@ const Modal = ({ movie, onClose }) => {
                                             animate={{ opacity: 1 }}
                                             exit={{ opacity: 0 }}
                                             transition={{ duration: 0.3 }}
-                                            className="text-3xl md:text-4xl lg:text-5xl font-bold text-white drop-shadow-2xl leading-tight"
+                                            className="text-2xl md:text-4xl lg:text-5xl font-bold text-white drop-shadow-2xl leading-tight"
                                         >
                                             {movie.title || movie.name}
                                         </motion.h2>
@@ -269,7 +275,7 @@ const Modal = ({ movie, onClose }) => {
                                 </AnimatePresence>
 
                                 {/* Metadata Row */}
-                                <div className="flex items-center gap-3 text-sm md:text-base flex-wrap">
+                                <div className="flex items-center gap-2 md:gap-3 text-xs md:text-base flex-wrap">
                                     {movieDetails?.number_of_seasons && (
                                         <>
                                             <span className="flex items-center gap-1 text-gray-300">
@@ -301,47 +307,47 @@ const Modal = ({ movie, onClose }) => {
                                 </div>
 
                                 {/* Buttons */}
-                                <div className="flex gap-3">
+                                <div className="flex gap-2 md:gap-3 flex-wrap">
                                     {/* Watch Now button - Only for movies */}
                                     {!movie.first_air_date && (
                                         <button
                                             onClick={() => setPlayerState({ isOpen: true, type: 'movie', season: 1, episode: 1 })}
-                                            className="flex items-center gap-2 bg-white text-black px-6 py-2.5 rounded-full hover:bg-white/90 transition"
+                                            className="flex items-center gap-1.5 md:gap-2 bg-white text-black px-4 md:px-6 py-2 md:py-2.5 text-sm md:text-base rounded-full hover:bg-white/90 transition"
                                         >
-                                            <Play className="w-5 h-5" strokeWidth={2} /> Watch Now
+                                            <Play className="w-4 h-4 md:w-5 md:h-5" strokeWidth={2} /> <span className="hidden sm:inline">Watch Now</span><span className="sm:hidden">Play</span>
                                         </button>
                                     )}
                                     <button
                                         onClick={handleTrailerOpen}
                                         disabled={!trailerKey}
-                                        className="flex items-center gap-2 bg-white/10 backdrop-blur-md text-white px-6 py-2.5 rounded-full hover:bg-white/20 transition border border-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="flex items-center gap-1.5 md:gap-2 bg-white/10 backdrop-blur-md text-white px-4 md:px-6 py-2 md:py-2.5 text-sm md:text-base rounded-full hover:bg-white/20 transition border border-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
-                                        <Play className="w-5 h-5" strokeWidth={1.5} /> Watch Trailer
+                                        <Play className="w-4 h-4 md:w-5 md:h-5" strokeWidth={1.5} /> <span className="hidden sm:inline">Trailer</span><span className="sm:hidden">Trailer</span>
                                     </button>
                                     <button
                                         onClick={handleListToggle}
-                                        className="flex items-center gap-2 bg-white/10 backdrop-blur-md text-white px-6 py-2.5 rounded-full hover:bg-white/20 transition border border-white/20"
+                                        className="flex items-center gap-1.5 md:gap-2 bg-white/10 backdrop-blur-md text-white px-4 md:px-6 py-2 md:py-2.5 text-sm md:text-base rounded-full hover:bg-white/20 transition border border-white/20"
                                     >
                                         {inList ? (
                                             <>
-                                                <Check className="w-5 h-5" strokeWidth={1.5} /> In My List
+                                                <Check className="w-4 h-4 md:w-5 md:h-5" strokeWidth={1.5} /> <span className="hidden sm:inline">In My List</span><span className="sm:hidden">Added</span>
                                             </>
                                         ) : (
                                             <>
-                                                <Plus className="w-5 h-5" /> Add to List
+                                                <Plus className="w-4 h-4 md:w-5 md:h-5" /> <span className="hidden sm:inline">Add to List</span><span className="sm:hidden">Add</span>
                                             </>
                                         )}
                                     </button>
                                 </div>
 
                                 {/* Description */}
-                                <p className="text-sm md:text-base text-gray-300 leading-relaxed max-w-3xl line-clamp-3">
+                                <p className="text-xs md:text-base text-gray-300 leading-relaxed max-w-3xl line-clamp-2 md:line-clamp-3">
                                     {movie.overview}
                                 </p>
                             </div>
 
                             {/* Right Side - Genre Tags and Cast */}
-                            <div className="flex flex-col items-end gap-4">
+                            <div className="hidden md:flex flex-col items-end gap-4">
                                 {/* Genre Tags */}
                                 {movieDetails?.genres && movieDetails.genres.length > 0 && (
                                     <div className="flex gap-2 flex-wrap justify-end">
@@ -387,14 +393,14 @@ const Modal = ({ movie, onClose }) => {
 
                 {/* Episodes Section - Between Hero and Tabs (TV Shows Only) */}
                 {movie.first_air_date && (
-                    <div className="px-8 md:px-12 py-6 md:py-8 bg-[#181818] border-b border-white/10">
+                    <div className="px-4 md:px-12 py-4 md:py-8 bg-[#181818] border-b border-white/10">
                         {/* Season Selector & View Toggler */}
-                        <div className="flex items-center justify-between mb-6">
-                            <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                                <Tv className="w-5 h-5" /> Episodes
+                        <div className="flex items-center justify-between mb-4 md:mb-6">
+                            <h3 className="text-lg md:text-xl font-bold text-white flex items-center gap-2">
+                                <Tv className="w-4 h-4 md:w-5 md:h-5" /> Episodes
                             </h3>
 
-                            <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-2 md:gap-4">
                                 {/* View Toggler */}
                                 <div className="relative flex items-center bg-[#2a2a2a] rounded-full p-1 border border-white/10">
                                     <div
@@ -451,7 +457,7 @@ const Modal = ({ movie, onClose }) => {
                             exit={{ opacity: 0, y: -10 }}
                             transition={{ duration: 0.3 }}
                             className={clsx(
-                                viewMode === 'grid' ? "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-4" : "space-y-4"
+                                viewMode === 'grid' ? "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4" : "space-y-3 md:space-y-4"
                             )}
                         >
                             {episodes.length > 0 ? (
@@ -461,15 +467,15 @@ const Modal = ({ movie, onClose }) => {
                                         <div
                                             key={episode.id}
                                             onClick={() => setPlayerState({ isOpen: true, type: 'tv', season: selectedSeason, episode: episode.episode_number })}
-                                            className={`flex gap-4 p-4 py-6 mb-0 rounded-lg hover:bg-[#2a2a2a] transition cursor-pointer group ${index !== episodes.length - 1 ? 'border-b border-white/10' : ''}`}
+                                            className={`flex gap-2 md:gap-4 p-3 md:p-4 py-4 md:py-6 mb-0 rounded-lg hover:bg-[#2a2a2a] transition cursor-pointer group ${index !== episodes.length - 1 ? 'border-b border-white/10' : ''}`}
                                         >
                                             {/* Episode Number */}
-                                            <div className="flex items-center justify-center flex-shrink-0 w-10 text-xl font-bold text-gray-500 group-hover:text-white transition">
+                                            <div className="hidden md:flex items-center justify-center flex-shrink-0 w-10 text-xl font-bold text-gray-500 group-hover:text-white transition">
                                                 {index + 1}
                                             </div>
 
                                             {/* Episode Thumbnail */}
-                                            <div className="flex-shrink-0 w-40 mr-3 h-24 bg-gradient-to-br from-gray-700 to-gray-900 rounded overflow-hidden">
+                                            <div className="flex-shrink-0 w-24 md:w-40 mr-2 md:mr-3 h-16 md:h-24 bg-gradient-to-br from-gray-700 to-gray-900 rounded overflow-hidden">
                                                 {episode.still_path ? (
                                                     <img
                                                         src={`https://image.tmdb.org/t/p/w300${episode.still_path}`}
@@ -485,8 +491,8 @@ const Modal = ({ movie, onClose }) => {
 
                                             {/* Episode Info */}
                                             <div className="flex-1 min-w-0">
-                                                <h4 className="text-white font-semibold mb-2 line-clamp-1">{episode.name}</h4>
-                                                <p className="text-sm text-gray-400 line-clamp-2 mb-2">{episode.overview || 'No description available.'}</p>
+                                                <h4 className="text-sm md:text-base text-white font-semibold mb-1 md:mb-2 line-clamp-1">{episode.name}</h4>
+                                                <p className="text-xs md:text-sm text-gray-400 line-clamp-2 mb-1 md:mb-2">{episode.overview || 'No description available.'}</p>
                                                 <div className="flex items-center gap-3 text-xs text-gray-500">
                                                     {episode.air_date && (
                                                         <span className="flex items-center gap-1">
@@ -570,12 +576,12 @@ const Modal = ({ movie, onClose }) => {
                 )}
 
                 {/* Bottom Section - Tabbed Interface */}
-                <div className="px-8 md:px-12 py-6 md:py-8 bg-[#181818]">
+                <div className="px-4 md:px-12 py-4 md:py-8 bg-[#181818]">
                     {/* Tab Buttons */}
-                    <div className="flex gap-6 border-b border-white/10 mb-6">
+                    <div className="flex gap-4 md:gap-6 border-b border-white/10 mb-4 md:mb-6">
                         <button
                             onClick={() => setActiveTab('more')}
-                            className={`pb-3 px-2 text-base font-semibold transition-colors relative ${activeTab === 'more'
+                            className={`pb-2 md:pb-3 px-1 md:px-2 text-sm md:text-base font-semibold transition-colors relative ${activeTab === 'more'
                                 ? 'text-white'
                                 : 'text-gray-400 hover:text-gray-300'
                                 }`}
@@ -587,7 +593,7 @@ const Modal = ({ movie, onClose }) => {
                         </button>
                         <button
                             onClick={() => setActiveTab('about')}
-                            className={`pb-3 px-2 text-base font-semibold transition-colors relative ${activeTab === 'about'
+                            className={`pb-2 md:pb-3 px-1 md:px-2 text-sm md:text-base font-semibold transition-colors relative ${activeTab === 'about'
                                 ? 'text-white'
                                 : 'text-gray-400 hover:text-gray-300'
                                 }`}
@@ -655,7 +661,7 @@ const Modal = ({ movie, onClose }) => {
                             </div>
                         ) : (
                             /* More Like This Section */
-                            <div className="grid grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4">
+                            <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-3 md:gap-4">
                                 {similarMovies.length > 0 ? (
                                     similarMovies.map((item) => (
                                         <div

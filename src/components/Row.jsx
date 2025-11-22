@@ -131,17 +131,17 @@ const Row = ({ title, fetchUrl, isLargeRow, onMovieClick }) => {
     };
 
     return (
-        <div className="text-white mb-6 group relative">
-            <h2 className="text-xl md:text-2xl font-semibold mb-4 pl-3 border-l-4 border-[#fff] ml-6">{title}</h2>
+        <div className="text-white mb-4 md:mb-6 group relative">
+            <h2 className="text-lg md:text-2xl font-semibold mb-3 md:mb-4 pl-2 md:pl-3 border-l-4 border-[#fff] ml-3 md:ml-6">{title}</h2>
 
             <div className="relative group">
                 <ChevronLeft
                     onClick={slideLeft}
-                    className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/80 rounded-full p-2 text-black cursor-pointer z-30 opacity-0 group-hover:opacity-100 hover:bg-white hover:scale-110 transition-all duration-300 shadow-lg w-10 h-10"
+                    className="hidden md:block absolute left-2 top-1/2 -translate-y-1/2 bg-white/80 rounded-full p-2 text-black cursor-pointer z-30 opacity-0 group-hover:opacity-100 hover:bg-white hover:scale-110 transition-all duration-300 shadow-lg w-10 h-10"
                 />
                 <ChevronRight
                     onClick={slideRight}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/80 rounded-full p-2 text-black cursor-pointer z-30 opacity-0 group-hover:opacity-100 hover:bg-white hover:scale-110 transition-all duration-300 shadow-lg w-10 h-10"
+                    className="hidden md:block absolute right-2 top-1/2 -translate-y-1/2 bg-white/80 rounded-full p-2 text-black cursor-pointer z-30 opacity-0 group-hover:opacity-100 hover:bg-white hover:scale-110 transition-all duration-300 shadow-lg w-10 h-10"
                 />
                 <div
                     ref={rowRef}
@@ -149,7 +149,7 @@ const Row = ({ title, fetchUrl, isLargeRow, onMovieClick }) => {
                     onMouseLeave={handleMouseLeave}
                     onMouseUp={handleMouseUp}
                     onMouseMove={handleMouseMove}
-                    className="flex gap-1 overflow-x-scroll scrollbar-hide px-6 py-6 cursor-grab active:cursor-grabbing select-none"
+                    className="flex gap-2 md:gap-2 overflow-x-scroll scrollbar-hide px-3 md:px-6 py-4 md:py-6 cursor-grab active:cursor-grabbing select-none"
                 >
                     {loading ? (
                         Array.from({ length: 10 }).map((_, i) => (
@@ -173,15 +173,15 @@ const Row = ({ title, fetchUrl, isLargeRow, onMovieClick }) => {
                                     />
 
                                     {/* Rating Badge */}
-                                    <div className="absolute top-2 left-2 bg-black/60 px-2 py-1 rounded-md flex items-center gap-1">
-                                        <span className="text-white font-bold text-xs">★</span>
-                                        <span className="text-white font-bold text-xs">{(movie.vote_average || 7.5).toFixed(1)}</span>
+                                    <div className="absolute top-2 left-2 md:top-2 md:left-2 bg-black/60 px-2 md:px-2 py-1 md:py-1 rounded-md flex items-center gap-1 md:gap-1">
+                                        <span className="text-white font-bold text-xs md:text-xs">★</span>
+                                        <span className="text-white font-bold text-xs md:text-xs">{(movie.vote_average || 7.5).toFixed(1)}</span>
                                     </div>
 
                                     {/* Overlay Info */}
-                                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent rounded-lg opacity-0 group-hover/item:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4">
-                                        <h3 className="text-base font-bold text-white leading-tight mb-1 drop-shadow-md">{movie.title || movie.name}</h3>
-                                        <p className="text-sm text-gray-300">{movie.release_date?.substring(0, 4) || movie.first_air_date?.substring(0, 4) || '2023'}</p>
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent rounded-lg opacity-0 group-hover/item:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-2 md:p-4">
+                                        <h3 className="text-xs md:text-base font-bold text-white leading-tight mb-0.5 md:mb-1 drop-shadow-md line-clamp-2">{movie.title || movie.name}</h3>
+                                        <p className="text-[10px] md:text-sm text-gray-300">{movie.release_date?.substring(0, 4) || movie.first_air_date?.substring(0, 4) || '2023'}</p>
                                     </div>
                                 </div>
                             </div>
