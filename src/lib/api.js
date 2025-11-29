@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { getBaseUrl } from '../utils/apiConfig';
+import useAuthStore from '../store/useAuthStore';
 
 /**
  * @typedef {import('axios').AxiosInstance} AxiosInstance
@@ -36,6 +37,28 @@ api.interceptors.request.use(
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
         }
+
+        // Inject Profile ID if selected
+        // We need to be careful about circular dependencies if useAuthStore imports api
+        // But useAuthStore imports api, so importing useAuthStore here might cause issues.
+        // However, we are using it inside the function, so it might be fine if it's not accessed at top level.
+        // To be safe, we can use localStorage for profile ID as well, since we store it there.
+        // But the requirement was to use the store.
+        // Let's try accessing the store. If circular dependency occurs, we'll fallback to localStorage.
+
+        try {
+            const currentProfile = useAuthStore.getState().currentProfile;
+            if (currentProfile) {
+                config.headers['X-Profile-ID'] = currentProfile._id;
+            }
+        } catch (e) {
+            // Fallback to localStorage if store access fails (e.g. during init)
+            const lastProfileId = localStorage.getItem('last_profile_id');
+            if (lastProfileId) {
+                config.headers['X-Profile-ID'] = lastProfileId;
+            }
+        }
+
         return config;
     },
     /**
@@ -71,6 +94,7 @@ api.interceptors.response.use(
         // Handle 401 errors - clear token and redirect to login
         if (error.response?.status === 401) {
             localStorage.removeItem('auth_token');
+            localStorage.removeItem('last_profile_id');
             console.log('Authentication required');
         }
 

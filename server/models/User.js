@@ -1,6 +1,37 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
+const profileSchema = new mongoose.Schema({
+    name: {
+        type: String,
+        required: true,
+        trim: true
+    },
+    avatar: {
+        type: String,
+        default: 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_150.png'
+    },
+    myList: [{
+        type: mongoose.Schema.Types.Mixed,
+        default: []
+    }],
+    watchHistory: [{
+        type: mongoose.Schema.Types.Mixed,
+        default: []
+    }],
+    searchHistory: [{
+        query: {
+            type: String,
+            required: true,
+            trim: true
+        },
+        timestamp: {
+            type: Date,
+            default: Date.now
+        }
+    }]
+});
+
 const userSchema = new mongoose.Schema({
     name: {
         type: String,
@@ -34,10 +65,11 @@ const userSchema = new mongoose.Schema({
         unique: true,
         sparse: true
     },
-    avatar: {
-        type: String,
-        default: 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_150.png'
+    profiles: {
+        type: [profileSchema],
+        default: []
     },
+    // Legacy fields kept for migration, but will be deprecated
     myList: [{
         type: mongoose.Schema.Types.Mixed,
         default: []
@@ -63,6 +95,25 @@ const userSchema = new mongoose.Schema({
     }
 }, {
     timestamps: true
+});
+
+// Migration hook: Move root data to default profile if profiles is empty
+userSchema.pre('save', function (next) {
+    if (this.profiles.length === 0) {
+        this.profiles.push({
+            name: this.name || 'Default',
+            avatar: this.avatar || 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_150.png',
+            myList: this.myList || [],
+            watchHistory: this.watchHistory || [],
+            searchHistory: this.searchHistory || []
+        });
+
+        // Optional: Clear root fields to save space, but keeping them for safety for now might be better
+        // this.myList = [];
+        // this.watchHistory = [];
+        // this.searchHistory = [];
+    }
+    next();
 });
 
 // Hash password before saving
@@ -100,10 +151,12 @@ userSchema.methods.getPublicProfile = function () {
         id: this._id,
         name: this.name,
         email: this.email,
-        avatar: this.avatar,
-        myList: this.myList,
-        watchHistory: this.watchHistory,
-        searchHistory: this.searchHistory,
+        profiles: this.profiles,
+        // Legacy support
+        avatar: this.profiles[0]?.avatar || this.avatar,
+        myList: this.profiles[0]?.myList || this.myList,
+        watchHistory: this.profiles[0]?.watchHistory || this.watchHistory,
+        searchHistory: this.profiles[0]?.searchHistory || this.searchHistory,
         createdAt: this.createdAt
     };
 };

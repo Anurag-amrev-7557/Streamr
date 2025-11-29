@@ -7,6 +7,7 @@ import useNotificationStore from './useNotificationStore';
 
 const useAuthStore = create((set, get) => ({
     user: null,
+    currentProfile: null,
     isCheckingAuth: false, // Optimistic: assume we are done checking or check in background
     isSyncing: false,
     isLoggingOut: false,
@@ -27,6 +28,23 @@ const useAuthStore = create((set, get) => ({
         });
 
         return merged;
+    },
+
+    // Select a profile
+    selectProfile: async (profileId) => {
+        const { user } = get();
+        if (!user || !user.profiles) return;
+
+        const profile = user.profiles.find(p => p._id === profileId);
+        if (profile) {
+            set({ currentProfile: profile });
+            localStorage.setItem('last_profile_id', profileId);
+
+            // Trigger data sync for the new profile
+            await get().syncDataAfterAuth();
+            return true;
+        }
+        return false;
     },
 
     // Sync data after authentication
@@ -85,6 +103,7 @@ const useAuthStore = create((set, get) => ({
             if (!token) {
                 set({
                     user: null,
+                    currentProfile: null,
                     isAuthenticated: false,
                     isCheckingAuth: false
                 });
@@ -102,18 +121,34 @@ const useAuthStore = create((set, get) => ({
                 timeoutPromise
             ]);
 
+            const userData = response.data.user;
+            let profileToSelect = null;
+
+            // Auto-select profile if last_profile_id exists and is valid
+            const lastProfileId = localStorage.getItem('last_profile_id');
+            if (lastProfileId && userData.profiles) {
+                profileToSelect = userData.profiles.find(p => p._id === lastProfileId);
+            }
+
+            // If no valid last profile, but only one profile exists (e.g. default), maybe select it?
+            // Requirement says: "Profile screen appears only when session = expired/new... Otherwise Netflix auto-loads your last used profile"
+            // So if no lastProfileId, we leave it null to show selection screen.
+
             set({
-                user: response.data.user,
+                user: userData,
+                currentProfile: profileToSelect || null,
                 isAuthenticated: true,
                 isCheckingAuth: false
             });
 
-            // Sync data in the background
-            Promise.resolve().then(() => {
-                get().syncDataAfterAuth().catch(error => {
-                    console.error('Background sync failed:', error);
+            // Sync data in the background ONLY if a profile is selected
+            if (profileToSelect) {
+                Promise.resolve().then(() => {
+                    get().syncDataAfterAuth().catch(error => {
+                        console.error('Background sync failed:', error);
+                    });
                 });
-            });
+            }
         } catch (error) {
             // Don't log error for 401 (Unauthorized) - it just means not logged in
             if (error.response && error.response.status === 401) {
@@ -204,6 +239,7 @@ const useAuthStore = create((set, get) => ({
 
             // Clear token from localStorage
             localStorage.removeItem('auth_token');
+            localStorage.removeItem('last_profile_id');
 
             // Clear local stores
             const watchHistoryStore = useWatchHistoryStore.getState();
@@ -211,20 +247,21 @@ const useAuthStore = create((set, get) => ({
             watchHistoryStore.setHistory([]);
             listStore.setList([]);
 
-            set({ user: null, isAuthenticated: false, isLoggingOut: false });
+            set({ user: null, currentProfile: null, isAuthenticated: false, isLoggingOut: false });
             addNotification({ type: 'success', message: 'Logged out successfully' });
         } catch (error) {
             console.error('Logout error:', error);
 
             // Force logout on client even if server fails
             localStorage.removeItem('auth_token');
+            localStorage.removeItem('last_profile_id');
 
             const watchHistoryStore = useWatchHistoryStore.getState();
             const listStore = useListStore.getState();
             watchHistoryStore.setHistory([]);
             listStore.setList([]);
 
-            set({ user: null, isAuthenticated: false, isLoggingOut: false });
+            set({ user: null, currentProfile: null, isAuthenticated: false, isLoggingOut: false });
             addNotification({ type: 'success', message: 'Logged out successfully' });
         }
     },
