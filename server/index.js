@@ -54,32 +54,7 @@ const app = express();
 // Trust proxy is required for Vercel/Heroku to handle secure cookies correctly
 app.set('trust proxy', 1);
 
-// Security Middleware
-app.use(helmet());
-app.use(xss());
-app.use(mongoSanitize());
-app.use(hpp());
-
-// Rate Limiting
-const limiter = rateLimit({
-    windowMs: 10 * 60 * 1000, // 10 minutes
-    max: 100 // limit each IP to 100 requests per windowMs
-});
-app.use(limiter);
-
-// Middleware (can be set up before DB connection)
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
-
-if (process.env.NODE_ENV === 'production') {
-    const distPath = path.join(__dirname, '../dist');
-    if (fs.existsSync(distPath)) {
-        app.use(express.static(distPath));
-    }
-}
-
-// CORS configuration
+// CORS configuration - MUST BE FIRST
 app.use(cors({
     origin: function (origin, callback) {
         const allowedOrigins = [
@@ -112,6 +87,31 @@ app.use(cors({
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
+// Security Middleware
+app.use(helmet());
+app.use(xss());
+app.use(mongoSanitize());
+app.use(hpp());
+
+// Rate Limiting
+const limiter = rateLimit({
+    windowMs: 10 * 60 * 1000, // 10 minutes
+    max: 100 // limit each IP to 100 requests per windowMs
+});
+app.use(limiter);
+
+// Middleware (can be set up before DB connection)
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
+
+if (process.env.NODE_ENV === 'production') {
+    const distPath = path.join(__dirname, '../dist');
+    if (fs.existsSync(distPath)) {
+        app.use(express.static(distPath));
+    }
+}
 
 // Session middleware (required for Passport)
 app.use(session({

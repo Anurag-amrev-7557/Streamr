@@ -205,7 +205,7 @@ const CastModal = ({ onMovieClick }) => {
                                 </div>
 
                                 {/* RIGHT CONTENT - Main Area (Full width on mobile) */}
-                                <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#101010]">
+                                <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden bg-[#101010]">
                                     {/* Header Image - Adjusted for mobile */}
                                     <div className="relative h-64 md:h-64 shrink-0 w-full">
                                         {backdropPath ? (
@@ -258,7 +258,7 @@ const CastModal = ({ onMovieClick }) => {
                                     </div>
 
                                     {/* Scrollable Content - Added padding-bottom for mobile nav */}
-                                    <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-8 pb-24 md:pb-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                                    <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-8 pb-24 md:pb-8 min-h-0">
                                         <AnimatePresence mode="wait">
                                             {activeCastTab === 'overview' && (
                                                 <motion.div
