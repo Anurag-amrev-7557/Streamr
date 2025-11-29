@@ -349,7 +349,6 @@ const ModalEpisodes = ({
                     <div
                         key={selectedSeason}
                         className={clsx(
-                            "animate-in fade-in slide-in-from-bottom-2 duration-300",
                             viewMode === 'grid' ? "grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4 pb-4" : "space-y-3 md:space-y-4"
                         )}
                     >

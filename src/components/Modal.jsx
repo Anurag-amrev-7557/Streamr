@@ -19,7 +19,7 @@ import { getBaseUrl } from '../utils/apiConfig';
 import { lazy, Suspense } from 'react';
 
 import ModalHero from './modal/ModalHero';
-const ModalEpisodes = lazy(() => import('./modal/ModalEpisodes'));
+import ModalEpisodes from './modal/ModalEpisodes';
 const ModalSimilar = lazy(() => import('./modal/ModalSimilar'));
 const ModalDetails = lazy(() => import('./modal/ModalDetails'));
 const TrailerModal = lazy(() => import('./modal/TrailerModal'));
