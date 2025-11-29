@@ -11,14 +11,7 @@ const logger = winston.createLogger({
         winston.format.json()
     ),
     defaultMeta: { service: 'streamr-backend' },
-    transports: [
-        //
-        // - Write all logs with importance level of `error` or less to `error.log`
-        // - Write all logs with importance level of `info` or less to `combined.log`
-        //
-        new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
-        new winston.transports.File({ filename: 'logs/combined.log' })
-    ]
+    transports: []
 });
 
 //
@@ -29,6 +22,18 @@ if (process.env.NODE_ENV !== 'production') {
     logger.add(new winston.transports.Console({
         format: winston.format.combine(
             winston.format.colorize(),
+            winston.format.simple()
+        )
+    }));
+
+    // Only add file transports in development/local environment
+    logger.add(new winston.transports.File({ filename: 'logs/error.log', level: 'error' }));
+    logger.add(new winston.transports.File({ filename: 'logs/combined.log' }));
+} else {
+    // In production (Vercel), just log to console (stdout/stderr)
+    // Vercel captures stdout/stderr as logs
+    logger.add(new winston.transports.Console({
+        format: winston.format.combine(
             winston.format.simple()
         )
     }));
