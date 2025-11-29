@@ -466,8 +466,9 @@ const Navbar = ({ onMovieClick }) => {
             {/* Standard Navbar */}
             <div className={clsx(
                 "fixed top-0 w-full z-50 px-3 md:px-8 py-3 md:py-4 flex items-center justify-between transition-all duration-500 ease-in-out",
-                isScrolled ? "-translate-y-full opacity-0 pointer-events-none" : "translate-y-0 opacity-100 bg-gradient-to-b from-black/80 to-transparent"
+                isScrolled ? "-translate-y-full opacity-0 pointer-events-none" : "translate-y-0 opacity-100"
             )}>
+                <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-black/90 via-black/50 to-transparent -z-10 pointer-events-none transition-all duration-500" />
                 <div className="flex items-center justify-center w-full md:w-auto md:justify-start gap-4 md:gap-12">
                     <Logo />
                     <NavigationLinks className="hidden md:flex gap-6 text-sm font-medium text-gray-300" />
