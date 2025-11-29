@@ -21,7 +21,6 @@ const MyList = lazy(() => import('./pages/MyList'));
 const Movies = lazy(() => import('./pages/Movies'));
 const Series = lazy(() => import('./pages/Series'));
 const AuthCallback = lazy(() => import('./pages/AuthCallback'));
-const ProfileSelection = lazy(() => import('./pages/ProfileSelection'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 function App() {
@@ -101,16 +100,12 @@ function App() {
             <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/oauth-success" element={<AuthCallback />} />
 
-            {/* Profile Selection - accessible only when logged in */}
-            <Route path="/profiles" element={user ? <ProfileSelection /> : <Navigate to="/login" />} />
-
             {/* Protected routes - render immediately with optimistic auth */}
-            {/* If logged in but no profile selected, redirect to profiles */}
-            <Route path="/" element={user && !useAuthStore.getState().currentProfile ? <Navigate to="/profiles" /> : <Home />} />
-            <Route path="/movies" element={user && !useAuthStore.getState().currentProfile ? <Navigate to="/profiles" /> : <Movies />} />
-            <Route path="/series" element={user && !useAuthStore.getState().currentProfile ? <Navigate to="/profiles" /> : <Series />} />
-            <Route path="/watch/:id" element={user && !useAuthStore.getState().currentProfile ? <Navigate to="/profiles" /> : <Watch />} />
-            <Route path="/my-list" element={user && !useAuthStore.getState().currentProfile ? <Navigate to="/profiles" /> : <MyList />} />
+            <Route path="/" element={<Home />} />
+            <Route path="/movies" element={<Movies />} />
+            <Route path="/series" element={<Series />} />
+            <Route path="/watch/:id" element={<Watch />} />
+            <Route path="/my-list" element={<MyList />} />
             {/* Catch-all route for 404 */}
             <Route path="*" element={<NotFound />} />
           </Routes>

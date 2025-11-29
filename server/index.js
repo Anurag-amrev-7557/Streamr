@@ -90,7 +90,7 @@ app.use(cors({
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Profile-ID']
+    allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 // Session middleware (required for Passport)

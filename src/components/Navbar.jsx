@@ -637,16 +637,10 @@ const Navbar = ({ onMovieClick }) => {
                                             (user?.name?.[0] || user?.email?.[0] || 'U').toUpperCase()
                                         )}
                                     </div>
-                                    <div className="absolute top-full right-0 mt-2 w-32 bg-black/90 border border-white/10 rounded-xl shadow-xl overflow-hidden opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 py-1">
-                                        <button
-                                            onClick={() => navigate('/profiles')}
-                                            className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/10 hover:text-white transition-colors"
-                                        >
-                                            Switch Profile
-                                        </button>
+                                    <div className="absolute top-full right-0 mt-2 w-32 bg-black/90 border border-white/10 rounded-full shadow-xl overflow-hidden opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200">
                                         <button
                                             onClick={handleLogoutClick}
-                                            className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/10 hover:text-white transition-colors"
+                                            className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/70 hover:text-black transition-colors"
                                         >
                                             Sign Out
                                         </button>
