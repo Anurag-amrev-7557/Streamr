@@ -5,6 +5,11 @@ import cookieParser from 'cookie-parser';
 import passport from 'passport';
 import session from 'express-session';
 import mongoose from 'mongoose';
+import helmet from 'helmet';
+import xss from 'xss-clean';
+import mongoSanitize from 'express-mongo-sanitize';
+import hpp from 'hpp';
+import rateLimit from 'express-rate-limit';
 import connectDB from './config/database.js';
 import passportConfig from './config/passport.js';
 import authRoutes from './routes/auth.js';
@@ -13,6 +18,8 @@ import downloadsRoutes from './routes/downloads.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import logger from './utils/logger.js';
+import errorHandler from './middleware/error.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,21 +27,21 @@ const __dirname = path.dirname(__filename);
 // Load environment variables
 dotenv.config();
 
-console.log('-------- SERVER CONFIG --------');
-console.log('FRONTEND_URL:', process.env.FRONTEND_URL);
-console.log('MONGODB_URI:', process.env.MONGODB_URI ? '(Set)' : '(Missing)');
-console.log('-------------------------------');
+logger.info('-------- SERVER CONFIG --------');
+logger.info(`FRONTEND_URL: ${process.env.FRONTEND_URL}`);
+logger.info(`MONGODB_URI: ${process.env.MONGODB_URI ? '(Set)' : '(Missing)'}`);
+logger.info('-------------------------------');
 
 // Check for required environment variables
 const requiredEnvVars = ['MONGODB_URI', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'JWT_SECRET'];
 const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
 
 if (missingEnvVars.length > 0) {
-    console.error('❌ Error: Missing required environment variables:');
+    logger.error('❌ Error: Missing required environment variables:');
     missingEnvVars.forEach(envVar => {
-        console.error(`   - ${envVar}`);
+        logger.error(`   - ${envVar}`);
     });
-    console.error('Please check your server/.env file.');
+    logger.error('Please check your server/.env file.');
     // Only exit if running as a standalone script
     if (process.argv[1] === __filename) {
         process.exit(1);
@@ -46,6 +53,19 @@ const app = express();
 
 // Trust proxy is required for Vercel/Heroku to handle secure cookies correctly
 app.set('trust proxy', 1);
+
+// Security Middleware
+app.use(helmet());
+app.use(xss());
+app.use(mongoSanitize());
+app.use(hpp());
+
+// Rate Limiting
+const limiter = rateLimit({
+    windowMs: 10 * 60 * 1000, // 10 minutes
+    max: 100 // limit each IP to 100 requests per windowMs
+});
+app.use(limiter);
 
 // Middleware (can be set up before DB connection)
 app.use(express.json());
@@ -118,7 +138,7 @@ const ensureDBConnection = async (req, res, next) => {
         await dbConnectionPromise;
         next();
     } catch (error) {
-        console.error('Database connection failed:', error);
+        logger.error('Database connection failed:', error);
         res.status(503).json({
             success: false,
             message: 'Database connection unavailable'
@@ -188,14 +208,7 @@ app.use((req, res) => {
 });
 
 // Error handler
-app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
-    console.error('Server Error:', err.stack);
-    res.status(err.status || 500).json({
-        success: false,
-        message: err.message || 'Server Error',
-        ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
-    });
-});
+app.use(errorHandler);
 
 // Start server only if running directly (not in serverless environment)
 if (process.argv[1] === __filename) {
@@ -203,11 +216,11 @@ if (process.argv[1] === __filename) {
     connectDB().then(() => {
         const PORT = process.env.PORT || 3000;
         app.listen(PORT, () => {
-            console.log(`🚀 Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
-            console.log(`📊 Database: ${mongoose.connection.readyState === 1 ? '✅ Connected' : '⚠️ Connecting...'}`);
+            logger.info(`🚀 Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
+            logger.info(`📊 Database: ${mongoose.connection.readyState === 1 ? '✅ Connected' : '⚠️ Connecting...'}`);
         });
     }).catch(err => {
-        console.error('❌ Failed to start server:', err);
+        logger.error('❌ Failed to start server:', err);
         process.exit(1);
     });
 }
