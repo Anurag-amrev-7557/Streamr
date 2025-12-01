@@ -96,6 +96,10 @@ const NavigationLinks = memo(({ className = "" }) => {
         prefetchOnInteraction('MyList', () => import('../pages/MyList'));
     }, []);
 
+    const handleFriendsHover = useCallback(() => {
+        prefetchOnInteraction('Friends', () => import('../pages/FriendsPage'));
+    }, []);
+
     return (
         <div className={className}>
             <Link
@@ -123,6 +127,14 @@ const NavigationLinks = memo(({ className = "" }) => {
             >
                 My List
             </Link>
+            <Link
+                to="/friends"
+                className="hover:text-white transition-colors"
+                onMouseEnter={handleFriendsHover}
+                onTouchStart={handleFriendsHover}
+            >
+                Friends
+            </Link>
         </div>
     );
 });
@@ -145,6 +157,10 @@ const PillNavigationLinks = memo(() => {
 
     const handleMyListHover = useCallback(() => {
         prefetchOnInteraction('MyList', () => import('../pages/MyList'));
+    }, []);
+
+    const handleFriendsHover = useCallback(() => {
+        prefetchOnInteraction('Friends', () => import('../pages/FriendsPage'));
     }, []);
 
     return (
@@ -172,6 +188,14 @@ const PillNavigationLinks = memo(() => {
                 onTouchStart={handleMyListHover}
             >
                 My List
+            </Link>
+            <Link
+                to="/friends"
+                className="px-3 py-1.5 text-sm font-medium text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-all duration-200"
+                onMouseEnter={handleFriendsHover}
+                onTouchStart={handleFriendsHover}
+            >
+                Friends
             </Link>
         </div>
     );

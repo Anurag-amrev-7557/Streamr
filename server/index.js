@@ -15,6 +15,7 @@ import passportConfig from './config/passport.js';
 import authRoutes from './routes/auth.js';
 import tmdbRoutes from './routes/tmdb.js';
 import downloadsRoutes from './routes/downloads.js';
+import friendRoutes from './routes/friend.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -160,6 +161,7 @@ app.use(passport.session());
 app.use('/api/auth', ensureDBConnection, authRoutes);
 app.use('/api/tmdb', tmdbRoutes);
 app.use('/api/downloads', downloadsRoutes);
+app.use('/api/friends', ensureDBConnection, friendRoutes);
 
 // Health check route
 app.get('/health', async (req, res) => {

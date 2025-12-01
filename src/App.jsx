@@ -22,6 +22,7 @@ const Movies = lazy(() => import('./pages/Movies'));
 const Series = lazy(() => import('./pages/Series'));
 const AuthCallback = lazy(() => import('./pages/AuthCallback'));
 const NotFound = lazy(() => import('./pages/NotFound'));
+const FriendsPage = lazy(() => import('./pages/FriendsPage'));
 
 function App() {
   performance.mark('app-init');
@@ -106,6 +107,7 @@ function App() {
             <Route path="/series" element={<Series />} />
             <Route path="/watch/:id" element={<Watch />} />
             <Route path="/my-list" element={<MyList />} />
+            <Route path="/friends" element={<FriendsPage />} />
             {/* Catch-all route for 404 */}
             <Route path="*" element={<NotFound />} />
           </Routes>
