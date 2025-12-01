@@ -11,8 +11,6 @@ import { prefetchCriticalRoutes } from './utils/routePrefetch';
 import { unregisterServiceWorker } from './utils/serviceWorkerManager';
 import { performance } from './utils/performance';
 import ToastContainer from './components/ToastContainer';
-import ChatWindow from './components/ChatWindow';
-import useChatStore from './store/useChatStore';
 
 // Lazy load all pages for code splitting
 const Home = lazy(() => import('./pages/Home'));
@@ -24,7 +22,6 @@ const Movies = lazy(() => import('./pages/Movies'));
 const Series = lazy(() => import('./pages/Series'));
 const AuthCallback = lazy(() => import('./pages/AuthCallback'));
 const NotFound = lazy(() => import('./pages/NotFound'));
-const FriendsPage = lazy(() => import('./pages/FriendsPage'));
 
 function App() {
   performance.mark('app-init');
@@ -50,17 +47,6 @@ function App() {
       unregisterServiceWorker();
     }
   }, []);
-
-  // Connect socket when user is logged in
-  const { connectSocket, disconnectSocket } = useChatStore();
-  useEffect(() => {
-    if (user) {
-      connectSocket();
-    } else {
-      disconnectSocket();
-    }
-    return () => disconnectSocket();
-  }, [user, connectSocket, disconnectSocket]);
 
   useEffect(() => {
     checkAuth();
@@ -120,7 +106,6 @@ function App() {
             <Route path="/series" element={<Series />} />
             <Route path="/watch/:id" element={<Watch />} />
             <Route path="/my-list" element={<MyList />} />
-            <Route path="/friends" element={<FriendsPage />} />
             {/* Catch-all route for 404 */}
             <Route path="*" element={<NotFound />} />
           </Routes>
@@ -231,9 +216,6 @@ function App() {
             </motion.div>
           )}
         </AnimatePresence>
-
-        {/* Chat Window */}
-        <ChatWindow />
       </div>
     </Router>
   );

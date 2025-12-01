@@ -1,4 +1,3 @@
-import chatRoutes from './routes/chat.js';
 import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
@@ -16,7 +15,6 @@ import passportConfig from './config/passport.js';
 import authRoutes from './routes/auth.js';
 import tmdbRoutes from './routes/tmdb.js';
 import downloadsRoutes from './routes/downloads.js';
-import friendRoutes from './routes/friend.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -50,11 +48,6 @@ if (missingEnvVars.length > 0) {
     }
 }
 
-import { createServer } from 'http';
-import { Server } from 'socket.io';
-
-// ... (keep existing imports)
-
 // Initialize Express app
 const app = express();
 
@@ -62,7 +55,7 @@ const app = express();
 app.set('trust proxy', 1);
 
 // CORS configuration - MUST BE FIRST
-const corsOptions = {
+app.use(cors({
     origin: function (origin, callback) {
         const allowedOrigins = [
             process.env.FRONTEND_URL,
@@ -74,12 +67,15 @@ const corsOptions = {
             'https://streamr-see.firebaseapp.com'
         ];
 
+        // Allow requests with no origin (like mobile apps or curl requests)
         if (!origin) return callback(null, true);
 
+        // Check if origin is in the allowed list
         if (allowedOrigins.indexOf(origin) !== -1) {
             return callback(null, true);
         }
 
+        // Allow subdomains for firebase deployments (e.g. https://streamr-see--preview-xyz.web.app)
         if (origin.endsWith('.streamr-see.web.app') || origin.endsWith('.streamr-see.firebaseapp.com')) {
             return callback(null, true);
         }
@@ -90,9 +86,7 @@ const corsOptions = {
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
-};
-
-app.use(cors(corsOptions));
+}));
 
 // Security Middleware
 app.use(helmet());
@@ -166,8 +160,6 @@ app.use(passport.session());
 app.use('/api/auth', ensureDBConnection, authRoutes);
 app.use('/api/tmdb', tmdbRoutes);
 app.use('/api/downloads', downloadsRoutes);
-app.use('/api/friends', ensureDBConnection, friendRoutes);
-app.use('/api/chat', ensureDBConnection, chatRoutes);
 
 // Health check route
 app.get('/health', async (req, res) => {
