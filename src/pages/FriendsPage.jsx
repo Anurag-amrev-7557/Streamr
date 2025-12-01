@@ -3,6 +3,7 @@ import { Search, UserPlus, Users, UserCheck, X, Check, MessageSquare, Filter, Ar
 import { motion, AnimatePresence } from 'framer-motion';
 import useFriendStore from '../store/useFriendStore';
 import useAuthStore from '../store/useAuthStore';
+import useChatStore from '../store/useChatStore';
 import Navbar from '../components/Navbar';
 
 // Memoized Right Column Component (Friends & Requests Summary)
@@ -382,6 +383,10 @@ const FriendsPage = () => {
                                                 {/* Hover Actions Overlay */}
                                                 <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
                                                     <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            openChat(friend);
+                                                        }}
                                                         className="p-2 rounded-full bg-white text-black hover:scale-110 transition-transform"
                                                         title="Message"
                                                     >

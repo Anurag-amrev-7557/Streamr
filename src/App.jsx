@@ -11,6 +11,8 @@ import { prefetchCriticalRoutes } from './utils/routePrefetch';
 import { unregisterServiceWorker } from './utils/serviceWorkerManager';
 import { performance } from './utils/performance';
 import ToastContainer from './components/ToastContainer';
+import ChatWindow from './components/ChatWindow';
+import useChatStore from './store/useChatStore';
 
 // Lazy load all pages for code splitting
 const Home = lazy(() => import('./pages/Home'));
@@ -48,6 +50,17 @@ function App() {
       unregisterServiceWorker();
     }
   }, []);
+
+  // Connect socket when user is logged in
+  const { connectSocket, disconnectSocket } = useChatStore();
+  useEffect(() => {
+    if (user) {
+      connectSocket();
+    } else {
+      disconnectSocket();
+    }
+    return () => disconnectSocket();
+  }, [user, connectSocket, disconnectSocket]);
 
   useEffect(() => {
     checkAuth();
@@ -218,6 +231,9 @@ function App() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Chat Window */}
+        <ChatWindow />
       </div>
     </Router>
   );
