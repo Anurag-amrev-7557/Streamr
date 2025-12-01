@@ -52,7 +52,6 @@ if (missingEnvVars.length > 0) {
 
 import { createServer } from 'http';
 import { Server } from 'socket.io';
-import chatRoutes from './routes/chat.js';
 
 // ... (keep existing imports)
 
