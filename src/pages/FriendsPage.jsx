@@ -356,33 +356,33 @@ const FriendsPage = () => {
                                         onAction={() => setActiveTab('add')}
                                     />
                                 ) : (
-                                    <div className="space-y-3">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                         {friends.map(friend => (
                                             <motion.div
                                                 key={friend._id}
                                                 initial={{ opacity: 0, y: 10 }}
                                                 animate={{ opacity: 1, y: 0 }}
-                                                className="group flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all"
+                                                className="group relative flex items-center gap-4 p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all overflow-hidden"
                                             >
-                                                <div className="flex items-center gap-4">
-                                                    <div className="relative">
-                                                        <img
-                                                            src={friend.avatar || 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_150.png'}
-                                                            alt={friend.name}
-                                                            className="w-12 h-12 rounded-full object-cover border border-white/10"
-                                                        />
-                                                        <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-black rounded-full"></div>
-                                                    </div>
-                                                    <div>
-                                                        <h3 className="font-bold text-white text-base">
-                                                            {friend.name}
-                                                        </h3>
-                                                        <p className="text-sm text-gray-400">@{friend.username}</p>
-                                                    </div>
+                                                <div className="relative shrink-0">
+                                                    <img
+                                                        src={friend.avatar || 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_150.png'}
+                                                        alt={friend.name}
+                                                        className="w-12 h-12 rounded-full object-cover border border-white/10"
+                                                    />
+                                                    <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-black rounded-full"></div>
                                                 </div>
-                                                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <div className="min-w-0 flex-1">
+                                                    <h3 className="font-bold text-white text-base truncate">
+                                                        {friend.name}
+                                                    </h3>
+                                                    <p className="text-sm text-gray-400 truncate">@{friend.username}</p>
+                                                </div>
+
+                                                {/* Hover Actions Overlay */}
+                                                <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
                                                     <button
-                                                        className="p-2.5 rounded-full bg-white/10 text-white hover:bg-white hover:text-black transition-all"
+                                                        className="p-2 rounded-full bg-white text-black hover:scale-110 transition-transform"
                                                         title="Message"
                                                     >
                                                         <MessageSquare size={18} />
@@ -392,7 +392,7 @@ const FriendsPage = () => {
                                                             e.stopPropagation();
                                                             if (window.confirm('Remove this friend?')) removeFriend(friend._id);
                                                         }}
-                                                        className="p-2.5 rounded-full bg-white/10 text-white hover:bg-red-600 hover:text-white transition-all"
+                                                        className="p-2 rounded-full bg-red-500 text-white hover:scale-110 transition-transform"
                                                         title="Remove"
                                                     >
                                                         <X size={18} />
