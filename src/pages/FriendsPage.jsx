@@ -191,6 +191,7 @@ const FriendsPage = () => {
         getFriends,
         getRequests
     } = useFriendStore();
+    const { openChat } = useChatStore();
     const { user } = useAuthStore();
 
     // Toggler Logic

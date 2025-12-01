@@ -13,6 +13,8 @@ const useChatStore = create((set, get) => ({
     isLoading: false,
 
     connectSocket: () => {
+        // Socket.io disabled for Vercel serverless compatibility
+        /*
         const { user } = useAuthStore.getState();
         if (!user || get().socket) return;
 
@@ -25,7 +27,7 @@ const useChatStore = create((set, get) => ({
 
         socket.on('receive_message', (message) => {
             const { activeChat, isChatOpen } = get();
-
+            
             // Only add to messages if chat is open with this person
             if (isChatOpen && activeChat && (message.sender === activeChat._id || message.sender._id === activeChat._id)) {
                 set(state => ({
@@ -37,6 +39,8 @@ const useChatStore = create((set, get) => ({
         });
 
         set({ socket });
+        */
+        console.log('Real-time chat disabled in this environment');
     },
 
     disconnectSocket: () => {
@@ -68,10 +72,10 @@ const useChatStore = create((set, get) => ({
     },
 
     sendMessage: async (content) => {
-        const { socket, activeChat, messages } = get();
+        const { activeChat, messages } = get();
         const { user } = useAuthStore.getState();
 
-        if (!socket || !activeChat || !content.trim()) return;
+        if (!activeChat || !content.trim()) return;
 
         const messageData = {
             sender: user._id,
@@ -85,7 +89,13 @@ const useChatStore = create((set, get) => ({
         // Optimistic update
         set({ messages: [...messages, messageData] });
 
-        socket.emit('send_message', messageData);
+        // socket.emit('send_message', messageData);
+
+        // Fallback: We need to save to DB via API since socket is disabled
+        // But currently we don't have a POST /api/chat endpoint implemented in the backend for this
+        // (it was handled by socket event).
+        // For now, messages will only appear locally via optimistic update and won't persist.
+        console.log('Message sent (optimistic only, persistence disabled due to no socket)');
 
         // Persist to DB (optional if socket handles it, but usually good to have API endpoint too)
         // For now, we rely on socket for real-time, but we should probably save it via API too 
