@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import api from '../lib/api';
 import useNotificationStore from './useNotificationStore';
+import useAuthStore from './useAuthStore';
 
 const useFriendStore = create((set, get) => ({
     friends: [],
@@ -55,11 +56,39 @@ const useFriendStore = create((set, get) => ({
     // Send friend request
     sendRequest: async (userId) => {
         const { addNotification } = useNotificationStore.getState();
+        const { user } = useAuthStore.getState();
+
+        // Optimistic update
+        const tempId = 'temp-' + Date.now();
+        const optimisticRequest = {
+            _id: tempId,
+            sender: { _id: user._id },
+            receiver: userId,
+            status: 'pending'
+        };
+
+        set(state => ({
+            requests: [...state.requests, optimisticRequest]
+        }));
+
         try {
-            await api.post(`/friends/request/${userId}`);
+            const response = await api.post(`/friends/request/${userId}`);
+
+            // Replace optimistic request with real one
+            set(state => ({
+                requests: state.requests.map(req =>
+                    req._id === tempId ? response.data.request : req
+                )
+            }));
+
             addNotification({ type: 'success', message: 'Friend request sent!' });
             return true;
         } catch (error) {
+            // Revert optimistic update
+            set(state => ({
+                requests: state.requests.filter(req => req._id !== tempId)
+            }));
+
             const message = error.response?.data?.message || 'Failed to send request';
             addNotification({ type: 'error', message });
             return false;
@@ -69,19 +98,28 @@ const useFriendStore = create((set, get) => ({
     // Accept friend request
     acceptRequest: async (requestId) => {
         const { addNotification } = useNotificationStore.getState();
+
+        // Optimistic update
+        const requestToAccept = get().requests.find(req => req._id === requestId);
+        if (!requestToAccept) return;
+
+        const newFriend = requestToAccept.sender;
+
+        set(state => ({
+            requests: state.requests.filter(req => req._id !== requestId),
+            friends: [...state.friends, newFriend]
+        }));
+
         try {
             await api.put(`/friends/request/${requestId}/accept`);
-
-            // Update local state
-            set(state => ({
-                requests: state.requests.filter(req => req._id !== requestId)
-            }));
-
-            // Refresh friends list
-            get().getFriends();
-
             addNotification({ type: 'success', message: 'Friend request accepted!' });
         } catch (error) {
+            // Revert optimistic update
+            set(state => ({
+                requests: [...state.requests, requestToAccept],
+                friends: state.friends.filter(f => f._id !== newFriend._id)
+            }));
+
             const message = error.response?.data?.message || 'Failed to accept request';
             addNotification({ type: 'error', message });
         }
@@ -90,16 +128,25 @@ const useFriendStore = create((set, get) => ({
     // Reject friend request
     rejectRequest: async (requestId) => {
         const { addNotification } = useNotificationStore.getState();
+
+        // Optimistic update
+        const requestToReject = get().requests.find(req => req._id === requestId);
+
+        set(state => ({
+            requests: state.requests.filter(req => req._id !== requestId)
+        }));
+
         try {
             await api.put(`/friends/request/${requestId}/reject`);
-
-            // Update local state
-            set(state => ({
-                requests: state.requests.filter(req => req._id !== requestId)
-            }));
-
             addNotification({ type: 'success', message: 'Friend request rejected' });
         } catch (error) {
+            // Revert optimistic update
+            if (requestToReject) {
+                set(state => ({
+                    requests: [...state.requests, requestToReject]
+                }));
+            }
+
             const message = error.response?.data?.message || 'Failed to reject request';
             addNotification({ type: 'error', message });
         }
