@@ -13,9 +13,15 @@ const HEADERS = {
  * @param {string} query - The search query.
  * @returns {Promise<Array>} - Array of search results with download links.
  */
-export const scrapeHicineSearch = async (query) => {
+/**
+ * Searches for movies/series using hicine API.
+ * @param {string} query - The search query.
+ * @param {Object} metadata - Optional metadata for better matching (year, type, seasons).
+ * @returns {Promise<Array>} - Array of search results with download links.
+ */
+export const scrapeHicineSearch = async (query, metadata = {}) => {
     try {
-        console.log(`[API] Searching for: ${query}`);
+        console.log(`[API] Searching for: ${query}`, metadata ? `with metadata: ${JSON.stringify(metadata)}` : '');
         const url = `${API_BASE_URL}/search/${encodeURIComponent(query)}`;
         const response = await axios.get(url, { headers: HEADERS });
 
@@ -39,7 +45,9 @@ export const scrapeHicineSearch = async (query) => {
                         type: 'series',
                         seasons: parseSeries(mergedItem),
                         year: extractYear(mergedItem.title),
-                        source_id: mergedItem._id
+                        source_id: mergedItem._id,
+                        overview: mergedItem.description || mergedItem.overview || '',
+                        genres: mergedItem.genres || mergedItem.category || []
                     };
                 } else {
                     return {
@@ -48,7 +56,9 @@ export const scrapeHicineSearch = async (query) => {
                         type: 'movie',
                         downloads: parseLinks(mergedItem.links),
                         year: extractYear(mergedItem.title),
-                        source_id: mergedItem._id
+                        source_id: mergedItem._id,
+                        overview: mergedItem.description || mergedItem.overview || '',
+                        genres: mergedItem.genres || mergedItem.category || []
                     };
                 }
             } catch (err) {
@@ -59,8 +69,9 @@ export const scrapeHicineSearch = async (query) => {
 
         const validResults = results.filter(r => r !== null);
 
-        // Sort results to prioritize exact matches, shorter titles, season count, and episode count
+        // Sort results using weighted scoring
         const normalize = (str) => {
+            if (!str) return '';
             // Remove years in parentheses e.g. (2025) or (2024 - 21)
             const withoutYear = str.replace(/\(\d{4}(?:\s*-\s*\d{2,4})?\)/g, '');
             return withoutYear.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -68,48 +79,82 @@ export const scrapeHicineSearch = async (query) => {
         const normalizedQuery = normalize(query);
 
         return validResults.sort((a, b) => {
-            const normA = normalize(a.title);
-            const normB = normalize(b.title);
-
-            // 1. Exact match with query (ignoring case/special chars/years)
-            const exactA = normA === normalizedQuery;
-            const exactB = normB === normalizedQuery;
-
-            if (exactA && !exactB) return -1;
-            if (!exactA && exactB) return 1;
-
-            // 2. Starts with query
-            const startA = normA.startsWith(normalizedQuery);
-            const startB = normB.startsWith(normalizedQuery);
-
-            if (startA && !startB) return -1;
-            if (!startA && startB) return 1;
-
-            // 3. Tie-breaker: Season count (for series)
-            if (a.type === 'series' && b.type === 'series') {
-                const seasonsA = a.seasons ? a.seasons.length : 0;
-                const seasonsB = b.seasons ? b.seasons.length : 0;
-                if (seasonsA !== seasonsB) {
-                    return seasonsB - seasonsA; // Descending order of seasons
-                }
-
-                // 4. Tie-breaker: Total Episode count (for series) - More episodes is better (completeness)
-                const episodesA = a.seasons ? a.seasons.reduce((acc, s) => acc + (s.episodes ? s.episodes.length : 0), 0) : 0;
-                const episodesB = b.seasons ? b.seasons.reduce((acc, s) => acc + (s.episodes ? s.episodes.length : 0), 0) : 0;
-
-                if (episodesA !== episodesB) {
-                    return episodesB - episodesA; // Descending order of episodes
-                }
-            }
-
-            // 5. Shorter title length (closer to query)
-            return a.title.length - b.title.length;
+            const scoreA = calculateScore(a, normalizedQuery, metadata);
+            const scoreB = calculateScore(b, normalizedQuery, metadata);
+            return scoreB - scoreA; // Descending score
         });
 
     } catch (error) {
         console.error('[API] Search Error:', error.message);
         return [];
     }
+};
+
+/**
+ * Calculates a match score for a result item.
+ * @param {Object} item - The result item.
+ * @param {string} normalizedQuery - The normalized search query.
+ * @param {Object} metadata - Metadata to match against (year, type, seasons).
+ * @returns {number} - The calculated score.
+ */
+const calculateScore = (item, normalizedQuery, metadata) => {
+    let score = 0;
+    const normTitle = item.title.toLowerCase().replace(/[^a-z0-9]/g, ''); // Simple normalization for title check
+
+    // 1. Title Match (Base Score)
+    if (normTitle === normalizedQuery) {
+        score += 100; // Exact match
+    } else if (normTitle.startsWith(normalizedQuery)) {
+        score += 80; // Starts with
+    } else if (normTitle.includes(normalizedQuery)) {
+        score += 50; // Contains
+    }
+
+    // 2. Type Match
+    if (metadata.type) {
+        if (item.type === metadata.type) {
+            score += 50;
+        } else {
+            score -= 50; // Penalize wrong type
+        }
+    }
+
+    // 3. Year Match
+    if (metadata.year) {
+        if (item.year) {
+            const itemYear = parseInt(item.year);
+            const metaYear = parseInt(metadata.year);
+            if (!isNaN(itemYear) && !isNaN(metaYear)) {
+                if (itemYear === metaYear) {
+                    score += 50;
+                } else if (Math.abs(itemYear - metaYear) <= 1) {
+                    score += 30; // Close enough (release dates vary)
+                } else {
+                    score -= 20; // Mismatch, but small penalty (user might want specific version)
+                }
+            }
+        } else {
+            // Metadata has year, but item does not. Penalize ambiguity.
+            score -= 50;
+        }
+    }
+
+    // 4. Season Count Match (for Series)
+    if (metadata.type === 'series' && item.type === 'series' && metadata.seasons) {
+        const itemSeasons = item.seasons ? item.seasons.length : 0;
+        const metaSeasons = parseInt(metadata.seasons);
+
+        if (itemSeasons === metaSeasons) {
+            score += 40;
+        } else if (itemSeasons > metaSeasons) {
+            score += 20; // More seasons is usually better (updates)
+        } else {
+            score -= 10; // Fewer seasons might be incomplete
+        }
+    }
+
+    console.log(`[Scorer] Item: ${item.title} | Year: ${item.year} | Type: ${item.type} | Seasons: ${item.seasons ? item.seasons.length : 0} | Score: ${score}`);
+    return score;
 };
 
 /**

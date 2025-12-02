@@ -158,10 +158,19 @@ const Modal = ({ movie, onClose, onMovieClick }) => {
 
         try {
             const query = movie.title || movie.name;
+            const year = movie.first_air_date?.substring(0, 4) || movie.release_date?.substring(0, 4);
+            const type = movie.first_air_date ? 'series' : 'movie';
+            const seasons = movieDetails?.number_of_seasons;
+
             // Use centralized API config
             const backendUrl = getBaseUrl();
             const response = await axios.get(`${backendUrl}/downloads/search`, {
-                params: { q: query }
+                params: {
+                    q: query,
+                    year,
+                    type,
+                    seasons
+                }
             });
 
             if (response.data.success && response.data.data.length > 0) {

@@ -8,12 +8,14 @@ const router = express.Router();
 // @access  Public
 router.get('/search', async (req, res) => {
     try {
-        const { q } = req.query;
+        const { q, year, type, seasons } = req.query;
+        console.log('[Downloads] Search Request:', { q, year, type, seasons });
         if (!q) {
             return res.status(400).json({ success: false, message: 'Query parameter "q" is required' });
         }
 
-        const results = await scrapeHicineSearch(q);
+        const metadata = { year, type, seasons };
+        const results = await scrapeHicineSearch(q, metadata);
         res.json({ success: true, count: results.length, data: results });
     } catch (error) {
         console.error('Search Route Error:', error);
