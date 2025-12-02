@@ -154,7 +154,6 @@ const useAuthStore = create((set, get) => ({
             }
 
             set({ user: response.data.user, isAuthenticated: true, error: null });
-            console.log('User set in store:', response.data.user);
 
             // Sync data after successful signup
             await get().syncDataAfterAuth();
