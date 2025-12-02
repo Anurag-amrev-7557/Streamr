@@ -1,6 +1,12 @@
 import axios from 'axios';
 
 const API_BASE_URL = 'https://api.hicine.info/api';
+const HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'x-api-key': 'hicine_website_secret_2025_exi9epdmrns',
+    'Origin': 'https://hicine.info',
+    'Referer': 'https://hicine.info/'
+};
 
 /**
  * Searches for movies/series using hicine API.
@@ -11,40 +17,103 @@ export const scrapeHicineSearch = async (query) => {
     try {
         console.log(`[API] Searching for: ${query}`);
         const url = `${API_BASE_URL}/search/${encodeURIComponent(query)}`;
-        const response = await axios.get(url);
+        const response = await axios.get(url, { headers: HEADERS });
 
         if (!response.data || !Array.isArray(response.data)) {
             console.warn('[API] Unexpected response format:', response.data);
             return [];
         }
 
-        return response.data.map(item => {
-            const isSeries = item.contentType === 'series' || !!item.season_1;
+        // Fetch details for each item to get links
+        const results = await Promise.all(response.data.map(async (item) => {
+            try {
+                const details = await fetchDetails(item._id, item.contentType);
+                const mergedItem = { ...item, ...details };
 
-            if (isSeries) {
-                return {
-                    title: item.title,
-                    poster: item.featured_image,
-                    type: 'series',
-                    seasons: parseSeries(item),
-                    year: extractYear(item.title),
-                    source_id: item._id
-                };
-            } else {
-                return {
-                    title: item.title,
-                    poster: item.featured_image,
-                    type: 'movie',
-                    downloads: parseLinks(item.links),
-                    year: extractYear(item.title),
-                    source_id: item._id
-                };
+                const isSeries = mergedItem.contentType === 'series' || !!mergedItem.season_1;
+
+                if (isSeries) {
+                    return {
+                        title: mergedItem.title,
+                        poster: mergedItem.featured_image,
+                        type: 'series',
+                        seasons: parseSeries(mergedItem),
+                        year: extractYear(mergedItem.title),
+                        source_id: mergedItem._id
+                    };
+                } else {
+                    return {
+                        title: mergedItem.title,
+                        poster: mergedItem.featured_image,
+                        type: 'movie',
+                        downloads: parseLinks(mergedItem.links),
+                        year: extractYear(mergedItem.title),
+                        source_id: mergedItem._id
+                    };
+                }
+            } catch (err) {
+                console.error(`[API] Failed to fetch details for ${item.title}:`, err.message);
+                return null;
             }
-        });
+        }));
+
+        return results.filter(r => r !== null);
 
     } catch (error) {
         console.error('[API] Search Error:', error.message);
         return [];
+    }
+};
+
+/**
+ * Fetches details for a specific item.
+ * @param {string} id 
+ * @param {string} type 
+ * @returns {Promise<Object>}
+ */
+const fetchDetails = async (id, type) => {
+    // Map contentType to API endpoint
+    let endpoint = 'movies'; // Default
+    if (type === 'series') endpoint = 'series';
+    else if (type === 'bolly_movies') endpoint = 'bollywood_movies';
+    else if (type === 'bolly_series') endpoint = 'bollywood_series';
+    else if (type === 'anime') endpoint = 'anime';
+    else if (type === 'hollywood_series') endpoint = 'hollywood_series';
+    else if (type === 'hollywood_movies') endpoint = 'hollywood_movies';
+
+    const url = `${API_BASE_URL}/${endpoint}/${id}`;
+
+    try {
+        const response = await axios.get(url, { headers: HEADERS });
+        return response.data;
+    } catch (error) {
+        console.log(`[API] Primary endpoint ${endpoint} failed for ${id}. Trying fallbacks...`);
+
+        // Fallback list
+        const fallbacks = [
+            'movies',
+            'series',
+            'bollywood_movies',
+            'bollywood_series',
+            'hollywood_movies',
+            'hollywood_series',
+            'anime'
+        ];
+
+        for (const fb of fallbacks) {
+            if (fb === endpoint) continue; // Skip the one we already tried
+
+            try {
+                const fallbackUrl = `${API_BASE_URL}/${fb}/${id}`;
+                const response = await axios.get(fallbackUrl, { headers: HEADERS });
+                console.log(`[API] Fallback success: ${fb}`);
+                return response.data;
+            } catch (e) {
+                // Continue to next fallback
+            }
+        }
+
+        throw new Error(`All endpoints failed for ${id}`);
     }
 };
 
@@ -84,19 +153,6 @@ const parseSeasonPacks = (text) => {
     if (!text) return [];
 
     const packs = [];
-
-    // Split text into lines or segments to find pack-related text
-    // Often packs are at the top or labeled "Zip" / "Pack"
-    // We'll look for lines containing these keywords and extract links
-
-    // Regex to find lines/blocks with "Zip", "Pack", "Batch" followed by links
-    // This is a heuristic.
-
-    // Strategy: Look for specific keywords and parse links near them.
-    // Or simpler: Parse ALL links in the text that are NOT part of the "Episode X" structure.
-    // But "Episode X" structure parsing removes them from consideration? No, parseEpisodes splits by "Episode X".
-    // The text *before* the first "Episode 1" is usually where packs are.
-
     const parts = text.split(/Episode\s+\d+\s*:/i);
     const headerText = parts[0]; // Text before first episode
 
@@ -123,21 +179,14 @@ const parseEpisodes = (text) => {
     if (!text) return [];
 
     // Split by "Episode <number> :"
-    // We use a regex with capturing group to keep the episode number
     const parts = text.split(/Episode\s+(\d+)\s*:/i);
-
     const episodes = [];
 
-    // parts[0] is usually header text before first episode
-    // parts[1] is episode number, parts[2] is content, parts[3] is next episode number, etc.
     for (let i = 1; i < parts.length; i += 2) {
         const episodeNum = parseInt(parts[i]);
         const content = parts[i + 1];
 
         if (content) {
-            // Split content by ":" which often separates different quality links for the same episode
-            // But sometimes it's just commas.
-            // Let's just parse all links found in the content string.
             const links = parseLinks(content);
             if (links.length > 0) {
                 episodes.push({
@@ -159,26 +208,18 @@ const parseEpisodes = (text) => {
 const parseLinks = (linksStr) => {
     if (!linksStr) return [];
 
-
     const links = [];
-
-    // First split by newlines as they often separate quality blocks
-    // Filter out empty strings after splitting
     let blocks = linksStr.trim().split('\n').filter(b => b.trim());
 
-    // If splitting by newline didn't give us multiple parts (or just 1 valid part), 
-    // try splitting by " : " if it exists.
     if (blocks.length <= 1 && linksStr.includes(' : ')) {
         blocks = linksStr.split(/\s+:\s+/);
     }
 
     blocks.forEach(block => {
-        // Extract all URLs in this block
         const urlRegex = /(https?:\/\/[^\s,]+)/g;
         const urls = block.match(urlRegex);
 
         if (urls) {
-            // Determine quality for this block
             let groupQuality = 'Unknown';
             const lowerBlock = block.toLowerCase();
 
@@ -188,11 +229,9 @@ const parseLinks = (linksStr) => {
             else if (lowerBlock.includes('480p')) groupQuality = '480p';
 
             urls.forEach(url => {
-                // Clean URL
                 const cleanUrl = url.replace(/[),]+$/, '').trim();
 
                 if (!cleanUrl.includes('empty')) {
-                    // Check if URL itself has specific quality that overrides group quality
                     let linkQuality = groupQuality;
                     const lowerUrl = cleanUrl.toLowerCase();
 
@@ -201,26 +240,21 @@ const parseLinks = (linksStr) => {
                     else if (lowerUrl.includes('720p')) linkQuality = '720p';
                     else if (lowerUrl.includes('480p')) linkQuality = '480p';
 
-                    // Extract additional features from URL or Block text
                     const features = [];
                     const textToCheck = (lowerBlock + ' ' + lowerUrl).toLowerCase();
 
-                    // Codecs
                     if (textToCheck.includes('hevc') || textToCheck.includes('x265')) features.push('HEVC');
                     else if (textToCheck.includes('x264') || textToCheck.includes('h.264') || textToCheck.includes('h264')) features.push('x264');
                     else if (textToCheck.includes('av1')) features.push('AV1');
 
-                    // Video Features
                     if (textToCheck.includes('10bit')) features.push('10bit');
                     if (textToCheck.includes('hdr')) features.push('HDR');
                     if (textToCheck.includes('dv') || textToCheck.includes('dolby vision')) features.push('DV');
 
-                    // Audio
                     if (textToCheck.includes('atmos')) features.push('Atmos');
                     else if (textToCheck.includes('ddp5.1') || textToCheck.includes('ddp')) features.push('DDP5.1');
                     else if (textToCheck.includes('aac')) features.push('AAC');
 
-                    // Construct final label
                     let finalLabel = linkQuality;
                     if (features.length > 0) {
                         finalLabel += ` (${features.join(' ')})`;
@@ -229,7 +263,7 @@ const parseLinks = (linksStr) => {
                     links.push({
                         link: cleanUrl,
                         quality: finalLabel,
-                        originalQuality: linkQuality, // Keep raw quality for sorting/filtering if needed
+                        originalQuality: linkQuality,
                         host: new URL(cleanUrl).hostname
                     });
                 }
