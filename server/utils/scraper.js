@@ -57,7 +57,54 @@ export const scrapeHicineSearch = async (query) => {
             }
         }));
 
-        return results.filter(r => r !== null);
+        const validResults = results.filter(r => r !== null);
+
+        // Sort results to prioritize exact matches, shorter titles, season count, and episode count
+        const normalize = (str) => {
+            // Remove years in parentheses e.g. (2025) or (2024 - 21)
+            const withoutYear = str.replace(/\(\d{4}(?:\s*-\s*\d{2,4})?\)/g, '');
+            return withoutYear.toLowerCase().replace(/[^a-z0-9]/g, '');
+        };
+        const normalizedQuery = normalize(query);
+
+        return validResults.sort((a, b) => {
+            const normA = normalize(a.title);
+            const normB = normalize(b.title);
+
+            // 1. Exact match with query (ignoring case/special chars/years)
+            const exactA = normA === normalizedQuery;
+            const exactB = normB === normalizedQuery;
+
+            if (exactA && !exactB) return -1;
+            if (!exactA && exactB) return 1;
+
+            // 2. Starts with query
+            const startA = normA.startsWith(normalizedQuery);
+            const startB = normB.startsWith(normalizedQuery);
+
+            if (startA && !startB) return -1;
+            if (!startA && startB) return 1;
+
+            // 3. Tie-breaker: Season count (for series)
+            if (a.type === 'series' && b.type === 'series') {
+                const seasonsA = a.seasons ? a.seasons.length : 0;
+                const seasonsB = b.seasons ? b.seasons.length : 0;
+                if (seasonsA !== seasonsB) {
+                    return seasonsB - seasonsA; // Descending order of seasons
+                }
+
+                // 4. Tie-breaker: Total Episode count (for series) - More episodes is better (completeness)
+                const episodesA = a.seasons ? a.seasons.reduce((acc, s) => acc + (s.episodes ? s.episodes.length : 0), 0) : 0;
+                const episodesB = b.seasons ? b.seasons.reduce((acc, s) => acc + (s.episodes ? s.episodes.length : 0), 0) : 0;
+
+                if (episodesA !== episodesB) {
+                    return episodesB - episodesA; // Descending order of episodes
+                }
+            }
+
+            // 5. Shorter title length (closer to query)
+            return a.title.length - b.title.length;
+        });
 
     } catch (error) {
         console.error('[API] Search Error:', error.message);
@@ -124,12 +171,22 @@ const fetchDetails = async (id, type) => {
  */
 const parseSeries = (item) => {
     const seasons = [];
+
+    // Parse season packs from season_zip if available
+    const seasonPacks = parseSeasonZip(item.season_zip);
+
     // Check for season_1 to season_20 (arbitrary limit)
     for (let i = 1; i <= 20; i++) {
         const seasonKey = `season_${i}`;
         if (item[seasonKey]) {
             const episodes = parseEpisodes(item[seasonKey]);
-            const packs = parseSeasonPacks(item[seasonKey]);
+            let packs = parseSeasonPacks(item[seasonKey]);
+
+            // Merge packs from season_zip
+            const zipPacks = seasonPacks[i] || [];
+            if (zipPacks.length > 0) {
+                packs = [...packs, ...zipPacks];
+            }
 
             if (episodes.length > 0 || packs.length > 0) {
                 seasons.push({
@@ -138,9 +195,43 @@ const parseSeries = (item) => {
                     packs: packs
                 });
             }
+        } else if (seasonPacks[i] && seasonPacks[i].length > 0) {
+            // If season key is missing but we have packs in zip, add the season
+            seasons.push({
+                season: i,
+                episodes: [],
+                packs: seasonPacks[i]
+            });
         }
     }
     return seasons;
+};
+
+/**
+ * Parses season_zip field for season packs.
+ * Format: "Season 1 : link... \n Season 2 : link..."
+ * @param {string} text 
+ * @returns {Object} - Map of season number to array of links.
+ */
+const parseSeasonZip = (text) => {
+    if (!text) return {};
+
+    const seasonMap = {};
+    const parts = text.split(/Season\s+(\d+)\s*:/i);
+
+    // parts[0] is header, parts[1] is season num, parts[2] is content...
+    for (let i = 1; i < parts.length; i += 2) {
+        const seasonNum = parseInt(parts[i]);
+        const content = parts[i + 1];
+
+        if (content) {
+            const links = parseLinks(content);
+            if (links.length > 0) {
+                seasonMap[seasonNum] = links;
+            }
+        }
+    }
+    return seasonMap;
 };
 
 /**
