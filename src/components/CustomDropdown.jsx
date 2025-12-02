@@ -1,6 +1,6 @@
 import { ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion'; // eslint-disable-line no-unused-vars
-import { useRef, useEffect, useCallback, memo } from 'react';
+import { useRef, useEffect, useCallback, memo, useState } from 'react';
 
 const CustomDropdown = ({
     value,
@@ -15,6 +15,8 @@ const CustomDropdown = ({
     renderOption
 }) => {
     const dropdownRef = useRef(null);
+    const listRef = useRef(null);
+    const [canScrollDown, setCanScrollDown] = useState(false);
 
     useEffect(() => {
         const handleClickOutside = (event) => {
@@ -31,6 +33,21 @@ const CustomDropdown = ({
             document.removeEventListener('mousedown', handleClickOutside);
         };
     }, [isOpen, setIsOpen]);
+
+    const checkScroll = useCallback(() => {
+        if (listRef.current) {
+            const { scrollTop, scrollHeight, clientHeight } = listRef.current;
+            setCanScrollDown(scrollTop + clientHeight < scrollHeight - 1);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (isOpen) {
+            // Small timeout to ensure rendering is complete
+            const timer = setTimeout(checkScroll, 0);
+            return () => clearTimeout(timer);
+        }
+    }, [isOpen, options, checkScroll]);
 
     const handleSelect = useCallback((option) => {
         onChange(option);
@@ -58,9 +75,14 @@ const CustomDropdown = ({
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -10 }}
                         transition={{ duration: 0.2 }}
-                        className={`absolute top-full max-h-[22vh] overflow-y-scroll scrollbar-hide left-0 mt-2 w-full bg-[#181818] border border-white/5 rounded-2xl shadow-2xl overflow-hidden z-50 ${menuClassName}`}
+                        className={`absolute top-full left-0 mt-2 w-full bg-[#181818] border border-white/5 rounded-2xl shadow-2xl overflow-hidden z-50 flex flex-col ${menuClassName}`}
+                        style={{ maxHeight: '22vh' }}
                     >
-                        <div className="p-2 space-y-1">
+                        <div
+                            ref={listRef}
+                            onScroll={checkScroll}
+                            className="overflow-y-auto scrollbar-hide p-2 space-y-1 flex-1"
+                        >
                             {options.map((option) => (
                                 <button
                                     key={option.value || option}
@@ -74,6 +96,20 @@ const CustomDropdown = ({
                                 </button>
                             ))}
                         </div>
+
+                        {/* Scroll Indicator */}
+                        <AnimatePresence>
+                            {canScrollDown && (
+                                <motion.div
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-[#181818] to-transparent pointer-events-none flex items-end justify-center pb-1"
+                                >
+                                    <ChevronDown className="w-4 h-4 text-white/50 animate-bounce" />
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                     </motion.div>
                 )}
             </AnimatePresence>
