@@ -17,35 +17,11 @@ import { getBaseUrl } from '../utils/apiConfig';
  */
 const api = axios.create({
     baseURL: getBaseUrl(),
+    withCredentials: true,
     headers: {
         'Content-Type': 'application/json',
     },
 });
-
-/**
- * Request interceptor to attach the authentication token to headers.
- * Retrieves 'auth_token' from localStorage.
- */
-api.interceptors.request.use(
-    /**
-     * @param {InternalAxiosRequestConfig} config
-     * @returns {InternalAxiosRequestConfig}
-     */
-    (config) => {
-        const token = localStorage.getItem('auth_token');
-        if (token) {
-            config.headers.Authorization = `Bearer ${token}`;
-        }
-        return config;
-    },
-    /**
-     * @param {any} error
-     * @returns {Promise<never>}
-     */
-    (error) => {
-        return Promise.reject(error);
-    }
-);
 
 /**
  * Response interceptor to handle global error responses.
@@ -68,9 +44,8 @@ api.interceptors.response.use(
             return Promise.reject(error);
         }
 
-        // Handle 401 errors - clear token and redirect to login
+        // Handle 401 errors - redirect to login if needed, but let the store handle state clearing
         if (error.response?.status === 401) {
-            localStorage.removeItem('auth_token');
             console.log('Authentication required');
         }
 

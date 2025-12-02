@@ -23,27 +23,11 @@ const tmdb = axios.create({
 /**
  * Request interceptor to attach the authentication token to headers.
  * Retrieves 'auth_token' from localStorage.
+ * 
+ * UPDATE: We now use HttpOnly cookies, so we don't need to manually attach the token.
+ * The browser will handle it automatically via withCredentials: true.
  */
-tmdb.interceptors.request.use(
-    /**
-     * @param {InternalAxiosRequestConfig} config
-     * @returns {InternalAxiosRequestConfig}
-     */
-    (config) => {
-        const token = localStorage.getItem('auth_token');
-        if (token) {
-            config.headers.Authorization = `Bearer ${token}`;
-        }
-        return config;
-    },
-    /**
-     * @param {any} error
-     * @returns {Promise<never>}
-     */
-    (error) => {
-        return Promise.reject(error);
-    }
-);
+// tmdb.interceptors.request.use(...) - Removed
 
 /**
  * Concurrency Manager to limit simultaneous requests

@@ -1,7 +1,6 @@
 import User from '../models/User.js';
-import { sendTokenResponse, generateToken } from '../middleware/auth.js';
+import { sendTokenResponse } from '../middleware/auth.js';
 import asyncHandler from '../middleware/async.js';
-import logger from '../utils/logger.js';
 import { validationResult } from 'express-validator';
 
 // @desc    Register user
@@ -76,7 +75,11 @@ export const getMe = asyncHandler(async (req, res, next) => {
 // @route   POST /api/auth/logout
 // @access  Private
 export const logout = asyncHandler(async (req, res, next) => {
-    // Client side should also remove the token
+    res.cookie('token', 'none', {
+        expires: new Date(Date.now() + 10 * 1000),
+        httpOnly: true
+    });
+
     res.status(200).json({
         success: true,
         message: 'User logged out successfully'

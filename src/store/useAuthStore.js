@@ -7,11 +7,10 @@ import useNotificationStore from './useNotificationStore';
 
 const useAuthStore = create((set, get) => ({
     user: null,
-    isCheckingAuth: false, // Optimistic: assume we are done checking or check in background
+    isCheckingAuth: true, // Start true to check on mount
     isSyncing: false,
     isLoggingOut: false,
-    // Optimistic: if token exists, assume authenticated until proven otherwise
-    isAuthenticated: !!localStorage.getItem('auth_token'),
+    isAuthenticated: false,
     error: null,
 
     // Helper function to merge local and backend data
@@ -76,21 +75,8 @@ const useAuthStore = create((set, get) => ({
 
     // Check if user is authenticated on mount
     checkAuth: async (retryCount = 0) => {
-        // We don't set isCheckingAuth to true here to avoid blocking UI
-        // The initial state is already optimistic based on token presence
-
+        set({ isCheckingAuth: true });
         try {
-            // Check if token exists in localStorage
-            const token = localStorage.getItem('auth_token');
-            if (!token) {
-                set({
-                    user: null,
-                    isAuthenticated: false,
-                    isCheckingAuth: false
-                });
-                return;
-            }
-
             // Create a timeout promise
             const timeoutPromise = new Promise((_, reject) =>
                 setTimeout(() => reject(new Error('Auth check timeout')), 5000)
@@ -117,9 +103,11 @@ const useAuthStore = create((set, get) => ({
         } catch (error) {
             // Don't log error for 401 (Unauthorized) - it just means not logged in
             if (error.response && error.response.status === 401) {
-                // Token was invalid, force logout
-                console.warn('Token invalid, logging out...');
-                get().logout();
+                set({
+                    user: null,
+                    isAuthenticated: false,
+                    isCheckingAuth: false
+                });
                 return;
             }
 
@@ -133,11 +121,7 @@ const useAuthStore = create((set, get) => ({
                 return get().checkAuth(retryCount + 1);
             }
 
-            // If all retries fail, we keep the user in "optimistic" state but maybe show a warning?
-            // For now, let's assume if network is down, we let them browse cached content if possible
-            // But if we can't verify, we might eventually want to logout. 
-            // However, for better UX on flaky connections, we'll just stop checking.
-            set({ isCheckingAuth: false });
+            set({ isCheckingAuth: false, isAuthenticated: false });
         }
     },
 
@@ -147,11 +131,6 @@ const useAuthStore = create((set, get) => ({
         const { addNotification } = useNotificationStore.getState();
         try {
             const response = await api.post('/auth/register', credentials);
-
-            // Store token in localStorage for cross-domain auth
-            if (response.data.token) {
-                localStorage.setItem('auth_token', response.data.token);
-            }
 
             set({ user: response.data.user, isAuthenticated: true, error: null });
 
@@ -175,11 +154,6 @@ const useAuthStore = create((set, get) => ({
         try {
             const response = await api.post('/auth/login', credentials);
 
-            // Store token in localStorage for cross-domain auth
-            if (response.data.token) {
-                localStorage.setItem('auth_token', response.data.token);
-            }
-
             set({ user: response.data.user, isAuthenticated: true, error: null });
 
             // Sync data after successful login
@@ -202,9 +176,6 @@ const useAuthStore = create((set, get) => ({
         try {
             await api.post('/auth/logout');
 
-            // Clear token from localStorage
-            localStorage.removeItem('auth_token');
-
             // Clear local stores
             const watchHistoryStore = useWatchHistoryStore.getState();
             const listStore = useListStore.getState();
@@ -215,9 +186,6 @@ const useAuthStore = create((set, get) => ({
             addNotification({ type: 'success', message: 'Logged out successfully' });
         } catch (error) {
             console.error('Logout error:', error);
-
-            // Force logout on client even if server fails
-            localStorage.removeItem('auth_token');
 
             const watchHistoryStore = useWatchHistoryStore.getState();
             const listStore = useListStore.getState();

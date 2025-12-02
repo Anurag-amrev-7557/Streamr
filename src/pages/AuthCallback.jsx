@@ -1,29 +1,22 @@
 import { useEffect, useState, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import useAuthStore from '../store/useAuthStore';
 import { Loader2 } from 'lucide-react';
 
 const AuthCallback = () => {
-    const [searchParams] = useSearchParams();
     const navigate = useNavigate();
     const { checkAuth, user, isCheckingAuth } = useAuthStore();
     const [hasChecked, setHasChecked] = useState(false);
     const authCheckInitiated = useRef(false);
 
     useEffect(() => {
-        const token = searchParams.get('token');
-
-        if (token && !authCheckInitiated.current) {
+        if (!authCheckInitiated.current) {
             authCheckInitiated.current = true;
             setHasChecked(true); // eslint-disable-line react-hooks/set-state-in-effect
-            // Store token in localStorage for cross-domain authentication
-            localStorage.setItem('auth_token', token);
-            // Trigger auth check which will now use the token from localStorage
+            // Trigger auth check which will now use the cookie
             checkAuth();
-        } else if (!token) {
-            navigate('/login');
         }
-    }, [searchParams, navigate, checkAuth]);
+    }, [checkAuth]);
 
     // Wait for auth check to complete and user state to update
     useEffect(() => {
