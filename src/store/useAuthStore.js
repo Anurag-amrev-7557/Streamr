@@ -177,6 +177,17 @@ const useAuthStore = create((set, get) => ({
 
     // Check if user is authenticated on mount
     checkAuth: async (retryCount = 0) => {
+        // Optimistic check: if no token, we know we're not logged in
+        const token = localStorage.getItem('auth_token');
+        if (!token) {
+            set({
+                user: null,
+                isAuthenticated: false,
+                isCheckingAuth: false
+            });
+            return;
+        }
+
         set({ isCheckingAuth: true });
         try {
             // Create a timeout promise

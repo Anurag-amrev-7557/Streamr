@@ -33,8 +33,10 @@ function App() {
   const [showNavbar, setShowNavbar] = useState(false);
   const hasShownIntro = useRef(false);
 
-  // Loading state - only check auth, sync happens in background
-  const isLoading = isCheckingAuth;
+  // Loading state - separated from auth check for perceived performance
+  // We only show the loader for the duration of the animation (or minimum time)
+  // regardless of whether auth check is complete.
+  const [isLoading, setIsLoading] = useState(true);
 
   // Memoized checkAuth to prevent unnecessary re-renders
   const checkAuth = useCallback(() => {
@@ -52,7 +54,17 @@ function App() {
     checkAuth();
   }, [checkAuth]);
 
-  // Trigger intro animation ONLY on first load when auth check completes
+  // Handle PageLoader timing independently of auth
+  useEffect(() => {
+    // Minimum load time to prevent flashing - enough for 1 loop of the "LOADING..." animation
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 100); // 2s fixed duration for consistent experience
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Trigger intro animation when loader dismisses
   useEffect(() => {
     if (!isLoading && !hasShownIntro.current) {
       hasShownIntro.current = true;

@@ -12,7 +12,7 @@ const Login = () => {
     const [showPassword, setShowPassword] = useState(false);
     const [focusedInput, setFocusedInput] = useState(null);
 
-    const { login, error } = useAuthStore();
+    const { login, error, isCheckingAuth } = useAuthStore();
     const navigate = useNavigate();
 
     const handleLogin = async (e) => {
@@ -32,6 +32,15 @@ const Login = () => {
         const apiUrl = import.meta.env.VITE_API_URL || 'https://streamrbackend.vercel.app/api';
         window.location.href = `${apiUrl}/auth/google`;
     };
+
+    // Prevent form flash if we're still determining if user is already logged in
+    if (isCheckingAuth) {
+        return (
+            <div className="min-h-screen w-full bg-[#0a0a0a] flex items-center justify-center">
+                <Loader2 className="w-10 h-10 text-white animate-spin" />
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen w-full bg-[#0a0a0a] lg:grid lg:grid-cols-2 overflow-hidden">

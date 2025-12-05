@@ -218,7 +218,7 @@ NotificationDropdown.propTypes = {
 NotificationDropdown.displayName = 'NotificationDropdown';
 
 const Navbar = ({ onMovieClick }) => {
-    const { user, logout, isLoggingOut } = useAuthStore();
+    const { user, logout, isLoggingOut, isCheckingAuth } = useAuthStore();
     const navigate = useNavigate();
 
     // Core state
@@ -635,8 +635,13 @@ const Navbar = ({ onMovieClick }) => {
                         </AnimatePresence>
                     </div>
 
-                    <div className="flex items-center gap-4 md:gap-6 text-white">
-                        {user ? (
+                    <div className="flex items-center gap-4 md:gap-6 text-white min-w-[100px] justify-end">
+                        {isCheckingAuth ? (
+                            <div className="flex items-center gap-3 animate-pulse">
+                                <div className="w-5 h-5 bg-white/10 rounded-full" />
+                                <div className="w-9 h-9 bg-white/10 rounded-full" />
+                            </div>
+                        ) : user ? (
                             <>
                                 <div className="relative inline-block">
                                     <Bell
@@ -753,8 +758,13 @@ const Navbar = ({ onMovieClick }) => {
                         <div className="hidden sm:block w-px h-5 bg-white/10"></div>
 
                         {/* User Section */}
-                        <div className="hidden sm:flex items-center gap-3 flex-shrink-0">
-                            {user ? (
+                        <div className="hidden sm:flex items-center gap-3 flex-shrink-0 min-w-[80px] justify-end">
+                            {isCheckingAuth ? (
+                                <div className="flex items-center gap-3 animate-pulse">
+                                    <div className="w-5 h-5 bg-white/10 rounded-full" />
+                                    <div className="w-8 h-8 bg-white/10 rounded-full" />
+                                </div>
+                            ) : user ? (
                                 <>
                                     <div className="relative">
                                         <Bell
@@ -802,30 +812,30 @@ const Navbar = ({ onMovieClick }) => {
                             )}
                         </div>
                     </div>
-
-                    {/* Scrolled Search Results / History */}
-                    <AnimatePresence>
-                        {shouldShowScrolledSearchResults && (
-                            <Suspense fallback={<div className="absolute flex justify-center items-center top-full min-h-[25vh] left-0 right-0 mt-4 bg-[#0a0a0a]/80 backdrop-blur-xl border border-white/10 rounded-xl p-4 text-center text-gray-400">Loading...</div>}>
-                                <SearchResults
-                                    results={searchResults}
-                                    suggestions={suggestions}
-                                    searches={searches}
-                                    isLoading={isSearching}
-                                    searchQuery={debouncedSearchQuery}
-                                    onResultClick={handleResultClick}
-                                    onHistoryClick={handleHistoryClick}
-                                    onClearHistory={clearHistory}
-                                    onRemoveSearch={removeSearch}
-                                    onHover={handleResultHover}
-                                    onLeave={handleResultLeave}
-                                    className="absolute top-full left-0 right-0 mt-4"
-                                />
-                            </Suspense>
-                        )}
-                    </AnimatePresence>
                 </div>
             </motion.div>
+            {/* Scrolled Search Results / History */}
+            <AnimatePresence>
+                {shouldShowScrolledSearchResults && (
+                    <Suspense fallback={<div className="absolute flex justify-center items-center top-full min-h-[25vh] left-0 right-0 mt-4 bg-[#0a0a0a]/80 backdrop-blur-xl border border-white/10 rounded-xl p-4 text-center text-gray-400">Loading...</div>}>
+                        <SearchResults
+                            results={searchResults}
+                            suggestions={suggestions}
+                            searches={searches}
+                            isLoading={isSearching}
+                            searchQuery={debouncedSearchQuery}
+                            activeSuggestionIndex={activeSuggestionIndex}
+                            onResultClick={handleResultClick}
+                            onHistoryClick={handleHistoryClick}
+                            onClearHistory={clearHistory}
+                            onRemoveSearch={removeSearch}
+                            onHover={handleResultHover}
+                            onLeave={handleResultLeave}
+                            className="absolute top-full left-0 right-0 mt-4"
+                        />
+                    </Suspense>
+                )}
+            </AnimatePresence>
 
             <LogoutModal
                 isOpen={isLogoutModalOpen}
