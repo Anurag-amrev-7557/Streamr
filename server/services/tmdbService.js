@@ -627,41 +627,14 @@ class TmdbService {
             eraEnd = `${decade + 9}-12-31`;
         }
 
-        const promises = [];
-        promises.push(this.fetchTMDB(`/${type}/${id}/similar`, { api_key: apiKey }).then(res => ({ source: 'similar', items: res })));
-        promises.push(this.fetchTMDB(`/${type}/${id}/recommendations`, { api_key: apiKey }).then(res => ({ source: 'recommendations', items: res })));
-
-        if (director && type === 'movie') {
-            promises.push(this.fetchTMDB('/discover/movie', {
-                api_key: apiKey,
-                with_people: director.id,
-                sort_by: 'popularity.desc'
-            }).then(res => ({ source: 'director_match', items: res })));
-        }
-
-        if (keywordIds.length > 0) {
-            promises.push(this.fetchTMDB(`/discover/${type}`, {
-                api_key: apiKey,
-                with_keywords: keywordIds.join('|'),
-                sort_by: 'popularity.desc'
-            }).then(res => ({ source: 'keyword_match', items: res })));
-        }
-
-        if (eraStart && itemDetails.genres?.length > 0) {
-            const genreIds = itemDetails.genres.map(g => g.id).slice(0, 2).join(',');
-            const dateParam = type === 'movie' ? 'primary_release_date' : 'first_air_date';
-            promises.push(this.fetchTMDB(`/discover/${type}`, {
-                api_key: apiKey,
-                with_genres: genreIds,
-                [`${dateParam}.gte`]: eraStart,
-                [`${dateParam}.lte`]: eraEnd,
-                sort_by: 'vote_average.desc',
-                'vote_count.gte': 100
-            }).then(res => ({ source: 'era_match', items: res })));
-        }
+        // --- Smart Fetch Strategy ---
+        // 1. Primary Sources (Critical, wait for these)
+        const primaryPromises = [];
+        primaryPromises.push(this.fetchTMDB(`/${type}/${id}/similar`, { api_key: apiKey }).then(res => ({ source: 'similar', items: res })));
+        primaryPromises.push(this.fetchTMDB(`/${type}/${id}/recommendations`, { api_key: apiKey }).then(res => ({ source: 'recommendations', items: res })));
 
         if (type === 'movie' && itemDetails.belongs_to_collection) {
-            promises.push(
+            primaryPromises.push(
                 tmdbClient.get(`/collection/${itemDetails.belongs_to_collection.id}`, {
                     api_key: apiKey
                 })
@@ -670,28 +643,88 @@ class TmdbService {
             );
         }
 
+        // 2. Secondary Sources (Enhancement, skip if slow)
+        const secondaryPromises = [];
+        const SECONDARY_TIMEOUT = 1500; // 1.5s timeout for secondary sources
+
+        const withTimeout = (promise, fallbackValue) => {
+            return Promise.race([
+                promise,
+                new Promise(resolve => setTimeout(() => resolve(fallbackValue), SECONDARY_TIMEOUT))
+            ]);
+        };
+
+        if (director && type === 'movie') {
+            secondaryPromises.push(withTimeout(
+                this.fetchTMDB('/discover/movie', {
+                    api_key: apiKey,
+                    with_people: director.id,
+                    sort_by: 'popularity.desc'
+                }).then(res => ({ source: 'director_match', items: res })),
+                { source: 'director_match', items: [] } // Fallback
+            ));
+        }
+
+        if (keywordIds.length > 0) {
+            secondaryPromises.push(withTimeout(
+                this.fetchTMDB(`/discover/${type}`, {
+                    api_key: apiKey,
+                    with_keywords: keywordIds.join('|'),
+                    sort_by: 'popularity.desc'
+                }).then(res => ({ source: 'keyword_match', items: res })),
+                { source: 'keyword_match', items: [] }
+            ));
+        }
+
+        if (eraStart && itemDetails.genres?.length > 0) {
+            const genreIds = itemDetails.genres.map(g => g.id).slice(0, 2).join(',');
+            const dateParam = type === 'movie' ? 'primary_release_date' : 'first_air_date';
+            secondaryPromises.push(withTimeout(
+                this.fetchTMDB(`/discover/${type}`, {
+                    api_key: apiKey,
+                    with_genres: genreIds,
+                    [`${dateParam}.gte`]: eraStart,
+                    [`${dateParam}.lte`]: eraEnd,
+                    sort_by: 'vote_average.desc',
+                    'vote_count.gte': 100
+                }).then(res => ({ source: 'era_match', items: res })),
+                { source: 'era_match', items: [] }
+            ));
+        }
+
         if (topCast.length > 0) {
             const castIds = topCast.map(c => c.id).join(',');
-            promises.push(this.fetchTMDB(`/discover/${type}`, {
-                api_key: apiKey,
-                with_people: castIds,
-                sort_by: 'popularity.desc'
-            }).then(res => ({ source: 'cast_match', items: res })));
+            secondaryPromises.push(withTimeout(
+                this.fetchTMDB(`/discover/${type}`, {
+                    api_key: apiKey,
+                    with_people: castIds,
+                    sort_by: 'popularity.desc'
+                }).then(res => ({ source: 'cast_match', items: res })),
+                { source: 'cast_match', items: [] }
+            ));
         }
 
         if (studio) {
-            promises.push(this.fetchTMDB(`/discover/${type}`, {
-                api_key: apiKey,
-                with_companies: studio.id,
-                sort_by: 'popularity.desc'
-            }).then(res => ({ source: 'studio_match', items: res })));
+            secondaryPromises.push(withTimeout(
+                this.fetchTMDB(`/discover/${type}`, {
+                    api_key: apiKey,
+                    with_companies: studio.id,
+                    sort_by: 'popularity.desc'
+                }).then(res => ({ source: 'studio_match', items: res })),
+                { source: 'studio_match', items: [] }
+            ));
         }
 
-        // Use allSettled for robustness
-        const resultsSettled = await Promise.allSettled(promises);
+        // Execute all requests
+        // We use allSettled to ensure one failure doesn't break the whole response
+        const allPromises = [...primaryPromises, ...secondaryPromises];
+        const resultsSettled = await Promise.allSettled(allPromises);
+
         const results = resultsSettled
             .filter(r => r.status === 'fulfilled')
-            .map(r => r.value);
+            .map(r => r.value)
+            // Filter out empty fallbacks if needed, though scoreAndRank handles empty lists
+            .filter(r => r && r.items);
 
         return this.scoreAndRankItemRecommendations(results, id, userTopGenres);
     }
