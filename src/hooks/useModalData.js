@@ -22,10 +22,14 @@ export const useModalData = (movie, modalEnabled, selectedSeason) => {
     // 2. Similar Movies/Shows - Separate Request (Heavy computation on backend)
     const {
         data: similarData,
-        isLoading: isSimilarLoading,
+        isLoading: isSimilarLoadingRaw,
         isError: isSimilarError,
         refetch: refetchSimilar
     } = useModalSimilar(movie?.id, type, modalEnabled);
+
+    // If we have aggregated data with similar results, we are NOT loading visually
+    const hasAggregatedSimilar = aggregatedData?.similar?.results?.length > 0 || aggregatedData?.recommendations?.results?.length > 0;
+    const isSimilarLoading = isSimilarLoadingRaw && !hasAggregatedSimilar;
 
     // 3. Episodes - Separate Request (TV Only, potentially large)
     const {
@@ -64,8 +68,23 @@ export const useModalData = (movie, modalEnabled, selectedSeason) => {
     }, [creditsData]);
 
     const similarMovies = useMemo(() => {
-        return similarData?.results?.slice(0, 8) || [];
-    }, [similarData]);
+        // Prioritize the "Smart" similar data if it has arrived
+        if (similarData?.results?.length > 0) {
+            return similarData.results.slice(0, 8);
+        }
+
+        // Fallback to the "Basic" similar data attached to the main detail response
+        // This is available IMMEDIATELY when the modal opens (since we appended it to details)
+        if (aggregatedData?.similar?.results?.length > 0) {
+            return aggregatedData.similar.results.slice(0, 8);
+        }
+
+        if (aggregatedData?.recommendations?.results?.length > 0) {
+            return aggregatedData.recommendations.results.slice(0, 8);
+        }
+
+        return [];
+    }, [similarData, aggregatedData]);
 
     const trailerKey = useMemo(() => {
         if (!videosData?.results) return null;

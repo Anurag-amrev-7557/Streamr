@@ -80,7 +80,7 @@ class TmdbService {
             try {
                 const response = await tmdbClient.get(`/${type}/${id}`, {
                     api_key: apiKey,
-                    append_to_response: appendToResponse,
+                    append_to_response: appendToResponse + ',similar,recommendations',
                     include_image_language: 'en,null' // Prioritize English images, fallback to no language
                 });
 
