@@ -211,11 +211,6 @@ const StreamingPlayer = memo(({ movie, type = 'movie', season = 1, episode = 1, 
                     {option.description}
                 </span>
             </div>
-            {option.value === fastestSource && !isChecking && (
-                <span className="text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">
-                    FASTEST
-                </span>
-            )}
         </div>
     ), [fastestSource, isChecking]);
 
