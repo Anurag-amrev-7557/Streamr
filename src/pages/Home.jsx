@@ -153,7 +153,7 @@ const Home = () => {
     }, []);
 
     return (
-        <div className="bg-[#0a0a0a] min-h-screen pb-10 overflow-x-hidden font-sans">
+        <div className="bg-[#0a0a0a] min-h-screen pb-10 overflow-x-hidden font-sans scrollbar-hide">
             <Navbar onMovieClick={handleMovieClick} />
 
             <div className="hidden md:block">

@@ -1,13 +1,13 @@
 import { X, Instagram, Twitter, Facebook, Globe, Calendar, MapPin, Briefcase, User, Film, Image as ImageIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion'; // eslint-disable-line no-unused-vars
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, memo, useCallback } from 'react';
 import useModalStore from '../../store/useModalStore';
 import { usePersonDetails } from '../../hooks/useTMDB';
 import ImageWithPlaceholder from '../ImageWithPlaceholder';
 import clsx from 'clsx';
 import CastModalSkeleton from './CastModalSkeleton';
 
-const CastModal = ({ onMovieClick }) => {
+const CastModal = memo(({ onMovieClick }) => {
     const { isCastModalOpen, selectedPerson, closeCastModal, activeCastTab, setActiveCastTab } = useModalStore();
     const { data: person, isLoading } = usePersonDetails(selectedPerson?.id, isCastModalOpen);
     const [showFullBio, setShowFullBio] = useState(false);
@@ -18,9 +18,9 @@ const CastModal = ({ onMovieClick }) => {
         // activeCastTab is reset in openCastModal action
     }, [selectedPerson]);
 
-    const handleClose = () => {
+    const handleClose = useCallback(() => {
         closeCastModal();
-    };
+    }, [closeCastModal]);
 
     // Memoize derived data
     const backdropPath = useMemo(() => {
@@ -357,7 +357,7 @@ const CastModal = ({ onMovieClick }) => {
                                                                 className="group relative aspect-[2/3] bg-[#2a2a2a] rounded-xl overflow-hidden cursor-pointer shadow-lg hover:shadow-2xl transition-all hover:-translate-y-1"
                                                             >
                                                                 <ImageWithPlaceholder
-                                                                    src={`https://image.tmdb.org/t/p/w500${work.poster_path}`}
+                                                                    src={`https://image.tmdb.org/t/p/w342${work.poster_path}`}
                                                                     alt={work.title || work.name}
                                                                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                                                                 />
@@ -399,7 +399,7 @@ const CastModal = ({ onMovieClick }) => {
                                                                 className="aspect-[2/3] rounded-xl overflow-hidden bg-[#2a2a2a] shadow-lg group relative"
                                                             >
                                                                 <ImageWithPlaceholder
-                                                                    src={`https://image.tmdb.org/t/p/w500${photo.file_path}`}
+                                                                    src={`https://image.tmdb.org/t/p/w342${photo.file_path}`}
                                                                     alt="Gallery Photo"
                                                                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                                                                 />
@@ -418,6 +418,8 @@ const CastModal = ({ onMovieClick }) => {
             )}
         </AnimatePresence>
     );
-};
+});
+
+CastModal.displayName = 'CastModal';
 
 export default CastModal;

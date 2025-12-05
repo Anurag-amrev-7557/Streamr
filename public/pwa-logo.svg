@@ -1,4 +1,5 @@
 <svg viewBox="-12 -12 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="-12" y="-12" width="72" height="72" fill="black"/>
   <path 
     fillRule="evenodd" 
     clipRule="evenodd" 

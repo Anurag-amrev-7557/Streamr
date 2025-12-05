@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { memo, useCallback } from 'react';
 import ImageWithPlaceholder from '../ImageWithPlaceholder';
 import useModalStore from '../../store/useModalStore';
 
 // --- Helper Components ---
 
-const InfoSection = ({ title, content, children }) => {
+const InfoSection = memo(({ title, content, children }) => {
     if (!content && !children) return null;
     return (
         <div>
@@ -12,9 +12,10 @@ const InfoSection = ({ title, content, children }) => {
             {children || <p className="text-base text-white font-medium">{content}</p>}
         </div>
     );
-};
+});
+InfoSection.displayName = 'InfoSection';
 
-const GenreList = ({ genres }) => {
+const GenreList = memo(({ genres }) => {
     if (!genres?.length) return null;
     return (
         <div>
@@ -28,16 +29,18 @@ const GenreList = ({ genres }) => {
             </div>
         </div>
     );
-};
+});
+GenreList.displayName = 'GenreList';
 
-const StatsItem = ({ label, value, children }) => (
+const StatsItem = memo(({ label, value, children }) => (
     <div>
         <p className="text-sm text-gray-500 mb-1">{label}</p>
         {children || <p className="text-sm text-white font-medium">{value}</p>}
     </div>
-);
+));
+StatsItem.displayName = 'StatsItem';
 
-const ProductionCompanies = ({ companies }) => {
+const ProductionCompanies = memo(({ companies }) => {
     if (!companies?.length) return null;
 
     const withLogo = companies.filter(c => c.logo_path).slice(0, 4);
@@ -66,7 +69,8 @@ const ProductionCompanies = ({ companies }) => {
             </div>
         </div>
     );
-};
+});
+ProductionCompanies.displayName = 'ProductionCompanies';
 
 const ModalSkeleton = () => (
     <div className="animate-pulse space-y-4">
@@ -79,8 +83,10 @@ const ModalSkeleton = () => (
 
 // --- Main Component ---
 
-const ModalDetails = ({ isLoading, cast, movieDetails, movie, director, creators }) => {
-    const openCastModal = useModalStore((state) => state.openCastModal);
+const ModalDetails = memo(({ isLoading, cast, movieDetails, movie, director, creators }) => {
+    const openCastModal = useCallback((person) => {
+        useModalStore.getState().openCastModal(person);
+    }, []);
 
     if (isLoading) return <ModalSkeleton />;
 
@@ -170,6 +176,8 @@ const ModalDetails = ({ isLoading, cast, movieDetails, movie, director, creators
             </div>
         </div>
     );
-};
+});
+
+ModalDetails.displayName = 'ModalDetails';
 
 export default ModalDetails;

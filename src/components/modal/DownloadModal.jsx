@@ -1,7 +1,7 @@
 import { X, Download, ExternalLink, AlertCircle, ChevronDown, Film, Tv, Package, Copy, Check, Info, ArrowUp, ArrowDown, ChevronRight } from 'lucide-react';
 import Skeleton from '../Skeleton';
 import { motion, AnimatePresence } from 'framer-motion'; // eslint-disable-line no-unused-vars
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, memo } from 'react';
 import CustomDropdown from '../CustomDropdown';
 
 // Helper to parse quality string into resolution and tags
@@ -32,7 +32,7 @@ const getQualityScore = (qualityStr) => {
     return 0;
 };
 
-const DownloadModal = ({ isOpen, onClose, downloads, seasons, isLoading, error, type }) => {
+const DownloadModal = memo(({ isOpen, onClose, downloads, seasons, isLoading, error, type }) => {
     const [selectedSeason, setSelectedSeason] = useState(1);
     const [selectedEpisode, setSelectedEpisode] = useState(1);
     const [activeDownloads, setActiveDownloads] = useState([]);
@@ -145,7 +145,7 @@ const DownloadModal = ({ isOpen, onClose, downloads, seasons, isLoading, error, 
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0, pointerEvents: 'none' }}
                     transition={{ duration: 0.2 }}
-                    className="fixed inset-0 z-[60] flex md:items-center items-start justify-center bg-black/80 p-4 backdrop-blur-sm"
+                    className="fixed inset-0 z-[60] flex md:items-center items-start justify-center bg-black/80 p-4"
                     onClick={onClose}
                 >
                     <motion.div
@@ -500,6 +500,8 @@ const DownloadModal = ({ isOpen, onClose, downloads, seasons, isLoading, error, 
             )}
         </AnimatePresence>
     );
-};
+});
+
+DownloadModal.displayName = 'DownloadModal';
 
 export default DownloadModal;

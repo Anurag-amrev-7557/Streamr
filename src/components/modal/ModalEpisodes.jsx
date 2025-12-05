@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, memo, useCallback } from 'react';
+import { useState, useRef, useEffect, memo, useCallback, useTransition } from 'react';
 import { Tv, List, Grid, Calendar, Clock, Image as ImageIcon, ChevronRight, AlertCircle, RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion'; // eslint-disable-line no-unused-vars
 import clsx from 'clsx';
@@ -58,6 +58,7 @@ const EpisodeListItem = memo(({ episode, index, onPlay, isLast }) => (
         </div>
     </div>
 ));
+EpisodeListItem.displayName = 'EpisodeListItem';
 
 const EpisodeGridItem = memo(({ episode, index, onPlay }) => (
     <div
@@ -107,6 +108,7 @@ const EpisodeGridItem = memo(({ episode, index, onPlay }) => (
         </div>
     </div>
 ));
+EpisodeGridItem.displayName = 'EpisodeGridItem';
 
 const EpisodeSkeleton = ({ viewMode }) => (
     <div className={clsx(
@@ -266,6 +268,7 @@ const ModalEpisodes = ({
     setPlayerState
 }) => {
     const [viewMode, setViewMode] = useState('list'); // 'list' or 'grid'
+    const [isPending, startTransition] = useTransition();
     const [displayedCount, setDisplayedCount] = useState(6);
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const dropdownRef = useRef(null);
@@ -311,7 +314,7 @@ const ModalEpisodes = ({
                 </h3>
 
                 <div className="w-full md:w-auto flex items-center justify-between md:justify-start gap-2 md:gap-4">
-                    <ViewToggler viewMode={viewMode} setViewMode={setViewMode} />
+                    <ViewToggler viewMode={viewMode} setViewMode={(mode) => startTransition(() => setViewMode(mode))} />
 
                     <SeasonSelector
                         movieDetails={movieDetails}
@@ -325,7 +328,7 @@ const ModalEpisodes = ({
             </div>
 
             {/* Episodes list with animation on season change */}
-            <div className="relative pb-20 md:pb-0">
+            <div className={`relative pb-20 md:pb-0 ${isPending ? 'opacity-70' : ''}`}>
                 {isEpisodesLoading ? (
                     <EpisodeSkeleton viewMode={viewMode} />
                 ) : isEpisodesError ? (

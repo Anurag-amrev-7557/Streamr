@@ -1,6 +1,7 @@
+import { memo } from 'react';
 import Skeleton from './Skeleton';
 
-const ModalSkeleton = () => {
+const ModalSkeleton = memo(() => {
     return (
         <div className="w-full bg-[#1a1a1a]">
             {/* Hero Section Skeleton */}
@@ -76,6 +77,9 @@ const ModalSkeleton = () => {
             </div>
         </div>
     );
-};
+});
+
+ModalSkeleton.displayName = 'ModalSkeleton';
 
 export default ModalSkeleton;
+

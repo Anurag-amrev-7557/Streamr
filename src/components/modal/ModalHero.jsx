@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo, useMemo, useCallback } from 'react';
 import clsx from 'clsx';
 import {
     HeroBackground,
@@ -10,7 +10,7 @@ import {
     HeroInfo
 } from './ModalHeroComponents';
 
-const ModalHero = ({
+const ModalHero = memo(({
     movie,
     movieDetails,
     logoPath,
@@ -27,14 +27,14 @@ const ModalHero = ({
     creators,
     onDownload
 }) => {
-    const hasHistory = !!getHistoryItem(movie.id);
+    const hasHistory = useMemo(() => !!getHistoryItem(movie.id), [getHistoryItem, movie.id]);
 
-    const handlePlay = () => {
+    const handlePlay = useCallback(() => {
         const historyItem = getHistoryItem(movie.id);
         const season = historyItem?.season || 1;
         const episode = historyItem?.episode || 1;
         onPlay(season, episode);
-    };
+    }, [getHistoryItem, movie.id, onPlay]);
 
     return (
         <>
@@ -124,6 +124,8 @@ const ModalHero = ({
             </div>
         </>
     );
-};
+});
+
+ModalHero.displayName = 'ModalHero';
 
 export default ModalHero;

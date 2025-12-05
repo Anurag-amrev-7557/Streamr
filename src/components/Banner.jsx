@@ -126,7 +126,7 @@ const Banner = ({ onMovieClick, fetchUrl }) => {
                 <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[#0a0a0a]" />
                 <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-transparent to-transparent" />
 
-                <div className="relative pt-[120px] md:pt-[250px] px-4 md:px-12 h-full flex flex-col justify-center">
+                <div className="relative pt-[120px] md:pt-[200px] lg:pt-[180px] xl:pt-[180px] 2xl:pt-[250px] px-4 md:px-8 lg:px-10 xl:px-10 2xl:px-12 h-full flex flex-col justify-center">
                     {logoPath && logoLoaded ? (
                         <div className="flex items-end mb-6">
                             <img
@@ -137,7 +137,7 @@ const Banner = ({ onMovieClick, fetchUrl }) => {
                                 decoding="async"
                                 width="500"
                                 height="200"
-                                className="w-auto max-h-32 max-w-md object-contain drop-shadow-2xl origin-left"
+                                className="w-auto max-h-24 lg:max-h-28 xl:max-h-28 2xl:max-h-32 max-w-xs lg:max-w-sm xl:max-w-sm 2xl:max-w-md object-contain drop-shadow-2xl origin-left"
                             />
                         </div>
                     ) : logoPath && !logoLoaded ? (
@@ -153,17 +153,17 @@ const Banner = ({ onMovieClick, fetchUrl }) => {
                                 height="200"
                                 className="hidden"
                             />
-                            <h1 className="text-3xl md:text-6xl font-bold pb-3 max-w-2xl drop-shadow-lg">
+                            <h1 className="text-3xl md:text-5xl lg:text-5xl xl:text-5xl 2xl:text-6xl font-bold pb-3 max-w-xl lg:max-w-xl xl:max-w-xl 2xl:max-w-2xl drop-shadow-lg">
                                 {movie?.title || movie?.name || movie?.original_name || 'Featured Content'}
                             </h1>
                         </>
                     ) : (
-                        <h1 className="text-3xl md:text-6xl font-bold pb-3 max-w-2xl drop-shadow-lg">
+                        <h1 className="text-3xl md:text-5xl lg:text-5xl xl:text-5xl 2xl:text-6xl font-bold pb-3 max-w-xl lg:max-w-xl xl:max-w-xl 2xl:max-w-2xl drop-shadow-lg">
                             {movie?.title || movie?.name || movie?.original_name || 'Featured Content'}
                         </h1>
                     )}
 
-                    <div className="flex items-center gap-3 text-base md:text-lg text-gray-300 mb-6 font-medium drop-shadow-md flex-wrap">
+                    <div className="flex items-center gap-3 text-sm md:text-base lg:text-base xl:text-base 2xl:text-lg text-gray-300 mb-4 lg:mb-5 xl:mb-5 2xl:mb-6 font-medium drop-shadow-md flex-wrap">
                         <span className="text-[#46d369] font-bold tracking-wide">{movie.vote_average ? `${(movie.vote_average * 10).toFixed(0)}% Match` : 'New'}</span>
                         <span className="text-gray-500 text-xs">•</span>
                         <span className="text-white">{movie.first_air_date?.substring(0, 4) || movie.release_date?.substring(0, 4)}</span>
@@ -183,7 +183,7 @@ const Banner = ({ onMovieClick, fetchUrl }) => {
                         )}
                     </div>
 
-                    <h1 className="w-full md:max-w-2xl text-xs md:text-lg font-medium drop-shadow-md mb-4 md:mb-8 line-clamp-2 md:line-clamp-4 text-gray-200">
+                    <h1 className="w-full md:max-w-xl lg:max-w-xl xl:max-w-xl 2xl:max-w-2xl text-xs md:text-base lg:text-base xl:text-base 2xl:text-lg font-medium drop-shadow-md mb-4 md:mb-6 lg:mb-6 xl:mb-6 2xl:mb-8 line-clamp-2 md:line-clamp-3 lg:line-clamp-3 xl:line-clamp-3 2xl:line-clamp-4 text-gray-200">
                         {truncate(movie?.overview || 'Discover amazing content.', window.innerWidth < 768 ? 100 : 150)}
                     </h1>
 
@@ -192,7 +192,7 @@ const Banner = ({ onMovieClick, fetchUrl }) => {
                             onClick={() => onMovieClick(movie)}
                             onMouseEnter={handleButtonHover}
                             onMouseLeave={handleButtonLeave}
-                            className="flex items-center gap-2 md:gap-3 cursor-pointer text-black outline-none border-none font-bold rounded-full px-4 md:px-8 py-2.5 md:py-4 text-sm md:text-base bg-white transition duration-300 shadow-lg hover:scale-105 active:scale-95"
+                            className="flex items-center gap-2 md:gap-2 lg:gap-2 xl:gap-2 2xl:gap-3 cursor-pointer text-black outline-none border-none font-bold rounded-full px-4 md:px-6 lg:px-6 xl:px-6 2xl:px-8 py-2.5 md:py-3 lg:py-3 xl:py-3 2xl:py-4 text-sm md:text-sm lg:text-sm xl:text-sm 2xl:text-base bg-white transition duration-300 shadow-lg hover:scale-105 active:scale-95"
                         >
                             <Play className="w-4 h-4 md:w-5 md:h-5 fill-black" />
                             <span className="hidden sm:inline">{getHistoryItem(movie.id) ? 'Resume' : 'Watch Now'}</span>
@@ -200,7 +200,7 @@ const Banner = ({ onMovieClick, fetchUrl }) => {
                         </button>
                         <button
                             onClick={handleListToggle}
-                            className="flex items-center gap-2 md:gap-3 cursor-pointer text-white outline-none border border-white/10 font-bold rounded-full px-4 md:px-8 py-2.5 md:py-4 text-sm md:text-base bg-white/10 hover:bg-white/20 hover:border-white/20 transition duration-300 shadow-lg hover:scale-105 active:scale-95 border border-white/20 backdrop-blur-md"
+                            className="flex items-center gap-2 md:gap-2 lg:gap-2 xl:gap-2 2xl:gap-3 cursor-pointer text-white outline-none border border-white/10 font-bold rounded-full px-4 md:px-6 lg:px-6 xl:px-6 2xl:px-8 py-2.5 md:py-3 lg:py-3 xl:py-3 2xl:py-4 text-sm md:text-sm lg:text-sm xl:text-sm 2xl:text-base bg-white/10 hover:bg-white/20 hover:border-white/20 transition duration-300 shadow-lg hover:scale-105 active:scale-95 border border-white/20"
                         >
                             {inList ? (
                                 <>

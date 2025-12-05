@@ -1,7 +1,8 @@
+import { memo } from 'react';
 import { X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion'; // eslint-disable-line no-unused-vars
 
-const TrailerModal = ({ showTrailer, trailerKey, onClose }) => {
+const TrailerModal = memo(({ showTrailer, trailerKey, onClose }) => {
     return (
         <AnimatePresence>
             {showTrailer && trailerKey && (
@@ -44,6 +45,9 @@ const TrailerModal = ({ showTrailer, trailerKey, onClose }) => {
             )}
         </AnimatePresence>
     );
-};
+});
+
+TrailerModal.displayName = 'TrailerModal';
 
 export default TrailerModal;
+

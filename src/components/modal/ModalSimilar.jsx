@@ -1,7 +1,18 @@
+import { memo, useCallback } from 'react';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import ImageWithPlaceholder from '../ImageWithPlaceholder';
 
-const ModalSimilar = ({ similarMovies, isLoading, onMovieClick, onClose, isError, onRetry }) => {
+const ModalSimilar = memo(({ similarMovies, isLoading, onMovieClick, onClose, isError, onRetry }) => {
+    const handleMovieClick = useCallback((item) => {
+        if (onMovieClick) {
+            onClose();
+            // Wait for modal to close before opening new one
+            setTimeout(() => {
+                onMovieClick(item);
+            }, 150);
+        }
+    }, [onMovieClick, onClose]);
+
     return (
         <div className="grid grid-cols-2 md:grid-cols-5 lg:grid-cols-6 gap-3 md:gap-4">
             {isLoading ? (
@@ -29,20 +40,12 @@ const ModalSimilar = ({ similarMovies, isLoading, onMovieClick, onClose, isError
                 similarMovies.map((item, index) => (
                     <div
                         key={`${item.id}-${index}`}
-                        onClick={() => {
-                            if (onMovieClick) {
-                                onClose();
-                                // Wait for modal to close before opening new one
-                                setTimeout(() => {
-                                    onMovieClick(item);
-                                }, 150);
-                            }
-                        }}
+                        onClick={() => handleMovieClick(item)}
                         className="group relative aspect-[2/3] bg-gradient-to-br from-gray-700 to-gray-900 rounded-lg overflow-hidden cursor-pointer transition ring ring-white/10 hover:ring-white/30 transition duration-200"
                     >
                         {item.poster_path ? (
                             <ImageWithPlaceholder
-                                src={`https://image.tmdb.org/t/p/w500${item.poster_path}`}
+                                src={`https://image.tmdb.org/t/p/w342${item.poster_path}`}
                                 placeholderSrc={`https://image.tmdb.org/t/p/w92${item.poster_path}`}
                                 alt={item.title || item.name}
                                 className="w-full h-full"
@@ -64,6 +67,9 @@ const ModalSimilar = ({ similarMovies, isLoading, onMovieClick, onClose, isError
             )}
         </div>
     );
-};
+});
+
+ModalSimilar.displayName = 'ModalSimilar';
 
 export default ModalSimilar;
+

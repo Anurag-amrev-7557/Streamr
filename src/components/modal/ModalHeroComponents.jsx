@@ -1,11 +1,10 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Play, Plus, Check, Tv, Download } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion'; // eslint-disable-line no-unused-vars
 import clsx from 'clsx';
 import ImageWithPlaceholder from '../ImageWithPlaceholder';
 import useModalStore from '../../store/useModalStore';
 
-export const HeroBackground = ({ movie, isMobile }) => {
+export const HeroBackground = memo(({ movie, isMobile }) => {
     const imagePath = movie.backdrop_path || movie.poster_path;
 
     return (
@@ -25,9 +24,10 @@ export const HeroBackground = ({ movie, isMobile }) => {
             />
         </div>
     );
-};
+});
+HeroBackground.displayName = 'HeroBackground';
 
-export const HeroTitle = ({ movie, logoPath, isMobile }) => {
+export const HeroTitle = memo(({ movie, logoPath, isMobile }) => {
     if (isMobile) {
         return logoPath ? (
             <ImageWithPlaceholder
@@ -46,16 +46,9 @@ export const HeroTitle = ({ movie, logoPath, isMobile }) => {
     }
 
     return (
-        <AnimatePresence mode="wait">
+        <div className="transition-opacity duration-300">
             {logoPath ? (
-                <motion.div
-                    key="logo"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.3 }}
-                    className="max-w-[220px] md:max-w-sm h-24 mb-4"
-                >
+                <div className="max-w-[220px] md:max-w-sm h-24 mb-4">
                     <ImageWithPlaceholder
                         src={`https://image.tmdb.org/t/p/w500${logoPath}`}
                         placeholderSrc={`https://image.tmdb.org/t/p/w92${logoPath}`}
@@ -63,24 +56,18 @@ export const HeroTitle = ({ movie, logoPath, isMobile }) => {
                         className="w-full h-full"
                         imgClassName="object-contain object-bottom drop-shadow-2xl"
                     />
-                </motion.div>
+                </div>
             ) : (
-                <motion.h2
-                    key="title"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.3 }}
-                    className="text-3xl md:text-4xl lg:text-5xl font-bold text-white drop-shadow-2xl leading-tight mb-4"
-                >
+                <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white drop-shadow-2xl leading-tight mb-4">
                     {movie.title || movie.name}
-                </motion.h2>
+                </h2>
             )}
-        </AnimatePresence>
+        </div>
     );
-};
+});
+HeroTitle.displayName = 'HeroTitle';
 
-export const HeroMetadata = ({ movie, movieDetails, isMobile }) => {
+export const HeroMetadata = memo(({ movie, movieDetails, isMobile }) => {
     if (isMobile) {
         return (
             <div className="flex items-center gap-3 text-sm font-medium flex-wrap">
@@ -134,9 +121,10 @@ export const HeroMetadata = ({ movie, movieDetails, isMobile }) => {
             </span>
         </div>
     );
-};
+});
+HeroMetadata.displayName = 'HeroMetadata';
 
-export const HeroActions = ({
+export const HeroActions = memo(({
     onPlay,
     handleTrailerOpen,
     handleListToggle,
@@ -209,19 +197,19 @@ export const HeroActions = ({
             <button
                 onClick={handleTrailerOpen}
                 disabled={!trailerKey}
-                className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white/5 backdrop-blur-md text-white px-6 py-3 md:px-6 md:py-2.5 text-base md:text-base rounded-full hover:bg-white/20 transition duration-300 ease-out border border-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white/10 text-white px-6 py-3 md:px-6 md:py-2.5 text-base md:text-base rounded-full hover:bg-white/20 transition duration-300 ease-out border border-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
             >
                 <Play className="w-5 h-5" strokeWidth={1.5} /> <span className="hidden sm:inline">Trailer</span><span className="sm:hidden">Trailer</span>
             </button>
             <button
                 onClick={onDownload}
-                className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white/5 backdrop-blur-md text-white px-6 py-3 md:px-6 md:py-2.5 text-base md:text-base rounded-full hover:bg-white/20 transition duration-300 ease-out border border-white/10"
+                className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white/10 text-white px-6 py-3 md:px-6 md:py-2.5 text-base md:text-base rounded-full hover:bg-white/20 transition duration-300 ease-out border border-white/10"
             >
                 <Download className="w-5 h-5" /> <span className="hidden sm:inline">Download</span><span className="sm:hidden">Download</span>
             </button>
             <button
                 onClick={handleListToggle}
-                className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white/5 backdrop-blur-md text-white px-6 py-3 md:px-6 md:py-2.5 text-base md:text-base rounded-full hover:bg-white/20 transition duration-300 ease-out border border-white/10"
+                className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white/10 text-white px-6 py-3 md:px-6 md:py-2.5 text-base md:text-base rounded-full hover:bg-white/20 transition duration-300 ease-out border border-white/10"
             >
                 {inList ? (
                     <>
@@ -235,9 +223,10 @@ export const HeroActions = ({
             </button>
         </div>
     );
-};
+});
+HeroActions.displayName = 'HeroActions';
 
-export const HeroCast = ({ cast, isMobile }) => {
+export const HeroCast = memo(({ cast, isMobile }) => {
     const openCastModal = useModalStore((state) => state.openCastModal);
 
     if (!cast || cast.length === 0) return null;
@@ -315,9 +304,10 @@ export const HeroCast = ({ cast, isMobile }) => {
             </div>
         </div>
     );
-};
+});
+HeroCast.displayName = 'HeroCast';
 
-export const HeroGenres = ({ movieDetails, isMobile }) => {
+export const HeroGenres = memo(({ movieDetails, isMobile }) => {
     if (!movieDetails?.genres || movieDetails.genres.length === 0) return null;
 
     if (isMobile) {
@@ -338,16 +328,17 @@ export const HeroGenres = ({ movieDetails, isMobile }) => {
             {movieDetails.genres.slice(0, 3).map((genre) => (
                 <span
                     key={genre.id}
-                    className="px-3 py-1 bg-white/10 backdrop-blur-md border border-white/20 rounded-full text-sm text-white"
+                    className="px-3 py-1 bg-white/10 border border-white/20 rounded-full text-sm text-white"
                 >
                     {genre.name}
                 </span>
             ))}
         </div>
     );
-};
+});
+HeroGenres.displayName = 'HeroGenres';
 
-export const HeroInfo = ({ director, creators }) => {
+export const HeroInfo = memo(({ director, creators }) => {
     return (
         <div className="flex flex-col gap-1">
             {director && (
@@ -366,4 +357,6 @@ export const HeroInfo = ({ director, creators }) => {
             )}
         </div>
     );
-};
+});
+HeroInfo.displayName = 'HeroInfo';
+

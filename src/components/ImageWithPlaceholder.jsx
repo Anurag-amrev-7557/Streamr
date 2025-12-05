@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, memo } from 'react';
 import clsx from 'clsx';
 
-const ImageWithPlaceholder = ({
+const ImageWithPlaceholder = memo(({
     src,
     placeholderSrc,
     alt,
@@ -27,17 +27,18 @@ const ImageWithPlaceholder = ({
 
     return (
         <div className={clsx("relative overflow-hidden", className)}>
-            {/* Low Quality Placeholder */}
-            <img
-                src={placeholderSrc}
-                alt={alt}
-                className={clsx(
-                    "absolute inset-0 w-full h-full transition-opacity duration-700",
-                    imgClassName,
-                    isLoaded ? "opacity-0" : "opacity-100 blur-xl scale-105"
-                )}
-                aria-hidden="true"
-            />
+            {/* Low Quality Placeholder - Only render when not loaded */}
+            {!isLoaded && (
+                <img
+                    src={placeholderSrc}
+                    alt=""
+                    className={clsx(
+                        "absolute inset-0 w-full h-full blur-md scale-105",
+                        imgClassName
+                    )}
+                    aria-hidden="true"
+                />
+            )}
 
             {/* High Quality Image */}
             <img
@@ -45,7 +46,7 @@ const ImageWithPlaceholder = ({
                 src={src}
                 alt={alt}
                 className={clsx(
-                    "relative w-full h-full transition-opacity duration-700",
+                    "relative w-full h-full transition-opacity duration-300",
                     imgClassName,
                     isLoaded ? "opacity-100" : "opacity-0"
                 )}
@@ -58,6 +59,8 @@ const ImageWithPlaceholder = ({
             />
         </div>
     );
-};
+});
+
+ImageWithPlaceholder.displayName = 'ImageWithPlaceholder';
 
 export default ImageWithPlaceholder;
