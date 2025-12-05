@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect, memo, useDeferredValue } from 'react';
-import { X, Settings, Loader2 } from 'lucide-react';
+import { X, Settings, Loader2, Signal, Info, FastForward } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion'; // eslint-disable-line no-unused-vars
 import { STREAMING_SERVICES, DEFAULT_STREAMING_SERVICE } from '../lib/constants';
 import CustomDropdown from './CustomDropdown';
+import { useStreamSources } from '../hooks/useStreamSources';
+import { useEpisodes } from '../hooks/useTMDB';
 
 // ============================================================================
 // STATIC COMPUTATIONS (Outside component for maximum performance)
@@ -100,14 +102,46 @@ const StreamingPlayer = memo(({ movie, type = 'movie', season = 1, episode = 1, 
     // STATE MANAGEMENT
     // ========================================================================
 
-    const [currentService, setCurrentService] = useState(() => {
-        return localStorage.getItem('preferredService') || DEFAULT_STREAMING_SERVICE;
-    });
+    // Use smart source selection hook
+    const {
+        currentSource,
+        setSource: setCurrentService,
+        isChecking,
+        fastestSource
+    } = useStreamSources();
+
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
+    const [showMetadata, setShowMetadata] = useState(true);
 
     // Debounce service changes to prevent rapid iframe reloads
-    const deferredService = useDeferredValue(currentService);
+    const deferredService = useDeferredValue(currentSource);
+
+    // ========================================================================
+    // METADATA FETCHING (Advanced)
+    // ========================================================================
+
+    const isTv = type === 'tv';
+
+    // Fetch episodes for the current season to get titles and metadata
+    // Only fetch if it's a TV show
+    const { data: episodesData } = useEpisodes(movie?.id, season, isTv);
+
+    const currentEpisodeInfo = useMemo(() => {
+        if (!isTv || !episodesData) return null;
+        return episodesData.find(ep => ep.episode_number === episode);
+    }, [isTv, episodesData, episode]);
+
+    const nextEpisodeInfo = useMemo(() => {
+        if (!isTv || !episodesData) return null;
+        return episodesData.find(ep => ep.episode_number === episode + 1);
+    }, [isTv, episodesData, episode]);
+
+    // Hide metadata overlay after a few seconds
+    useEffect(() => {
+        const timer = setTimeout(() => setShowMetadata(false), 5000);
+        return () => clearTimeout(timer);
+    }, []);
 
     // ========================================================================
     // REFS
@@ -120,7 +154,7 @@ const StreamingPlayer = memo(({ movie, type = 'movie', season = 1, episode = 1, 
     const containerRef = useRef(null);
 
     // Track if we've saved to localStorage to avoid redundant writes
-    const lastSavedServiceRef = useRef(currentService);
+    const lastSavedServiceRef = useRef(currentSource);
 
     // ========================================================================
     // MEMOIZED COMPUTATIONS
@@ -134,6 +168,7 @@ const StreamingPlayer = memo(({ movie, type = 'movie', season = 1, episode = 1, 
         if (!movie?.id) return null;
         const service = STREAMING_SERVICES[deferredService] || STREAMING_SERVICES[DEFAULT_STREAMING_SERVICE];
         return buildStreamUrl(service, movie.id, type, season, episode);
+        // eslint-disable-next-line react-hooks/preserve-manual-memoization
     }, [deferredService, movie?.id, type, season, episode]);
 
     /**
@@ -151,25 +186,38 @@ const StreamingPlayer = memo(({ movie, type = 'movie', season = 1, episode = 1, 
      * Memoized render function for dropdown value display
      */
     const renderDropdownValue = useCallback((val) => (
-        <>
+        <div className="flex items-center gap-2">
             <Settings className="w-4 h-4" />
-            <span className="font-medium text-sm inline">
+            <span className="font-medium text-sm hidden md:inline">
                 Server: {STREAMING_SERVICES[val]?.name}
             </span>
-        </>
-    ), []);
+            {val === fastestSource && !isChecking && (
+                <span className="flex h-2 w-2 relative">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                </span>
+            )}
+        </div>
+    ), [fastestSource, isChecking]);
 
     /**
      * Memoized render function for dropdown options
      */
     const renderDropdownOption = useCallback((option) => (
-        <div className="flex items-center justify-between w-full">
-            <span>{option.label}</span>
-            <span className="text-xs text-gray-500">
-                {option.description}
-            </span>
+        <div className="flex items-center justify-between w-full group">
+            <div className="flex flex-col">
+                <span className="group-hover:text-white transition-colors">{option.label}</span>
+                <span className="text-xs text-gray-500 group-hover:text-gray-400">
+                    {option.description}
+                </span>
+            </div>
+            {option.value === fastestSource && !isChecking && (
+                <span className="text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">
+                    FASTEST
+                </span>
+            )}
         </div>
-    ), []);
+    ), [fastestSource, isChecking]);
 
     /**
      * Handle iframe load completion
@@ -183,6 +231,8 @@ const StreamingPlayer = memo(({ movie, type = 'movie', season = 1, episode = 1, 
      */
     const handleContainerClick = useCallback((e) => {
         e.stopPropagation();
+        // Toggle metadata visibility on click
+        setShowMetadata(prev => !prev);
     }, []);
 
     /**
@@ -218,6 +268,7 @@ const StreamingPlayer = memo(({ movie, type = 'movie', season = 1, episode = 1, 
             localStorage.setItem('preferredService', deferredService);
             lastSavedServiceRef.current = deferredService;
         }
+        // eslint-disable-next-line react-hooks/set-state-in-effect
     }, [deferredService, movie?.id, type, season, episode]);
 
     /**
@@ -279,7 +330,7 @@ const StreamingPlayer = memo(({ movie, type = 'movie', season = 1, episode = 1, 
                 ref={containerRef}
                 {...ANIMATION_VARIANTS}
                 onClick={handleContainerClick}
-                className="fixed inset-0 z-[100] bg-black"
+                className="fixed inset-0 z-[100] bg-black font-sans"
                 style={containerStyle}
             >
                 {/* Loading Spinner */}
@@ -290,12 +341,23 @@ const StreamingPlayer = memo(({ movie, type = 'movie', season = 1, episode = 1, 
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                             transition={{ duration: 0.15 }}
-                            className="absolute inset-0 flex items-center justify-center z-10"
+                            className="absolute inset-0 flex flex-col items-center justify-center z-10 space-y-4"
                         >
                             <Loader2 className="w-10 h-10 text-white animate-spin" />
+                            {isChecking && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    className="flex items-center gap-2 text-white/70 text-sm"
+                                >
+                                    <Signal className="w-4 h-4 animate-pulse" />
+                                    <span>Finding fastest server...</span>
+                                </motion.div>
+                            )}
                         </motion.div>
                     )}
                 </AnimatePresence>
+
 
                 {/* Iframe Container with Priority Hints */}
                 <iframe
@@ -311,29 +373,44 @@ const StreamingPlayer = memo(({ movie, type = 'movie', season = 1, episode = 1, 
                     fetchpriority="high"
                 />
 
+                {/* Controls Layer */}
+
                 {/* Service Toggler - Left */}
                 <div
                     className="absolute top-4 left-4 md:left-8 z-20"
-                    onClick={handleContainerClick}
+                    onClick={(e) => e.stopPropagation()}
                 >
                     <CustomDropdown
-                        value={currentService}
+                        value={currentSource}
                         options={DROPDOWN_OPTIONS}
                         onChange={setCurrentService}
                         isOpen={isDropdownOpen}
                         setIsOpen={setIsDropdownOpen}
-                        buttonClassName="bg-black/60 hover:bg-black/80 text-white px-4 py-2 rounded-full border border-white/20 backdrop-blur-md"
-                        menuClassName="w-64"
+                        buttonClassName="bg-black/60 hover:bg-black/80 text-white px-4 py-2 rounded-full border border-white/20 backdrop-blur-md shadow-lg"
+                        menuClassName="w-72"
                         renderValue={renderDropdownValue}
                         renderOption={renderDropdownOption}
                     />
+                </div>
+
+                {/* Info Toggle Button (Mobile) */}
+                <div className="absolute top-4 right-16 md:hidden z-20">
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setShowMetadata(prev => !prev);
+                        }}
+                        className="bg-black/60 hover:bg-black/80 p-2 rounded-full transition text-white border border-white/20 backdrop-blur-md"
+                    >
+                        <Info className="w-6 h-6" />
+                    </button>
                 </div>
 
                 {/* Close Button - Right */}
                 <div className="absolute top-4 right-4 md:right-8 z-20">
                     <button
                         onClick={handleCloseClick}
-                        className="bg-black/60 hover:bg-black/80 p-2 rounded-full transition text-white border border-white/20 backdrop-blur-md"
+                        className="bg-black/60 hover:bg-black/80 p-2 rounded-full transition text-white border border-white/20 backdrop-blur-md shadow-lg"
                     >
                         <X className="w-6 h-6" />
                     </button>

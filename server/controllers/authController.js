@@ -189,18 +189,23 @@ export const getWatchHistory = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/auth/watch-history
 // @access  Private
 export const updateWatchHistory = asyncHandler(async (req, res, next) => {
-    const { watchHistory } = req.body;
+    try {
+        const { watchHistory } = req.body;
 
-    const user = await User.findByIdAndUpdate(
-        req.user.id,
-        { watchHistory },
-        { new: true, runValidators: true }
-    );
+        const user = await User.findByIdAndUpdate(
+            req.user.id,
+            { watchHistory },
+            { new: true, runValidators: true }
+        );
 
-    res.status(200).json({
-        success: true,
-        watchHistory: user.watchHistory
-    });
+        res.status(200).json({
+            success: true,
+            watchHistory: user.watchHistory
+        });
+    } catch (error) {
+        console.error('Update Watch History Error:', error);
+        return res.status(500).json({ success: false, message: 'Failed to update watch history', error: error.message });
+    }
 });
 
 // @desc    Add item to user's watch history

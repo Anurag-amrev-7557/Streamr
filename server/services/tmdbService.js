@@ -500,11 +500,21 @@ class TmdbService {
     }
 
     async generateItemRecommendations(type, id, apiKey, userTopGenres, userMyListIds = []) {
-        // --- Smart Parallel Fetch Strategy ---
-        // Goal: Get results FAST while still being "smart".
-        // Instead of waiting for details -> then secondary -> then merge, we fire Primary IMMEDIATELY.
+        // --- Smart Parallel Fetch Strategy (Robust) ---
+        // Goal: Get results FAST. If TMDB is slow, return partial results instead of timing out (504).
 
-        // 1. Fire Primary Sources parallel to Details
+        const PRIMARY_TIMEOUT = 3000; // 3s max for primary sources
+        const SECONDARY_TIMEOUT = 1000; // 1s max for secondary sources
+        const DETAILS_TIMEOUT = 2000; // 2s max for details
+
+        const withTimeout = (promise, fallbackValue, ms) => {
+            return Promise.race([
+                promise,
+                new Promise(resolve => setTimeout(() => resolve(fallbackValue), ms))
+            ]);
+        };
+
+        // 1. Fire Primary Sources parallel to Details with STRICT TIMEOUT
         const primarySourcesPromise = (async () => {
             const promises = [
                 this.fetchTMDB(`/${type}/${id}/similar`, { api_key: apiKey })
@@ -515,21 +525,19 @@ class TmdbService {
                     .catch(() => ({ source: 'recommendations', items: [] }))
             ];
 
-            // We'll wait for these separately later
-            return Promise.all(promises);
+            // Wait for all, but cap effective time
+            return withTimeout(Promise.all(promises), [], PRIMARY_TIMEOUT);
         })();
 
         // 2. Fetch Details (needed for Secondary sources like Director/Keywords)
-        // We set a timeout on details too, so if TMDB is slow on details, we just show Primary results.
         const detailsPromise = new Promise((resolve) => {
             tmdbClient.get(`/${type}/${id}`, {
                 api_key: apiKey,
                 append_to_response: 'credits,keywords',
-                timeout: 2000 // 2s timeout for details
+                timeout: DETAILS_TIMEOUT
             })
                 .then(response => resolve(response.data))
                 .catch(() => {
-                    console.warn(`Details fetch failed/timedout for ${type}/${id}`);
                     resolve(null);
                 });
         });
@@ -558,51 +566,50 @@ class TmdbService {
                 eraEnd = `${decade + 9}-12-31`;
             }
 
-            const SECONDARY_TIMEOUT = 1000; // Reduced to 1000ms
-            const withTimeout = (promise, fallbackValue) => {
-                return Promise.race([
-                    promise,
-                    new Promise(resolve => setTimeout(() => resolve(fallbackValue), SECONDARY_TIMEOUT))
-                ]);
+            // Helper for secondary calls
+            const safeFetch = (promise, source) => {
+                return withTimeout(
+                    promise.then(res => ({ source, items: res })),
+                    { source, items: [] },
+                    SECONDARY_TIMEOUT
+                );
             };
 
-            // Franchise Match (Often high quality)
+            // Franchise Match
             if (type === 'movie' && itemDetails.belongs_to_collection) {
-                secondaryPromises.push(
-                    tmdbClient.get(`/collection/${itemDetails.belongs_to_collection.id}`, {
-                        api_key: apiKey
-                    })
-                        .then(res => ({ source: 'franchise_match', items: res.data.parts || [] }))
-                        .catch(() => ({ source: 'franchise_match', items: [] }))
-                );
+                secondaryPromises.push(safeFetch(
+                    tmdbClient.get(`/collection/${itemDetails.belongs_to_collection.id}`, { api_key: apiKey })
+                        .then(res => res.data.parts || []),
+                    'franchise_match'
+                ));
             }
 
             if (director && type === 'movie') {
-                secondaryPromises.push(withTimeout(
+                secondaryPromises.push(safeFetch(
                     this.fetchTMDB('/discover/movie', {
                         api_key: apiKey,
                         with_people: director.id,
                         sort_by: 'popularity.desc'
-                    }).then(res => ({ source: 'director_match', items: res })),
-                    { source: 'director_match', items: [] }
+                    }),
+                    'director_match'
                 ));
             }
 
             if (keywordIds.length > 0) {
-                secondaryPromises.push(withTimeout(
+                secondaryPromises.push(safeFetch(
                     this.fetchTMDB(`/discover/${type}`, {
                         api_key: apiKey,
                         with_keywords: keywordIds.join('|'),
                         sort_by: 'popularity.desc'
-                    }).then(res => ({ source: 'keyword_match', items: res })),
-                    { source: 'keyword_match', items: [] }
+                    }),
+                    'keyword_match'
                 ));
             }
 
             if (eraStart && itemDetails.genres?.length > 0) {
                 const genreIds = itemDetails.genres.map(g => g.id).slice(0, 2).join(',');
                 const dateParam = type === 'movie' ? 'primary_release_date' : 'first_air_date';
-                secondaryPromises.push(withTimeout(
+                secondaryPromises.push(safeFetch(
                     this.fetchTMDB(`/discover/${type}`, {
                         api_key: apiKey,
                         with_genres: genreIds,
@@ -610,37 +617,37 @@ class TmdbService {
                         [`${dateParam}.lte`]: eraEnd,
                         sort_by: 'vote_average.desc',
                         'vote_count.gte': 100
-                    }).then(res => ({ source: 'era_match', items: res })),
-                    { source: 'era_match', items: [] }
+                    }),
+                    'era_match'
                 ));
             }
 
             if (topCast.length > 0) {
                 const castIds = topCast.map(c => c.id).join(',');
-                secondaryPromises.push(withTimeout(
+                secondaryPromises.push(safeFetch(
                     this.fetchTMDB(`/discover/${type}`, {
                         api_key: apiKey,
                         with_people: castIds,
                         sort_by: 'popularity.desc'
-                    }).then(res => ({ source: 'cast_match', items: res })),
-                    { source: 'cast_match', items: [] }
+                    }),
+                    'cast_match'
                 ));
             }
 
             if (studio) {
-                secondaryPromises.push(withTimeout(
+                secondaryPromises.push(safeFetch(
                     this.fetchTMDB(`/discover/${type}`, {
                         api_key: apiKey,
                         with_companies: studio.id,
                         sort_by: 'popularity.desc'
-                    }).then(res => ({ source: 'studio_match', items: res })),
-                    { source: 'studio_match', items: [] }
+                    }),
+                    'studio_match'
                 ));
             }
         }
 
-        // 5. Final await: Wait for Primary to finish (must be done) AND Secondary to finish (or timeout)
-        // Note: primarySourcesPromise started WAY back at step 1.
+        // 5. Final await: Wait for Primary AND Secondary (both safe guarded by their own timeouts)
+        // We do ONE final Promise.all to gate the response.
         const [primaryResults, secondaryResults] = await Promise.all([
             primarySourcesPromise,
             Promise.allSettled(secondaryPromises).then(results =>
@@ -648,7 +655,7 @@ class TmdbService {
             )
         ]);
 
-        const allResults = [...primaryResults, ...secondaryResults].filter(r => r && r.items && r.items.length > 0);
+        const allResults = [...(primaryResults || []), ...secondaryResults].filter(r => r && r.items && r.items.length > 0);
 
         return scoreAndRankItemRecommendations(allResults, id, userTopGenres, userMyListIds);
     }
