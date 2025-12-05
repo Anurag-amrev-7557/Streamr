@@ -26,9 +26,11 @@ const useWatchHistoryStore = create(
                         const validHistory = (response.data.watchHistory || []).filter(item =>
                             item && typeof item.id === 'number' && item.id > 0
                         );
+                        console.log('[Sync] fetchFromBackend success. Items:', validHistory.length, 'First:', validHistory[0]?.title);
                         set({ history: validHistory });
                         return validHistory;
                     }
+                    console.log('[Sync] fetchFromBackend failed: success=false');
                 } catch (error) {
                     console.error('Failed to fetch watch history from backend:', error);
                     return null;

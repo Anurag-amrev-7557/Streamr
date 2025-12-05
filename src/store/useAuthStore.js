@@ -62,6 +62,15 @@ const useAuthStore = create((set, get) => ({
             }
         });
 
+        // Sort by timestamp if provided
+        if (timestampKey) {
+            merged.sort((a, b) => {
+                const timeA = a[timestampKey] ? new Date(a[timestampKey]).getTime() : 0;
+                const timeB = b[timestampKey] ? new Date(b[timestampKey]).getTime() : 0;
+                return timeB - timeA;
+            });
+        }
+
         return merged;
     },
 
@@ -102,6 +111,7 @@ const useAuthStore = create((set, get) => ({
         try {
             // Get local data
             const localWatchHistory = watchHistoryStore.history;
+            console.log('[Sync] Captured local history:', localWatchHistory.length, 'First:', localWatchHistory[0]?.title);
             const localList = listStore.list;
             const localSearchHistory = searchHistoryStore.searches;
 
@@ -121,6 +131,8 @@ const useAuthStore = create((set, get) => ({
                 })
             ]);
 
+            console.log('[Sync] Fetched backend history:', backendWatchHistory?.length, 'First:', backendWatchHistory?.[0]?.title);
+
             // Merge data intelligently with timestamp awareness
             const mergedWatchHistory = get().mergeData(
                 localWatchHistory,
@@ -128,6 +140,8 @@ const useAuthStore = create((set, get) => ({
                 'id',
                 'lastWatched'
             );
+            console.log('[Sync] Merged history:', mergedWatchHistory.length, 'First:', mergedWatchHistory[0]?.title);
+
             const mergedList = get().mergeData(
                 localList,
                 backendList || [],
