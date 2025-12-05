@@ -1,48 +1,13 @@
-import { useEffect } from 'react';
+import React, { memo } from 'react';
+
+// Static data outside component to prevent recreation
+const LOADING_LETTERS = ['L', 'O', 'A', 'D', 'I', 'N', 'G', '.', '.', '.'];
 
 // Loading component with enhanced Netflix-style animation - GPU optimized
-const PageLoader = () => {
-    // Inject styles only once when component mounts
-    useEffect(() => {
-        if (!document.head.querySelector('[data-pageloader-styles]')) {
-            const style = document.createElement('style');
-            style.setAttribute('data-pageloader-styles', 'true');
-            style.textContent = `
-                @keyframes shimmer {
-                    0% { transform: translateX(-100%) translateZ(0); }
-                    100% { transform: translateX(400%) translateZ(0); }
-                }
-                
-                .bg-gradient-radial {
-                    background: radial-gradient(circle at center, var(--tw-gradient-stops));
-                }
-                
-                /* Optimize animations for 60fps */
-                @media (prefers-reduced-motion: no-preference) {
-                    .animate-pulse,
-                    .animate-ping {
-                        animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
-                    }
-                }
-                
-                /* Respect user's motion preferences */
-                @media (prefers-reduced-motion: reduce) {
-                    .animate-pulse,
-                    .animate-ping,
-                    [class*="animate-"] {
-                        animation-duration: 0.01ms !important;
-                        animation-iteration-count: 1 !important;
-                        transition-duration: 0.01ms !important;
-                    }
-                }
-            `;
-            document.head.appendChild(style);
-        }
-    }, []);
-
+const PageLoader = memo(() => {
     return (
         <div
-            className="fixed inset-0 w-full bg-black overflow-hidden z-50"
+            className="fixed inset-0 w-full bg-black overflow-hidden z-50 pageloader-container"
             style={{
                 transform: 'translateZ(0)', // Force GPU acceleration
                 backfaceVisibility: 'hidden',
@@ -58,7 +23,7 @@ const PageLoader = () => {
                     {/* Outer glow ring - slow pulse - optimized */}
                     <div className="absolute inset-0 flex items-center justify-center">
                         <div
-                            className="w-32 h-32 bg-white/3 rounded-full animate-ping"
+                            className="w-32 h-32 bg-white/3 rounded-full animate-ping-optimized"
                             style={{
                                 animationDuration: '3s',
                                 willChange: 'transform, opacity',
@@ -70,7 +35,7 @@ const PageLoader = () => {
                     {/* Middle glow ring - medium pulse - optimized */}
                     <div className="absolute inset-0 flex items-center justify-center">
                         <div
-                            className="w-24 h-24 bg-white/5 rounded-full animate-ping"
+                            className="w-24 h-24 bg-white/5 rounded-full animate-ping-optimized"
                             style={{
                                 animationDuration: '2s',
                                 willChange: 'transform, opacity',
@@ -82,7 +47,7 @@ const PageLoader = () => {
                     {/* Inner glow - fast pulse - optimized */}
                     <div className="absolute inset-0 flex items-center justify-center">
                         <div
-                            className="w-16 h-16 bg-white/10 rounded-full animate-pulse"
+                            className="w-16 h-16 bg-white/10 rounded-full animate-pulse-optimized"
                             style={{
                                 animationDuration: '1.5s',
                                 willChange: 'opacity',
@@ -105,7 +70,7 @@ const PageLoader = () => {
                             viewBox="0 0 48 48"
                             fill="none"
                             xmlns="http://www.w3.org/2000/svg"
-                            className="animate-pulse filter drop-shadow-[0_0_10px_rgba(255,255,255,0.3)]"
+                            className="animate-pulse-optimized filter drop-shadow-[0_0_10px_rgba(255,255,255,0.3)]"
                             style={{
                                 animationDuration: '2s',
                                 willChange: 'opacity'
@@ -131,10 +96,10 @@ const PageLoader = () => {
                 }}
             >
                 <div className="flex items-center gap-1.5">
-                    {['L', 'O', 'A', 'D', 'I', 'N', 'G', '.', '.', '.'].map((letter, index) => (
+                    {LOADING_LETTERS.map((letter, index) => (
                         <span
                             key={index}
-                            className="text-gray-300 text-sm font-semibold tracking-wider animate-pulse"
+                            className="text-gray-300 text-sm font-semibold tracking-wider animate-pulse-optimized"
                             style={{
                                 animationDuration: '2s',
                                 animationDelay: `${index * 0.1}s`,
@@ -169,6 +134,8 @@ const PageLoader = () => {
             </div>
         </div>
     );
-};
+});
+
+PageLoader.displayName = 'PageLoader';
 
 export default PageLoader;

@@ -13,81 +13,245 @@ import { trackSearchQuery } from '../utils/searchAnalytics.js';
 
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 
-// Create an axios instance for TMDB
-const tmdbClient = axios.create({
-    baseURL: TMDB_BASE_URL,
-    timeout: 10000,
-    httpsAgent: new https.Agent({ keepAlive: true })
-});
+// --- Configuration & Constants ---
+const CONFIG = {
+    TIMEOUT: 10000,
+    CIRCUIT_BREAKER: {
+        FAILURE_THRESHOLD: 5,
+        RESET_TIMEOUT: 30000, // 30 seconds
+    },
+    RETRY: {
+        MAX_RETRIES: 3,
+        INITIAL_DELAY: 1000,
+    },
+    CACHE_TTL: {
+        TRENDING: 86400, // 24 hours
+        SEARCH: 900,     // 15 minutes
+        DETAILS: 43200,  // 12 hours
+        SUGGESTIONS: 3600 // 1 hour
+    },
+    SCORING: {
+        FRANCHISE: 20,
+        SIMILAR: 10,
+        DIRECTOR: 8,
+        CAST: 6,
+        KEYWORD: 6,
+        LANGUAGE: 5,
+        STUDIO: 5,
+        ERA: 4,
+        GENRE: 3,
+        BASE: 2
+    }
+};
+
+// --- Advanced Networking Client ---
+class TMDBClient {
+    constructor() {
+        this.client = axios.create({
+            baseURL: TMDB_BASE_URL,
+            timeout: CONFIG.TIMEOUT,
+            httpsAgent: new https.Agent({ keepAlive: true })
+        });
+
+        this.pendingRequests = new Map();
+
+        // Circuit Breaker State
+        this.failures = 0;
+        this.lastFailureTime = 0;
+        this.circuitOpen = false;
+
+        // Setup Interceptors
+        this.setupInterceptors();
+    }
+
+    setupInterceptors() {
+        this.client.interceptors.response.use(
+            response => {
+                this.recordSuccess();
+                return response;
+            },
+            async error => {
+                this.recordFailure();
+
+                const config = error.config;
+
+                // Handle Rate Limiting (429), Server Errors (5xx), and Network Errors
+                const shouldRetry =
+                    config &&
+                    !config._retry &&
+                    (
+                        (error.response?.status === 429 || error.response?.status >= 500) ||
+                        (error.code === 'ECONNABORTED' || error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT')
+                    );
+
+                if (shouldRetry) {
+                    config._retry = true;
+                    config.retryCount = config.retryCount || 0;
+
+                    if (config.retryCount < CONFIG.RETRY.MAX_RETRIES) {
+                        config.retryCount++;
+                        const delay = CONFIG.RETRY.INITIAL_DELAY * Math.pow(2, config.retryCount - 1);
+
+                        console.warn(`TMDB Retry ${config.retryCount}/${CONFIG.RETRY.MAX_RETRIES} for ${config.url} due to ${error.code || error.response?.status}`);
+
+                        // Wait for delay
+                        await new Promise(resolve => setTimeout(resolve, delay));
+
+                        return this.client(config);
+                    }
+                }
+                return Promise.reject(error);
+            }
+        );
+    }
+
+    recordSuccess() {
+        if (this.circuitOpen) {
+            this.circuitOpen = false;
+            this.failures = 0;
+            console.log('TMDB Circuit Breaker: CLOSED (Recovered)');
+        }
+    }
+
+    recordFailure() {
+        this.failures++;
+        this.lastFailureTime = Date.now();
+
+        if (this.failures >= CONFIG.CIRCUIT_BREAKER.FAILURE_THRESHOLD) {
+            this.circuitOpen = true;
+            console.warn('TMDB Circuit Breaker: OPEN (Too many failures)');
+        }
+    }
+
+    checkCircuit() {
+        if (this.circuitOpen) {
+            if (Date.now() - this.lastFailureTime > CONFIG.CIRCUIT_BREAKER.RESET_TIMEOUT) {
+                // Half-open state: allow one request to try
+                return true;
+            }
+            throw new Error('TMDB Service Unavailable (Circuit Breaker Open)');
+        }
+        return true;
+    }
+
+    async get(endpoint, params = {}) {
+        this.checkCircuit();
+
+        const cacheKey = `${endpoint}_${JSON.stringify(params)}`;
+
+        // Request Coalescing
+        if (this.pendingRequests.has(cacheKey)) {
+            return this.pendingRequests.get(cacheKey);
+        }
+
+        const requestPromise = this.client.get(endpoint, { params })
+            .then(res => {
+                this.pendingRequests.delete(cacheKey);
+                return res;
+            })
+            .catch(err => {
+                this.pendingRequests.delete(cacheKey);
+                throw err;
+            });
+
+        this.pendingRequests.set(cacheKey, requestPromise);
+        return requestPromise;
+    }
+}
+
+const tmdbClient = new TMDBClient();
 
 class TmdbService {
     constructor() {
         this.cache = cache;
     }
 
+    // --- Smart Caching Wrapper ---
+    async getWithSmartCache(key, fetchFn, ttl = 300) {
+        const cached = this.cache.get(key);
+
+        if (cached) {
+            // Stale-While-Revalidate Logic could be implemented here if we stored timestamp
+            // For now, standard cache return
+            return { data: cached, fromCache: true };
+        }
+
+        try {
+            const data = await fetchFn();
+            this.cache.set(key, data, ttl);
+            return { data, fromCache: false };
+        } catch (error) {
+            // If fetch fails but we have stale data (not implemented in node-cache directly without custom wrapper),
+            // we would return it here.
+            // Fallback: if error, try to return empty structure or rethrow
+            throw error;
+        }
+    }
+
     async getRecommendations(userId) {
         const cacheKey = userId ? `rec_home_v3_${userId}` : 'rec_home_v3_guest';
-        const cachedData = this.cache.get(cacheKey);
 
+        // SWR-like behavior: Check cache first
+        const cachedData = this.cache.get(cacheKey);
         if (cachedData) {
+            // In a real SWR, we might trigger a background refresh here if data is "old" but not expired
             return { data: cachedData, fromCache: true };
         }
 
         const apiKey = process.env.TMDB_API_KEY;
 
-        if (!userId) {
+        const fetchLogic = async () => {
+            if (!userId) {
+                const trending = await this.fetchTMDB('/trending/all/week', { api_key: apiKey });
+                return { results: trending };
+            }
+
+            const user = await User.findById(userId);
+            if (!user) throw new Error('User not found');
+
+            const watchHistory = user.watchHistory || [];
+
+            if (watchHistory.length === 0) {
+                const trending = await this.fetchTMDB('/trending/all/week', { api_key: apiKey });
+                return { results: trending };
+            }
+
+            const recommendations = await this.generatePersonalizedRecommendations(watchHistory, apiKey);
+            return { results: recommendations };
+        };
+
+        try {
+            const data = await fetchLogic();
+            this.cache.set(cacheKey, data, CONFIG.CACHE_TTL.TRENDING);
+            return { data, fromCache: false };
+        } catch (error) {
+            console.error('Error fetching recommendations:', error);
+            // Fallback to trending if personalization fails
             const trending = await this.fetchTMDB('/trending/all/week', { api_key: apiKey });
-            const responseData = { results: trending };
-            this.cache.set(cacheKey, responseData, 600);
-            return { data: responseData, fromCache: false };
-        }
-
-        const user = await User.findById(userId);
-        if (!user) {
-            throw new Error('User not found');
-        }
-
-        const watchHistory = user.watchHistory || [];
-
-        // Strategy 1: If history is empty, return Trending
-        if (watchHistory.length === 0) {
-            const trending = await this.fetchTMDB('/trending/all/week', { api_key: apiKey });
-            this.cache.set(cacheKey, { results: trending }, 600);
             return { data: { results: trending }, fromCache: false };
         }
-
-        // --- Advanced Recommendation Algorithm ---
-        const recommendations = await this.generatePersonalizedRecommendations(watchHistory, apiKey);
-
-        const responseData = { results: recommendations };
-        this.cache.set(cacheKey, responseData, 600);
-
-        return { data: responseData, fromCache: false };
     }
 
     async getItemRecommendations(type, id, userId) {
         const cacheKey = userId ? `rec_item_${type}_${id}_${userId}` : `rec_item_${type}_${id}_guest`;
-        const cachedData = this.cache.get(cacheKey);
 
-        if (cachedData) {
-            return { data: cachedData, fromCache: true };
-        }
+        return this.getWithSmartCache(cacheKey, async () => {
+            const apiKey = process.env.TMDB_API_KEY;
+            let userTopGenres = [];
 
-        const apiKey = process.env.TMDB_API_KEY;
-        let userTopGenres = [];
+            if (userId) {
+                try {
+                    const user = await User.findById(userId);
+                    const watchHistory = user ? (user.watchHistory || []) : [];
+                    userTopGenres = this.calculateUserTopGenres(watchHistory);
+                } catch (err) {
+                    console.warn('Failed to fetch user for item recommendations', err);
+                }
+            }
 
-        if (userId) {
-            const user = await User.findById(userId);
-            const watchHistory = user ? (user.watchHistory || []) : [];
-            userTopGenres = this.calculateUserTopGenres(watchHistory);
-        }
-
-        const recommendations = await this.generateItemRecommendations(type, id, apiKey, userTopGenres);
-
-        const responseData = { results: recommendations };
-        this.cache.set(cacheKey, responseData, 600);
-
-        return { data: responseData, fromCache: false };
+            const recommendations = await this.generateItemRecommendations(type, id, apiKey, userTopGenres);
+            return { results: recommendations };
+        }, CONFIG.CACHE_TTL.DETAILS);
     }
 
     async multiSearch(params) {
@@ -104,16 +268,7 @@ class TmdbService {
         } = params;
 
         if (!query || !query.trim()) {
-            return {
-                results: [],
-                pagination: {
-                    page: 1,
-                    limit: parseInt(limit),
-                    total: 0,
-                    totalPages: 0,
-                    hasMore: false
-                }
-            };
+            return this.getEmptySearchResult(limit);
         }
 
         const trimmedQuery = query.trim();
@@ -129,72 +284,65 @@ class TmdbService {
         };
 
         const cacheKey = generateSearchCacheKey(trimmedQuery, filters, pageNum);
-        const cachedResponse = this.cache.get(cacheKey);
 
-        if (cachedResponse) {
-            trackSearchQuery(trimmedQuery, cachedResponse.results?.length || 0, 0);
-            return { data: cachedResponse, fromCache: true };
-        }
+        return this.getWithSmartCache(cacheKey, async () => {
+            const apiKey = process.env.TMDB_API_KEY;
+            if (!apiKey) throw new Error('TMDB API Key missing');
 
-        const apiKey = process.env.TMDB_API_KEY;
-        if (!apiKey) throw new Error('TMDB API Key missing');
+            const startTime = Date.now();
+            const results = await this.fetchSearchResults(trimmedQuery, apiKey, limitNum);
 
-        const startTime = Date.now();
-        const results = await this.fetchSearchResults(trimmedQuery, apiKey, limitNum);
+            let filteredResults = this.processSearchResults(results, filters, trimmedQuery, sortBy);
+            const paginatedData = paginateResults(filteredResults, pageNum, limitNum);
 
-        let filteredResults = this.processSearchResults(results, filters, trimmedQuery, sortBy);
+            // Cleanup internal scores
+            paginatedData.results = paginatedData.results.map(({ _relevanceScore, ...item }) => item);
 
-        const paginatedData = paginateResults(filteredResults, pageNum, limitNum);
-        // Remove internal score
-        paginatedData.results = paginatedData.results.map(({ _relevanceScore, ...item }) => item); // eslint-disable-line no-unused-vars
+            const responseTime = Date.now() - startTime;
+            trackSearchQuery(trimmedQuery, paginatedData.results.length, responseTime);
 
-        const responseTime = Date.now() - startTime;
+            return {
+                ...paginatedData,
+                query: trimmedQuery,
+                filters,
+                sortBy,
+                responseTime
+            };
+        }, CONFIG.CACHE_TTL.SEARCH);
+    }
 
-        const responseData = {
-            ...paginatedData,
-            query: trimmedQuery,
-            filters: {
-                mediaType: filters.mediaType || 'all',
-                yearStart: filters.yearStart,
-                yearEnd: filters.yearEnd,
-                minRating: filters.minRating,
-                genres: filters.genres
-            },
-            sortBy,
-            responseTime
+    getEmptySearchResult(limit) {
+        return {
+            results: [],
+            pagination: {
+                page: 1,
+                limit: parseInt(limit),
+                total: 0,
+                totalPages: 0,
+                hasMore: false
+            }
         };
-
-        this.cache.set(cacheKey, responseData, 900);
-        return { data: responseData, fromCache: false };
     }
 
     async getSearchSuggestions(query) {
-        if (!query || !query.trim()) {
-            return [];
-        }
+        if (!query || !query.trim()) return [];
 
         const trimmedQuery = query.trim();
         const cacheKey = `search_suggestions_${normalizeSearchQuery(trimmedQuery)}`;
-        const cachedData = this.cache.get(cacheKey);
 
-        if (cachedData) {
-            return cachedData;
-        }
+        const cached = this.cache.get(cacheKey);
+        if (cached) return cached;
 
         const apiKey = process.env.TMDB_API_KEY;
         try {
             const response = await tmdbClient.get('/search/multi', {
-                params: {
-                    api_key: apiKey,
-                    query: trimmedQuery,
-                    language: 'en-US',
-                    page: 1
-                }
+                api_key: apiKey,
+                query: trimmedQuery,
+                language: 'en-US',
+                page: 1
             });
 
             const results = response.data.results || [];
-
-            // Filter and map to simple suggestions
             const suggestions = results
                 .filter(item => item.media_type === 'movie' || item.media_type === 'tv')
                 .slice(0, 10)
@@ -206,7 +354,7 @@ class TmdbService {
                     poster_path: item.poster_path
                 }));
 
-            this.cache.set(cacheKey, suggestions, 3600); // Cache for 1 hour
+            this.cache.set(cacheKey, suggestions, CONFIG.CACHE_TTL.SUGGESTIONS);
             return suggestions;
         } catch (error) {
             console.error('Search Suggestions Error:', error.message);
@@ -214,10 +362,11 @@ class TmdbService {
         }
     }
 
-    // Helper methods
+    // --- Helper Methods ---
+
     async fetchTMDB(endpoint, params = {}) {
         try {
-            const response = await tmdbClient.get(endpoint, { params });
+            const response = await tmdbClient.get(endpoint, params);
             return response.data.results || [];
         } catch (error) {
             console.error(`TMDB Fetch Error (${endpoint}):`, error.message);
@@ -228,10 +377,8 @@ class TmdbService {
     async fetchDetails(type, id, apiKey) {
         try {
             const response = await tmdbClient.get(`/${type}/${id}`, {
-                params: {
-                    api_key: apiKey,
-                    append_to_response: 'credits,keywords'
-                }
+                api_key: apiKey,
+                append_to_response: 'credits,keywords'
             });
             return response.data;
         } catch (error) {
@@ -257,11 +404,9 @@ class TmdbService {
     }
 
     async generatePersonalizedRecommendations(watchHistory, apiKey) {
-        // 1. Weighted Genre Analysis
         const topGenres = this.calculateUserTopGenres(watchHistory);
-
-        // 2. Deep Analysis of Recent Items
         const recentItems = watchHistory.slice(0, 3);
+
         const analyzedDetails = await Promise.all(
             recentItems.map(item => {
                 if (!item.id) return null;
@@ -271,11 +416,8 @@ class TmdbService {
         );
 
         const validDetails = analyzedDetails.filter(d => d !== null);
-
-        // Extract Preferences (People, Languages, Keywords, Eras)
         const { topPeople, topLanguage, topKeywords, topEra } = this.extractPreferences(validDetails);
 
-        // 3. Multi-Source Retrieval
         const promises = [];
 
         // Source A: Popularity based on Top Genre 1
@@ -288,7 +430,7 @@ class TmdbService {
             }).then(res => ({ source: 'popular_genre_1', items: res })));
         }
 
-        // Source B: Quality (High Rated) based on Top Genre 2
+        // Source B: Quality based on Top Genre 2
         const qualityGenre = topGenres[1] || topGenres[0];
         if (qualityGenre) {
             promises.push(this.fetchTMDB('/discover/movie', {
@@ -299,33 +441,28 @@ class TmdbService {
             }).then(res => ({ source: 'quality_genre_2', items: res })));
         }
 
-        // Source C: Contextual (Based on last 3 watched items)
-        recentItems.forEach((item, idx) => {
-            if (item.id) {
-                const type = item.media_type || (item.first_air_date ? 'tv' : 'movie');
-                promises.push(this.fetchTMDB(`/${type}/${item.id}/recommendations`, { api_key: apiKey })
-                    .then(res => ({ source: `recent_${idx}`, items: res })));
-            }
-        });
-
-        // Source D: Similarity (Based on most recent item)
+        // Source C: Contextual (Based on most recent item)
         if (recentItems[0] && recentItems[0].id) {
             const item = recentItems[0];
             const type = item.media_type || (item.first_air_date ? 'tv' : 'movie');
+
+            promises.push(this.fetchTMDB(`/${type}/${item.id}/recommendations`, { api_key: apiKey })
+                .then(res => ({ source: 'recent_0', items: res })));
+
             promises.push(this.fetchTMDB(`/${type}/${item.id}/similar`, { api_key: apiKey })
                 .then(res => ({ source: 'similar_recent', items: res })));
         }
 
-        // Source E: People (Director/Actor)
+        // Source E: People
         if (topPeople.length > 0) {
             promises.push(this.fetchTMDB('/discover/movie', {
                 api_key: apiKey,
-                with_people: topPeople.join(','),
+                with_people: topPeople.slice(0, 1).join(','),
                 sort_by: 'popularity.desc'
             }).then(res => ({ source: 'people_match', items: res })));
         }
 
-        // Source F: Regional/Language
+        // Source F: Regional
         if (topLanguage && topLanguage !== 'en') {
             promises.push(this.fetchTMDB('/discover/movie', {
                 api_key: apiKey,
@@ -334,29 +471,22 @@ class TmdbService {
             }).then(res => ({ source: 'language_match', items: res })));
         }
 
-        // Source G: Keywords
-        if (topKeywords.length > 0) {
-            promises.push(this.fetchTMDB('/discover/movie', {
-                api_key: apiKey,
-                with_keywords: topKeywords.join('|'),
-                sort_by: 'popularity.desc'
-            }).then(res => ({ source: 'keyword_match', items: res })));
-        }
-
-        // Source H: Franchise/Collection
+        // Source H: Franchise
         if (validDetails[0] && validDetails[0].belongs_to_collection) {
             promises.push(
                 tmdbClient.get(`/collection/${validDetails[0].belongs_to_collection.id}`, {
-                    params: { api_key: apiKey }
+                    api_key: apiKey
                 })
                     .then(res => ({ source: 'franchise_match', items: res.data.parts || [] }))
                     .catch(() => ({ source: 'franchise_match', items: [] }))
             );
         }
 
-        const results = await Promise.all(promises);
+        const resultsSettled = await Promise.allSettled(promises);
+        const results = resultsSettled
+            .filter(r => r.status === 'fulfilled')
+            .map(r => r.value);
 
-        // 4. Scoring & Re-Ranking
         return this.scoreAndRankItems(results, watchHistory, topGenres, topLanguage, topEra);
     }
 
@@ -420,20 +550,23 @@ class TmdbService {
                 }
 
                 let score = 0;
-                if (source === 'franchise_match') score += 20;
-                if (source === 'similar_recent') score += 10;
-                if (source === 'people_match') score += 8;
-                if (source === 'keyword_match') score += 6;
-                if (source === 'language_match') score += 5;
+                if (source === 'franchise_match') score += CONFIG.SCORING.FRANCHISE;
+                if (source === 'similar_recent') score += CONFIG.SCORING.SIMILAR;
+                if (source === 'people_match') score += CONFIG.SCORING.DIRECTOR;
+                if (source === 'language_match') score += CONFIG.SCORING.LANGUAGE;
                 if (source.startsWith('recent_')) score += 5;
                 if (source === 'popular_genre_1') score += 3;
                 if (source === 'quality_genre_2') score += 3;
-                score += 2;
+                score += CONFIG.SCORING.BASE;
 
                 itemScores.set(item.id, itemScores.get(item.id) + score);
             });
         });
 
+        return this.finalizeRanking(itemScores, itemData, watchHistory, topGenres, topLanguage, topEra);
+    }
+
+    finalizeRanking(itemScores, itemData, watchHistory, topGenres, topLanguage, topEra) {
         for (const [id, score] of itemScores.entries()) {
             const item = itemData.get(id);
             let newScore = score;
@@ -471,10 +604,8 @@ class TmdbService {
         let itemDetails;
         try {
             const response = await tmdbClient.get(`/${type}/${id}`, {
-                params: {
-                    api_key: apiKey,
-                    append_to_response: 'credits,keywords'
-                }
+                api_key: apiKey,
+                append_to_response: 'credits,keywords'
             });
             itemDetails = response.data;
         } catch (error) {
@@ -532,7 +663,7 @@ class TmdbService {
         if (type === 'movie' && itemDetails.belongs_to_collection) {
             promises.push(
                 tmdbClient.get(`/collection/${itemDetails.belongs_to_collection.id}`, {
-                    params: { api_key: apiKey }
+                    api_key: apiKey
                 })
                     .then(res => ({ source: 'franchise_match', items: res.data.parts || [] }))
                     .catch(() => ({ source: 'franchise_match', items: [] }))
@@ -556,7 +687,12 @@ class TmdbService {
             }).then(res => ({ source: 'studio_match', items: res })));
         }
 
-        const results = await Promise.all(promises);
+        // Use allSettled for robustness
+        const resultsSettled = await Promise.allSettled(promises);
+        const results = resultsSettled
+            .filter(r => r.status === 'fulfilled')
+            .map(r => r.value);
+
         return this.scoreAndRankItemRecommendations(results, id, userTopGenres);
     }
 
@@ -574,15 +710,15 @@ class TmdbService {
                 }
 
                 let score = 0;
-                if (source === 'franchise_match') score += 20;
-                if (source === 'similar') score += 5;
+                if (source === 'franchise_match') score += CONFIG.SCORING.FRANCHISE;
+                if (source === 'similar') score += CONFIG.SCORING.SIMILAR;
                 if (source === 'recommendations') score += 5;
-                if (source === 'director_match') score += 8;
-                if (source === 'cast_match') score += 6;
-                if (source === 'keyword_match') score += 6;
-                if (source === 'studio_match') score += 5;
-                if (source === 'era_match') score += 4;
-                score += 2;
+                if (source === 'director_match') score += CONFIG.SCORING.DIRECTOR;
+                if (source === 'cast_match') score += CONFIG.SCORING.CAST;
+                if (source === 'keyword_match') score += CONFIG.SCORING.KEYWORD;
+                if (source === 'studio_match') score += CONFIG.SCORING.STUDIO;
+                if (source === 'era_match') score += CONFIG.SCORING.ERA;
+                score += CONFIG.SCORING.BASE;
 
                 itemScores.set(item.id, itemScores.get(item.id) + score);
             });
@@ -615,12 +751,10 @@ class TmdbService {
         for (let i = 1; i <= pagesToFetch; i++) {
             fetchPromises.push(
                 tmdbClient.get('/search/multi', {
-                    params: {
-                        api_key: apiKey,
-                        query: query,
-                        language: 'en-US',
-                        page: i
-                    }
+                    api_key: apiKey,
+                    query: query,
+                    language: 'en-US',
+                    page: i
                 }).catch(err => {
                     console.error(`Error fetching page ${i}:`, err.message);
                     return { data: { results: [] } };
@@ -641,23 +775,14 @@ class TmdbService {
     async proxyRequest(endpoint, params) {
         const apiKey = process.env.TMDB_API_KEY;
         const cacheKey = `tmdb_proxy_${endpoint}_${JSON.stringify(params)}`;
-        const cachedData = this.cache.get(cacheKey);
 
-        if (cachedData) {
-            return { data: cachedData, fromCache: true };
-        }
-
-        try {
+        return this.getWithSmartCache(cacheKey, async () => {
             const response = await tmdbClient.get(endpoint, {
-                params: { ...params, api_key: apiKey }
+                ...params,
+                api_key: apiKey
             });
-
-            this.cache.set(cacheKey, response.data, 300); // Cache for 5 minutes
-            return { data: response.data, fromCache: false };
-        } catch (error) {
-            console.error(`TMDB Proxy Error (${endpoint}):`, error.message);
-            throw error;
-        }
+            return response.data;
+        }, 300);
     }
 
     processSearchResults(allResults, filters, query, sortBy) {

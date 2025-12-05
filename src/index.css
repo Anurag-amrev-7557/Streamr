@@ -96,3 +96,43 @@ body {
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.3);
 }
+
+/* PageLoader Optimizations */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%) translateZ(0);
+  }
+
+  100% {
+    transform: translateX(400%) translateZ(0);
+  }
+}
+
+.bg-gradient-radial {
+  background: radial-gradient(circle at center, var(--tw-gradient-stops));
+}
+
+/* Optimize animations for 60fps */
+@media (prefers-reduced-motion: no-preference) {
+
+  .animate-pulse-optimized,
+  .animate-ping-optimized {
+    animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
+  }
+}
+
+/* Respect user's motion preferences */
+@media (prefers-reduced-motion: reduce) {
+
+  .animate-pulse-optimized,
+  .animate-ping-optimized,
+  [class*="animate-"] {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.pageloader-container {
+  contain: strict;
+}

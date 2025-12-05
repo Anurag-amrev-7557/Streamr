@@ -6,15 +6,16 @@ const ModalSimilar = memo(({ similarMovies, isLoading, onMovieClick, onClose, is
     const handleMovieClick = useCallback((item) => {
         if (onMovieClick) {
             onClose();
-            // Wait for modal to close before opening new one
-            setTimeout(() => {
-                onMovieClick(item);
-            }, 150);
+            // Immediate navigation without artificial delay
+            onMovieClick(item);
         }
     }, [onMovieClick, onClose]);
 
     return (
-        <div className="grid grid-cols-2 md:grid-cols-5 lg:grid-cols-6 gap-3 md:gap-4">
+        <div
+            className="grid grid-cols-2 md:grid-cols-5 lg:grid-cols-6 gap-3 md:gap-4"
+            style={{ contentVisibility: 'auto', containIntrinsicSize: '200px' }}
+        >
             {isLoading ? (
                 Array.from({ length: 6 }).map((_, i) => (
                     <div key={i} className="aspect-[2/3] bg-white/5 animate-pulse rounded-lg"></div>
@@ -50,8 +51,9 @@ const ModalSimilar = memo(({ similarMovies, isLoading, onMovieClick, onClose, is
                                 alt={item.title || item.name}
                                 className="w-full h-full"
                                 imgClassName="object-cover"
-                                loading="lazy"
-                                fetchPriority="low"
+                                loading={index < 4 ? "eager" : "lazy"}
+                                fetchPriority={index < 4 ? "high" : "low"}
+                                decoding="async"
                             />
                         ) : (
                             <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-xs">
