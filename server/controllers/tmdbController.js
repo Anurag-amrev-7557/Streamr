@@ -2,8 +2,9 @@ import tmdbService from '../services/tmdbService.js';
 
 export const getRecommendations = async (req, res, next) => {
     try {
-        const userId = req.user?.id || null;
-        const { data, fromCache } = await tmdbService.getRecommendations(userId);
+        // Pass the full user object (which contains watchHistory) to avoid re-fetching in service
+        const user = req.user || null;
+        const { data, fromCache } = await tmdbService.getRecommendations(user);
 
         if (fromCache) {
             res.setHeader('X-Cache', 'HIT');
@@ -20,9 +21,9 @@ export const getRecommendations = async (req, res, next) => {
 export const getItemRecommendations = async (req, res, next) => {
     try {
         const { type, id } = req.params;
-        const userId = req.user?.id || null;
+        const user = req.user || null;
 
-        const { data, fromCache } = await tmdbService.getItemRecommendations(type, id, userId);
+        const { data, fromCache } = await tmdbService.getItemRecommendations(type, id, user);
 
         if (fromCache) {
             res.setHeader('X-Cache', 'HIT');

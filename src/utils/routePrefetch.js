@@ -103,6 +103,40 @@ export const prefetchOnInteraction = (routeName, importFn) => {
 };
 
 /**
+ * Prefetch when element enters viewport
+ * @param {HTMLElement} element - Element to observe
+ * @param {string} routeName - Name of route
+ * @param {Function} importFn - Import function
+ */
+export const prefetchViewport = (element, routeName, importFn) => {
+    if (!element || typeof IntersectionObserver === 'undefined') return;
+
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                prefetchRoute(routeName, importFn, { useIdleCallback: true, priority: 'low' });
+                observer.unobserve(element);
+            }
+        });
+    }, { rootMargin: '50px' });
+
+    observer.observe(element);
+};
+
+/**
+ * Inject modulepreload link
+ * @param {string} href - URL to preload
+ */
+export const injectModulePreload = (href) => {
+    if (document.querySelector(`link[rel="modulepreload"][href="${href}"]`)) return;
+
+    const link = document.createElement('link');
+    link.rel = 'modulepreload';
+    link.href = href;
+    document.head.appendChild(link);
+};
+
+/**
  * Reset prefetch cache (useful for development)
  */
 export const resetPrefetchCache = () => {

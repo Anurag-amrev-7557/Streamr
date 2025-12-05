@@ -190,7 +190,7 @@ export const HeroActions = memo(({
                 onClick={onPlay}
                 className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white text-black px-6 py-3 md:px-6 md:py-2.5 text-base md:text-base rounded-full hover:bg-white/90 transition duration-300 ease-out"
             >
-                <Play className="w-5 h-5" strokeWidth={2} />
+                <Play className="w-5 h-5 fill-current" strokeWidth={2} />
                 <span className="hidden sm:inline">{hasHistory ? 'Resume' : 'Watch Now'}</span>
                 <span className="sm:hidden">{hasHistory ? 'Resume' : 'Play'}</span>
             </button>

@@ -108,6 +108,74 @@ class IndexedDBCache {
     }
 
     /**
+     * Get multiple items from store
+     */
+    async getMany(storeName, keys) {
+        await this.initPromise;
+        if (!this.db) return [];
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(storeName, 'readonly');
+            const store = transaction.objectStore(storeName);
+            const results = [];
+            let completed = 0;
+
+            keys.forEach((key, index) => {
+                const request = store.get(key);
+                request.onsuccess = () => {
+                    const result = request.result;
+                    if (result) {
+                        const maxAge = storeName === STORES.IMAGES ? 24 * 60 * 60 * 1000 : 60 * 60 * 1000;
+                        if (Date.now() - result.timestamp <= maxAge) {
+                            results[index] = result;
+                        } else {
+                            // Expired
+                            results[index] = null;
+                            // We don't delete here to avoid transaction issues, cleanup will handle it
+                        }
+                    } else {
+                        results[index] = null;
+                    }
+                    completed++;
+                    if (completed === keys.length) {
+                        resolve(results);
+                    }
+                };
+                request.onerror = () => {
+                    results[index] = null;
+                    completed++;
+                    if (completed === keys.length) {
+                        resolve(results);
+                    }
+                };
+            });
+        });
+    }
+
+    /**
+     * Set multiple items in store
+     */
+    async setMany(storeName, items) {
+        await this.initPromise;
+        if (!this.db) return;
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(storeName, 'readwrite');
+            const store = transaction.objectStore(storeName);
+
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => reject(transaction.error);
+
+            items.forEach(item => {
+                store.put({
+                    ...item,
+                    timestamp: Date.now(),
+                });
+            });
+        });
+    }
+
+    /**
      * Delete item from store
      */
     async delete(storeName, key) {
@@ -153,18 +221,20 @@ class IndexedDBCache {
 
         for (const storeName of stores) {
             const maxAge = storeName === STORES.IMAGES ? 24 * 60 * 60 * 1000 : 60 * 60 * 1000;
+            const expiryTime = now - maxAge;
 
             const transaction = this.db.transaction(storeName, 'readwrite');
             const store = transaction.objectStore(storeName);
             const index = store.index('timestamp');
-            const request = index.openCursor();
+
+            // Use IDBKeyRange to find all expired items efficiently
+            const range = IDBKeyRange.upperBound(expiryTime);
+            const request = index.openCursor(range);
 
             request.onsuccess = (event) => {
                 const cursor = event.target.result;
                 if (cursor) {
-                    if (now - cursor.value.timestamp > maxAge) {
-                        cursor.delete();
-                    }
+                    cursor.delete();
                     cursor.continue();
                 }
             };

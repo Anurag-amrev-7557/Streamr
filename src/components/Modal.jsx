@@ -20,7 +20,7 @@ import { lazy, Suspense } from 'react';
 
 import ModalHero from './modal/ModalHero';
 import ModalEpisodes from './modal/ModalEpisodes';
-const ModalSimilar = lazy(() => import('./modal/ModalSimilar'));
+import ModalSimilar from './modal/ModalSimilar';
 const ModalDetails = lazy(() => import('./modal/ModalDetails'));
 const TrailerModal = lazy(() => import('./modal/TrailerModal'));
 const CastModal = lazy(() => import('./modal/CastModal'));

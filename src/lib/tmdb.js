@@ -83,7 +83,7 @@ class ConcurrencyManager {
 // Apply concurrency limiting FIRST so its response interceptor runs before the retry logic
 // Response Interceptors run in the order they are added.
 // We want to release the concurrency slot (runningCount--) BEFORE we attempt a retry.
-new ConcurrencyManager(tmdb, 5);
+new ConcurrencyManager(tmdb, 10);
 
 /**
  * Request interceptor to append default language to every request.

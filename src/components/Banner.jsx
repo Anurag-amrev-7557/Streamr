@@ -138,7 +138,7 @@ const BannerContent = memo(({ movie, movieDetails, onPlay, onToggleList, inList,
                 )}
             </div>
 
-            <h1 className="w-full md:max-w-xl lg:max-w-xl xl:max-w-xl 2xl:max-w-2xl text-xs md:text-base lg:text-base xl:text-base 2xl:text-lg font-medium drop-shadow-md mb-4 md:mb-6 lg:mb-6 xl:mb-6 2xl:mb-8 line-clamp-2 md:line-clamp-3 lg:line-clamp-3 xl:line-clamp-3 2xl:line-clamp-4 text-gray-200">
+            <h1 className="w-full md:max-w-xl lg:max-w-xl xl:max-w-xl 2xl:max-w-2xl text-xs md:text-base lg:text-base xl:text-base 2xl:text-lg font-medium drop-shadow-md mb-4 md:mb-6 lg:mb-6 xl:mb-6 2xl:mb-8 line-clamp-2 md:line-clamp-3 lg:line-clamp-2 text-gray-200">
                 {movie?.overview || 'Discover amazing content.'}
             </h1>
 
@@ -296,7 +296,7 @@ const BannerInner = memo(({ movie, onMovieClick }) => {
                             )}
                         </div>
 
-                        <h1 className="w-full md:max-w-xl lg:max-w-xl xl:max-w-xl 2xl:max-w-2xl text-xs md:text-base lg:text-base xl:text-base 2xl:text-lg font-medium drop-shadow-md mb-4 md:mb-6 lg:mb-6 xl:mb-6 2xl:mb-8 line-clamp-2 md:line-clamp-3 lg:line-clamp-3 xl:line-clamp-3 2xl:line-clamp-4 text-gray-200">
+                        <h1 className="w-full md:max-w-xl lg:max-w-xl xl:max-w-xl 2xl:max-w-2xl text-xs md:text-base lg:text-base xl:text-base 2xl:text-lg font-medium drop-shadow-md mb-4 md:mb-6 lg:mb-6 xl:mb-6 2xl:mb-8 line-clamp-2 md:line-clamp-3 lg:line-clamp-2 text-gray-200">
                             {movie?.overview || 'Discover amazing content.'}
                         </h1>
 

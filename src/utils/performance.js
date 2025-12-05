@@ -38,5 +38,67 @@ export const performance = {
             window.performance.clearMarks();
             window.performance.clearMeasures();
         }
+    },
+
+    /**
+     * Initialize Web Vitals monitoring
+     * @param {Function} onPerfEntry - Callback for performance entries
+     */
+    initWebVitals: (onPerfEntry) => {
+        if (typeof window === 'undefined' || !onPerfEntry) return;
+
+        try {
+            // Observe LCP
+            new PerformanceObserver((entryList) => {
+                for (const entry of entryList.getEntries()) {
+                    onPerfEntry({
+                        name: 'LCP',
+                        value: entry.startTime,
+                        id: 'LCP',
+                    });
+                }
+            }).observe({ type: 'largest-contentful-paint', buffered: true });
+
+            // Observe FID
+            new PerformanceObserver((entryList) => {
+                for (const entry of entryList.getEntries()) {
+                    onPerfEntry({
+                        name: 'FID',
+                        value: entry.processingStart - entry.startTime,
+                        id: 'FID',
+                    });
+                }
+            }).observe({ type: 'first-input', buffered: true });
+
+            // Observe CLS
+            let clsValue = 0;
+            new PerformanceObserver((entryList) => {
+                for (const entry of entryList.getEntries()) {
+                    if (!entry.hadRecentInput) {
+                        clsValue += entry.value;
+                        onPerfEntry({
+                            name: 'CLS',
+                            value: clsValue,
+                            id: 'CLS',
+                        });
+                    }
+                }
+            }).observe({ type: 'layout-shift', buffered: true });
+
+            // Observe Long Tasks
+            new PerformanceObserver((entryList) => {
+                for (const entry of entryList.getEntries()) {
+                    onPerfEntry({
+                        name: 'LongTask',
+                        value: entry.duration,
+                        startTime: entry.startTime,
+                        id: 'LongTask',
+                    });
+                }
+            }).observe({ type: 'longtask', buffered: true });
+
+        } catch (e) {
+            console.warn('Web Vitals observation failed:', e);
+        }
     }
 };
