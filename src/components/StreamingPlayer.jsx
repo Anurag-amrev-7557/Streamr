@@ -188,7 +188,7 @@ const StreamingPlayer = memo(({ movie, type = 'movie', season = 1, episode = 1, 
     const renderDropdownValue = useCallback((val) => (
         <div className="flex items-center gap-2">
             <Settings className="w-4 h-4" />
-            <span className="font-medium text-sm hidden md:inline">
+            <span className="font-medium text-sm">
                 Server: {STREAMING_SERVICES[val]?.name}
             </span>
             {val === fastestSource && !isChecking && (
@@ -205,7 +205,7 @@ const StreamingPlayer = memo(({ movie, type = 'movie', season = 1, episode = 1, 
      */
     const renderDropdownOption = useCallback((option) => (
         <div className="flex items-center justify-between w-full group">
-            <div className="flex flex-col">
+            <div className="flex justify-between items-center w-full">
                 <span className="group-hover:text-white transition-colors">{option.label}</span>
                 <span className="text-xs text-gray-500 group-hover:text-gray-400">
                     {option.description}
@@ -391,19 +391,6 @@ const StreamingPlayer = memo(({ movie, type = 'movie', season = 1, episode = 1, 
                         renderValue={renderDropdownValue}
                         renderOption={renderDropdownOption}
                     />
-                </div>
-
-                {/* Info Toggle Button (Mobile) */}
-                <div className="absolute top-4 right-16 md:hidden z-20">
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            setShowMetadata(prev => !prev);
-                        }}
-                        className="bg-black/60 hover:bg-black/80 p-2 rounded-full transition text-white border border-white/20 backdrop-blur-md"
-                    >
-                        <Info className="w-6 h-6" />
-                    </button>
                 </div>
 
                 {/* Close Button - Right */}
