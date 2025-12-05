@@ -29,7 +29,7 @@ HeroBackground.displayName = 'HeroBackground';
 
 export const HeroTitle = memo(({ movie, logoPath, isMobile }) => {
     if (isMobile) {
-        return logoPath ? (
+        return logoPath && logoPath !== 'null' ? (
             <ImageWithPlaceholder
                 src={`https://image.tmdb.org/t/p/w500${logoPath}`}
                 placeholderSrc={`https://image.tmdb.org/t/p/w92${logoPath}`}
@@ -47,7 +47,7 @@ export const HeroTitle = memo(({ movie, logoPath, isMobile }) => {
 
     return (
         <div className="transition-opacity duration-300">
-            {logoPath ? (
+            {logoPath && logoPath !== 'null' ? (
                 <div className="max-w-[220px] md:max-w-sm h-24 mb-4">
                     <ImageWithPlaceholder
                         src={`https://image.tmdb.org/t/p/w500${logoPath}`}

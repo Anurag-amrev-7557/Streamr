@@ -88,7 +88,7 @@ export const useModalData = (movie, modalEnabled, selectedSeason) => {
 
     // Preload logo image for instant display
     useEffect(() => {
-        if (!logoPath) return;
+        if (!logoPath || logoPath === 'null') return;
         const img = new Image();
         img.src = `https://image.tmdb.org/t/p/w500${logoPath}`;
     }, [logoPath]);

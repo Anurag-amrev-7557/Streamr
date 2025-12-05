@@ -141,7 +141,7 @@ class TmdbService {
             const paginatedData = paginateResults(filteredResults, pageNum, limitNum);
 
             // Cleanup internal scores
-            paginatedData.results = paginatedData.results.map(({ _relevanceScore, ...item }) => item);
+            paginatedData.results = paginatedData.results.map(({ _relevanceScore: _, ...item }) => item);
 
             const responseTime = Date.now() - startTime;
             trackSearchQuery(trimmedQuery, paginatedData.results.length, responseTime);
@@ -222,7 +222,7 @@ class TmdbService {
                 append_to_response: 'credits,keywords'
             });
             return response.data;
-        } catch (error) {
+        } catch {
             return null;
         }
     }
@@ -240,7 +240,7 @@ class TmdbService {
         );
 
         const validDetails = analyzedDetails.filter(d => d !== null);
-        const { topPeople, topLanguage, topKeywords, topEra } = extractPreferences(validDetails);
+        const { topPeople, topLanguage, topEra } = extractPreferences(validDetails);
 
         const promises = [];
 
@@ -315,130 +315,159 @@ class TmdbService {
     }
 
     async generateItemRecommendations(type, id, apiKey, userTopGenres) {
-        let itemDetails;
-        try {
-            const response = await tmdbClient.get(`/${type}/${id}`, {
+        // --- Smart Parallel Fetch Strategy ---
+        // Goal: Get results FAST while still being "smart".
+        // Instead of waiting for details -> then secondary -> then merge, we fire Primary IMMEDIATELY.
+
+        // 1. Fire Primary Sources parallel to Details
+        const primarySourcesPromise = (async () => {
+            const promises = [
+                this.fetchTMDB(`/${type}/${id}/similar`, { api_key: apiKey })
+                    .then(res => ({ source: 'similar', items: res }))
+                    .catch(() => ({ source: 'similar', items: [] })),
+                this.fetchTMDB(`/${type}/${id}/recommendations`, { api_key: apiKey })
+                    .then(res => ({ source: 'recommendations', items: res }))
+                    .catch(() => ({ source: 'recommendations', items: [] }))
+            ];
+
+            // We'll wait for these separately later
+            return Promise.all(promises);
+        })();
+
+        // 2. Fetch Details (needed for Secondary sources like Director/Keywords)
+        // We set a timeout on details too, so if TMDB is slow on details, we just show Primary results.
+        // 2. Fetch Details (needed for Secondary sources like Director/Keywords)
+        // We set a timeout on details too, so if TMDB is slow on details, we just show Primary results.
+        const detailsPromise = new Promise((resolve) => {
+            tmdbClient.get(`/${type}/${id}`, {
                 api_key: apiKey,
-                append_to_response: 'credits,keywords'
-            });
-            itemDetails = response.data;
-        } catch (error) {
-            throw new Error('Item not found');
-        }
+                append_to_response: 'credits,keywords',
+                timeout: 2000 // 2s timeout for details
+            })
+                .then(response => resolve(response.data))
+                .catch(() => {
+                    console.warn(`Details fetch failed/timedout for ${type}/${id}`);
+                    resolve(null);
+                });
+        });
 
-        const keywords = itemDetails.keywords?.keywords || itemDetails.keywords?.results || [];
-        const keywordIds = keywords.map(k => k.id).slice(0, 3);
-        const director = itemDetails.credits?.crew?.find(c => c.job === 'Director');
-        const topCast = itemDetails.credits?.cast?.slice(0, 2) || [];
-        const studio = itemDetails.production_companies?.[0];
+        // 3. Wait for Details (or timeout)
+        let itemDetails = null;
+        try {
+            itemDetails = await detailsPromise;
+        } catch { /* ignore */ }
 
-        const date = itemDetails.release_date || itemDetails.first_air_date;
-        let eraStart, eraEnd;
-        if (date) {
-            const year = parseInt(date.substring(0, 4));
-            const decade = Math.floor(year / 10) * 10;
-            eraStart = `${decade}-01-01`;
-            eraEnd = `${decade + 9}-12-31`;
-        }
-
-        // --- Smart Fetch Strategy ---
-        // 1. Primary Sources (Critical, wait for these)
-        const primaryPromises = [];
-        primaryPromises.push(this.fetchTMDB(`/${type}/${id}/similar`, { api_key: apiKey }).then(res => ({ source: 'similar', items: res })));
-        primaryPromises.push(this.fetchTMDB(`/${type}/${id}/recommendations`, { api_key: apiKey }).then(res => ({ source: 'recommendations', items: res })));
-
-        if (type === 'movie' && itemDetails.belongs_to_collection) {
-            primaryPromises.push(
-                tmdbClient.get(`/collection/${itemDetails.belongs_to_collection.id}`, {
-                    api_key: apiKey
-                })
-                    .then(res => ({ source: 'franchise_match', items: res.data.parts || [] }))
-                    .catch(() => ({ source: 'franchise_match', items: [] }))
-            );
-        }
-
-        // 2. Secondary Sources (Enhancement, skip if slow)
+        // 4. Fire Secondary Sources (only if we got details)
         const secondaryPromises = [];
-        const SECONDARY_TIMEOUT = 1500; // 1.5s timeout for secondary sources
+        if (itemDetails) {
+            const keywords = itemDetails.keywords?.keywords || itemDetails.keywords?.results || [];
+            const keywordIds = keywords.map(k => k.id).slice(0, 3);
+            const director = itemDetails.credits?.crew?.find(c => c.job === 'Director');
+            const topCast = itemDetails.credits?.cast?.slice(0, 2) || [];
+            const studio = itemDetails.production_companies?.[0];
 
-        const withTimeout = (promise, fallbackValue) => {
-            return Promise.race([
-                promise,
-                new Promise(resolve => setTimeout(() => resolve(fallbackValue), SECONDARY_TIMEOUT))
-            ]);
-        };
+            const date = itemDetails.release_date || itemDetails.first_air_date;
+            let eraStart, eraEnd;
+            if (date) {
+                const year = parseInt(date.substring(0, 4));
+                const decade = Math.floor(year / 10) * 10;
+                eraStart = `${decade}-01-01`;
+                eraEnd = `${decade + 9}-12-31`;
+            }
 
-        if (director && type === 'movie') {
-            secondaryPromises.push(withTimeout(
-                this.fetchTMDB('/discover/movie', {
-                    api_key: apiKey,
-                    with_people: director.id,
-                    sort_by: 'popularity.desc'
-                }).then(res => ({ source: 'director_match', items: res })),
-                { source: 'director_match', items: [] } // Fallback
-            ));
+            const SECONDARY_TIMEOUT = 1000; // Reduced to 1000ms
+            const withTimeout = (promise, fallbackValue) => {
+                return Promise.race([
+                    promise,
+                    new Promise(resolve => setTimeout(() => resolve(fallbackValue), SECONDARY_TIMEOUT))
+                ]);
+            };
+
+            // Franchise Match (Often high quality)
+            if (type === 'movie' && itemDetails.belongs_to_collection) {
+                secondaryPromises.push(
+                    tmdbClient.get(`/collection/${itemDetails.belongs_to_collection.id}`, {
+                        api_key: apiKey
+                    })
+                        .then(res => ({ source: 'franchise_match', items: res.data.parts || [] }))
+                        .catch(() => ({ source: 'franchise_match', items: [] }))
+                );
+            }
+
+            if (director && type === 'movie') {
+                secondaryPromises.push(withTimeout(
+                    this.fetchTMDB('/discover/movie', {
+                        api_key: apiKey,
+                        with_people: director.id,
+                        sort_by: 'popularity.desc'
+                    }).then(res => ({ source: 'director_match', items: res })),
+                    { source: 'director_match', items: [] }
+                ));
+            }
+
+            if (keywordIds.length > 0) {
+                secondaryPromises.push(withTimeout(
+                    this.fetchTMDB(`/discover/${type}`, {
+                        api_key: apiKey,
+                        with_keywords: keywordIds.join('|'),
+                        sort_by: 'popularity.desc'
+                    }).then(res => ({ source: 'keyword_match', items: res })),
+                    { source: 'keyword_match', items: [] }
+                ));
+            }
+
+            if (eraStart && itemDetails.genres?.length > 0) {
+                const genreIds = itemDetails.genres.map(g => g.id).slice(0, 2).join(',');
+                const dateParam = type === 'movie' ? 'primary_release_date' : 'first_air_date';
+                secondaryPromises.push(withTimeout(
+                    this.fetchTMDB(`/discover/${type}`, {
+                        api_key: apiKey,
+                        with_genres: genreIds,
+                        [`${dateParam}.gte`]: eraStart,
+                        [`${dateParam}.lte`]: eraEnd,
+                        sort_by: 'vote_average.desc',
+                        'vote_count.gte': 100
+                    }).then(res => ({ source: 'era_match', items: res })),
+                    { source: 'era_match', items: [] }
+                ));
+            }
+
+            if (topCast.length > 0) {
+                const castIds = topCast.map(c => c.id).join(',');
+                secondaryPromises.push(withTimeout(
+                    this.fetchTMDB(`/discover/${type}`, {
+                        api_key: apiKey,
+                        with_people: castIds,
+                        sort_by: 'popularity.desc'
+                    }).then(res => ({ source: 'cast_match', items: res })),
+                    { source: 'cast_match', items: [] }
+                ));
+            }
+
+            if (studio) {
+                secondaryPromises.push(withTimeout(
+                    this.fetchTMDB(`/discover/${type}`, {
+                        api_key: apiKey,
+                        with_companies: studio.id,
+                        sort_by: 'popularity.desc'
+                    }).then(res => ({ source: 'studio_match', items: res })),
+                    { source: 'studio_match', items: [] }
+                ));
+            }
         }
 
-        if (keywordIds.length > 0) {
-            secondaryPromises.push(withTimeout(
-                this.fetchTMDB(`/discover/${type}`, {
-                    api_key: apiKey,
-                    with_keywords: keywordIds.join('|'),
-                    sort_by: 'popularity.desc'
-                }).then(res => ({ source: 'keyword_match', items: res })),
-                { source: 'keyword_match', items: [] }
-            ));
-        }
+        // 5. Final await: Wait for Primary to finish (must be done) AND Secondary to finish (or timeout)
+        // Note: primarySourcesPromise started WAY back at step 1.
+        const [primaryResults, secondaryResults] = await Promise.all([
+            primarySourcesPromise,
+            Promise.allSettled(secondaryPromises).then(results =>
+                results.filter(r => r.status === 'fulfilled').map(r => r.value)
+            )
+        ]);
 
-        if (eraStart && itemDetails.genres?.length > 0) {
-            const genreIds = itemDetails.genres.map(g => g.id).slice(0, 2).join(',');
-            const dateParam = type === 'movie' ? 'primary_release_date' : 'first_air_date';
-            secondaryPromises.push(withTimeout(
-                this.fetchTMDB(`/discover/${type}`, {
-                    api_key: apiKey,
-                    with_genres: genreIds,
-                    [`${dateParam}.gte`]: eraStart,
-                    [`${dateParam}.lte`]: eraEnd,
-                    sort_by: 'vote_average.desc',
-                    'vote_count.gte': 100
-                }).then(res => ({ source: 'era_match', items: res })),
-                { source: 'era_match', items: [] }
-            ));
-        }
+        const allResults = [...primaryResults, ...secondaryResults].filter(r => r && r.items && r.items.length > 0);
 
-        if (topCast.length > 0) {
-            const castIds = topCast.map(c => c.id).join(',');
-            secondaryPromises.push(withTimeout(
-                this.fetchTMDB(`/discover/${type}`, {
-                    api_key: apiKey,
-                    with_people: castIds,
-                    sort_by: 'popularity.desc'
-                }).then(res => ({ source: 'cast_match', items: res })),
-                { source: 'cast_match', items: [] }
-            ));
-        }
-
-        if (studio) {
-            secondaryPromises.push(withTimeout(
-                this.fetchTMDB(`/discover/${type}`, {
-                    api_key: apiKey,
-                    with_companies: studio.id,
-                    sort_by: 'popularity.desc'
-                }).then(res => ({ source: 'studio_match', items: res })),
-                { source: 'studio_match', items: [] }
-            ));
-        }
-
-        // Execute all requests
-        const allPromises = [...primaryPromises, ...secondaryPromises];
-        const resultsSettled = await Promise.allSettled(allPromises);
-
-        const results = resultsSettled
-            .filter(r => r.status === 'fulfilled')
-            .map(r => r.value)
-            .filter(r => r && r.items);
-
-        return scoreAndRankItemRecommendations(results, id, userTopGenres);
+        return scoreAndRankItemRecommendations(allResults, id, userTopGenres);
     }
 
     async fetchSearchResults(query, apiKey, limit) {
