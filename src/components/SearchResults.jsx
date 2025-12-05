@@ -84,7 +84,11 @@ const highlightText = (text, query) => {
 // Memoized Result Item Component
 const ResultItem = React.memo(({ result, searchQuery, onClick, onHover, onLeave }) => (
     <motion.div
+        layout
         variants={itemVariants}
+        initial="hidden"
+        animate="visible"
+        exit="hidden"
         onClick={() => onClick(result)}
         onMouseEnter={() => onHover && onHover(result)}
         onMouseLeave={onLeave}
@@ -148,6 +152,7 @@ const SearchResults = ({
     suggestions = [],
     searches = [],
     isLoading = false,
+    isFetching = false,
     searchQuery = '',
     activeSuggestionIndex = -1,
     sortBy = 'relevance',
@@ -349,15 +354,23 @@ const SearchResults = ({
                     {(totalResults !== undefined || onSortChange) && (
                         <div className="px-3 py-2 bg-[#181818]/95 backdrop-blur-md sticky top-0 z-10 border-b border-white/5">
                             <div className="flex items-center justify-between">
-                                <div className="text-xs text-gray-400">
-                                    {totalResults !== undefined && (
-                                        <>
-                                            <span className="font-medium text-white">{totalResults}</span>
-                                            {' result' + (totalResults !== 1 ? 's' : '')}
-                                        </>
-                                    )}
-                                    {responseTime && (
-                                        <span className="ml-2">in {responseTime}ms</span>
+                                <div className="text-xs text-gray-400 flex items-center gap-2">
+                                    <span>
+                                        {totalResults !== undefined && (
+                                            <>
+                                                <span className="font-medium text-white">{totalResults}</span>
+                                                {' result' + (totalResults !== 1 ? 's' : '')}
+                                            </>
+                                        )}
+                                        {responseTime && (
+                                            <span className="ml-2">in {responseTime}ms</span>
+                                        )}
+                                    </span>
+                                    {isFetching && (
+                                        <span className="flex items-center gap-1 ml-2 text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                                            Updating
+                                        </span>
                                     )}
                                 </div>
 

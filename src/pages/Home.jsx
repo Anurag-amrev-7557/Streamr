@@ -5,6 +5,7 @@ import Row from '../components/Row';
 import Modal from '../components/Modal';
 import Navbar from '../components/Navbar';
 import MobileHero from '../components/MobileHero';
+import RowSkeleton from '../components/RowSkeleton';
 import requests from '../lib/requests';
 import tmdb from '../lib/tmdb';
 import useWatchHistoryStore from '../store/useWatchHistoryStore';
@@ -117,17 +118,7 @@ const Home = () => {
                 )}
 
                 {isLoading ? (
-                    // Skeleton Rows
-                    [...Array(4)].map((_, i) => (
-                        <div key={i} className="mb-8">
-                            <div className="h-6 w-48 bg-gray-800 rounded mb-4 ml-12 animate-pulse" />
-                            <div className="flex gap-4 overflow-hidden pl-12">
-                                {[...Array(6)].map((_, j) => (
-                                    <div key={j} className="h-[200px] min-w-[300px] bg-gray-800 rounded-lg animate-pulse" />
-                                ))}
-                            </div>
-                        </div>
-                    ))
+                    <RowSkeleton count={4} />
                 ) : (
                     feed.slice(0, visibleRows).map((section) => (
                         <Row

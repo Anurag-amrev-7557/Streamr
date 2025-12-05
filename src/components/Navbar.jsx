@@ -4,9 +4,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Search, Bell, X } from 'lucide-react';
 import useAuthStore from '../store/useAuthStore';
 import clsx from 'clsx';
-import axios from '../lib/tmdb';
 import { motion, AnimatePresence } from 'framer-motion'; // eslint-disable-line no-unused-vars
-import { useSearch, usePrefetchModalData, useSearchSuggestions } from '../hooks/useTMDB';
+import { useSearch, usePrefetchModalData, useSearchSuggestions, useNotifications } from '../hooks/useTMDB';
 import { useDebounce } from '../hooks/useDebounce';
 import useSearchHistoryStore from '../store/useSearchHistoryStore';
 import { prefetchOnInteraction } from '../utils/routePrefetch';
@@ -225,7 +224,8 @@ const Navbar = ({ onMovieClick }) => {
     const [isScrolled, setIsScrolled] = useState(false);
     const [notifOpen, setNotifOpen] = useState(false);
     const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
-    const [notifications, setNotifications] = useState([]);
+    // Notification data is now handled by React Query
+    const { data: notifications = [] } = useNotifications();
 
     // Search state
     const [searchOpen, setSearchOpen] = useState(false);
@@ -294,8 +294,11 @@ const Navbar = ({ onMovieClick }) => {
     }, [suggestions, activeSuggestionIndex, handleHistoryClick]);
 
     // Use React Query for search with caching (enhanced with filters/pagination)
-    const { data: searchData, isLoading: isSearching } = useSearch(debouncedSearchQuery);
-    const searchResults = useMemo(() => searchData?.results || [], [searchData]);
+    const { data: searchData, isLoading: isSearching, isFetching } = useSearch(debouncedSearchQuery);
+    const searchResults = useMemo(() => {
+        if (!debouncedSearchQuery?.trim()) return [];
+        return searchData?.results || [];
+    }, [searchData, debouncedSearchQuery]);
 
     // Prefetch hook for result hover
     const { prefetchModalData } = usePrefetchModalData();
@@ -342,52 +345,6 @@ const Navbar = ({ onMovieClick }) => {
             }
         };
     }, [handleScroll]);
-
-    // Fetch notifications with AbortController for cleanup
-    useEffect(() => {
-        if (!notifOpen || notifications.length > 0) return;
-
-        const controller = new AbortController();
-
-        const fetchNotifications = async () => {
-            try {
-                const [movieRes, tvRes] = await Promise.all([
-                    axios.get(`/movie/upcoming`, { signal: controller.signal }),
-                    axios.get(`/tv/on_the_air`, { signal: controller.signal })
-                ]);
-
-                const movies = (movieRes.data.results || []).map(item => ({
-                    id: item.id,
-                    title: item.title,
-                    release_date: item.release_date,
-                    type: 'movie',
-                    poster_path: item.poster_path
-                }));
-
-                const tvShows = (tvRes.data.results || []).map(item => ({
-                    id: item.id,
-                    title: item.name,
-                    release_date: item.first_air_date,
-                    type: 'tv',
-                    poster_path: item.poster_path
-                }));
-
-                const combined = [...movies, ...tvShows]
-                    .filter(n => n.release_date)
-                    .sort((a, b) => new Date(a.release_date) - new Date(b.release_date));
-
-                setNotifications(combined);
-            } catch (e) {
-                if (e.name !== 'AbortError') {
-                    console.error('Failed to fetch notifications', e);
-                }
-            }
-        };
-
-        fetchNotifications();
-
-        return () => controller.abort();
-    }, [notifOpen, notifications.length]);
 
     // Close dropdown on outside click
     useEffect(() => {
@@ -619,6 +576,7 @@ const Navbar = ({ onMovieClick }) => {
                                         suggestions={suggestions}
                                         searches={searches}
                                         isLoading={isSearching}
+                                        isFetching={isFetching}
                                         searchQuery={debouncedSearchQuery}
                                         activeSuggestionIndex={activeSuggestionIndex}
                                         onResultClick={handleResultClick}
@@ -747,7 +705,11 @@ const Navbar = ({ onMovieClick }) => {
                                     >
                                         <X
                                             className="w-[22px] h-[22px] p-1 bg-white text-black rounded-full cursor-pointer hover:bg-gray-200 transition-colors flex-shrink-0"
-                                            onClick={handleClearQuery}
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                handleClearQuery();
+                                                pillSearchInputRef.current?.focus();
+                                            }}
                                         />
                                     </motion.div>
                                 )}
@@ -821,6 +783,7 @@ const Navbar = ({ onMovieClick }) => {
                                     suggestions={suggestions}
                                     searches={searches}
                                     isLoading={isSearching}
+                                    isFetching={isFetching}
                                     searchQuery={debouncedSearchQuery}
                                     activeSuggestionIndex={activeSuggestionIndex}
                                     onResultClick={handleResultClick}

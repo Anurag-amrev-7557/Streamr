@@ -61,10 +61,50 @@ export const queryKeys = {
         all: ['person'],
         detail: (id) => [...queryKeys.person.all, id],
     },
+    notifications: {
+        all: ['notifications'],
+    },
     modal: {
         all: ['modal'],
         detail: (type, id) => [...queryKeys.modal.all, type, id],
     }
+};
+
+export const useNotifications = () => {
+    return useQuery({
+        queryKey: queryKeys.notifications.all,
+        queryFn: async () => {
+            const [movieRes, tvRes] = await Promise.all([
+                tmdb.get('/movie/upcoming'),
+                tmdb.get('/tv/on_the_air')
+            ]);
+
+            const movies = (movieRes.data.results || []).map(item => ({
+                id: item.id,
+                title: item.title,
+                release_date: item.release_date,
+                type: 'movie',
+                poster_path: item.poster_path
+            }));
+
+            const tvShows = (tvRes.data.results || []).map(item => ({
+                id: item.id,
+                title: item.name,
+                release_date: item.first_air_date,
+                type: 'tv',
+                poster_path: item.poster_path
+            }));
+
+            const combined = [...movies, ...tvShows]
+                .filter(n => n.release_date)
+                .sort((a, b) => new Date(a.release_date) - new Date(b.release_date));
+
+            return combined;
+        },
+        staleTime: 24 * 60 * 60 * 1000, // 24 hours - highly static data
+        gcTime: 24 * 60 * 60 * 1000,
+        retry: 2,
+    });
 };
 export const useTrending = () => {
     return useQuery({
@@ -451,6 +491,7 @@ export const useSearch = (query, filters = {}, options = {}) => {
         gcTime: 30 * 60 * 1000, // 30 minutes - keep search cache longer
         retry: 1,
         retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 5000),
+        placeholderData: (previousData) => previousData, // Keep previous results while fetching new ones
     });
 };
 
@@ -471,6 +512,7 @@ export const useSearchSuggestions = (query, enabled = true) => {
         staleTime: 5 * 60 * 1000, // 5 minutes - suggestions change more frequently
         gcTime: 10 * 60 * 1000, // 10 minutes
         retry: false, // Don't retry suggestions, fail fast
+        placeholderData: (previousData) => previousData, // Keep previous suggestions while typing
     });
 };
 
@@ -522,6 +564,7 @@ export const useInfiniteSearch = (query, filters = {}, sortBy = 'relevance', ena
         staleTime: 15 * 60 * 1000,
         gcTime: 30 * 60 * 1000,
         retry: 1,
+        placeholderData: (previousData) => previousData, // Keep previous infinite data while refetching
     });
 };
 
