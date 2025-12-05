@@ -57,7 +57,8 @@ const useListStore = create(
                     const previousList = [...list];
                     const movieWithTimestamp = {
                         ...movie,
-                        addedAt: new Date().toISOString()
+                        addedAt: new Date().toISOString(),
+                        _unsynced: true // Mark as unsynced initially
                     };
                     const newList = [...list, movieWithTimestamp];
                     set({ list: newList });
@@ -66,6 +67,14 @@ const useListStore = create(
                     // Sync with backend if available
                     try {
                         await api.post('/auth/mylist/add', { item: movieWithTimestamp });
+
+                        // On success, remove the _unsynced flag
+                        const currentList = get().list;
+                        const updatedList = currentList.map(item =>
+                            item.id === movie.id ? { ...item, _unsynced: undefined } : item
+                        );
+                        set({ list: updatedList });
+
                     } catch (error) {
                         console.error('Failed to sync add to backend:', error);
                         // Rollback on failure if it's not just an auth issue
@@ -74,6 +83,7 @@ const useListStore = create(
                             addNotification({ type: 'error', message: 'Failed to add to list' });
                         } else {
                             console.log('Not syncing to backend (user may not be authenticated)');
+                            // Keep _unsynced: true so it syncs later
                         }
                     }
                 }

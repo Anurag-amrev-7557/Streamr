@@ -103,7 +103,7 @@ const VersionManager = () => {
                     className={clsx(
                         "fixed left-1/2 z-[100] flex items-center gap-4 bg-black/60 border border-white/10 pl-4 pr-2 py-2 rounded-full shadow-2xl backdrop-blur-xl backdrop-saturate-150",
                         isNavbarVisible
-                            ? "bottom-24 w-full max-w-[320px] justify-between"
+                            ? "bottom-12 w-full max-w-[320px] justify-between"
                             : "bottom-6 w-auto max-w-[90vw]"
                     )}
                 >

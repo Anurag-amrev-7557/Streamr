@@ -56,7 +56,11 @@ const useAuthStore = create((set, get) => ({
                     ...winner,  // Overwrite with winner's data (so winner's values take precedence)
                 });
             } else if (localItem) {
-                merged.push(localItem);
+                // Only keep local item if it's marked as unsynced (meaning it was added locally and hasn't synced yet)
+                // If it's not unsynced, it means it was present before but is now missing from backend (deleted remotely)
+                if (localItem._unsynced) {
+                    merged.push(localItem);
+                }
             } else if (backendItem) {
                 merged.push(backendItem);
             }

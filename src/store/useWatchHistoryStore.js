@@ -73,7 +73,8 @@ const useWatchHistoryStore = create(
                     ...movie,
                     media_type: mediaType,
                     ...metadata,
-                    lastWatched: new Date().toISOString()
+                    lastWatched: new Date().toISOString(),
+                    _unsynced: true // Mark as unsynced initially
                 };
 
                 // Update local state
@@ -84,6 +85,14 @@ const useWatchHistoryStore = create(
                 // Sync with backend if available
                 try {
                     await api.post('/auth/watch-history/add', { item: newItem });
+
+                    // On success, remove the _unsynced flag
+                    const currentHistory = get().history;
+                    const updatedHistory = currentHistory.map(item =>
+                        item.id === movie.id ? { ...item, _unsynced: undefined } : item
+                    );
+                    set({ history: updatedHistory });
+
                 } catch (error) {
                     // Rollback on failure if it's not just an auth issue
                     if (error.response?.status !== 401) {
@@ -92,6 +101,7 @@ const useWatchHistoryStore = create(
                         // The next sync will handle it, or it will remain local
                     } else {
                         console.log('Not syncing to backend (user may not be authenticated)');
+                        // Keep _unsynced: true so it syncs later
                     }
                 }
             },
