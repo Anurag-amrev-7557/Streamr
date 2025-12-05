@@ -24,31 +24,41 @@ const api = axios.create({
 });
 
 /**
+ * Request interceptor to attach Authorization header with token from localStorage.
+ * This is needed for cross-origin requests in production where third-party cookies may be blocked.
+ */
+api.interceptors.request.use(
+    (config) => {
+        const token = localStorage.getItem('auth_token');
+        if (token) {
+            config.headers.Authorization = `Bearer ${token}`;
+        }
+        return config;
+    },
+    (error) => Promise.reject(error)
+);
+
+/**
  * Response interceptor to handle global error responses.
- * Specifically handles 401 Unauthorized errors by clearing the token.
+ * Also extracts and stores tokens from successful auth responses.
  */
 api.interceptors.response.use(
-    /**
-     * @param {AxiosResponse} response
-     * @returns {AxiosResponse}
-     */
-    (response) => response,
-    /**
-     * @param {AxiosError} error
-     * @returns {Promise<never>}
-     */
+    (response) => {
+        // Store token from auth responses
+        if (response.data?.token) {
+            localStorage.setItem('auth_token', response.data.token);
+        }
+        return response;
+    },
     (error) => {
-        // Suppress expected 401 errors from /auth/me (when user is not logged in)
-        if (error.config?.url?.includes('/auth/me') && error.response?.status === 401) {
-            // This is expected when user is not authenticated, don't log it
-            return Promise.reject(error);
-        }
-
-        // Handle 401 errors - redirect to login if needed, but let the store handle state clearing
+        // Clear token on 401 errors (except for /auth/me which is expected when not logged in)
         if (error.response?.status === 401) {
-            console.log('Authentication required');
+            if (!error.config?.url?.includes('/auth/me')) {
+                localStorage.removeItem('auth_token');
+                console.log('Authentication required');
+            }
+            // Otherwise suppress - this is expected when user is not logged in
         }
-
         return Promise.reject(error);
     }
 );

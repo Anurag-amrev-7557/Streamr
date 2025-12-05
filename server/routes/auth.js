@@ -85,7 +85,8 @@ router.get(
 
         // Use localhost in development mode
         const frontendUrl = process.env.NODE_ENV === 'development' ? 'http://localhost:5173' : process.env.FRONTEND_URL;
-        const redirectUrl = `${frontendUrl}/auth/callback`;
+        // Pass token as URL parameter for cross-origin production auth where cookies may be blocked
+        const redirectUrl = `${frontendUrl}/auth/callback?token=${token}`;
         res.redirect(redirectUrl);
     }
 );

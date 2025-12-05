@@ -251,6 +251,9 @@ const useAuthStore = create((set, get) => ({
         try {
             await api.post('/auth/logout');
 
+            // Clear auth token from localStorage
+            localStorage.removeItem('auth_token');
+
             // Clear all local stores
             const watchHistoryStore = useWatchHistoryStore.getState();
             const listStore = useListStore.getState();
@@ -264,6 +267,9 @@ const useAuthStore = create((set, get) => ({
             addNotification({ type: 'success', message: 'Logged out successfully' });
         } catch (error) {
             console.error('Logout error:', error);
+
+            // Clear auth token from localStorage even on error
+            localStorage.removeItem('auth_token');
 
             // Still clear local stores even on error
             const watchHistoryStore = useWatchHistoryStore.getState();
