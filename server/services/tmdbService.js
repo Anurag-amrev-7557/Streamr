@@ -1,6 +1,7 @@
 import tmdbClient from '../utils/tmdbClient.js';
 import smartCache from '../utils/smartCache.js';
 import User from '../models/User.js';
+import { CATEGORIES } from '../utils/mediaCategories.js';
 import {
     generateSearchCacheKey,
     normalizeSearchQuery,
@@ -21,11 +22,29 @@ const CONFIG = {
         TRENDING: 86400, // 24 hours
         SEARCH: 900,     // 15 minutes
         DETAILS: 43200,  // 12 hours
-        SUGGESTIONS: 3600 // 1 hour
+        SUGGESTIONS: 3600, // 1 hour
+        FEED_ITEM: 3600    // 1 hour (Cache individual categories, not the whole feed layout)
     }
 };
 
 class TmdbService {
+    // Helper to get random categories
+    getRandomCategories(type = 'all', count = 15) {
+        let filtered = CATEGORIES;
+        if (type !== 'all') {
+            filtered = CATEGORIES.filter(cat => cat.type === type);
+        }
+
+        // Fisher-Yates shuffle
+        const shuffled = [...filtered];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+
+        return shuffled.slice(0, count);
+    }
+
     async getRecommendations(user) {
         const userId = user ? user.id : null;
         const cacheKey = userId ? `rec_home_v4_${userId}` : 'rec_home_v4_guest';
@@ -172,6 +191,99 @@ class TmdbService {
         };
     }
 
+    async getHomeFeed(user) {
+        // DO NOT cache the entire feed structure, so it stays dynamic!
+        // Individual requests inside will be cached by fetchTMDB via smartCache.
+
+        const apiKey = process.env.TMDB_API_KEY;
+        const feeds = [];
+
+        // 1. Personalized Recommendations
+        if (user && (user.watchHistory?.length > 0 || user.myList?.length > 0)) {
+            feeds.push(
+                this.getRecommendations(user)
+                    .then(res => ({ title: 'Recommended for You', data: res.results }))
+                    .catch(() => null)
+            );
+        }
+
+        const stickySections = [
+            { title: 'Trending Now', endpoint: '/trending/all/week' },
+        ];
+
+        let dynamicCategories = [];
+        try {
+            dynamicCategories = this.getRandomCategories('all', 12);
+        } catch (e) {
+            console.error('Error getting random categories:', e);
+        }
+
+        const allSections = [...stickySections, ...dynamicCategories];
+
+        const sectionPromises = allSections.map(section =>
+            this.fetchTMDB(section.endpoint, { api_key: apiKey, ...section.params })
+                .then(results => ({ title: section.title, data: results }))
+                .catch(err => {
+                    console.error(`Feed Error [${section.title}]:`, err.message);
+                    return null;
+                })
+        );
+
+        const allResults = await Promise.allSettled([...feeds, ...sectionPromises]);
+
+        const finalFeed = allResults
+            .filter(r => r.status === 'fulfilled' && r.value && r.value.data && r.value.data.length > 0)
+            .map(r => r.value);
+
+        return finalFeed;
+    }
+
+    async getMoviesFeed() {
+        // No top-level caching for dynamic order
+        const apiKey = process.env.TMDB_API_KEY;
+
+        const stickySections = [
+            { title: 'Trending Movies', endpoint: '/trending/movie/week' },
+        ];
+
+        const dynamicCategories = this.getRandomCategories('movie', 12);
+        const allSections = [...stickySections, ...dynamicCategories];
+
+        const promises = allSections.map(section =>
+            this.fetchTMDB(section.endpoint, { api_key: apiKey, ...section.params })
+                .then(results => ({ title: section.title, data: results }))
+                .catch(() => null)
+        );
+
+        const allResults = await Promise.allSettled(promises);
+        return allResults
+            .filter(r => r.status === 'fulfilled' && r.value && r.value.data && r.value.data.length > 0)
+            .map(r => r.value);
+    }
+
+    async getSeriesFeed() {
+        // No top-level caching for dynamic order
+        const apiKey = process.env.TMDB_API_KEY;
+
+        const stickySections = [
+            { title: 'Trending Series', endpoint: '/trending/tv/week' },
+        ];
+
+        const dynamicCategories = this.getRandomCategories('tv', 12);
+        const allSections = [...stickySections, ...dynamicCategories];
+
+        const promises = allSections.map(section =>
+            this.fetchTMDB(section.endpoint, { api_key: apiKey, ...section.params })
+                .then(results => ({ title: section.title, data: results }))
+                .catch(() => null)
+        );
+
+        const allResults = await Promise.allSettled(promises);
+        return allResults
+            .filter(r => r.status === 'fulfilled' && r.value && r.value.data && r.value.data.length > 0)
+            .map(r => r.value);
+    }
+
     async getSearchSuggestions(query) {
         if (!query || !query.trim()) return [];
 
@@ -209,13 +321,29 @@ class TmdbService {
     // --- Helper Methods ---
 
     async fetchTMDB(endpoint, params = {}) {
-        try {
-            const response = await tmdbClient.get(endpoint, params);
-            return response.data.results || [];
-        } catch (error) {
-            console.error(`TMDB Fetch Error (${endpoint}):`, error.message);
-            return [];
-        }
+        // Updated to use smartCache for individual requests!
+        // This is crucial now that top-level feed caching is removed.
+
+        // Remove api_key from cache key generation so we don't leak it/dupe it
+        const { api_key, ...otherParams } = params; // eslint-disable-line no-unused-vars
+
+        // Stable stringify for cache key
+        const sortedParams = Object.keys(otherParams).sort().reduce((obj, key) => {
+            obj[key] = otherParams[key];
+            return obj;
+        }, {});
+
+        const cacheKey = `tmdb_req_${endpoint}_${JSON.stringify(sortedParams)}`;
+
+        return smartCache.get(cacheKey, async () => {
+            try {
+                const response = await tmdbClient.get(endpoint, params);
+                return response.data.results || [];
+            } catch (error) {
+                console.error(`TMDB Fetch Error (${endpoint}):`, error.message);
+                return [];
+            }
+        }, CONFIG.CACHE_TTL.FEED_ITEM).then(res => res.data); // Return simple data from cache result
     }
 
     async fetchDetails(type, id, apiKey) {

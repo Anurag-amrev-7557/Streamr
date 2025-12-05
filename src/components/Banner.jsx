@@ -352,12 +352,23 @@ BannerInner.displayName = 'BannerInner';
 
 // --- Main Component ---
 
-const Banner = ({ onMovieClick, fetchUrl }) => {
+// --- Main Component ---
+
+const Banner = ({ onMovieClick, fetchUrl, movies: propMovies }) => {
     const { bannerMovie, setBannerMovie } = useBannerStore();
-    const { data: movies } = useRowData(fetchUrl || requests.fetchNetflixOriginals, 'Banner');
+
+    // Only fetch if we don't have propMovies
+    const { data: fetchedMovies } = useRowData(
+        propMovies ? null : (fetchUrl || requests.fetchNetflixOriginals),
+        'Banner'
+    );
+
+    const movies = propMovies || fetchedMovies;
 
     // Effect to initialize bannerMovie if it's not set
     useEffect(() => {
+        // Only select a new random movie if we don't have one, or if we switched pages (force reset logic could be added)
+        // For now, if we have movies and no bannerMovie, select one.
         if (!bannerMovie && movies && movies.length > 0) {
             const selectedMovie = movies[Math.floor(Math.random() * movies.length)];
             setBannerMovie(selectedMovie);
@@ -386,7 +397,8 @@ const Banner = ({ onMovieClick, fetchUrl }) => {
 
 Banner.propTypes = {
     onMovieClick: PropTypes.func.isRequired,
-    fetchUrl: PropTypes.string
+    fetchUrl: PropTypes.string,
+    movies: PropTypes.array
 };
 
 export default Banner;

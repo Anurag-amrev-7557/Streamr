@@ -19,6 +19,11 @@ router.get('/search/multi', tmdbController.multiSearch);
 // Search Suggestions
 router.get('/search/suggestions', tmdbController.getSearchSuggestions);
 
+// Feed Routes (Aggregated Arrays)
+router.get('/feed/home', optionalProtect, tmdbController.getHomeFeed);
+router.get('/feed/movies', tmdbController.getMoviesFeed);
+router.get('/feed/series', tmdbController.getSeriesFeed);
+
 // Proxy all other requests to TMDB
 router.get('/*', tmdbController.proxy);
 

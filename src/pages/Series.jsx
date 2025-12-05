@@ -1,38 +1,34 @@
 import { useState, useEffect } from 'react';
-
-import useRoutePrefetch from '../hooks/useRoutePrefetch';
-import useDynamicCategories from '../hooks/useDynamicCategories';
+import { useQuery } from '@tanstack/react-query';
 import Banner from '../components/Banner';
 import Row from '../components/Row';
 import Modal from '../components/Modal';
 import Navbar from '../components/Navbar';
 import MobileHero from '../components/MobileHero';
 import requests from '../lib/requests';
+import tmdb from '../lib/tmdb';
 import { AnimatePresence } from 'framer-motion';
 
 const Series = () => {
     const [selectedMovie, setSelectedMovie] = useState(null);
-    const dynamicCategories = useDynamicCategories('tv', 15);
-
 
     // SEO
     useEffect(() => {
         document.title = 'Series - Streamr';
     }, []);
 
-    // Background Prefetching
-    const prefetchCategories = [
-        { key: 'Trending Series', url: requests.fetchTrendingTV },
-        { key: 'Top Rated', url: requests.fetchTopRatedTV },
-        { key: 'Action & Adventure', url: requests.fetchActionTV },
-        { key: 'Comedy', url: requests.fetchComedyTV },
-        { key: 'Crime', url: requests.fetchCrimeTV },
-        { key: 'Drama', url: requests.fetchDramaTV },
-        { key: 'Mystery', url: requests.fetchMysteryTV },
-        { key: 'Sci-Fi & Fantasy', url: requests.fetchSciFiTV },
-    ];
+    // Fetch Series Feed
+    const { data: feed = [], isLoading, isError } = useQuery({
+        queryKey: ['seriesFeed'],
+        queryFn: async () => {
+            const { data } = await tmdb.get(requests.fetchSeriesFeed);
+            return data;
+        },
+        staleTime: 0,
+        gcTime: 5 * 60 * 1000,
+    });
 
-    useRoutePrefetch(prefetchCategories);
+    const trendingSeries = feed.find(s => s.title === 'Trending Series')?.data || [];
 
     const handleMovieClick = (movie) => {
         setSelectedMovie(movie);
@@ -43,22 +39,43 @@ const Series = () => {
             <Navbar onMovieClick={handleMovieClick} />
 
             <div className="hidden md:block">
-                <Banner onMovieClick={handleMovieClick} fetchUrl={requests.fetchTrendingTV} />
+                <Banner
+                    onMovieClick={handleMovieClick}
+                    movies={trendingSeries.length > 0 ? trendingSeries : null}
+                    fetchUrl={requests.fetchTrendingTV}
+                />
             </div>
-            {/* MobileHero might need adjustment to show TV shows specifically if desired, 
-                but for now we'll reuse it. It might show a movie or TV show depending on its internal logic.
-            */}
+
             <MobileHero onMovieClick={handleMovieClick} />
 
             <div className="flex flex-col gap-1 md:gap-2 relative z-10 pl-0 md:pl-2 pb-16 md:pb-20 mt-4">
-                {dynamicCategories.map((category) => (
-                    <Row
-                        key={category.id}
-                        title={category.title}
-                        fetchUrl={category.fetchUrl}
-                        onMovieClick={handleMovieClick}
-                    />
-                ))}
+                {isLoading ? (
+                    // Skeleton Rows
+                    [...Array(4)].map((_, i) => (
+                        <div key={i} className="mb-8">
+                            <div className="h-6 w-48 bg-gray-800 rounded mb-4 ml-12 animate-pulse" />
+                            <div className="flex gap-4 overflow-hidden pl-12">
+                                {[...Array(6)].map((_, j) => (
+                                    <div key={j} className="h-[200px] min-w-[300px] bg-gray-800 rounded-lg animate-pulse" />
+                                ))}
+                            </div>
+                        </div>
+                    ))
+                ) : (
+                    feed.map((category) => (
+                        <Row
+                            key={category.title}
+                            title={category.title}
+                            movies={category.data}
+                            onMovieClick={handleMovieClick}
+                        />
+                    ))
+                )}
+                {isError && (
+                    <div className="text-center text-red-500 py-10">
+                        Failed to load series.
+                    </div>
+                )}
             </div>
             <AnimatePresence>
                 {selectedMovie && <Modal movie={selectedMovie} onClose={() => setSelectedMovie(null)} onMovieClick={handleMovieClick} />}

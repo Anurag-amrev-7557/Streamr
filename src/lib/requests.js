@@ -24,7 +24,12 @@ const requests = {
     fetchCrimeTV: `/discover/tv?with_genres=80`,
     fetchDramaTV: `/discover/tv?with_genres=18`,
     fetchMysteryTV: `/discover/tv?with_genres=9648`,
+    fetchMysteryTV: `/discover/tv?with_genres=9648`,
     fetchSciFiTV: `/discover/tv?with_genres=10765`,
+    // Feeds
+    fetchHomeFeed: `/feed/home`,
+    fetchMoviesFeed: `/feed/movies`,
+    fetchSeriesFeed: `/feed/series`,
 };
 
 export default requests;

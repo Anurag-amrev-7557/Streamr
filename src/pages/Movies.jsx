@@ -1,37 +1,34 @@
 import { useState, useEffect } from 'react';
-
-import useRoutePrefetch from '../hooks/useRoutePrefetch';
-import useDynamicCategories from '../hooks/useDynamicCategories';
+import { useQuery } from '@tanstack/react-query';
 import Banner from '../components/Banner';
 import Row from '../components/Row';
 import Modal from '../components/Modal';
 import Navbar from '../components/Navbar';
 import MobileHero from '../components/MobileHero';
 import requests from '../lib/requests';
+import tmdb from '../lib/tmdb';
 import { AnimatePresence } from 'framer-motion';
 
 const Movies = () => {
     const [selectedMovie, setSelectedMovie] = useState(null);
-    const dynamicCategories = useDynamicCategories('movie', 15);
-
 
     // SEO
     useEffect(() => {
         document.title = 'Movies - Streamr';
     }, []);
 
-    // Background Prefetching
-    const prefetchCategories = [
-        { key: 'Trending Movies', url: requests.fetchTrendingMovies },
-        { key: 'Top Rated', url: requests.fetchTopRated },
-        { key: 'Action', url: requests.fetchActionMovies },
-        { key: 'Comedy', url: requests.fetchComedyMovies },
-        { key: 'Horror', url: requests.fetchHorrorMovies },
-        { key: 'Romance', url: requests.fetchRomanceMovies },
-        { key: 'Documentaries', url: requests.fetchDocumentaries },
-    ];
+    // Fetch Movies Feed
+    const { data: feed = [], isLoading, isError } = useQuery({
+        queryKey: ['moviesFeed'],
+        queryFn: async () => {
+            const { data } = await tmdb.get(requests.fetchMoviesFeed);
+            return data;
+        },
+        staleTime: 0,
+        gcTime: 5 * 60 * 1000,
+    });
 
-    useRoutePrefetch(prefetchCategories);
+    const trendingMovies = feed.find(s => s.title === 'Trending Movies')?.data || [];
 
     const handleMovieClick = (movie) => {
         setSelectedMovie(movie);
@@ -42,25 +39,44 @@ const Movies = () => {
             <Navbar onMovieClick={handleMovieClick} />
 
             <div className="hidden md:block">
-                <Banner onMovieClick={handleMovieClick} fetchUrl={requests.fetchTrendingMovies} />
+                <Banner
+                    onMovieClick={handleMovieClick}
+                    movies={trendingMovies.length > 0 ? trendingMovies : null}
+                    fetchUrl={requests.fetchTrendingMovies}
+                />
             </div>
-            {/* Reusing MobileHero but it might need adjustment if it doesn't support custom fetchUrl. 
-                For now, MobileHero seems to use its own logic or props. 
-                Let's check MobileHero later if needed, but for now we'll keep it as is or omit if it's strictly for Home.
-                Actually, MobileHero in Home.jsx doesn't take fetchUrl, it might just show a random movie.
-                Let's keep it for consistency on mobile.
-            */}
+
             <MobileHero onMovieClick={handleMovieClick} />
 
             <div className="flex flex-col gap-1 md:gap-2 relative z-10 pl-0 md:pl-2 pb-16 md:pb-20 mt-4">
-                {dynamicCategories.map((category) => (
-                    <Row
-                        key={category.id}
-                        title={category.title}
-                        fetchUrl={category.fetchUrl}
-                        onMovieClick={handleMovieClick}
-                    />
-                ))}
+                {isLoading ? (
+                    // Skeleton Rows
+                    [...Array(4)].map((_, i) => (
+                        <div key={i} className="mb-8">
+                            <div className="h-6 w-48 bg-gray-800 rounded mb-4 ml-12 animate-pulse" />
+                            <div className="flex gap-4 overflow-hidden pl-12">
+                                {[...Array(6)].map((_, j) => (
+                                    <div key={j} className="h-[200px] min-w-[300px] bg-gray-800 rounded-lg animate-pulse" />
+                                ))}
+                            </div>
+                        </div>
+                    ))
+                ) : (
+                    feed.map((category) => (
+                        <Row
+                            key={category.title}
+                            title={category.title}
+                            movies={category.data}
+                            onMovieClick={handleMovieClick}
+                        />
+                    ))
+                )}
+
+                {isError && (
+                    <div className="text-center text-red-500 py-10">
+                        Failed to load movies.
+                    </div>
+                )}
             </div>
             <AnimatePresence>
                 {selectedMovie && <Modal movie={selectedMovie} onClose={() => setSelectedMovie(null)} onMovieClick={handleMovieClick} />}

@@ -78,6 +78,34 @@ export const getSearchSuggestions = async (req, res, next) => {
     }
 };
 
+export const getHomeFeed = async (req, res, next) => {
+    try {
+        const user = req.user || null;
+        const feed = await tmdbService.getHomeFeed(user);
+        res.json(feed);
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const getMoviesFeed = async (req, res, next) => {
+    try {
+        const feed = await tmdbService.getMoviesFeed();
+        res.json(feed);
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const getSeriesFeed = async (req, res, next) => {
+    try {
+        const feed = await tmdbService.getSeriesFeed();
+        res.json(feed);
+    } catch (error) {
+        next(error);
+    }
+};
+
 export const proxy = async (req, res, next) => {
     try {
         const endpoint = req.path;
