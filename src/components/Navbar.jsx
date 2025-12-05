@@ -812,30 +812,32 @@ const Navbar = ({ onMovieClick }) => {
                             )}
                         </div>
                     </div>
+                    {/* Scrolled Search Results / History */}
+                    <AnimatePresence>
+                        {shouldShowScrolledSearchResults && (
+                            <Suspense fallback={<div className="absolute flex justify-center items-center top-full min-h-[25vh] left-0 right-0 mt-4 bg-[#0a0a0a]/80 backdrop-blur-xl border border-white/10 rounded-xl p-4 text-center text-gray-400">Loading...</div>}>
+                                <SearchResults
+                                    results={searchResults}
+                                    suggestions={suggestions}
+                                    searches={searches}
+                                    isLoading={isSearching}
+                                    searchQuery={debouncedSearchQuery}
+                                    activeSuggestionIndex={activeSuggestionIndex}
+                                    onResultClick={handleResultClick}
+                                    onHistoryClick={handleHistoryClick}
+                                    onClearHistory={clearHistory}
+                                    onRemoveSearch={removeSearch}
+                                    onHover={handleResultHover}
+                                    onLeave={handleResultLeave}
+                                    className="absolute top-full left-0 right-0 mt-4"
+                                />
+                            </Suspense>
+                        )}
+                    </AnimatePresence>
                 </div>
             </motion.div>
             {/* Scrolled Search Results / History */}
-            <AnimatePresence>
-                {shouldShowScrolledSearchResults && (
-                    <Suspense fallback={<div className="absolute flex justify-center items-center top-full min-h-[25vh] left-0 right-0 mt-4 bg-[#0a0a0a]/80 backdrop-blur-xl border border-white/10 rounded-xl p-4 text-center text-gray-400">Loading...</div>}>
-                        <SearchResults
-                            results={searchResults}
-                            suggestions={suggestions}
-                            searches={searches}
-                            isLoading={isSearching}
-                            searchQuery={debouncedSearchQuery}
-                            activeSuggestionIndex={activeSuggestionIndex}
-                            onResultClick={handleResultClick}
-                            onHistoryClick={handleHistoryClick}
-                            onClearHistory={clearHistory}
-                            onRemoveSearch={removeSearch}
-                            onHover={handleResultHover}
-                            onLeave={handleResultLeave}
-                            className="absolute top-full left-0 right-0 mt-4"
-                        />
-                    </Suspense>
-                )}
-            </AnimatePresence>
+
 
             <LogoutModal
                 isOpen={isLogoutModalOpen}

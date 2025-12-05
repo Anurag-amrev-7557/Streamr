@@ -28,7 +28,7 @@ const CONFIG = {
 class TmdbService {
     async getRecommendations(user) {
         const userId = user ? user.id : null;
-        const cacheKey = userId ? `rec_home_v3_${userId}` : 'rec_home_v3_guest';
+        const cacheKey = userId ? `rec_home_v4_${userId}` : 'rec_home_v4_guest';
 
         return smartCache.get(cacheKey, async () => {
             const apiKey = process.env.TMDB_API_KEY;
@@ -39,13 +39,14 @@ class TmdbService {
             }
 
             const watchHistory = user.watchHistory || [];
+            const myList = user.myList || [];
 
-            if (watchHistory.length === 0) {
+            if (watchHistory.length === 0 && myList.length === 0) {
                 const trending = await this.fetchTMDB('/trending/all/week', { api_key: apiKey });
                 return { results: trending };
             }
 
-            const recommendations = await this.generatePersonalizedRecommendations(watchHistory, apiKey);
+            const recommendations = await this.generatePersonalizedRecommendations(watchHistory, myList, apiKey);
             return { results: recommendations };
         }, CONFIG.CACHE_TTL.TRENDING);
     }
@@ -57,13 +58,15 @@ class TmdbService {
         return smartCache.get(cacheKey, async () => {
             const apiKey = process.env.TMDB_API_KEY;
             let userTopGenres = [];
+            let userMyListIds = [];
 
             if (user) {
                 const watchHistory = user.watchHistory || [];
                 userTopGenres = calculateUserTopGenres(watchHistory);
+                userMyListIds = (user.myList || []).map(item => item.id);
             }
 
-            const recommendations = await this.generateItemRecommendations(type, id, apiKey, userTopGenres);
+            const recommendations = await this.generateItemRecommendations(type, id, apiKey, userTopGenres, userMyListIds);
             return { results: recommendations };
         }, CONFIG.CACHE_TTL.DETAILS);
     }
@@ -227,75 +230,128 @@ class TmdbService {
         }
     }
 
-    async generatePersonalizedRecommendations(watchHistory, apiKey) {
+    async generatePersonalizedRecommendations(watchHistory, myList, apiKey) {
         const topGenres = calculateUserTopGenres(watchHistory);
+
+        // 1. Analyze Recent Watch History (Weighted)
+        // Take top 3 recent items to avoid "tunnel vision" on just the very last watched item
         const recentItems = watchHistory.slice(0, 3);
 
-        const analyzedDetails = await Promise.all(
-            recentItems.map(item => {
+        // 2. Analyze My List (High Intent)
+        // Take most recently added items to My List
+        const recentMyList = myList.slice(0, 3);
+
+        const analyzedDetailsPromises = [
+            ...recentItems.map(item => {
+                if (!item.id) return null;
+                const type = item.media_type || (item.first_air_date ? 'tv' : 'movie');
+                return this.fetchDetails(type, item.id, apiKey);
+            }),
+            ...recentMyList.map(item => {
                 if (!item.id) return null;
                 const type = item.media_type || (item.first_air_date ? 'tv' : 'movie');
                 return this.fetchDetails(type, item.id, apiKey);
             })
-        );
+        ];
 
-        const validDetails = analyzedDetails.filter(d => d !== null);
+        const analyzedDetailsRaw = await Promise.all(analyzedDetailsPromises);
+        const validDetails = analyzedDetailsRaw.filter(d => d !== null);
+
         const { topPeople, topLanguage, topEra } = extractPreferences(validDetails);
 
         const promises = [];
 
-        // Source A: Popularity based on Top Genre 1
+        // --- Source A: Watch History Context (Recent) ---
+        recentItems.forEach((item, index) => {
+            const type = item.media_type || (item.first_air_date ? 'tv' : 'movie');
+            // Recent 0 gets "Recommendations" (TMDB's logic)
+            // Recent 1, 2 get "Similar" (Content equality)
+            const endpoint = index === 0 ? 'recommendations' : 'similar';
+
+            promises.push(this.fetchTMDB(`/${type}/${item.id}/${endpoint}`, { api_key: apiKey })
+                .then(res => ({ source: `history_recent_${index}`, items: res })));
+        });
+
+        // --- Source B: My List Intent ---
+        recentMyList.forEach((item, index) => {
+            const type = item.media_type || (item.first_air_date ? 'tv' : 'movie');
+            promises.push(this.fetchTMDB(`/${type}/${item.id}/recommendations`, { api_key: apiKey })
+                .then(res => ({ source: `mylist_intent_${index}`, items: res })));
+        });
+
+        // --- Source C: Genre Mastery (Popularity + Quality) ---
         if (topGenres[0]) {
             promises.push(this.fetchTMDB('/discover/movie', {
                 api_key: apiKey,
                 with_genres: topGenres[0],
                 sort_by: 'popularity.desc',
-                'vote_count.gte': 100
-            }).then(res => ({ source: 'popular_genre_1', items: res })));
+                'vote_count.gte': 200
+            }).then(res => ({ source: 'genre_hero_pop', items: res })));
         }
 
-        // Source B: Quality based on Top Genre 2
         const qualityGenre = topGenres[1] || topGenres[0];
         if (qualityGenre) {
             promises.push(this.fetchTMDB('/discover/movie', {
                 api_key: apiKey,
                 with_genres: qualityGenre,
                 sort_by: 'vote_average.desc',
-                'vote_count.gte': 300
-            }).then(res => ({ source: 'quality_genre_2', items: res })));
+                'vote_count.gte': 500,
+                'primary_release_date.gte': '2010-01-01' // Modern classics
+            }).then(res => ({ source: 'genre_hero_quality', items: res })));
         }
 
-        // Source C: Contextual (Based on most recent item)
-        if (recentItems[0] && recentItems[0].id) {
-            const item = recentItems[0];
-            const type = item.media_type || (item.first_air_date ? 'tv' : 'movie');
-
-            promises.push(this.fetchTMDB(`/${type}/${item.id}/recommendations`, { api_key: apiKey })
-                .then(res => ({ source: 'recent_0', items: res })));
-
-            promises.push(this.fetchTMDB(`/${type}/${item.id}/similar`, { api_key: apiKey })
-                .then(res => ({ source: 'similar_recent', items: res })));
+        // --- Source D: Discovery / Diversity (Cross-pollination) ---
+        // If they love Genre A, recommend highly rated items from OTHER genres that are popular
+        // We simulate this by excluding their top genres
+        // (Note: TMDB doesn't easily support "exclude genre" AND "sort by pop" efficiently in all cases, 
+        // effectively utilize 'without_genres')
+        if (topGenres.length > 0) {
+            const excludeGenres = topGenres.slice(0, 2).join(',');
+            promises.push(this.fetchTMDB('/discover/movie', {
+                api_key: apiKey,
+                without_genres: excludeGenres,
+                sort_by: 'popularity.desc',
+                'vote_count.gte': 1000,
+                page: 1
+            }).then(res => ({ source: 'discovery_new_horizons', items: res })));
         }
 
-        // Source E: People
+        // --- Source E: Deep Cuts (Valid for deeper library exploration) ---
+        // Find movies from their top era/genre that are NOT the most popular, but high rated
+        if (topEra && topGenres[0]) {
+            const startDev = `${topEra}-01-01`;
+            const endDev = `${topEra + 9}-12-31`;
+            promises.push(this.fetchTMDB('/discover/movie', {
+                api_key: apiKey,
+                with_genres: topGenres[0],
+                'primary_release_date.gte': startDev,
+                'primary_release_date.lte': endDev,
+                sort_by: 'vote_average.desc',
+                'vote_count.gte': 100,
+                'vote_count.lte': 5000 // Not the super-blockbusters
+            }).then(res => ({ source: 'deep_cuts', items: res })));
+        }
+
+        // Source F: People & Language (Preserve specific tastes)
+        // Only if strongly detected (e.g. they watched 2+ movies by same director)
         if (topPeople.length > 0) {
             promises.push(this.fetchTMDB('/discover/movie', {
                 api_key: apiKey,
                 with_people: topPeople.slice(0, 1).join(','),
                 sort_by: 'popularity.desc'
-            }).then(res => ({ source: 'people_match', items: res })));
+            }).then(res => ({ source: 'director_aficionado', items: res })));
         }
 
-        // Source F: Regional
         if (topLanguage && topLanguage !== 'en') {
             promises.push(this.fetchTMDB('/discover/movie', {
                 api_key: apiKey,
                 with_original_language: topLanguage,
                 sort_by: 'popularity.desc'
-            }).then(res => ({ source: 'language_match', items: res })));
+            }).then(res => ({ source: 'intl_fan', items: res })));
         }
 
-        // Source H: Franchise
+        // Source G: Franchise (Strongest signal)
+        // Check ONLY most recent item for franchise
         if (validDetails[0] && validDetails[0].belongs_to_collection) {
             promises.push(
                 tmdbClient.get(`/collection/${validDetails[0].belongs_to_collection.id}`, {
@@ -311,10 +367,11 @@ class TmdbService {
             .filter(r => r.status === 'fulfilled')
             .map(r => r.value);
 
-        return scoreAndRankItems(results, watchHistory, topGenres, topLanguage, topEra);
+        // Pass full context for re-ranking
+        return scoreAndRankItems(results, watchHistory, myList, topGenres, topLanguage, topEra);
     }
 
-    async generateItemRecommendations(type, id, apiKey, userTopGenres) {
+    async generateItemRecommendations(type, id, apiKey, userTopGenres, userMyListIds = []) {
         // --- Smart Parallel Fetch Strategy ---
         // Goal: Get results FAST while still being "smart".
         // Instead of waiting for details -> then secondary -> then merge, we fire Primary IMMEDIATELY.
@@ -334,8 +391,6 @@ class TmdbService {
             return Promise.all(promises);
         })();
 
-        // 2. Fetch Details (needed for Secondary sources like Director/Keywords)
-        // We set a timeout on details too, so if TMDB is slow on details, we just show Primary results.
         // 2. Fetch Details (needed for Secondary sources like Director/Keywords)
         // We set a timeout on details too, so if TMDB is slow on details, we just show Primary results.
         const detailsPromise = new Promise((resolve) => {
@@ -467,7 +522,7 @@ class TmdbService {
 
         const allResults = [...primaryResults, ...secondaryResults].filter(r => r && r.items && r.items.length > 0);
 
-        return scoreAndRankItemRecommendations(allResults, id, userTopGenres);
+        return scoreAndRankItemRecommendations(allResults, id, userTopGenres, userMyListIds);
     }
 
     async fetchSearchResults(query, apiKey, limit) {

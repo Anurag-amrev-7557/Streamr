@@ -1,16 +1,19 @@
 import { scoreSearchResult, applyFilters } from './searchHelpers.js';
 
 const SCORING = {
-    FRANCHISE: 20,
-    SIMILAR: 10,
-    DIRECTOR: 8,
-    CAST: 6,
+    FRANCHISE: 25, // Boosted
+    SIMILAR: 15,
+    DIRECTOR: 12,
+    MY_LIST_INTENT: 12, // New high signal
+    CAST: 8,
     KEYWORD: 6,
     LANGUAGE: 5,
     STUDIO: 5,
     ERA: 4,
     GENRE: 3,
-    BASE: 2
+    BASE: 2,
+    DEEP_CUT_BONUS: 5,
+    DISCOVERY_BONUS: 4
 };
 
 export const calculateUserTopGenres = (watchHistory) => {
@@ -37,7 +40,8 @@ export const extractPreferences = (validDetails) => {
     const preferredEras = {};
 
     validDetails.forEach((detail, idx) => {
-        const weight = Math.pow(0.9, idx);
+        // More recent watches have significantly higher weight
+        const weight = Math.pow(0.85, idx);
 
         if (detail.original_language) {
             preferredLanguages[detail.original_language] = (preferredLanguages[detail.original_language] || 0) + weight;
@@ -46,7 +50,7 @@ export const extractPreferences = (validDetails) => {
         if (detail.credits) {
             const directors = detail.credits.crew?.filter(c => c.job === 'Director') || [];
             directors.forEach(d => {
-                preferredPeople[d.id] = (preferredPeople[d.id] || 0) + (weight * 2);
+                preferredPeople[d.id] = (preferredPeople[d.id] || 0) + (weight * 3); // Directors are huge signal
             });
 
             const cast = detail.credits.cast?.slice(0, 3) || [];
@@ -76,7 +80,7 @@ export const extractPreferences = (validDetails) => {
     return { topPeople, topLanguage, topKeywords, topEra };
 };
 
-export const scoreAndRankItems = (results, watchHistory, topGenres, topLanguage, topEra) => {
+export const scoreAndRankItems = (results, watchHistory, myList, topGenres, topLanguage, topEra) => {
     const itemScores = new Map();
     const itemData = new Map();
 
@@ -91,58 +95,114 @@ export const scoreAndRankItems = (results, watchHistory, topGenres, topLanguage,
 
             let score = 0;
             if (source === 'franchise_match') score += SCORING.FRANCHISE;
-            if (source === 'similar_recent') score += SCORING.SIMILAR;
-            if (source === 'people_match') score += SCORING.DIRECTOR;
-            if (source === 'language_match') score += SCORING.LANGUAGE;
-            if (source.startsWith('recent_')) score += 5;
-            if (source === 'popular_genre_1') score += 3;
-            if (source === 'quality_genre_2') score += 3;
+            if (source === 'director_aficionado') score += SCORING.DIRECTOR;
+            if (source.startsWith('history_recent_')) score += SCORING.SIMILAR;
+            if (source.startsWith('mylist_intent_')) score += SCORING.MY_LIST_INTENT;
+            if (source === 'people_match') score += SCORING.DIRECTOR; // Legacy fallback
+            if (source === 'language_match' || source === 'intl_fan') score += SCORING.LANGUAGE;
+            if (source === 'popular_genre_1') score += SCORING.GENRE * 1.5;
+            if (source === 'genre_hero_pop') score += SCORING.GENRE * 2;
+            if (source === 'genre_hero_quality') score += SCORING.GENRE * 2;
+            if (source === 'quality_genre_2') score += SCORING.GENRE;
+
+            if (source === 'deep_cuts') score += SCORING.DEEP_CUT_BONUS;
+            if (source === 'discovery_new_horizons') score += SCORING.DISCOVERY_BONUS;
+            if (source.startsWith('recent_')) score += 5; // Legacy fallback
+
             score += SCORING.BASE;
 
             itemScores.set(item.id, itemScores.get(item.id) + score);
         });
     });
 
-    return finalizeRanking(itemScores, itemData, watchHistory, topGenres, topLanguage, topEra);
+    // Add explicit MyList content IDs for easy checking
+    const myListIds = new Set((myList || []).map(m => m.id));
+
+    return finalizeRanking(itemScores, itemData, watchHistory, myListIds, topGenres, topLanguage, topEra);
 };
 
-const finalizeRanking = (itemScores, itemData, watchHistory, topGenres, topLanguage, topEra) => {
+const finalizeRanking = (itemScores, itemData, watchHistory, myListIds, topGenres, topLanguage, topEra) => {
     for (const [id, score] of itemScores.entries()) {
         const item = itemData.get(id);
         let newScore = score;
 
         if (item.vote_average) newScore += item.vote_average;
 
+        // Boost items that match top genres
         if (item.genre_ids) {
             item.genre_ids.forEach(gid => {
                 if (topGenres.includes(String(gid)) || topGenres.includes(gid)) newScore += 2;
             });
         }
 
-        if (item.original_language === topLanguage && topLanguage !== 'en') newScore += 3;
-
+        // Boost items from the same era
         const date = item.release_date || item.first_air_date;
         if (date && topEra) {
             const year = parseInt(date.substring(0, 4));
             const decade = Math.floor(year / 10) * 10;
-            if (decade === topEra) newScore += 4;
+            if (decade === topEra) newScore += 3;
+        }
+
+        // Boost items already in MyList (Remind them to watch) or closely related
+        if (myListIds && myListIds.has(item.id)) {
+            // Actually, we might want to filter out things ALREADY in my list depending on UI?
+            // Usually "Recommendations" shouldn't show what I already explicitly saved to watch,
+            // OR it should show them with a "Jump Back In" label. 
+            // For now, let's slight penalize exact matches so they don't dominate discovery, 
+            // but keep them if they are high scoring (reminder).
+            newScore -= 5;
         }
 
         itemScores.set(id, newScore);
     }
 
     const watchedIds = new Set(watchHistory.map(item => item.id));
-    return Array.from(itemScores.entries())
+
+    // Diverse Selection Strategy
+    const sortedItems = Array.from(itemScores.entries())
         .filter(([id]) => !watchedIds.has(id))
         .sort(([, scoreA], [, scoreB]) => scoreB - scoreA)
         .map(([id]) => itemData.get(id))
-        .filter(item => item.poster_path || item.backdrop_path)
-        .slice(0, 20);
+        .filter(item => item.poster_path || item.backdrop_path);
+
+    const finalSelection = [];
+    const seenGenres = new Set();
+
+    // Greedy selection with diversity boost
+    for (const item of sortedItems) {
+        if (finalSelection.length >= 20) break;
+
+        // Check if we have too much of this primary genre already
+        const primaryGenre = item.genre_ids?.[0];
+        const isGenreSaturated = seenGenres.has(primaryGenre) && finalSelection.filter(i => i.genre_ids?.[0] === primaryGenre).length > 3;
+
+        if (!isGenreSaturated) {
+            finalSelection.push(item);
+            if (primaryGenre) seenGenres.add(primaryGenre);
+        } else {
+            // If highly scored enough, we still include it, but maybe skip marginal ones?
+            // For now, just skip to force diversity
+            // Actually, let's allow it if it's REALLY high score (>30)
+            if (itemScores.get(item.id) > 30) {
+                finalSelection.push(item);
+            }
+        }
+    }
+
+    // Fill up if diversity filtering was too aggressive
+    if (finalSelection.length < 20) {
+        const remaining = sortedItems.filter(i => !finalSelection.includes(i));
+        finalSelection.push(...remaining.slice(0, 20 - finalSelection.length));
+    }
+
+    return finalSelection;
 };
 
-export const scoreAndRankItemRecommendations = (results, currentId, userTopGenres) => {
+export const scoreAndRankItemRecommendations = (results, currentId, userTopGenres, userMyListIds = []) => {
     const itemScores = new Map();
     const itemData = new Map();
+
+    const myListSet = new Set(userMyListIds);
 
     results.forEach(({ source, items }) => {
         items.forEach(item => {
@@ -177,6 +237,9 @@ export const scoreAndRankItemRecommendations = (results, currentId, userTopGenre
                 if (userTopGenres.includes(String(gid)) || userTopGenres.includes(gid)) newScore += 3;
             });
         }
+
+        // Boost items that are in the user's MyList (User already expressed interest)
+        if (myListSet.has(item.id)) newScore += 10;
 
         itemScores.set(id, newScore);
     }
