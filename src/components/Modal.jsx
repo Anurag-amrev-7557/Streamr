@@ -146,7 +146,10 @@ const Modal = ({ movie, onClose, onMovieClick }) => {
 
     const handlePlay = useCallback((season = 1, episode = 1) => {
         const mediaType = movie.first_air_date ? 'tv' : 'movie';
-        addToHistory(movie, {
+        // Merge movie details with the basic movie object to ensure we have full metadata
+        const movieWithDetails = { ...movie, ...movieDetails };
+
+        addToHistory(movieWithDetails, {
             media_type: mediaType,
             season: mediaType === 'tv' ? season : undefined,
             episode: mediaType === 'tv' ? episode : undefined

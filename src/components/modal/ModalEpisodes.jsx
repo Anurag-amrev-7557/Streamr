@@ -296,7 +296,10 @@ const ModalEpisodes = ({
     }, [selectedSeason]);
 
     const handlePlay = useCallback((episode) => {
-        addToHistory(movie, {
+        // Merge movie details with the basic movie object to ensure we have full metadata
+        const movieWithDetails = { ...movie, ...movieDetails };
+
+        addToHistory(movieWithDetails, {
             media_type: 'tv',
             season: selectedSeason,
             episode: episode.episode_number,
@@ -304,7 +307,7 @@ const ModalEpisodes = ({
             duration: episode.runtime
         });
         setPlayerState({ isOpen: true, type: 'tv', season: selectedSeason, episode: episode.episode_number });
-    }, [addToHistory, movie, selectedSeason, setPlayerState]);
+    }, [addToHistory, movie, movieDetails, selectedSeason, setPlayerState]);
 
     if (!movie.first_air_date) return null;
 

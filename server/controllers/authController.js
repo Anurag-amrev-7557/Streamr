@@ -221,6 +221,9 @@ export const addToWatchHistory = asyncHandler(async (req, res, next) => {
     const newItem = {
         id: item.id,
         title: item.title || item.name,
+        name: item.name || item.title, // Ensure both exist
+        original_title: item.original_title,
+        original_name: item.original_name,
         poster_path: item.poster_path,
         backdrop_path: item.backdrop_path,
         media_type: item.media_type || (item.first_air_date ? 'tv' : 'movie'),
@@ -229,6 +232,16 @@ export const addToWatchHistory = asyncHandler(async (req, res, next) => {
         episodeTitle: item.episodeTitle,
         duration: item.duration,
         progress: item.progress,
+        overview: item.overview,
+        genres: item.genres,
+        vote_average: item.vote_average,
+        vote_count: item.vote_count,
+        first_air_date: item.first_air_date,
+        release_date: item.release_date,
+        popularity: item.popularity,
+        adult: item.adult,
+        origin_country: item.origin_country,
+        original_language: item.original_language,
         lastWatched: item.lastWatched || new Date().toISOString()
     };
 
