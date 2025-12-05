@@ -30,6 +30,25 @@ body {
   scrollbar-width: none;
 }
 
+/* Scroll Snap Utilities for Row Component */
+.scroll-snap-align-start {
+  scroll-snap-align: start;
+}
+
+/* GPU-accelerated image cards for smooth scrolling */
+.group\/item {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* Content visibility optimization for off-screen cards */
+@supports (content-visibility: auto) {
+  .group\/item {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 360px 203px;
+  }
+}
+
 /* Marquee Animations */
 @keyframes marquee {
   0% {

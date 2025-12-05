@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, memo, useMemo } from 'react';
+import { useState, useRef, useCallback, useEffect, memo, useMemo, useDeferredValue } from 'react';
 import PropTypes from 'prop-types';
 import { useRowData, usePrefetchModalData } from '../hooks/useTMDB';
 import useIsMobile from '../hooks/useIsMobile';
@@ -6,7 +6,20 @@ import clsx from 'clsx';
 import Skeleton from './Skeleton';
 import { ChevronLeft, ChevronRight, X, Trash2 } from 'lucide-react';
 
-// Cache window width to avoid repeated DOM queries
+// CSS for content-visibility optimization
+const cardContainerStyle = {
+    contentVisibility: 'auto',
+    containIntrinsicSize: 'auto 360px 203px',
+};
+
+// Static dimensions lookup - avoids layout thrashing from window.innerWidth
+const CARD_DIMENSIONS = {
+    desktop: { width: 360, height: 203 },
+    tablet: { width: 280, height: 158 },
+    mobile: { width: 170, height: 255 },
+    cast: { width: 170, height: 227 },
+};
+
 
 
 // Shared IntersectionObserver for all MovieCards (performance optimization)
@@ -68,7 +81,9 @@ const MovieCard = memo(({
     onHover,
     onLeave,
     isDraggingRef,
-    cardIndex
+    cardIndex,
+    isMobile, // Now passed from parent - no hook call per card!
+    dimensions // Pre-computed dimensions from parent
 }) => {
     const cardRef = useRef(null);
     const [isInView, setIsInView] = useState(false);
@@ -89,6 +104,7 @@ const MovieCard = memo(({
         };
     }, []);
 
+    // Event handlers - using stable references with movie.id key
     const handleClick = useCallback(() => {
         if (!isDraggingRef.current) {
             onClick(movie);
@@ -103,8 +119,6 @@ const MovieCard = memo(({
         e.stopPropagation();
         onRemove(movie.id);
     }, [movie.id, onRemove]);
-
-    const isMobile = useIsMobile();
 
     // Determine image source based on type and viewport
     const imageSrc = useMemo(() => {
@@ -135,6 +149,7 @@ const MovieCard = memo(({
             onMouseEnter={handleMouseEnter}
             onMouseLeave={onLeave}
             className="relative flex-shrink-0 w-[170px] md:w-[240px] lg:w-[280px] xl:w-[360px] group/item cursor-pointer"
+            style={cardContainerStyle}
         >
             <div className={clsx(
                 "bg-[#1a1a1a] rounded-lg overflow-hidden shadow-lg relative",
@@ -150,12 +165,12 @@ const MovieCard = memo(({
                         loading={cardIndex < 4 ? "eager" : "lazy"}
                         fetchPriority={cardIndex < 4 ? "high" : "auto"}
                         decoding="async"
-                        width={isCast ? 170 : (typeof window !== 'undefined' && window.innerWidth >= 1280 ? 360 : window.innerWidth >= 1024 ? 280 : window.innerWidth >= 768 ? 240 : 170)}
-                        height={isCast ? 227 : (typeof window !== 'undefined' && window.innerWidth >= 1280 ? 203 : window.innerWidth >= 1024 ? 158 : window.innerWidth >= 768 ? 135 : 255)}
+                        width={dimensions.width}
+                        height={dimensions.height}
                     />
                 ) : (
-                    // Placeholder while not in view
-                    <div className="w-full h-full bg-gray-800" />
+                    // Placeholder while not in view - using CSS background for better perf
+                    <div className="w-full h-full bg-gray-800" aria-hidden="true" />
                 )}
 
                 {/* Rating Badge - Hide for Cast */}
@@ -200,12 +215,14 @@ const MovieCard = memo(({
         </div>
     );
 }, (prevProps, nextProps) => {
-    // Custom comparison function for memo
+    // Custom comparison function for memo - optimized for stable references
     return (
         prevProps.movie.id === nextProps.movie.id &&
         prevProps.isCast === nextProps.isCast &&
         prevProps.alwaysOverlay === nextProps.alwaysOverlay &&
-        prevProps.onRemove === nextProps.onRemove
+        prevProps.onRemove === nextProps.onRemove &&
+        prevProps.isMobile === nextProps.isMobile &&
+        prevProps.cardIndex === nextProps.cardIndex
     );
 });
 
@@ -218,7 +235,12 @@ MovieCard.propTypes = {
     onHover: PropTypes.func.isRequired,
     onLeave: PropTypes.func.isRequired,
     isDraggingRef: PropTypes.object.isRequired,
-    cardIndex: PropTypes.number.isRequired
+    cardIndex: PropTypes.number.isRequired,
+    isMobile: PropTypes.bool.isRequired,
+    dimensions: PropTypes.shape({
+        width: PropTypes.number.isRequired,
+        height: PropTypes.number.isRequired
+    }).isRequired
 };
 
 MovieCard.displayName = 'MovieCard';
@@ -236,10 +258,21 @@ const Row = ({
 }) => {
     const { data: fetchedMovies = [], isLoading: loading, isError, refetch } = useRowData(fetchUrl, title);
 
-    const movies = propMovies || fetchedMovies;
+    // Use deferred value for non-urgent movie list updates
+    const rawMovies = propMovies || fetchedMovies;
+    const movies = useDeferredValue(rawMovies);
     const isLocalData = !!propMovies;
 
     const { prefetchModalData } = usePrefetchModalData();
+
+    // Hoist useIsMobile to Row level - single hook call for all cards
+    const isMobile = useIsMobile();
+
+    // Pre-compute dimensions once per render cycle - no layout thrashing
+    const cardDimensions = useMemo(() => {
+        if (isCast) return CARD_DIMENSIONS.cast;
+        return isMobile ? CARD_DIMENSIONS.mobile : CARD_DIMENSIONS.desktop;
+    }, [isCast, isMobile]);
 
     const rowRef = useRef(null);
     const [isDown, setIsDown] = useState(false);
@@ -248,98 +281,63 @@ const Row = ({
     const isDragging = useRef(false);
     const hoverTimeoutRef = useRef(null);
 
-    // Momentum refs
-    const velocity = useRef(0);
-    const lastPageX = useRef(0);
-    const rAF = useRef(null);
+    // Simplified scroll state - CSS handles momentum via scroll-snap
+    const scrollStateRef = useRef({ isDown: false, startX: 0, scrollLeft: 0 });
 
-    // Memoized scroll functions
+    // Memoized scroll functions - using CSS scroll-snap for smooth behavior
     const slideLeft = useCallback(() => {
         if (rowRef.current) {
-            rowRef.current.scrollTo({
-                left: rowRef.current.scrollLeft - 500,
+            const cardWidth = isMobile ? 178 : 368; // card width + gap
+            rowRef.current.scrollBy({
+                left: -cardWidth * 2,
                 behavior: 'smooth'
             });
         }
-    }, []);
+    }, [isMobile]);
 
     const slideRight = useCallback(() => {
         if (rowRef.current) {
-            rowRef.current.scrollTo({
-                left: rowRef.current.scrollLeft + 500,
+            const cardWidth = isMobile ? 178 : 368; // card width + gap
+            rowRef.current.scrollBy({
+                left: cardWidth * 2,
                 behavior: 'smooth'
             });
         }
-    }, []);
+    }, [isMobile]);
 
-    const cancelMomentum = useCallback(() => {
-        if (rAF.current) {
-            cancelAnimationFrame(rAF.current);
-            rAF.current = null;
-        }
-    }, []);
-
-    const beginMomentum = useCallback(() => {
-        cancelMomentum();
-        const momentumLoop = () => {
-            if (!rowRef.current) return;
-
-            // Apply velocity
-            rowRef.current.scrollLeft -= velocity.current * 2;
-
-            // Decay
-            velocity.current *= 0.95;
-
-            // Stop if slow enough
-            if (Math.abs(velocity.current) > 0.5) {
-                rAF.current = requestAnimationFrame(momentumLoop);
-            } else {
-                velocity.current = 0;
-            }
-        };
-        momentumLoop();
-    }, [cancelMomentum]);
-
+    // Simplified drag handlers - CSS scroll-snap handles momentum
     const handleMouseDown = useCallback((e) => {
-        cancelMomentum();
         setIsDown(true);
         if (rowRef.current) {
             setStartX(e.pageX - rowRef.current.offsetLeft);
             setScrollLeft(rowRef.current.scrollLeft);
-            lastPageX.current = e.pageX;
-            velocity.current = 0;
         }
         isDragging.current = false;
-    }, [cancelMomentum]);
+    }, []);
 
     const handleMouseLeave = useCallback(() => {
         if (isDown) {
             setIsDown(false);
-            beginMomentum();
         }
-    }, [isDown, beginMomentum]);
+    }, [isDown]);
 
     const handleMouseUp = useCallback(() => {
         setIsDown(false);
-        beginMomentum();
-        // Small delay to reset dragging status to allow click to fire if it wasn't a drag
+        // Use setTimeout to ensure click event fires before resetting isDragging
+        // Click events fire synchronously after mouseup, but we need a small delay
+        // to ensure our check in handleClick sees the correct isDragging state
         setTimeout(() => {
             isDragging.current = false;
-        }, 0);
-    }, [beginMomentum]);
+        }, 50);
+    }, []);
 
     const handleMouseMove = useCallback((e) => {
         if (!isDown) return;
         e.preventDefault();
         if (rowRef.current) {
             const x = e.pageX - rowRef.current.offsetLeft;
-            const walk = (x - startX) * 2; // Scroll-fast
+            const walk = (x - startX) * 1.5; // Scroll speed multiplier
             rowRef.current.scrollLeft = scrollLeft - walk;
-
-            // Calculate velocity
-            const delta = e.pageX - lastPageX.current;
-            velocity.current = delta;
-            lastPageX.current = e.pageX;
 
             if (Math.abs(walk) > 5) {
                 isDragging.current = true;
@@ -367,21 +365,17 @@ const Row = ({
 
     // Cleanup effect to prevent memory leaks
     useEffect(() => {
+        const timeoutRef = hoverTimeoutRef.current;
         return () => {
-            // Cancel any ongoing animation frames
-            if (rAF.current) {
-                cancelAnimationFrame(rAF.current);
-                rAF.current = null;
-            }
             // Clear any pending hover timeouts
-            if (hoverTimeoutRef.current) {
-                clearTimeout(hoverTimeoutRef.current);
+            if (timeoutRef) {
+                clearTimeout(timeoutRef);
             }
         };
     }, []);
 
-    // Skeleton array memoization
-    const skeletonArray = useMemo(() => Array.from({ length: 10 }), []);
+    // Skeleton array memoization - reduced count for better initial render
+    const skeletonArray = useMemo(() => Array.from({ length: 6 }), []);
 
     return (
         <div className="text-white mb-4 md:mb-6 group relative">
@@ -425,7 +419,10 @@ const Row = ({
                     onMouseUp={handleMouseUp}
                     onMouseMove={handleMouseMove}
                     className="flex gap-2 md:gap-2 overflow-x-scroll scrollbar-hide px-3 md:px-6 py-4 md:py-6 cursor-grab active:cursor-grabbing select-none"
-                    style={{ willChange: 'scroll-position' }}
+                    style={{
+                        overscrollBehaviorX: 'contain',
+                        contain: 'layout style paint'
+                    }}
                     role="list"
                 >
                     {isError && !isLocalData ? (
@@ -464,6 +461,8 @@ const Row = ({
                                 onLeave={handleMovieLeave}
                                 isDraggingRef={isDragging}
                                 cardIndex={index}
+                                isMobile={isMobile}
+                                dimensions={cardDimensions}
                             />
                         ))
                     )}

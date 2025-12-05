@@ -38,14 +38,23 @@ const useAuthStore = create((set, get) => ({
 
             if (localItem && backendItem) {
                 // Both exist - use timestamp to decide which is newer
+                let winner;
                 if (timestampKey) {
                     const localTime = localItem[timestampKey] ? new Date(localItem[timestampKey]).getTime() : 0;
                     const backendTime = backendItem[timestampKey] ? new Date(backendItem[timestampKey]).getTime() : 0;
-                    merged.push(localTime >= backendTime ? localItem : backendItem);
+                    winner = localTime >= backendTime ? localItem : backendItem;
                 } else {
                     // No timestamp, prefer backend (as it's the source of truth)
-                    merged.push(backendItem);
+                    winner = backendItem;
                 }
+
+                // Backfill missing properties from the loser to the winner
+                // This ensures that if we have richer metadata in one, we don't lose it
+                const loser = winner === localItem ? backendItem : localItem;
+                merged.push({
+                    ...loser,   // Base with loser's data
+                    ...winner,  // Overwrite with winner's data (so winner's values take precedence)
+                });
             } else if (localItem) {
                 merged.push(localItem);
             } else if (backendItem) {

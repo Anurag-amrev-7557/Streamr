@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useCallback, useMemo, memo, lazy, Suspense } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, memo, lazy, Suspense, useTransition, useDeferredValue } from 'react';
 import PropTypes from 'prop-types';
 import { Link, useNavigate } from 'react-router-dom';
-import { Search, Bell, User, X, Calendar, Star } from 'lucide-react';
+import { Search, Bell, X } from 'lucide-react';
 import useAuthStore from '../store/useAuthStore';
 import clsx from 'clsx';
 import axios from '../lib/tmdb';
@@ -14,30 +14,74 @@ import { getOptimizedAvatarUrl } from '../utils/imageUtils';
 
 const SearchResults = lazy(() => import('./SearchResults'));
 
-// Throttle function for scroll optimization
-const throttle = (func, delay) => {
-    let timeoutId;
-    let lastRan;
-    return function (...args) {
-        if (!lastRan) {
-            func.apply(this, args);
-            lastRan = Date.now();
-        } else {
-            clearTimeout(timeoutId);
+// ============================================
+// STATIC CONSTANTS - Defined outside component to prevent recreation
+// ============================================
+
+// Optimized throttle function with proper cleanup
+const createThrottledHandler = (fn, delay) => {
+    let timeoutId = null;
+    let lastRan = 0;
+
+    const throttled = (...args) => {
+        const now = Date.now();
+        if (now - lastRan >= delay) {
+            fn(...args);
+            lastRan = now;
+        } else if (!timeoutId) {
             timeoutId = setTimeout(() => {
-                if (Date.now() - lastRan >= delay) {
-                    func.apply(this, args);
-                    lastRan = Date.now();
-                }
-            }, delay - (Date.now() - lastRan));
+                fn(...args);
+                lastRan = Date.now();
+                timeoutId = null;
+            }, delay - (now - lastRan));
         }
     };
+
+    throttled.cancel = () => {
+        if (timeoutId) {
+            clearTimeout(timeoutId);
+            timeoutId = null;
+        }
+    };
+
+    return throttled;
+};
+
+// Static animation variants - prevents object recreation on every render
+const SEARCH_ICON_VARIANTS = {
+    initial: { opacity: 0, scale: 0.8 },
+    animate: { opacity: 1, scale: 1 },
+    exit: { opacity: 0, scale: 0.8 }
+};
+
+const SEARCH_ICON_TRANSITION = {
+    duration: 0.15,
+    ease: [0.4, 0, 0.2, 1]
+};
+
+const SEARCH_INPUT_TRANSITION = {
+    width: { type: "spring", stiffness: 300, damping: 30 },
+    opacity: { duration: 0.2, ease: "easeOut" }
+};
+
+const PILL_NAVBAR_TRANSITION = {
+    duration: 0.3,
+    ease: [0.25, 0.1, 0.25, 1.0]
+};
+
+const CLEAR_BUTTON_TRANSITION = { duration: 0.2 };
+
+const SEARCH_RESULTS_SPRING = { type: "spring", stiffness: 400, damping: 30 };
+
+// Shared route prefetch handlers - stable references
+const ROUTE_HANDLERS = {
+    movies: () => prefetchOnInteraction('Movies', () => import('../pages/Movies')),
+    series: () => prefetchOnInteraction('Series', () => import('../pages/Series')),
+    myList: () => prefetchOnInteraction('MyList', () => import('../pages/MyList'))
 };
 
 import Logo from './Logo';
 import LogoutModal from './LogoutModal';
-
-// Throttle function for scroll optimization
 
 // Memoized Notification Item
 const NotificationItem = memo(({ notification }) => {
@@ -58,6 +102,9 @@ const NotificationItem = memo(({ notification }) => {
                     className="w-12 h-16 object-cover rounded-lg"
                     loading="lazy"
                     decoding="async"
+                    width={48}
+                    height={64}
+                    fetchpriority="low"
                 />
             ) : (
                 <div className="w-12 h-16 bg-gray-700 flex items-center justify-center text-xs text-gray-400 rounded-lg">N/A</div>
@@ -82,44 +129,44 @@ NotificationItem.propTypes = {
 
 NotificationItem.displayName = 'NotificationItem';
 
-// Memoized Navigation Links
-const NavigationLinks = memo(({ className = "" }) => {
-    const handleMoviesHover = useCallback(() => {
-        prefetchOnInteraction('Movies', () => import('../pages/Movies'));
-    }, []);
+// Memoized Navigation Links - Unified component for both standard and pill variants
+const NavigationLinks = memo(({ variant = 'standard', className = '' }) => {
+    const isStandard = variant === 'standard';
 
-    const handleSeriesHover = useCallback(() => {
-        prefetchOnInteraction('Series', () => import('../pages/Series'));
-    }, []);
+    const linkClass = isStandard
+        ? "hover:text-white transition-colors"
+        : "px-3 py-1.5 text-sm font-medium text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-all duration-200";
 
-    const handleMyListHover = useCallback(() => {
-        prefetchOnInteraction('MyList', () => import('../pages/MyList'));
-    }, []);
+    const containerClass = isStandard
+        ? className
+        : "hidden md:flex items-center gap-1 flex-shrink-0";
 
     return (
-        <div className={className}>
+        <div className={containerClass}>
             <Link
                 to="/movies"
-                className="hover:text-white transition-colors"
-                onMouseEnter={handleMoviesHover}
-                onTouchStart={handleMoviesHover}
+                className={linkClass}
+                onMouseEnter={ROUTE_HANDLERS.movies}
+                onTouchStart={ROUTE_HANDLERS.movies}
             >
                 Movies
             </Link>
             <Link
                 to="/series"
-                className="hover:text-white transition-colors"
-                onMouseEnter={handleSeriesHover}
-                onTouchStart={handleSeriesHover}
+                className={linkClass}
+                onMouseEnter={ROUTE_HANDLERS.series}
+                onTouchStart={ROUTE_HANDLERS.series}
             >
                 Series
             </Link>
-            <Link to="/" className="hover:text-white transition-colors">Trending</Link>
+            {isStandard && (
+                <Link to="/" className={linkClass}>Trending</Link>
+            )}
             <Link
                 to="/my-list"
-                className="hover:text-white transition-colors"
-                onMouseEnter={handleMyListHover}
-                onTouchStart={handleMyListHover}
+                className={linkClass}
+                onMouseEnter={ROUTE_HANDLERS.myList}
+                onTouchStart={ROUTE_HANDLERS.myList}
             >
                 My List
             </Link>
@@ -128,56 +175,11 @@ const NavigationLinks = memo(({ className = "" }) => {
 });
 
 NavigationLinks.propTypes = {
+    variant: PropTypes.oneOf(['standard', 'pill']),
     className: PropTypes.string
 };
 
 NavigationLinks.displayName = 'NavigationLinks';
-
-// Memoized Pill Navigation Links
-const PillNavigationLinks = memo(() => {
-    const handleMoviesHover = useCallback(() => {
-        prefetchOnInteraction('Movies', () => import('../pages/Movies'));
-    }, []);
-
-    const handleSeriesHover = useCallback(() => {
-        prefetchOnInteraction('Series', () => import('../pages/Series'));
-    }, []);
-
-    const handleMyListHover = useCallback(() => {
-        prefetchOnInteraction('MyList', () => import('../pages/MyList'));
-    }, []);
-
-    return (
-        <div className="hidden md:flex items-center gap-1 flex-shrink-0">
-            <Link
-                to="/movies"
-                className="px-3 py-1.5 text-sm font-medium text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-all duration-200"
-                onMouseEnter={handleMoviesHover}
-                onTouchStart={handleMoviesHover}
-            >
-                Movies
-            </Link>
-            <Link
-                to="/series"
-                className="px-3 py-1.5 text-sm font-medium text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-all duration-200"
-                onMouseEnter={handleSeriesHover}
-                onTouchStart={handleSeriesHover}
-            >
-                Series
-            </Link>
-            <Link
-                to="/my-list"
-                className="px-3 py-1.5 text-sm font-medium text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-all duration-200"
-                onMouseEnter={handleMyListHover}
-                onTouchStart={handleMyListHover}
-            >
-                My List
-            </Link>
-        </div>
-    );
-});
-
-PillNavigationLinks.displayName = 'PillNavigationLinks';
 
 // Memoized Notification Dropdown
 const NotificationDropdown = memo(({ notifications, isOpen, isPill = false }) => {
@@ -218,47 +220,78 @@ NotificationDropdown.displayName = 'NotificationDropdown';
 const Navbar = ({ onMovieClick }) => {
     const { user, logout, isLoggingOut } = useAuthStore();
     const navigate = useNavigate();
+
+    // Core state
     const [isScrolled, setIsScrolled] = useState(false);
     const [notifOpen, setNotifOpen] = useState(false);
     const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
     const [notifications, setNotifications] = useState([]);
-    const notifRef = useRef(null);
+
+    // Search state
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+    const [isSearchFocused, setIsSearchFocused] = useState(false);
+    const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
+
+    // Refs for DOM and timeouts
+    const notifRef = useRef(null);
     const searchInputRef = useRef(null);
     const pillSearchInputRef = useRef(null);
     const hoverTimeoutRef = useRef(null);
     const blurTimeoutRef = useRef(null);
-    const [isSearchFocused, setIsSearchFocused] = useState(false);
-    const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
+    const rafRef = useRef(null);
+    const throttledScrollRef = useRef(null);
 
-    // Debounce search query
-    const debouncedSearchQuery = useDebounce(searchQuery, 300);
+    // Concurrent rendering optimizations
+    const [isPending, startTransition] = useTransition();
+    const deferredSearchQuery = useDeferredValue(searchQuery);
+
+    // Debounce search query for API calls
+    const debouncedSearchQuery = useDebounce(deferredSearchQuery, 300);
+
+    // Calculate search input width once on mount (not during render)
+    const [searchInputWidth] = useState(() => {
+        return typeof window !== 'undefined' && window.innerWidth < 768 ? 240 : 320;
+    });
 
     // Use Search Suggestions
     const { data: suggestionsData } = useSearchSuggestions(debouncedSearchQuery);
-    const suggestions = suggestionsData?.suggestions || [];
+    const suggestions = useMemo(() => suggestionsData?.suggestions || [], [suggestionsData]);
 
     // Reset active suggestion when query changes
     useEffect(() => {
         setActiveSuggestionIndex(-1); // eslint-disable-line react-hooks/set-state-in-effect
     }, [debouncedSearchQuery]);
 
-    const handleKeyDown = (e) => {
+    // Handler for clicking on search history/suggestion - defined early for use in handleKeyDown
+    const handleHistoryClick = useCallback((query) => {
+        setSearchQuery(query);
+    }, []);
+
+    // Optimized keyboard navigation handler
+    const handleKeyDown = useCallback((e) => {
         if (!suggestions.length) return;
 
-        if (e.key === 'ArrowRight') {
-            e.preventDefault();
-            setActiveSuggestionIndex(prev => (prev < suggestions.length - 1 ? prev + 1 : 0));
-        } else if (e.key === 'ArrowLeft') {
-            e.preventDefault();
-            setActiveSuggestionIndex(prev => (prev > 0 ? prev - 1 : suggestions.length - 1));
-        } else if (e.key === 'Enter' && activeSuggestionIndex !== -1) {
-            e.preventDefault();
-            handleHistoryClick(suggestions[activeSuggestionIndex]);
-            setActiveSuggestionIndex(-1);
+        switch (e.key) {
+            case 'ArrowRight':
+                e.preventDefault();
+                setActiveSuggestionIndex(prev => (prev < suggestions.length - 1 ? prev + 1 : 0));
+                break;
+            case 'ArrowLeft':
+                e.preventDefault();
+                setActiveSuggestionIndex(prev => (prev > 0 ? prev - 1 : suggestions.length - 1));
+                break;
+            case 'Enter':
+                if (activeSuggestionIndex !== -1) {
+                    e.preventDefault();
+                    handleHistoryClick(suggestions[activeSuggestionIndex]);
+                    setActiveSuggestionIndex(-1);
+                }
+                break;
+            default:
+                break;
         }
-    };
+    }, [suggestions, activeSuggestionIndex, handleHistoryClick]);
 
     // Use React Query for search with caching (enhanced with filters/pagination)
     const { data: searchData, isLoading: isSearching } = useSearch(debouncedSearchQuery);
@@ -285,29 +318,44 @@ const Navbar = ({ onMovieClick }) => {
         }
     }, [user, fetchHistory]);
 
-    // Memoized throttled scroll handler
-    const handleScroll = useMemo(() => {
-        const scrollHandler = () => {
-            setIsScrolled(window.scrollY > 100);
-        };
-        return throttle(scrollHandler, 100);
+    // Optimized scroll handler with RAF for smooth performance
+    const handleScroll = useCallback(() => {
+        if (rafRef.current) return;
+
+        rafRef.current = requestAnimationFrame(() => {
+            const scrolled = window.scrollY > 100;
+            setIsScrolled(prev => prev !== scrolled ? scrolled : prev);
+            rafRef.current = null;
+        });
     }, []);
 
+    // Setup throttled scroll listener with cleanup
     useEffect(() => {
-        window.addEventListener('scroll', handleScroll, { passive: true });
-        return () => window.removeEventListener('scroll', handleScroll);
+        throttledScrollRef.current = createThrottledHandler(handleScroll, 100);
+        window.addEventListener('scroll', throttledScrollRef.current, { passive: true });
+
+        return () => {
+            window.removeEventListener('scroll', throttledScrollRef.current);
+            throttledScrollRef.current?.cancel?.();
+            if (rafRef.current) {
+                cancelAnimationFrame(rafRef.current);
+            }
+        };
     }, [handleScroll]);
 
-    // Fetch notifications (upcoming movies & TV) when dropdown opens
+    // Fetch notifications with AbortController for cleanup
     useEffect(() => {
         if (!notifOpen || notifications.length > 0) return;
+
+        const controller = new AbortController();
 
         const fetchNotifications = async () => {
             try {
                 const [movieRes, tvRes] = await Promise.all([
-                    axios.get(`/movie/upcoming`),
-                    axios.get(`/tv/on_the_air`)
+                    axios.get(`/movie/upcoming`, { signal: controller.signal }),
+                    axios.get(`/tv/on_the_air`, { signal: controller.signal })
                 ]);
+
                 const movies = (movieRes.data.results || []).map(item => ({
                     id: item.id,
                     title: item.title,
@@ -315,6 +363,7 @@ const Navbar = ({ onMovieClick }) => {
                     type: 'movie',
                     poster_path: item.poster_path
                 }));
+
                 const tvShows = (tvRes.data.results || []).map(item => ({
                     id: item.id,
                     title: item.name,
@@ -322,15 +371,22 @@ const Navbar = ({ onMovieClick }) => {
                     type: 'tv',
                     poster_path: item.poster_path
                 }));
+
                 const combined = [...movies, ...tvShows]
                     .filter(n => n.release_date)
                     .sort((a, b) => new Date(a.release_date) - new Date(b.release_date));
+
                 setNotifications(combined);
             } catch (e) {
-                console.error('Failed to fetch notifications', e);
+                if (e.name !== 'AbortError') {
+                    console.error('Failed to fetch notifications', e);
+                }
             }
         };
+
         fetchNotifications();
+
+        return () => controller.abort();
     }, [notifOpen, notifications.length]);
 
     // Close dropdown on outside click
@@ -392,9 +448,7 @@ const Navbar = ({ onMovieClick }) => {
         handleSearchClose();
     }, [addSearch, onMovieClick, navigate, handleSearchClose]);
 
-    const handleHistoryClick = useCallback((query) => {
-        setSearchQuery(query);
-    }, []);
+
 
     const handleSearchIconClick = useCallback(() => {
         setSearchOpen(true);
@@ -437,11 +491,6 @@ const Navbar = ({ onMovieClick }) => {
         navigate('/login');
     }, [logout, navigate]);
 
-    // Memoize animation width for search input
-    const searchInputWidth = useMemo(() => {
-        return typeof window !== 'undefined' && window.innerWidth < 768 ? 240 : 320;
-    }, []);
-
     // Memoize search results visibility condition
     const shouldShowSearchResults = useMemo(() => {
         return searchOpen && (
@@ -481,13 +530,10 @@ const Navbar = ({ onMovieClick }) => {
                             {!searchOpen ? (
                                 <motion.div
                                     key="search-icon"
-                                    initial={{ opacity: 0, scale: 0.8 }}
-                                    animate={{ opacity: 1, scale: 1 }}
-                                    exit={{ opacity: 0, scale: 0.8 }}
-                                    transition={{
-                                        duration: 0.15,
-                                        ease: [0.4, 0, 0.2, 1]
-                                    }}
+                                    initial={SEARCH_ICON_VARIANTS.initial}
+                                    animate={SEARCH_ICON_VARIANTS.animate}
+                                    exit={SEARCH_ICON_VARIANTS.exit}
+                                    transition={SEARCH_ICON_TRANSITION}
                                 >
                                     <Search
                                         className="w-5 h-5 cursor-pointer hover:text-gray-300 transition-colors"
@@ -502,25 +548,9 @@ const Navbar = ({ onMovieClick }) => {
                                 <motion.div
                                     key="search-input"
                                     initial={{ width: 0, opacity: 0 }}
-                                    animate={{
-                                        width: searchInputWidth,
-                                        opacity: 1
-                                    }}
-                                    exit={{
-                                        width: 0,
-                                        opacity: 0
-                                    }}
-                                    transition={{
-                                        width: {
-                                            type: "spring",
-                                            stiffness: 300,
-                                            damping: 30
-                                        },
-                                        opacity: {
-                                            duration: 0.2,
-                                            ease: "easeOut"
-                                        }
-                                    }}
+                                    animate={{ width: searchInputWidth, opacity: 1 }}
+                                    exit={{ width: 0, opacity: 0 }}
+                                    transition={SEARCH_INPUT_TRANSITION}
                                     className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-2 bg-black/80 border border-white/20 rounded-full px-3 py-2 md:py-3 overflow-hidden backdrop-blur-md"
                                 >
                                     <Search className="w-4 h-4 text-gray-400 flex-shrink-0" />
@@ -563,7 +593,7 @@ const Navbar = ({ onMovieClick }) => {
                                         initial={{ opacity: 0, y: -10, scale: 0.95 }}
                                         animate={{ opacity: 1, y: 0, scale: 1 }}
                                         exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                                        transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                                        transition={SEARCH_RESULTS_SPRING}
                                         className="absolute top-full right-0 mt-8 w-[calc(100vw-2rem)] md:w-[450px] max-w-md bg-[#0a0a0a]/95 border border-white/10 rounded-2xl overflow-hidden shadow-2xl z-50 flex flex-col p-2 space-y-2"
                                     >
                                         <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
@@ -668,10 +698,7 @@ const Navbar = ({ onMovieClick }) => {
                     y: isScrolled ? 0 : -100,
                     opacity: isScrolled ? 1 : 0
                 }}
-                transition={{
-                    duration: 0.3,
-                    ease: [0.25, 0.1, 0.25, 1.0], // Cubic bezier for smooth ease-out
-                }}
+                transition={PILL_NAVBAR_TRANSITION}
             >
                 <div className="relative">
                     {/* Main Pill Container */}
@@ -686,7 +713,7 @@ const Navbar = ({ onMovieClick }) => {
                         <div className="hidden md:block w-px h-5 bg-white/10"></div>
 
                         {/* Navigation Links */}
-                        <PillNavigationLinks />
+                        <NavigationLinks variant="pill" />
 
                         {/* Divider */}
                         <div className="hidden md:block w-px h-5 bg-white/10"></div>
@@ -711,7 +738,7 @@ const Navbar = ({ onMovieClick }) => {
                                         initial={{ scale: 0.5, opacity: 0 }}
                                         animate={{ scale: 1, opacity: 1 }}
                                         exit={{ scale: 0.5, opacity: 0 }}
-                                        transition={{ duration: 0.2 }}
+                                        transition={CLEAR_BUTTON_TRANSITION}
                                     >
                                         <X
                                             className="w-[22px] h-[22px] p-1 bg-white text-black rounded-full cursor-pointer hover:bg-gray-200 transition-colors flex-shrink-0"

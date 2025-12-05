@@ -43,6 +43,7 @@ const useWatchHistoryStore = create(
                     if (response.data.success) {
                         return true;
                     }
+                    return false;
                 } catch (error) {
                     console.error('Failed to sync watch history to backend:', error);
                     return false;
@@ -63,8 +64,12 @@ const useWatchHistoryStore = create(
                 // Remove existing entry if present to move it to the top
                 const filteredHistory = history.filter((item) => item.id !== movie.id);
 
+                // Ensure media_type is present
+                const mediaType = metadata.media_type || movie.media_type || (movie.first_air_date ? 'tv' : 'movie');
+
                 const newItem = {
                     ...movie,
+                    media_type: mediaType,
                     ...metadata,
                     lastWatched: new Date().toISOString()
                 };
@@ -81,8 +86,8 @@ const useWatchHistoryStore = create(
                     // Rollback on failure if it's not just an auth issue
                     if (error.response?.status !== 401) {
                         console.error('Failed to sync add to history:', error);
-                        set({ history: previousHistory });
-                        // Optional: notify user, but watch history is often silent
+                        // We don't rollback local state for sync errors to prevent UI flickering
+                        // The next sync will handle it, or it will remain local
                     } else {
                         console.log('Not syncing to backend (user may not be authenticated)');
                     }

@@ -145,8 +145,13 @@ const Modal = ({ movie, onClose, onMovieClick }) => {
     }, []);
 
     const handlePlay = useCallback((season = 1, episode = 1) => {
-        addToHistory(movie);
-        setPlayerState({ isOpen: true, type: movie.first_air_date ? 'tv' : 'movie', season, episode });
+        const mediaType = movie.first_air_date ? 'tv' : 'movie';
+        addToHistory(movie, {
+            media_type: mediaType,
+            season: mediaType === 'tv' ? season : undefined,
+            episode: mediaType === 'tv' ? episode : undefined
+        });
+        setPlayerState({ isOpen: true, type: mediaType, season, episode });
     }, [addToHistory, movie, setPlayerState]);
 
     const handleDownload = useCallback(async () => {

@@ -1,43 +1,63 @@
-import { useState, useEffect } from 'react';
+import { useSyncExternalStore, useCallback, useMemo } from 'react';
 
+// Shared MediaQueryList cache to prevent duplicate subscriptions
+const mediaQueryCache = new Map();
+
+/**
+ * Get or create a cached MediaQueryList for a breakpoint
+ * @param {number} breakpoint - The pixel breakpoint
+ * @returns {MediaQueryList|null}
+ */
+const getMediaQuery = (breakpoint) => {
+    if (typeof window === 'undefined') return null;
+
+    const key = breakpoint;
+    if (!mediaQueryCache.has(key)) {
+        const mql = window.matchMedia(`(max-width: ${breakpoint - 1}px)`);
+        mediaQueryCache.set(key, mql);
+    }
+    return mediaQueryCache.get(key);
+};
+
+/**
+ * Server-side snapshot - always return false for SSR
+ */
+const getServerSnapshot = () => false;
+
+/**
+ * Optimized useIsMobile hook using useSyncExternalStore
+ * - Proper React 18 concurrent mode support
+ * - Shared MediaQueryList subscriptions across components
+ * - SSR-safe with consistent hydration
+ * 
+ * @param {number} breakpoint - The pixel breakpoint (default: 768)
+ * @returns {boolean} - Whether the viewport is mobile-sized
+ */
 const useIsMobile = (breakpoint = 768) => {
-    const [isMobile, setIsMobile] = useState(() => {
-        if (typeof window === 'undefined') return false;
-        return window.innerWidth < breakpoint;
-    });
+    // Subscribe to MediaQueryList changes
+    const subscribe = useCallback((onStoreChange) => {
+        const mql = getMediaQuery(breakpoint);
+        if (!mql) return () => { };
 
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-
-        const mediaQuery = window.matchMedia(`(max-width: ${breakpoint - 1}px)`);
-
-        const handleChange = (e) => {
-            setIsMobile(e.matches);
-        };
-
-        // Update state only if it differs from current
-        if (mediaQuery.matches !== isMobile) {
-            setIsMobile(mediaQuery.matches); // eslint-disable-line react-hooks/set-state-in-effect
+        // Modern API (most browsers)
+        if (mql.addEventListener) {
+            mql.addEventListener('change', onStoreChange);
+            return () => mql.removeEventListener('change', onStoreChange);
         }
 
-        // Add listener
-        // Modern browsers support addEventListener on MediaQueryList, but older ones use addListener
-        if (mediaQuery.addEventListener) {
-            mediaQuery.addEventListener('change', handleChange);
-        } else {
-            mediaQuery.addListener(handleChange);
-        }
+        // Legacy API (Safari < 14)
+        mql.addListener(onStoreChange);
+        return () => mql.removeListener(onStoreChange);
+    }, [breakpoint]);
 
-        return () => {
-            if (mediaQuery.removeEventListener) {
-                mediaQuery.removeEventListener('change', handleChange);
-            } else {
-                mediaQuery.removeListener(handleChange);
-            }
-        };
-    }, [breakpoint, isMobile]); // Added isMobile to dependency array to ensure the `if (mediaQuery.matches !== isMobile)` check is always based on the latest state.
+    // Get the current snapshot of the media query state
+    const getSnapshot = useCallback(() => {
+        const mql = getMediaQuery(breakpoint);
+        return mql ? mql.matches : false;
+    }, [breakpoint]);
 
-    return isMobile;
+    // Use useSyncExternalStore for tear-free reads in concurrent mode
+    return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 };
 
 export default useIsMobile;

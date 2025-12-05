@@ -8,6 +8,60 @@ import { performance } from '../utils/performance';
 const STALE_TIME = 30 * 60 * 1000; // 30 minutes - increased for better caching
 const GC_TIME = 45 * 60 * 1000; // 45 minutes - increased to retain prefetched data longer
 
+/**
+ * Query Key Factory Pattern
+ * Provides type-safe, consistent query keys with easy invalidation
+ */
+export const queryKeys = {
+    // Row data keys
+    row: {
+        all: ['row'],
+        list: (title) => [...queryKeys.row.all, title],
+        detail: (title, url) => [...queryKeys.row.all, title, url],
+    },
+    // Modal data keys
+    images: {
+        all: ['images'],
+        byType: (type) => [...queryKeys.images.all, type],
+        detail: (type, id) => [...queryKeys.images.all, type, id],
+    },
+    details: {
+        all: ['details'],
+        byType: (type) => [...queryKeys.details.all, type],
+        detail: (type, id) => [...queryKeys.details.all, type, id],
+    },
+    credits: {
+        all: ['credits'],
+        byType: (type) => [...queryKeys.credits.all, type],
+        detail: (type, id) => [...queryKeys.credits.all, type, id],
+    },
+    similar: {
+        all: ['similar'],
+        byType: (type) => [...queryKeys.similar.all, type],
+        detail: (type, id) => [...queryKeys.similar.all, type, id],
+    },
+    videos: {
+        all: ['videos'],
+        byType: (type) => [...queryKeys.videos.all, type],
+        detail: (type, id) => [...queryKeys.videos.all, type, id],
+    },
+    episodes: {
+        all: ['episodes'],
+        byShow: (showId) => [...queryKeys.episodes.all, showId],
+        bySeason: (showId, season) => [...queryKeys.episodes.all, showId, season],
+    },
+    search: {
+        all: ['search'],
+        suggestions: (query) => ['searchSuggestions', query],
+        results: (query, filters, page, sortBy) => ['search', query, filters, page, sortBy],
+        infinite: (query, filters, sortBy) => ['infiniteSearch', query, filters, sortBy],
+        trending: ['trendingSearches'],
+    },
+    person: {
+        all: ['person'],
+        detail: (id) => [...queryKeys.person.all, id],
+    },
+};
 export const useTrending = () => {
     return useQuery({
         queryKey: ['trending'],

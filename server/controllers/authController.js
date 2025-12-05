@@ -211,14 +211,25 @@ import cache from '../utils/cache.js';
 export const addToWatchHistory = asyncHandler(async (req, res, next) => {
     const { item } = req.body;
 
+    // Remove existing entry if present
     await User.findByIdAndUpdate(
         req.user.id,
         { $pull: { watchHistory: { id: item.id } } }
     );
 
+    // Construct new item with all metadata
     const newItem = {
-        ...item,
-        lastWatched: new Date().toISOString()
+        id: item.id,
+        title: item.title || item.name,
+        poster_path: item.poster_path,
+        backdrop_path: item.backdrop_path,
+        media_type: item.media_type || (item.first_air_date ? 'tv' : 'movie'),
+        season: item.season,
+        episode: item.episode,
+        episodeTitle: item.episodeTitle,
+        duration: item.duration,
+        progress: item.progress,
+        lastWatched: item.lastWatched || new Date().toISOString()
     };
 
     const user = await User.findByIdAndUpdate(
@@ -227,7 +238,8 @@ export const addToWatchHistory = asyncHandler(async (req, res, next) => {
             $push: {
                 watchHistory: {
                     $each: [newItem],
-                    $position: 0
+                    $position: 0,
+                    $slice: 100 // Limit history to 100 items
                 }
             }
         },
@@ -235,7 +247,7 @@ export const addToWatchHistory = asyncHandler(async (req, res, next) => {
     );
 
     // Invalidate Home Recommendations Cache for this user
-    const cacheKey = `rec_home_${req.user.id}`;
+    const cacheKey = `rec_home_v3_${req.user.id}`;
     cache.del(cacheKey);
 
     res.status(200).json({
