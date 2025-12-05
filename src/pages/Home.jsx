@@ -15,7 +15,7 @@ import { performance } from '../utils/performance';
 
 const Home = () => {
     const [selectedMovie, setSelectedMovie] = useState(null);
-    const { history, removeFromHistory } = useWatchHistoryStore();
+    const { history, removeFromHistory, clearHistory } = useWatchHistoryStore();
     const queryClient = useQueryClient();
 
 
@@ -168,6 +168,7 @@ const Home = () => {
                         movies={history}
                         onMovieClick={handleMovieClick}
                         onRemove={removeFromHistory}
+                        onClearAll={clearHistory}
                         alwaysOverlay={true}
                     />
                 )}

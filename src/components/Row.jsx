@@ -4,7 +4,7 @@ import { useRowData, usePrefetchModalData } from '../hooks/useTMDB';
 import useIsMobile from '../hooks/useIsMobile';
 import clsx from 'clsx';
 import Skeleton from './Skeleton';
-import { ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X, Trash2 } from 'lucide-react';
 
 // Cache window width to avoid repeated DOM queries
 
@@ -229,6 +229,7 @@ const Row = ({
     movies: propMovies,
     onMovieClick,
     onRemove,
+    onClearAll,
     alwaysOverlay = false,
     isCast = false,
     onTitleClick
@@ -384,15 +385,27 @@ const Row = ({
 
     return (
         <div className="text-white mb-4 md:mb-6 group relative">
-            <h2
-                onClick={onTitleClick}
-                className="text-sm md:text-xl font-bold mb-2 md:mb-3 px-4 md:px-12 flex items-center gap-2 text-[#e5e5e5] hover:text-white transition-colors cursor-pointer group/title"
-            >
-                {title.toUpperCase()}
-                <span className="text-xs md:text-sm opacity-0 group-hover/title:opacity-100 group-hover/title:translate-x-1 transition-all duration-300 flex items-center text-white/70 font-bold">
-                    {isCast ? 'See All' : 'Explore All'} <ChevronRight className="w-4 h-4" />
-                </span>
-            </h2>
+            <div className="flex items-center justify-between px-4 md:px-12 mb-2 md:mb-3">
+                <h2
+                    onClick={onTitleClick}
+                    className="text-sm md:text-xl font-bold flex items-center gap-2 text-[#e5e5e5] hover:text-white transition-colors cursor-pointer group/title"
+                >
+                    {title.toUpperCase()}
+                    <span className="text-xs md:text-sm opacity-0 group-hover/title:opacity-100 group-hover/title:translate-x-1 transition-all duration-300 flex items-center text-white/70 font-bold">
+                        {isCast ? 'See All' : 'Explore All'} <ChevronRight className="w-4 h-4" />
+                    </span>
+                </h2>
+                {onClearAll && (
+                    <button
+                        onClick={onClearAll}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs md:text-sm font-semibold text-gray-400 hover:text-white hover:bg-white/10 rounded-full transition-all duration-200"
+                        title="Clear All"
+                    >
+                        <Trash2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                        <span className="hidden md:inline">Clear All</span>
+                    </button>
+                )}
+            </div>
 
             <div className="relative group">
                 <ChevronLeft
@@ -466,6 +479,7 @@ Row.propTypes = {
     movies: PropTypes.array,
     onMovieClick: PropTypes.func,
     onRemove: PropTypes.func,
+    onClearAll: PropTypes.func,
     alwaysOverlay: PropTypes.bool,
     isCast: PropTypes.bool,
     onTitleClick: PropTypes.func

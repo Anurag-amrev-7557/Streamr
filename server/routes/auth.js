@@ -113,15 +113,15 @@ router.get('/mylist', protect, getMyList);
 // @access  Private
 router.post('/mylist/add', protect, addToMyList);
 
-// @route   DELETE /api/auth/mylist/:id
-// @desc    Remove item from user's my list
-// @access  Private
-router.delete('/mylist/:id', protect, removeFromMyList);
-
 // @route   DELETE /api/auth/mylist/clear
 // @desc    Clear user's my list
 // @access  Private
 router.delete('/mylist/clear', protect, clearMyList);
+
+// @route   DELETE /api/auth/mylist/:id
+// @desc    Remove item from user's my list
+// @access  Private
+router.delete('/mylist/:id', protect, removeFromMyList);
 
 // @route   GET /api/auth/watch-history
 // @desc    Get user's watch history

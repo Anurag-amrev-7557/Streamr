@@ -116,13 +116,24 @@ const useListStore = create(
             },
 
             clearList: async () => {
+                const { list } = get();
+                const { addNotification } = useNotificationStore.getState();
+                const previousList = [...list];
+
                 set({ list: [] });
+                addNotification({ type: 'info', message: 'My List cleared' });
 
                 // Sync with backend if available
                 try {
                     await api.delete('/auth/mylist/clear');
-                } catch {
-                    console.log('Not syncing to backend (user may not be authenticated)');
+                } catch (error) {
+                    if (error.response?.status !== 401) {
+                        console.error('Failed to clear list:', error);
+                        set({ list: previousList });
+                        addNotification({ type: 'error', message: 'Failed to clear list' });
+                    } else {
+                        console.log('Not syncing to backend (user may not be authenticated)');
+                    }
                 }
             },
 
