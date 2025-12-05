@@ -1,36 +1,16 @@
 import express from 'express';
-import { scrapeHicineSearch } from '../utils/scraper.js';
+import * as downloadsController from '../controllers/downloadsController.js';
 
 const router = express.Router();
 
 // @route   GET /api/downloads/search
 // @desc    Search for movies/series on hicine.info
 // @access  Public
-router.get('/search', async (req, res) => {
-    try {
-        const { q, year, type, seasons } = req.query;
-        console.log('[Downloads] Search Request:', { q, year, type, seasons });
-        if (!q) {
-            return res.status(400).json({ success: false, message: 'Query parameter "q" is required' });
-        }
-
-        const metadata = { year, type, seasons };
-        const results = await scrapeHicineSearch(q, metadata);
-        res.json({ success: true, count: results.length, data: results });
-    } catch (error) {
-        console.error('Search Route Error:', error);
-        res.status(500).json({ success: false, message: 'Failed to fetch search results', error: error.message });
-    }
-});
+router.get('/search', downloadsController.searchDownloads);
 
 // @route   GET /api/downloads/details
 // @desc    Get download links (Not needed with new API, but kept for compatibility or future use)
 // @access  Public
-router.get('/details', async (req, res) => {
-    // With the new API, search returns all details including links.
-    // We can either deprecate this or use it to fetch by ID if we find that endpoint.
-    // For now, we'll return a message.
-    res.json({ success: true, message: 'Details are included in search results.' });
-});
+router.get('/details', downloadsController.getDownloadDetails);
 
 export default router;

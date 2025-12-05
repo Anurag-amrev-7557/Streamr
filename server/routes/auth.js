@@ -17,6 +17,7 @@ import {
     addToWatchHistory,
     removeFromWatchHistory,
     getSearchHistory,
+    updateSearchHistory,
     addToSearchHistory,
     removeFromSearchHistory,
     clearSearchHistory
@@ -146,6 +147,11 @@ router.delete('/watch-history/:id', protect, removeFromWatchHistory);
 // @desc    Get user's search history
 // @access  Private
 router.get('/search-history', protect, getSearchHistory);
+
+// @route   PUT /api/auth/search-history
+// @desc    Update user's search history (full sync)
+// @access  Private
+router.put('/search-history', protect, updateSearchHistory);
 
 // @route   POST /api/auth/search-history/add
 // @desc    Add item to user's search history

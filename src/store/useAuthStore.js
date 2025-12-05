@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import api from '../lib/api';
 import useWatchHistoryStore from './useWatchHistoryStore';
 import useListStore from './useListStore';
+import useSearchHistoryStore from './useSearchHistoryStore';
 
 import useNotificationStore from './useNotificationStore';
 
@@ -13,19 +14,73 @@ const useAuthStore = create((set, get) => ({
     isAuthenticated: false,
     error: null,
 
-    // Helper function to merge local and backend data
-    mergeData: (localData, backendData) => {
-        const merged = [...backendData];
-        const backendIds = new Set(backendData.map(item => item.id));
+    // Helper function to merge local and backend data with timestamp awareness
+    mergeData: (localData, backendData, idKey = 'id', timestampKey = null) => {
+        const merged = [];
+        const seenIds = new Set();
 
-        // Add local items that don't exist in backend
-        localData.forEach(item => {
-            if (!backendIds.has(item.id)) {
-                merged.push(item);
+        // Create lookup maps for efficient access
+        const localMap = new Map(localData.map(item => [item[idKey], item]));
+        const backendMap = new Map(backendData.map(item => [item[idKey], item]));
+
+        // Process all unique IDs
+        const allIds = new Set([
+            ...localData.map(item => item[idKey]),
+            ...backendData.map(item => item[idKey])
+        ]);
+
+        allIds.forEach(id => {
+            if (seenIds.has(id)) return;
+            seenIds.add(id);
+
+            const localItem = localMap.get(id);
+            const backendItem = backendMap.get(id);
+
+            if (localItem && backendItem) {
+                // Both exist - use timestamp to decide which is newer
+                if (timestampKey) {
+                    const localTime = localItem[timestampKey] ? new Date(localItem[timestampKey]).getTime() : 0;
+                    const backendTime = backendItem[timestampKey] ? new Date(backendItem[timestampKey]).getTime() : 0;
+                    merged.push(localTime >= backendTime ? localItem : backendItem);
+                } else {
+                    // No timestamp, prefer backend (as it's the source of truth)
+                    merged.push(backendItem);
+                }
+            } else if (localItem) {
+                merged.push(localItem);
+            } else if (backendItem) {
+                merged.push(backendItem);
             }
         });
 
         return merged;
+    },
+
+    // Helper function to merge search history with query-based deduplication
+    mergeSearchHistory: (localSearches, backendSearches) => {
+        const merged = [];
+        const seenQueries = new Set();
+
+        // Combine and sort by timestamp (newest first)
+        const allSearches = [...localSearches, ...backendSearches]
+            .filter(s => s && s.query)
+            .sort((a, b) => {
+                const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+                const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+                return timeB - timeA;
+            });
+
+        // Keep only the most recent occurrence of each query
+        allSearches.forEach(search => {
+            const queryLower = search.query.toLowerCase();
+            if (!seenQueries.has(queryLower)) {
+                seenQueries.add(queryLower);
+                merged.push(search);
+            }
+        });
+
+        // Limit to 10 most recent
+        return merged.slice(0, 10);
     },
 
     // Sync data after authentication
@@ -33,15 +88,16 @@ const useAuthStore = create((set, get) => ({
         set({ isSyncing: true });
         const watchHistoryStore = useWatchHistoryStore.getState();
         const listStore = useListStore.getState();
+        const searchHistoryStore = useSearchHistoryStore.getState();
 
         try {
             // Get local data
             const localWatchHistory = watchHistoryStore.history;
             const localList = listStore.list;
+            const localSearchHistory = searchHistoryStore.searches;
 
-            // Fetch backend data
             // Fetch backend data in parallel
-            const [backendWatchHistory, backendList] = await Promise.all([
+            const [backendWatchHistory, backendList, backendSearchHistory] = await Promise.all([
                 watchHistoryStore.fetchFromBackend().catch(err => {
                     console.error('Failed to fetch watch history:', err);
                     return [];
@@ -49,22 +105,41 @@ const useAuthStore = create((set, get) => ({
                 listStore.fetchFromBackend().catch(err => {
                     console.error('Failed to fetch list:', err);
                     return [];
+                }),
+                searchHistoryStore.fetchFromBackend().catch(err => {
+                    console.error('Failed to fetch search history:', err);
+                    return [];
                 })
             ]);
 
-            // Merge data intelligently
-            const mergedWatchHistory = get().mergeData(localWatchHistory, backendWatchHistory);
-            const mergedList = get().mergeData(localList, backendList);
+            // Merge data intelligently with timestamp awareness
+            const mergedWatchHistory = get().mergeData(
+                localWatchHistory,
+                backendWatchHistory || [],
+                'id',
+                'lastWatched'
+            );
+            const mergedList = get().mergeData(
+                localList,
+                backendList || [],
+                'id',
+                'addedAt'
+            );
+            const mergedSearchHistory = get().mergeSearchHistory(
+                localSearchHistory,
+                backendSearchHistory || []
+            );
 
             // Update local stores
             watchHistoryStore.setHistory(mergedWatchHistory);
             listStore.setList(mergedList);
+            searchHistoryStore.setSearches(mergedSearchHistory);
 
-            // Sync merged data back to backend
             // Sync merged data back to backend in parallel
             await Promise.all([
                 watchHistoryStore.syncWithBackend().catch(console.error),
-                listStore.syncWithBackend().catch(console.error)
+                listStore.syncWithBackend().catch(console.error),
+                searchHistoryStore.syncWithBackend().catch(console.error)
             ]);
         } catch (error) {
             console.error('Failed to sync data:', error);
@@ -176,21 +251,28 @@ const useAuthStore = create((set, get) => ({
         try {
             await api.post('/auth/logout');
 
-            // Clear local stores
+            // Clear all local stores
             const watchHistoryStore = useWatchHistoryStore.getState();
             const listStore = useListStore.getState();
+            const searchHistoryStore = useSearchHistoryStore.getState();
+
             watchHistoryStore.setHistory([]);
             listStore.setList([]);
+            searchHistoryStore.setSearches([]);
 
             set({ user: null, isAuthenticated: false, isLoggingOut: false });
             addNotification({ type: 'success', message: 'Logged out successfully' });
         } catch (error) {
             console.error('Logout error:', error);
 
+            // Still clear local stores even on error
             const watchHistoryStore = useWatchHistoryStore.getState();
             const listStore = useListStore.getState();
+            const searchHistoryStore = useSearchHistoryStore.getState();
+
             watchHistoryStore.setHistory([]);
             listStore.setList([]);
+            searchHistoryStore.setSearches([]);
 
             set({ user: null, isAuthenticated: false, isLoggingOut: false });
             addNotification({ type: 'success', message: 'Logged out successfully' });

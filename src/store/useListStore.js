@@ -45,16 +45,27 @@ const useListStore = create(
             addMovie: async (movie) => {
                 const { list } = get();
                 const { addNotification } = useNotificationStore.getState();
+
+                // Validate movie has required fields
+                if (!movie || !movie.id) {
+                    console.error('Invalid movie object - missing id:', movie);
+                    return;
+                }
+
                 if (!list.some((item) => item.id === movie.id)) {
                     // Optimistic update
                     const previousList = [...list];
-                    const newList = [...list, movie];
+                    const movieWithTimestamp = {
+                        ...movie,
+                        addedAt: new Date().toISOString()
+                    };
+                    const newList = [...list, movieWithTimestamp];
                     set({ list: newList });
                     addNotification({ type: 'success', message: 'Added to My List' });
 
                     // Sync with backend if available
                     try {
-                        await api.post('/auth/mylist/add', { item: movie });
+                        await api.post('/auth/mylist/add', { item: movieWithTimestamp });
                     } catch (error) {
                         console.error('Failed to sync add to backend:', error);
                         // Rollback on failure if it's not just an auth issue

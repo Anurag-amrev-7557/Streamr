@@ -263,6 +263,33 @@ export const removeFromWatchHistory = asyncHandler(async (req, res, next) => {
     });
 });
 
+// @desc    Update user's search history (full sync)
+// @route   PUT /api/auth/search-history
+// @access  Private
+export const updateSearchHistory = asyncHandler(async (req, res, next) => {
+    const { searchHistory } = req.body;
+
+    // Validate and limit to 10 items
+    const validHistory = (searchHistory || [])
+        .filter(item => item && typeof item.query === 'string' && item.query.trim())
+        .slice(0, 10)
+        .map(item => ({
+            query: item.query.trim(),
+            timestamp: item.timestamp ? new Date(item.timestamp) : new Date()
+        }));
+
+    const user = await User.findByIdAndUpdate(
+        req.user.id,
+        { searchHistory: validHistory },
+        { new: true, runValidators: true }
+    );
+
+    res.status(200).json({
+        success: true,
+        searchHistory: user.searchHistory
+    });
+});
+
 // @desc    Get user's search history
 // @route   GET /api/auth/search-history
 // @access  Private
