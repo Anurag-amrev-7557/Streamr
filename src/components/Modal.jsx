@@ -105,6 +105,8 @@ const Modal = ({ movie, onClose, onMovieClick }) => {
         // Error states
         isSimilarError,
         isEpisodesError,
+        // Loading states
+        isSimilarLoading,
         // Refetch functions
         refetchSimilar,
         refetchEpisodes
@@ -336,7 +338,7 @@ const Modal = ({ movie, onClose, onMovieClick }) => {
                             {(isMobile || desktopTab === 'more') ? (
                                 <ModalSimilar
                                     similarMovies={similarMovies}
-                                    isLoading={isLoading}
+                                    isLoading={isSimilarLoading}
                                     isError={isSimilarError}
                                     onRetry={refetchSimilar}
                                     onMovieClick={onMovieClick}

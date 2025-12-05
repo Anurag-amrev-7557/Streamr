@@ -635,7 +635,7 @@ const Navbar = ({ onMovieClick }) => {
                         </AnimatePresence>
                     </div>
 
-                    <div className="flex items-center text-white min-w-[100px] justify-end">
+                    <div className="flex items-center gap-5 text-white min-w-[100px] justify-end">
                         {isCheckingAuth ? (
                             <div className="flex items-center gap-3 animate-pulse">
                                 <div className="w-5 h-5 bg-white/10 rounded-full" />
@@ -758,7 +758,7 @@ const Navbar = ({ onMovieClick }) => {
                         <div className="hidden sm:block w-px h-5 bg-white/10"></div>
 
                         {/* User Section */}
-                        <div className="hidden sm:flex items-center gap-3 flex-shrink-0 min-w-[80px] justify-end">
+                        <div className="hidden sm:flex items-center gap-3 flex-shrink-0 min-w-[80px] justify-end gap-5">
                             {isCheckingAuth ? (
                                 <div className="flex items-center gap-3 animate-pulse">
                                     <div className="w-5 h-5 bg-white/10 rounded-full" />

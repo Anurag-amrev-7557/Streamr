@@ -37,6 +37,23 @@ export const getItemRecommendations = async (req, res, next) => {
     }
 };
 
+export const getModalData = async (req, res, next) => {
+    try {
+        const { type, id } = req.params;
+        const { data, fromCache } = await tmdbService.getModalData(type, id);
+
+        if (fromCache) {
+            res.setHeader('X-Cache', 'HIT');
+        } else {
+            res.setHeader('X-Cache', 'MISS');
+        }
+
+        res.json(data);
+    } catch (error) {
+        next(error);
+    }
+};
+
 export const multiSearch = async (req, res, next) => {
     try {
         const { data, fromCache } = await tmdbService.multiSearch(req.query);

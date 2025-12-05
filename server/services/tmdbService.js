@@ -68,6 +68,37 @@ class TmdbService {
         }, CONFIG.CACHE_TTL.DETAILS);
     }
 
+    async getModalData(type, id) {
+        const cacheKey = `modal_data_${type}_${id}`;
+
+        return smartCache.get(cacheKey, async () => {
+            const apiKey = process.env.TMDB_API_KEY;
+            // Append critical resources to the main details request
+            // We get details, credits, images, videos, content ratings (for PG age), and release dates (for certifying age)
+            const appendToResponse = 'credits,images,videos,content_ratings,release_dates,external_ids';
+
+            try {
+                const response = await tmdbClient.get(`/${type}/${id}`, {
+                    api_key: apiKey,
+                    append_to_response: appendToResponse,
+                    include_image_language: 'en,null' // Prioritize English images, fallback to no language
+                });
+
+                const data = response.data;
+
+                // transform data if needed, but returning it raw is fine as we can destructure on client
+                // We add a 'success' flag just in case
+                return {
+                    ...data,
+                    // Helper to make frontend easier if needed, but frontend can just access properties
+                };
+            } catch (error) {
+                console.error(`Error fetching modal data for ${type}/${id}:`, error.message);
+                throw error;
+            }
+        }, CONFIG.CACHE_TTL.DETAILS);
+    }
+
     async multiSearch(params) {
         const {
             query,

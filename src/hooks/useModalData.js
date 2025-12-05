@@ -2,11 +2,8 @@ import { useMemo, useEffect } from 'react';
 import {
     useEpisodes,
     usePrefetchSeasonEpisodes,
-    useModalImages,
-    useModalDetails,
-    useModalCredits,
+    useAggregatedModalData,
     useModalSimilar,
-    useModalVideos,
     usePrefetchModalData
 } from './useTMDB';
 
@@ -14,27 +11,47 @@ export const useModalData = (movie, modalEnabled, selectedSeason) => {
     const isTv = !!movie?.first_air_date;
     const type = isTv ? 'tv' : 'movie';
 
-    // Use React Query hooks for all modal data - with error states
-    const { data: imagesData, isLoading: isImagesLoading, isError: isImagesError, refetch: refetchImages } = useModalImages(movie?.id, type, modalEnabled);
-    const { data: movieDetails, isLoading: isDetailsLoading, isError: isDetailsError, refetch: refetchDetails } = useModalDetails(movie?.id, type, modalEnabled);
-    const { data: creditsData, isLoading: isCreditsLoading, isError: isCreditsError, refetch: refetchCredits } = useModalCredits(movie?.id, type, modalEnabled);
-    const { data: similarData, isLoading: isSimilarLoading, isError: isSimilarError, refetch: refetchSimilar } = useModalSimilar(movie?.id, type, modalEnabled);
-    const { data: videosData, isLoading: isVideosLoading, isError: isVideosError, refetch: refetchVideos } = useModalVideos(movie?.id, type, modalEnabled);
+    // 1. Aggregated Data (Details, Credits, Images, Videos) - ONE Request
+    const {
+        data: aggregatedData,
+        isLoading: isAggregatedLoading,
+        isError: isAggregatedError,
+        refetch: refetchAggregated
+    } = useAggregatedModalData(movie?.id, type, modalEnabled);
 
-    // Use React Query for episodes with caching - with error states
-    const { data: episodes = [], isLoading: isEpisodesLoading, isError: isEpisodesError, refetch: refetchEpisodes } = useEpisodes(
+    // 2. Similar Movies/Shows - Separate Request (Heavy computation on backend)
+    const {
+        data: similarData,
+        isLoading: isSimilarLoading,
+        isError: isSimilarError,
+        refetch: refetchSimilar
+    } = useModalSimilar(movie?.id, type, modalEnabled);
+
+    // 3. Episodes - Separate Request (TV Only, potentially large)
+    const {
+        data: episodes = [],
+        isLoading: isEpisodesLoading,
+        isError: isEpisodesError,
+        refetch: refetchEpisodes
+    } = useEpisodes(
         movie?.id,
         selectedSeason,
         isTv && modalEnabled
     );
 
-    // Combined loading state
-    const isLoading = isImagesLoading || isDetailsLoading || isCreditsLoading || isSimilarLoading || isVideosLoading;
+    // Derived Data from Aggregated Response
+    const movieDetails = aggregatedData; // Root object is details
+    const imagesData = aggregatedData?.images;
+    const creditsData = aggregatedData?.credits;
+    const videosData = aggregatedData?.videos;
 
-    // Combined error state
-    const hasError = isImagesError || isDetailsError || isCreditsError || isSimilarError || isVideosError;
+    // Loading State
+    const isHeroLoading = isAggregatedLoading;
 
-    // Derive computed values from React Query data
+    // Error State
+    const hasError = isAggregatedError || isSimilarError;
+
+    // Derive computed values
     const logoPath = useMemo(() => {
         if (!imagesData?.logos) return null;
         const englishLogo = imagesData.logos.find(logo => logo.iso_639_1 === 'en');
@@ -82,7 +99,7 @@ export const useModalData = (movie, modalEnabled, selectedSeason) => {
     // Prefetch adjacent seasons AFTER initial modal data is loaded
     useEffect(() => {
         if (!movie?.id || !isTv || !movieDetails?.number_of_seasons) return;
-        if (isLoading || isEpisodesLoading) return; // Wait for initial load to complete
+        if (isHeroLoading || isEpisodesLoading) return; // Wait for initial load to complete
 
         // Skip prefetching on slow connections or data saver
         if (navigator.connection?.saveData || (navigator.connection?.effectiveType && ['slow-2g', '2g'].includes(navigator.connection.effectiveType))) {
@@ -118,7 +135,7 @@ export const useModalData = (movie, modalEnabled, selectedSeason) => {
                 clearTimeout(idleCallbackId);
             }
         };
-    }, [movie?.id, selectedSeason, movieDetails?.number_of_seasons, isTv, isLoading, isEpisodesLoading, prefetchSeasonEpisodes]);
+    }, [movie?.id, selectedSeason, movieDetails?.number_of_seasons, isTv, isHeroLoading, isEpisodesLoading, prefetchSeasonEpisodes]);
 
     // Prefetch details for top similar movies
     const { prefetchModalData } = usePrefetchModalData();
@@ -149,14 +166,17 @@ export const useModalData = (movie, modalEnabled, selectedSeason) => {
     }, [similarData, prefetchModalData]);
 
     return {
-        imagesData,
-        movieDetails,
-        creditsData,
-        similarData,
-        videosData,
-        episodes,
+        imagesData, // Extracted from aggregated
+        movieDetails, // Extracted from aggregated (is the root)
+        creditsData, // Extracted from aggregated
+        similarData, // Separate
+        videosData, // Extracted from aggregated
+        episodes, // Separate
         isEpisodesLoading,
-        isLoading,
+        isLoading: isHeroLoading, // Backward compatibility
+        isHeroLoading,
+        isSimilarLoading,
+        isVideosLoading: isAggregatedLoading, // Proxied
         logoPath,
         cast,
         similarMovies,
@@ -165,19 +185,16 @@ export const useModalData = (movie, modalEnabled, selectedSeason) => {
         creators,
         // Error states
         hasError,
-        isImagesError,
-        isDetailsError,
-        isCreditsError,
+        isImagesError: isAggregatedError,
+        isDetailsError: isAggregatedError,
+        isCreditsError: isAggregatedError,
         isSimilarError,
-        isVideosError,
+        isVideosError: isAggregatedError,
         isEpisodesError,
         // Refetch functions
         refetchAll: () => {
-            refetchImages();
-            refetchDetails();
-            refetchCredits();
+            refetchAggregated();
             refetchSimilar();
-            refetchVideos();
             if (isTv) refetchEpisodes();
         },
         refetchSimilar,

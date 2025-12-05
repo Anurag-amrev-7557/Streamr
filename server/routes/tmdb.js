@@ -10,6 +10,9 @@ router.get('/recommendations', optionalProtect, tmdbController.getRecommendation
 // Item-Based Recommendation Route (for Modal)
 router.get('/recommendations/:type/:id', optionalProtect, tmdbController.getItemRecommendations);
 
+// Aggregated Modal Data Route
+router.get('/modal/:type/:id', tmdbController.getModalData);
+
 // Enhanced Multi-Search Endpoint with Fuzzy Search, Filters, and Pagination
 router.get('/search/multi', tmdbController.multiSearch);
 

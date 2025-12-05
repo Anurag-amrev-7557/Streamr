@@ -61,6 +61,10 @@ export const queryKeys = {
         all: ['person'],
         detail: (id) => [...queryKeys.person.all, id],
     },
+    modal: {
+        all: ['modal'],
+        detail: (type, id) => [...queryKeys.modal.all, type, id],
+    }
 };
 export const useTrending = () => {
     return useQuery({
@@ -203,6 +207,24 @@ export const useModalVideos = (movieId, type, enabled = true) => {
     });
 };
 
+// Aggregated Modal Data Hook
+export const useAggregatedModalData = (movieId, type, enabled = true) => {
+    return useQuery({
+        queryKey: queryKeys.modal.detail(type, movieId),
+        queryFn: async () => {
+            // Fetch everything in one go from our new optimized endpoint
+            const { data } = await tmdb.get(`/modal/${type}/${movieId}`);
+            return data;
+        },
+        enabled: enabled && !!movieId && !!type,
+        retry: 1,
+        retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+        refetchOnReconnect: true,
+        staleTime: STALE_TIME,
+        gcTime: GC_TIME,
+    });
+};
+
 export const usePersonDetails = (personId, enabled = true) => {
     return useQuery({
         queryKey: ['person', personId],
@@ -238,63 +260,39 @@ export const usePrefetchModalData = () => {
         const type = isTv ? 'tv' : 'movie';
         const id = movie.id;
 
-        // Build prefetch promises array
+        // Optimized prefetch: Grab everything in one request
         const prefetchPromises = [
             queryClient.prefetchQuery({
-                queryKey: ['images', type, id],
+                queryKey: queryKeys.modal.detail(type, id),
                 queryFn: async () => {
-                    const { data } = await tmdb.get(`/${type}/${id}/images`);
+                    const { data } = await tmdb.get(`/modal/${type}/${id}`);
                     return data;
                 },
                 staleTime: STALE_TIME,
             }).then(() => {
-                // Preload the logo image file
-                const data = queryClient.getQueryData(['images', type, id]);
-                if (data?.logos) {
-                    const englishLogo = data.logos.find(logo => logo.iso_639_1 === 'en');
-                    const logo = englishLogo || data.logos[0];
+                // Preload the logo image file from the aggregated data
+                const data = queryClient.getQueryData(queryKeys.modal.detail(type, id));
+                if (data?.images?.logos) {
+                    const englishLogo = data.images.logos.find(logo => logo.iso_639_1 === 'en');
+                    const logo = englishLogo || data.images.logos[0];
                     if (logo?.file_path) {
                         const img = new Image();
                         img.src = `https://image.tmdb.org/t/p/w500${logo.file_path}`;
                     }
                 }
             }),
-            queryClient.prefetchQuery({
-                queryKey: ['details', type, id],
-                queryFn: async () => {
-                    const { data } = await tmdb.get(`/${type}/${id}`);
-                    return data;
-                },
-                staleTime: STALE_TIME,
-            }),
-            queryClient.prefetchQuery({
-                queryKey: ['credits', type, id],
-                queryFn: async () => {
-                    const { data } = await tmdb.get(`/${type}/${id}/credits`);
-                    return data;
-                },
-                staleTime: STALE_TIME,
-            }),
+            // Keep prefetching recommendations (Similar) as it is still a separate heavyweight request
             queryClient.prefetchQuery({
                 queryKey: ['similar', type, id],
                 queryFn: async () => {
-                    // Use our advanced backend endpoint instead of direct TMDB proxy
                     const { data } = await tmdb.get(`/recommendations/${type}/${id}`);
                     return data;
                 },
                 staleTime: STALE_TIME,
-            }),
-            queryClient.prefetchQuery({
-                queryKey: ['videos', type, id],
-                queryFn: async () => {
-                    const { data } = await tmdb.get(`/${type}/${id}/videos`);
-                    return data;
-                },
-                staleTime: STALE_TIME,
-            }),
+            })
         ];
 
-        // If it's a TV show, also prefetch first season episodes
+        // If it's a TV show, also prefetch first season episodes (remains separate)
         if (isTv) {
             prefetchPromises.push(
                 queryClient.prefetchQuery({
