@@ -68,7 +68,7 @@ router.get(
 router.get(
     '/google/callback',
     passport.authenticate('google', {
-        failureRedirect: `${process.env.FRONTEND_URL}/login?error=oauth_failed`,
+        failureRedirect: `${process.env.NODE_ENV === 'development' ? 'http://localhost:5173' : process.env.FRONTEND_URL}/login?error=oauth_failed`,
         session: false
     }),
     (req, res) => {
@@ -83,7 +83,9 @@ router.get(
 
         res.cookie('token', token, options);
 
-        const redirectUrl = `${process.env.FRONTEND_URL}/auth/callback`;
+        // Use localhost in development mode
+        const frontendUrl = process.env.NODE_ENV === 'development' ? 'http://localhost:5173' : process.env.FRONTEND_URL;
+        const redirectUrl = `${frontendUrl}/auth/callback`;
         res.redirect(redirectUrl);
     }
 );

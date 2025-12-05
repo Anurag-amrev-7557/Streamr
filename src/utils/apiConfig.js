@@ -10,12 +10,15 @@
  * @returns {string} The base URL for API requests
  */
 export const getBaseUrl = () => {
+    // In development mode, always use localhost to ensure proper cookie handling
+    if (!import.meta.env.PROD) {
+        return 'http://localhost:3000/api';
+    }
+
     const url = import.meta.env.VITE_API_URL;
     // If url is missing, empty, or just a slash, fallback to hardcoded production URL
     if (!url || url === '/' || url.startsWith('/')) {
-        return import.meta.env.PROD
-            ? 'https://streamrbackend.vercel.app/api'
-            : 'http://localhost:3000/api';
+        return 'https://streamrbackend.vercel.app/api';
     }
     return url;
 };
