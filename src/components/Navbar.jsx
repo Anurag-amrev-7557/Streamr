@@ -523,7 +523,7 @@ const Navbar = ({ onMovieClick }) => {
                     <NavigationLinks className="hidden md:flex gap-6 text-sm font-medium text-gray-300" />
                 </div>
 
-                <div className="hidden md:flex items-center gap-4 md:gap-6 text-white">
+                <div className="hidden md:flex items-center text-white">
                     {/* Search Section */}
                     <div className="relative">
                         <AnimatePresence mode="wait">
@@ -635,7 +635,7 @@ const Navbar = ({ onMovieClick }) => {
                         </AnimatePresence>
                     </div>
 
-                    <div className="flex items-center gap-4 md:gap-6 text-white min-w-[100px] justify-end">
+                    <div className="flex items-center text-white min-w-[100px] justify-end">
                         {isCheckingAuth ? (
                             <div className="flex items-center gap-3 animate-pulse">
                                 <div className="w-5 h-5 bg-white/10 rounded-full" />
