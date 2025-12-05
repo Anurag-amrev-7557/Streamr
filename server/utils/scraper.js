@@ -21,8 +21,9 @@ const HEADERS = {
  */
 export const scrapeHicineSearch = async (query, metadata = {}) => {
     try {
-        console.log(`[API] Searching for: ${query}`, metadata ? `with metadata: ${JSON.stringify(metadata)}` : '');
-        const url = `${API_BASE_URL}/search/${encodeURIComponent(query)}`;
+        const apiQuery = normalizeSearchQuery(query);
+        console.log(`[API] Searching for: ${query} (Normalized: ${apiQuery})`, metadata ? `with metadata: ${JSON.stringify(metadata)}` : '');
+        const url = `${API_BASE_URL}/search/${encodeURIComponent(apiQuery)}`;
         const response = await axios.get(url, { headers: HEADERS });
 
         if (!response.data || !Array.isArray(response.data)) {
@@ -422,4 +423,20 @@ const extractYear = (title) => {
 
 export const scrapeHicineDetails = async (id) => { // eslint-disable-line no-unused-vars
     return {};
+};
+
+/**
+ * Normalizes search query to handle Roman numerals.
+ * Converts "Part II" -> "Part 2", "Part III" -> "Part 3", etc.
+ * @param {string} query 
+ * @returns {string}
+ */
+const normalizeSearchQuery = (query) => {
+    if (!query) return '';
+
+    return query
+        .replace(/\bPart\s+II\b/gi, 'Part 2')
+        .replace(/\bPart\s+III\b/gi, 'Part 3')
+        .replace(/\bPart\s+IV\b/gi, 'Part 4')
+        .replace(/\bPart\s+V\b/gi, 'Part 5');
 };
